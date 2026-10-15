@@ -1,0 +1,54 @@
+import { fontHead } from '../../base/font-head'
+import { themeFrame } from '../../base/theme-frame'
+import branding from '../../branding.json'
+import { agent } from './agent'
+import { clientFilePage, clientList } from './clients'
+import { clinic } from './clinic'
+import { intakeForms } from './intake'
+import { invoices } from './invoices'
+import { movein } from './import'
+import { mail } from './mail'
+import { bookPage, intakePage, missingPage } from './public'
+import { schedule } from './schedule'
+import { desk, h, owner } from './shared'
+import { style } from './style'
+
+type Notice = { message?: string; error?: string; result?: any }
+
+async function documentFor(title: string, body: string, status: number) {
+  const frame = await themeFrame({ href: '/rer-theme.css', productName: branding.name, accentColor: branding.primaryColor })
+  const hash = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(style)))))
+  const policy = frame.policy.replace("style-src 'self'", `style-src 'self' 'sha256-${hash}'`)
+  const html = `<!doctype html><html lang="en-AU"${frame.htmlClass}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title>${fontHead}${frame.head}<style>${style}</style></head><body>${body.replace('{{brand}}', frame.brand)}</body></html>`
+  return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `default-src 'none'; ${policy}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, 'referrer-policy': 'same-origin', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' } })
+}
+
+export async function renderApp(state: any, path: string, notice: Notice = {}, file?: any, status = 200): Promise<Response> {
+  const current = path.split('?')[0].replace(/\/$/, '') || '/app'
+  const tabs: [string, string][] = [['/app', 'Schedule'], ['/app/clients', 'Clients'],
+    ...(desk(state) ? [['/app/invoices', 'Invoices and reminders']] as [string, string][] : []),
+    ...(owner(state) ? [['/app/clinic', 'Clinic'], ['/app/intake', 'Intake form'], ['/app/import', 'Move in'], ['/app/agent', 'Agent access'], ...(state.localMail ? [['/app/mail', 'Local mail']] : [])] as [string, string][] : [])]
+  const section = current.startsWith('/app/clients/') ? '/app/clients' : current
+  const allowed = tabs.some(([url]) => url === section)
+  const title = current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tabs.find(([url]) => url === current)?.[1] ?? 'Page unavailable'
+  const content = !allowed ? '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><p><a href="/app">Open the schedule</a></p>'
+    : file ? clientFilePage(state, file, notice)
+      : current === '/app/clients' ? clientList(state)
+        : current === '/app/invoices' ? invoices(state)
+          : current === '/app/clinic' ? clinic(state)
+            : current === '/app/intake' ? intakeForms(state)
+              : current === '/app/import' ? movein(state, notice)
+                : current === '/app/agent' ? agent(state, notice)
+                  : current === '/app/mail' ? mail(state)
+                    : schedule(state)
+  const clinicName = state.settings?.clinic_name ?? branding.name
+  const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header><nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav><div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
+  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403)
+}
+
+export async function renderPublic(kind: 'book' | 'intake' | 'missing', data: any, status = 200): Promise<Response> {
+  const clinicName = data.clinic?.clinic_name ?? data.appointment?.clinic_name ?? branding.name
+  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : missingPage()
+  const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span><span class="identity">${h(clinicName)}</span></header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
+  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : 'Link not found'} · ${clinicName}`, body, status)
+}

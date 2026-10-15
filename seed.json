@@ -1,0 +1,91 @@
+{
+  "id": "balm",
+  "name": "Balm",
+  "version": "0.1.0",
+  "maturity": "first-release-local",
+  "category": "clinic",
+  "spine": {
+    "id": "client-file",
+    "record": "Client file: appointments, intake answers, treatment notes, invoices and its access audit"
+  },
+  "description": "Allied-health clinic: online booking, intake forms, practitioner-only treatment notes, reviewed invoices and an audited client file.",
+  "capabilities": [
+    {
+      "id": "clinic-operations",
+      "clauses": [
+        "BALM-001"
+      ]
+    }
+  ],
+  "nonGoals": [
+    "Medicare, DVA, NDIS or health-fund claiming",
+    "Prescribing",
+    "My Health Record",
+    "Telehealth video",
+    "Clinical decision support",
+    "Card processing"
+  ],
+  "externals": [
+    {
+      "id": "cloudflare",
+      "required": true,
+      "why": "Worker hosting",
+      "data": [
+        "HTTP requests"
+      ],
+      "adapters": []
+    }
+  ],
+  "env": [],
+  "deploy": {
+    "healthPath": "/health",
+    "publicPaths": [
+      "/",
+      "/book",
+      "/health",
+      "/intake/*",
+      "/signin"
+    ],
+    "notes": "Native sessions guard /app and every /api/balm handler; /book and /intake links are the only public product pages; unknown paths return real 404s."
+  },
+  "extensionPoints": {
+    "contributions": [],
+    "policies": [],
+    "events": [],
+    "slots": [],
+    "adapters": []
+  },
+  "limits": {
+    "status": "unmeasured"
+  },
+  "accessibility": {
+    "level": "WCAG 2.2 AA",
+    "status": "target; unaudited"
+  },
+  "operatingCost": {
+    "status": "unmeasured"
+  },
+  "composition": {
+    "base": "base",
+    "family": "clinic",
+    "edition": "balm",
+    "modules": [
+      "delivery-producer",
+      "job-queue",
+      "release",
+      "deploy-kit",
+      "container",
+      "demo-host",
+      "demo",
+      "integrations",
+      "mail",
+      "ai",
+      "portability",
+      "d1-transport",
+      "erasure",
+      "dependencies",
+      "operator-auth",
+      "owner-claim"
+    ]
+  }
+}

@@ -1,0 +1,99 @@
+// Guarded batches adapted from Satchel's atomic()/audit() (src/satchel/model.ts,
+// just-every/run-satchel @ 2d460e4) and Strap's st_assert fence: every write
+// re-checks the actor's live authority inside the same D1 batch.
+export type Role = 'owner' | 'practitioner' | 'reception' | 'agent'
+export interface Actor {
+  /** Native operator id (the owner's id for an agent key). */
+  id: string; email: string; role: Role
+  /** The linked staff row, when this person is on the clinic's staff list. */
+  staffId?: string; staffRole?: 'practitioner' | 'reception'
+  operatorVersion: number; staffVersion?: number
+}
+export type Data = Record<string, any>
+
+export class DomainError extends Error {
+  constructor(public code: string, public status = 400) { super(code); this.name = 'DomainError' }
+}
+export function insist(condition: unknown, code: string, status = 400): asserts condition {
+  if (!condition) throw new DomainError(code, status)
+}
+export const id = () => crypto.randomUUID()
+export const now = () => new Date().toISOString()
+export function text(value: unknown, field: string, max = 200): string {
+  insist(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), `invalid_${field}`)
+  return value.trim()
+}
+export function optional(value: unknown, field: string, max = 200): string | null {
+  if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) return null
+  return text(value, field, max)
+}
+export function integer(value: unknown, field: string, min = 0, max = 10_000_000): number {
+  const number = typeof value === 'string' && /^-?\d+$/.test(value.trim()) ? Number(value) : value
+  insist(typeof number === 'number' && Number.isSafeInteger(number) && number >= min && number <= max, `invalid_${field}`)
+  return number
+}
+export function day(value: unknown, field: string): string {
+  const v = text(value, field, 10)
+  insist(/^\d{4}-\d\d-\d\d$/.test(v) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v, `invalid_${field}`)
+  return v
+}
+export function email(value: unknown, field = 'email'): string {
+  const v = text(value, field, 254).toLowerCase()
+  insist(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), `invalid_${field}`)
+  return v
+}
+export async function sha256(value: string) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+export const stmt = (db: D1Database, sql: string, ...values: unknown[]) => db.prepare(sql).bind(...values)
+export async function rows<T = Data>(db: D1Database, sql: string, ...values: unknown[]) { return (await stmt(db, sql, ...values).all<T>()).results }
+export async function one<T = Data>(db: D1Database, sql: string, ...values: unknown[]) { return await stmt(db, sql, ...values).first<T>() }
+
+/** A failed predicate aborts the whole batch through bm_assert's CHECK. */
+export function guard(db: D1Database, condition: string, ...values: unknown[]) {
+  return stmt(db, `INSERT INTO bm_assert(value) SELECT CASE WHEN (${condition}) THEN 1 ELSE 0 END`, ...values)
+}
+
+export const human = (who: Actor) => insist(who.role !== 'agent', 'a_person_must_approve', 403)
+export function need(who: Actor, ...roles: Role[]) {
+  insist(roles.includes(who.role) || (who.staffRole && roles.includes(who.staffRole)), 'role_cannot_do_this', 403)
+}
+/** Practitioner powers come from a linked practitioner staff row, including the owner's own. */
+export const practitionerId = (who: Actor) => who.staffRole === 'practitioner' ? who.staffId : undefined
+
+function authority(db: D1Database, who: Actor) {
+  if (who.role === 'owner' || who.role === 'agent') return guard(db, "EXISTS(SELECT 1 FROM oa_operators WHERE id=? AND lower(email)=lower(?) AND status='active' AND role='owner' AND version=?)", who.id, who.email, who.operatorVersion)
+  return guard(db, `EXISTS(SELECT 1 FROM oa_operators o JOIN bm_staff s ON lower(s.email)=lower(o.email)
+    WHERE o.id=? AND o.status='active' AND o.version=? AND s.id=? AND s.active=1 AND s.erased_at IS NULL AND s.role=? AND s.version=?)`,
+  who.id, who.operatorVersion, who.staffId, who.staffRole, who.staffVersion)
+}
+
+export function audit(db: D1Database, who: Actor | { email: string; role: string }, action: string, clientId: string | null, subjectId: string | null = null, detail = '') {
+  return stmt(db, 'INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)', now(), who.email, who.role, action, clientId, subjectId, detail)
+}
+
+/** One D1 batch: live authority, the caller's guards and writes, then cleanup. */
+export async function commit(db: D1Database, who: Actor | null, statements: D1PreparedStatement[]) {
+  try {
+    await db.batch([...(who ? [authority(db, who)] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
+  } catch (error) {
+    if (/bm_assert|CHECK constraint|UNIQUE constraint|ik_d1_assertions/.test(String(error))) throw new DomainError('changed_refresh_and_retry', 409)
+    throw error
+  }
+}
+
+type OperatorRow = { id: string; email: string; role: string; status: string; version: number }
+type StaffRow = { id: string; role: 'practitioner' | 'reception'; version: number }
+/** Resolves the current person from the native operator and the staff list. */
+export async function actor(db: D1Database, operatorId: string, agent = false): Promise<Actor> {
+  const operator = await one<OperatorRow>(db, 'SELECT id,email,role,status,version FROM oa_operators WHERE id=?', operatorId)
+  insist(operator?.status === 'active', 'sign_in_required', 401)
+  const staff = await one<StaffRow>(db, 'SELECT id,role,version FROM bm_staff WHERE lower(email)=lower(?) AND active=1 AND erased_at IS NULL', operator.email)
+  const base = { id: operator.id, email: operator.email, operatorVersion: operator.version }
+  if (operator.role === 'owner') {
+    if (agent) return { ...base, role: 'agent' }
+    return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, staffVersion: staff.version } : {}) }
+  }
+  insist(!agent && staff, 'active_staff_required', 403)
+  return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, staffVersion: staff.version }
+}
