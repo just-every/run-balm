@@ -6,17 +6,13 @@ Online bookings, intake forms, private treatment notes and invoices for an Austr
 
 ## Run it on your computer
 
-Install Git and Node 22 or newer. Install the `rer` launcher once, then clone and start Balm:
+Install Git and Node 22 or newer, then run one line. It clones Balm, installs the `rer` launcher and starts it:
 
 ```sh
-npx -y @runeditrun/rer cli install
-export PATH="$HOME/.local/bin:$PATH"
-git clone https://github.com/just-every/run-balm.git
-cd run-balm
-rer dev
+npx -y @runeditrun/rer dev just-every/run-balm
 ```
 
-`rer dev` installs the pinned dependencies and Node 22.20.0, prepares the local D1 database and a local owner, and starts the app. The first launch can take several minutes; if it is interrupted, run `rer dev` again. When it is ready it prints:
+To start it again later, run `cd run-balm && rer dev`. `rer dev` installs the pinned dependencies and Node 22.20.0, prepares the local D1 database and a local owner, and starts the app. The first launch can take several minutes; if it is interrupted, run `rer dev` again. When it is ready it prints:
 
 - `RER_READY http://127.0.0.1:<port>`: the app's address (the port is the first free one from 8787, and is kept for this checkout).
 - `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
