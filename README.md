@@ -21,7 +21,7 @@ To start it again later, run `cd run-balm && rer dev`. `rer dev` installs the pi
 - `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
 - `RER_SITE http://127.0.0.1:<port>`: Balm's run site, served locally. Its **Run Balm** page is at `http://127.0.0.1:<port>/run`, using the `RER_SITE` port rer printed.
 
-The public run site, https://run-balm.com, goes live once its domain is registered. Until then the run site exists only locally, as above.
+The public run site is at https://run-balm.com, and its **Run Balm** page is at https://run-balm.com/run. The local copy above serves the same pages.
 
 To use your own email as the owner, run `rer install`, then `rer setup --owner-email you@example.com`, then `rer dev`. Local development sends no real email: messages wait in **Local mail** inside the app. Stop with `rer dev --stop` or Ctrl-C. If the saved port is taken, choose a free one, for example `rer dev --port 8899`. Never expose the development server to the internet.
 
