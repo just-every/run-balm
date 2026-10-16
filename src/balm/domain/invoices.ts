@@ -6,7 +6,7 @@ import { audit, commit, guard, human, id, insist, integer, need, now, one, rows,
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
-export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-AU', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
+export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
 async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
@@ -19,7 +19,7 @@ async function snapshot(db: D1Database, appointmentId: string, amountCents?: num
     client: { name: `${row.first_name} ${row.last_name}`, dateOfBirth: row.date_of_birth },
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
-    appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'AUD',
+    appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'USD',
   } }
 }
 
@@ -40,16 +40,16 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
 
 function artifact(number: number, value: any, approvedAt: string) {
   const line = (label: string, v: unknown) => v ? `<p><strong>${escape(label)}:</strong> ${escape(v)}</p>` : ''
-  return `<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><title>${invoiceNumber(number)}</title>`
+  return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><title>${invoiceNumber(number)}</title>`
     + '<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1d2a26}table{width:100%;border-collapse:collapse;margin:24px 0}td,th{border-bottom:1px solid #ccd;padding:8px;text-align:left}td:last-child,th:last-child{text-align:right}</style></head><body>'
     + `<h1>Invoice ${invoiceNumber(number)}</h1><p>Issued ${escape(approvedAt.slice(0, 10))}</p>`
-    + `<h2>${escape(value.clinic.name)}</h2>${line('ABN', value.clinic.abn)}${line('Address', value.clinic.address)}`
+    + `<h2>${escape(value.clinic.name)}</h2>${line('Tax ID', value.clinic.abn)}${line('Address', value.clinic.address)}`
     + `<h2>Client</h2>${line('Name', value.client.name)}${line('Date of birth', value.client.dateOfBirth)}`
     + `<h2>Provider</h2>${line('Practitioner', value.practitioner.name)}${line('Profession', value.practitioner.profession)}${line('Provider number', value.practitioner.providerNumber)}`
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`
     + `<tfoot><tr><th colspan="2">Total</th><th>${dollars(value.amountCents)}</th></tr></tfoot></table>`
-    + '<p>Payment and any health-fund or Medicare claim are made outside Balm. Keep this invoice for your claim.</p></body></html>\n'
+    + '<p>Payment and any insurance claim are made outside Balm. Keep this invoice for your records.</p></body></html>\n'
 }
 
 export async function approveInvoice(db: D1Database, who: Actor, input: Data) {

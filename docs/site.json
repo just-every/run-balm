@@ -1,0 +1,30 @@
+{
+  "sections": [
+    {
+      "title": "Start here",
+      "pages": [
+        { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in two lines and sign in as the owner." },
+        { "slug": "set-up-your-clinic", "title": "Set up your clinic", "file": "set-up-your-clinic.md", "summary": "Your clinic details, services, practitioners and reception, weekly hours and sign-in invitations." }
+      ]
+    },
+    {
+      "title": "Run your clinic",
+      "pages": [
+        { "slug": "bookings", "title": "Bookings and the schedule", "file": "bookings.md", "summary": "Online booking at /book, booking from a client file, and marking visits attended, missed or canceled." },
+        { "slug": "intake", "title": "Intake forms", "file": "intake.md", "summary": "The private intake link each new booking gets, who reads the answers, and publishing a new version of the form." },
+        { "slug": "notes", "title": "Treatment notes", "file": "notes.md", "summary": "Write a note against a visit, amend it with a reason, and know who can read it." },
+        { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },
+        { "slug": "reminders", "title": "Appointment reminders", "file": "reminders.md", "summary": "Balm writes the exact reminder text for an upcoming visit; a person approves it and sends it their usual way." }
+      ]
+    },
+    {
+      "title": "Keep your records",
+      "pages": [
+        { "slug": "people-and-audit", "title": "People, roles and the access audit", "file": "people-and-audit.md", "summary": "Owner, practitioners and reception, removing access at once, erasing records, and the audit on every client file." },
+        { "slug": "agent-commands", "title": "Agent commands", "file": "AGENT-COMMANDS.md", "summary": "Give an assistant a key so it can prepare invoices, reminder text and intake versions for a person to approve." },
+        { "slug": "move-in", "title": "Move in from Cliniko", "file": "MOVE-IN.md", "summary": "Preview a Cliniko patient CSV, apply that exact preview, read the journal and undo it if needed." },
+        { "slug": "backup", "title": "Back up and restore", "file": "backup.md", "summary": "Export the whole clinic to one archive and restore it into a fresh copy." }
+      ]
+    }
+  ]
+}

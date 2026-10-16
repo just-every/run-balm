@@ -9,7 +9,7 @@ export const identity: EditionIdentity = {
   product: branding.name,
   deployment: branding.name,
   purpose: '{deployment} keeps your clinic’s bookings, intake forms, treatment notes and invoices in your own account, with every access audited.',
-  tagline: 'Online bookings, intake forms, private treatment notes and invoices for a small allied-health clinic, in your own account.',
+  tagline: 'Online bookings, intake forms, private treatment notes and invoices for a US outpatient therapy clinic, in your own account.',
   signInPath: '/signin',
   // The run site `rer deploy --site` publishes (deploy-site.json).
   runSite: `https://${site.domain}`,

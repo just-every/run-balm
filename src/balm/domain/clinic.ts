@@ -6,7 +6,7 @@ import { audit, commit, email, guard, human, id, insist, integer, need, one, opt
 
 export function validTimeZone(value: unknown) {
   const zone = text(value, 'time_zone', 64)
-  try { new Intl.DateTimeFormat('en-AU', { timeZone: zone }).format(0) } catch { insist(false, 'invalid_time_zone') }
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(0) } catch { insist(false, 'invalid_time_zone') }
   return zone
 }
 

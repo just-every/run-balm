@@ -2,7 +2,8 @@
    read these --rer-* tokens; the app serves this file and its fonts.
    Buttons keep the colour chosen at setup (src/branding.json primaryColor)
    because no --rer-accent is declared here; declare --rer-accent and
-   --rer-accent-text together to fix them instead. */
+   --rer-accent-text together to fix them instead. The wordmark and headings use
+   Newsreader, the run site's heading face; the app's own design round follows. */
 @font-face {
   font-family: Outfit;
   font-style: normal;
@@ -10,9 +11,17 @@
   font-display: swap;
   src: url('/fonts/outfit/outfit-latin-wght-normal.woff2') format('woff2');
 }
+@font-face {
+  font-family: Newsreader;
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader/newsreader-latin-standard-normal.woff2') format('woff2');
+}
 :root {
   --rer-font-body: Outfit, Arial, sans-serif;
-  --rer-font-heading: Outfit, Arial, sans-serif;
+  --rer-font-heading: Newsreader, Georgia, serif;
+  --rer-wordmark-weight: 500;
   --rer-page: #f4f6f5;
   --rer-surface: #ffffff;
   --rer-text: #1b2724;

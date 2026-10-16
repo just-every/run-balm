@@ -17,7 +17,7 @@ export function bookPage(d: any) {
     const byDay = new Map<string, any[]>()
     for (const slot of d.slots.slots) byDay.set(slot.hostDate, [...(byDay.get(slot.hostDate) ?? []), slot])
     const link = (start: string) => `/book?${new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.from, start })}`
-    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic's time zone (${h(zone)}).</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-AU', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-AU', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
+    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic's time zone (${h(zone)}).</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
       <p><a href="/book?${h(new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.next }))}">Show the next week</a></p></section>`
   }
   const details = p.start && d.slots ? `<section class="panel"><h2>3. Your details</h2><p>Booking <strong>${h(d.slots.service.name)}</strong> with <strong>${h(d.slots.practitioner.name)}</strong> on <strong>${h(localTime(p.start, zone))}</strong>.</p>
@@ -46,4 +46,4 @@ export function intakePage(d: any) {
     <section class="panel"><h2>${h(d.form.title)}</h2><form method="post" action=""><input type="hidden" name="formId" value="${h(d.form.id)}">${d.form.questions.map(question).join('')}<button type="submit">Send my intake form</button></form></section>`
 }
 
-export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was cancelled. Please contact the clinic.</p>'
+export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was canceled. Please contact the clinic.</p>'

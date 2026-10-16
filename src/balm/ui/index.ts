@@ -19,7 +19,7 @@ async function documentFor(title: string, body: string, status: number) {
   const frame = await themeFrame({ href: '/rer-theme.css', productName: branding.name, accentColor: branding.primaryColor })
   const hash = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(style)))))
   const policy = frame.policy.replace("style-src 'self'", `style-src 'self' 'sha256-${hash}'`)
-  const html = `<!doctype html><html lang="en-AU"${frame.htmlClass}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title>${fontHead}${frame.head}<style>${style}</style></head><body>${body.replace('{{brand}}', frame.brand)}</body></html>`
+  const html = `<!doctype html><html lang="en-US"${frame.htmlClass}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title>${fontHead}${frame.head}<style>${style}</style></head><body>${body.replace('{{brand}}', frame.brand)}</body></html>`
   return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `default-src 'none'; ${policy}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, 'referrer-policy': 'same-origin', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' } })
 }
 

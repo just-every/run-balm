@@ -15,7 +15,7 @@ export const form = (command: string, path: string, body: string, button: string
 export const panel = (title: string, body: string, extra = '') => `<section class="panel${extra ? ' ' + extra : ''}"><h2>${h(title)}</h2>${body}</section>`
 export const empty = (message: string) => `<p class="empty">${h(message)}</p>`
 export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2))}</pre>`
-export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' '))}</span>`
+export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'))}</span>`
 export const entry = (title: string, body: string) => `<article class="entry"><h3>${h(title)}</h3>${body}</article>`
 export const result = (notice: any) => notice.result?.result ?? notice.result
 export const money = (cents: unknown) => `$${(Number(cents ?? 0) / 100).toFixed(2)}`
