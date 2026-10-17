@@ -6,14 +6,13 @@ Online bookings, intake forms, private treatment notes and invoices for a US out
 
 ## Run it on your computer
 
-Install Git, then run two lines. The first installs the `rer` launcher; the second clones Balm and starts it:
+Install Git, then run one line to install the `rer` launcher, clone Balm and start it:
 
 ```sh
-curl -fsSL https://runeditrun.com/install.sh | sh
-rer dev just-every/run-balm
+npx -y @runeditrun/rer dev just-every/run-balm
 ```
 
-The first line installs `rer` for you alone, with its own Node if you have none. It changes no shell settings: if it prints an `export PATH=…` line, run that line before the second. Already have Node 22 or later? `npx -y @runeditrun/rer dev just-every/run-balm` does both lines in one.
+No Node? `curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm` does the same and brings its own Node; it changes no shell settings, so if it prints an `export PATH=…` line, run that line to use `rer` again later. To set Balm up without starting it, use `setup` in place of `dev`.
 
 To start it again later, run `cd run-balm && rer dev`. `rer dev` installs the pinned dependencies and Node 22.20.0, prepares the local D1 database and a local owner, and starts the app. The first launch can take several minutes; if it is interrupted, run `rer dev` again. When it is ready it prints:
 
