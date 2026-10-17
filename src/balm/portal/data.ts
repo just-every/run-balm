@@ -1,6 +1,7 @@
-import { runtimeBindings, type Bindings } from '../../auth.server'
+import { type Bindings } from '../../auth.server'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, text, type Data } from '../domain/model'
-import { send } from '../mail-out'
+import { savePatientMessage } from '../messages/patient'
+import { destination, recipients } from '../messages/routing'
 import { thread } from '../messages/thread'
 import { paymentBlock } from '../payments/connect'
 import { receiptPdf, statementPdf, superbillPdf } from '../payments/documents'
@@ -11,7 +12,7 @@ import { exerciseProgress, patientExercises } from './programs'
 /** The session's client id is the only patient selector accepted by portal reads. */
 export async function portalHome(env: Bindings, patient: Patient) {
   const db = env.DB, at = now()
-  const [clinic, appointments, exercises, messages, balance, block, receipts, superbills] = await Promise.all([
+  const [clinic, appointments, exercises, messages, balance, block, receipts, superbills, messageRecipients] = await Promise.all([
     one<{ clinic_name: string; time_zone: string }>(db, 'SELECT clinic_name,time_zone FROM bm_settings WHERE id=1'),
     rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,p.name AS practitioner,s.name AS service,
       CASE WHEN a.status='booked' AND a.start_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) THEN 1 ELSE 0 END AS intake_open
@@ -20,6 +21,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     patientExercises(db, patient), thread(db, patient.clientId), ledger(db, patient.clientId), paymentBlock(env, db),
     rows(db, "SELECT id,receipt_number,amount_cents,succeeded_at FROM bm_card_payments WHERE client_id=? AND status='succeeded' AND receipt_number IS NOT NULL ORDER BY succeeded_at DESC", patient.clientId),
     rows(db, "SELECT id,number,approved_at FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC", patient.clientId),
+    recipients(db, patient.clientId),
   ])
   await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'portal.viewed', patient.clientId),
     audit(db, patientActor, 'message.thread_read', patient.clientId), ...messages.map(m => audit(db, patientActor, 'message.read', patient.clientId, m.id)),
@@ -30,7 +32,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     upcoming: appointments.filter(a => a.end_at >= at && a.status === 'booked'),
     past: appointments.filter(a => a.end_at < at || a.status !== 'booked').reverse(),
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
-    exercises, messages: messages.map(({ notification, ...m }) => m),
+    exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     billing: { ...balance, block, statementUrl: '/portal/statement.pdf', receipts, superbills },
   }
 }
@@ -47,21 +49,10 @@ async function intakeOpen(db: D1Database, patient: Patient, input: Data) {
   return { redirect: '/intake/' + token }
 }
 
-/** Reuse the existing immutable conversation and its mail edge; no clinical content is emailed. */
+/** Patient sessions and private links share the immutable message writer. */
 async function messageSend(env: Bindings, patient: Patient, input: Data) {
-  const db = env.DB, body = text(input.body, 'message', 10000), messageId = id(), at = now()
-  await commit(db, null, [portalGuard(db, patient),
-    guard(db, "(SELECT COUNT(*) FROM bm_messages WHERE client_id=? AND sender='patient' AND sent_at>?)<20", patient.clientId, new Date(Date.now() - 10 * 60_000).toISOString()),
-    stmt(db, "INSERT INTO bm_messages(id,client_id,sender,author_name,body,sent_at,notification_state) VALUES(?,?,'patient','Patient',?,?,'pending')", messageId, patient.clientId, body, at),
-    audit(db, patientActor, 'message.sent', patient.clientId, messageId),
-  ])
-  const owner = await one<{ email: string }>(db, "SELECT email FROM oa_operators WHERE role='owner' AND status='active' ORDER BY id LIMIT 1")
-  const delivery = await send(env, owner?.email, 'A secure message needs your attention',
-    `A patient has sent a secure message. Sign in to the clinic to read and reply:\n${new URL('/app/clients/' + encodeURIComponent(patient.clientId), runtimeBindings(env).AUTH_ORIGIN).href}\n\nClinical content is available only after signing in. Please do not reply to this email.`)
-  await commit(db, null, [stmt(db, 'UPDATE bm_messages SET notification_state=?,notified_at=? WHERE id=?', delivery, now(), messageId),
-    audit(db, { email: 'clinic-mail', role: 'system' }, 'message.notification', patient.clientId, messageId, delivery),
-  ])
-  return { messageId, sent: true, notice: 'Your message is saved for the clinic. This inbox is not for emergencies. For an emergency, call 911.' }
+  const target = await destination(env.DB, patient.clientId, input)
+  return savePatientMessage(env, patient.clientId, input, target, portalGuard(env.DB, patient), patientActor)
 }
 
 async function paymentOpen(env: Bindings, patient: Patient, input: Data) {

@@ -1,4 +1,6 @@
 import type { Bindings } from '../../auth.server'
+import { portalAttachment } from './messages'
+import { parseMessageInput } from '../messages/input'
 import { plain } from '../refusals'
 import { renderPortal } from '../ui/portal'
 import { consumePortalLink, portalAction, portalHome, portalPatient, portalStatement, portalDocument, requestPortalLink, signOutPortal } from './index'
@@ -11,7 +13,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
   const url = new URL(request.url), path = url.pathname
   try {
     if (request.method === 'POST' && (request.headers.get('origin') !== env.AUTH_ORIGIN || request.headers.get('sec-fetch-site') === 'cross-site')) return renderPortal('signin', { error: 'Open this page again before submitting.' }, 403)
-    const input = request.method === 'POST' ? Object.fromEntries(await request.formData()) : {}
+    const input = request.method === 'POST' ? await parseMessageInput(request) : {}
     if (path === '/portal/confirm') {
       const token = String(input.token ?? url.searchParams.get('token') ?? '')
       if (request.method === 'GET') return renderPortal('confirm', { token })
@@ -24,6 +26,8 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       return patient ? redirect('/portal/home') : renderPortal('signin', {})
     }
     const patient = await portalPatient(env.DB, request)
+    const attachment = path.match(/^\/portal\/messages\/attachments\/([\w-]+)$/)
+    if (attachment && request.method === 'GET') return await portalAttachment(env.DB, patient, attachment[1])
     if (path === '/portal/signout' && request.method === 'POST') return redirect('/portal', (await signOutPortal(env.DB, request)).cookie)
     if (path === '/portal/statement.pdf' && request.method === 'GET') {
       const doc = await portalStatement(env.DB, patient)

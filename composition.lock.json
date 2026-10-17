@@ -407,7 +407,7 @@
       "source": "editions/balm/AGENTS.md"
     },
     "CONTRACT.md": {
-      "sha256": "9c22960e9c0b34fa176a832469f490e751fd407076687fb1624c8c1fae0d1540",
+      "sha256": "3be469b6378bfa729de8458dc4f69e1d980404c66923b71cc19ff8269b6c28bd",
       "mode": 420,
       "component": "balm",
       "repository": "family",

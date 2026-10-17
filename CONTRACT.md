@@ -370,7 +370,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 20 | sign consent | `INTAKE-003` | done |
 | 21 | add their insurance card | `INTAKE-004` | done |
 | 22 | Their home exercises … live in the same portal | `PORTAL-001`, `PORTAL-002`, `PORTAL-007` | partial |
-| 23 | and messages | `PORTAL-003` | partial |
+| 23 | and messages | `PORTAL-003` | done |
 | 24 | PT, OT and speech templates for evaluations, daily notes, progress and discharge | `BALM-004`, `CHART-002` | partial |
 | 25 | The scribe drafts from the visit | `BALM-004`, `CHART-012` | partial |
 | 26 | you review and sign | `BALM-004`, `CHART-004`, `CHART-012` | partial |
@@ -413,8 +413,8 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 2 | 55 | 37 | 94 |
-| All | 17 | 55 | 37 | 109 |
+| Target and push further | 3 | 54 | 37 | 94 |
+| All | 18 | 54 | 37 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -444,7 +444,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `INTAKE-004` | Insurance and identity capture | target | done | `src/balm/intake/coverage.ts`; `src/balm/intake/verify-coverage.ts`; `src/balm/insurance/policy.ts`; `src/balm/insurance/eligibility.ts`; `src/balm/ui/intake-insurance.ts`; `tests/intake-portal.test.mjs`; `tests/archive.test.mjs` | Patients add primary and secondary insurance with required claim/subscriber fields, card fronts/backs and photo ID. The clinic supplies payer routing and billing identifiers first. The same intake batch creates native policies and exportable 270 requests; coverage remains unknown until a real payer response. Staff corrections update the policy and replace stale requests; original photos are fixed and downloads audited. Hosted at 1440 and 390 with real QA-inbox intake mail, 18 October 2026. |
 | `PORTAL-001` | Patient portal | target | partial | `src/balm/portal/`; `src/balm/ui/portal.ts`; `tests/portal.test.mjs` | One-use emailed links create expiring patient-only sessions for visits, intake, home exercises, secure messages, statements, receipts and superbills. No guardian access, SMS sign-in or contact/insurance updates in the portal. Managed email sign-in is not available yet. |
 | `PORTAL-002` | Home exercise programs | target | partial | `src/balm/portal/programs.ts`; `src/balm/ui/portal-chart.ts`; `tests/portal.test.mjs` | Clinicians assign practice-made exercises with sets, reps, frequency, instructions and uploaded images; patients log daily completion and clinicians see adherence. No shipped library, note assignment, printable program PDF or pain log. |
-| `PORTAL-003` | Secure messaging | target | partial | `src/balm/messages/`; `src/balm/portal/data.ts`; `tests/portal.test.mjs`; `tests/reminders.test.mjs` | Patient and clinic exchange secure messages in the signed-in portal and private links, with clinical role checks and audit. Generic email notices contain no clinical content; the emergency advice is shown. No attachments or front-desk routing. |
+| `PORTAL-003` | Secure messaging | target | done | `src/balm/messages/`; `src/balm/portal/`; `src/balm/ui/messages.ts`; `migrations/core/0035_balm_message_attachments.sql`; `tests/portal.test.mjs`; `tests/reminders.test.mjs` | Patient and clinic messages with immutable image/PDF attachments, audited authenticated downloads, separate practitioner/front-desk conversations, generic notices and persisted emergency auto-replies. Hosted at 1440 and 390 with real patient and staff mail, 18 October 2026. |
 | `PORTAL-004` | Statements, receipts and superbills in the portal | target | partial | `src/balm/portal/data.ts`; `src/balm/payments/documents.ts`; `tests/portal.test.mjs`; `tests/payments.test.mjs` | The signed-in patient sees their ledger balance and downloads statements, card receipts and superbills, and opens the existing Stripe payment/card door when connected. Historical issued statement runs remain incomplete. |
 | `PORTAL-005` | Accessible, English and Spanish patient pages | target | missing |  | Patient pages are English only and unaudited against WCAG 2.2 AA |
 | `PORTAL-006` | Patient access to their record | target | missing |  | No record request workflow or FHIR export |

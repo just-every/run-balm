@@ -27,6 +27,8 @@ import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
 import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
 import { DomainError, human, insist, need } from './domain/model'
+import { clinicAttachment, linkAttachment } from './messages/attachments'
+import { parseMessageInput } from './messages/input'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
 import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
 import { visitReply, visitReplyView } from './reminders/replies'
@@ -261,6 +263,11 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), error: failure.text }, failure.status)
     }
   }
+  const messageAttachment = path.match(/^\/messages\/([A-Za-z0-9_-]{43})\/attachments\/([\w-]+)$/)
+  if (messageAttachment) {
+    if (request.method !== 'GET') fail('method_not_allowed', 405)
+    return await linkAttachment(env.DB, messageAttachment[1], messageAttachment[2])
+  }
   const privatePage = path.match(/^\/(visit|messages)\/([A-Za-z0-9_-]{20,64})$/)
   if (privatePage) {
     const [, matchedKind, token] = privatePage
@@ -268,7 +275,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     try {
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
-        const input = await inputBody(request)
+        const input = kind === 'messages' ? await parseMessageInput(request) : await inputBody(request)
         if (kind === 'visit') await visitReply(env, token, input)
         else await patientSend(env, token, input)
         return redirect(`/${kind}/${token}?saved=1`)
@@ -322,6 +329,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
+      const messageAttachment = path.match(/^\/api\/balm\/messages\/attachments\/([\w-]+)$/)
+      if (messageAttachment) return await clinicAttachment(env.DB, who, messageAttachment[1])
       if (intakeDocumentPath) {
         const [, kind, id, suffix, side] = intakeDocumentPath
         if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side) || (kind === 'identity' && suffix !== '/photo')) fail('not_found', 404)
@@ -356,7 +365,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
       if (path === '/app/action') {
-        let input = await inputBody(request); const name = url.searchParams.get('name') ?? ''
+        const name = url.searchParams.get('name') ?? ''; let input = name.startsWith('message.') ? await parseMessageInput(request) : await inputBody(request)
         if (name === 'session.signout') {
           const response = await operatorAuth(env).signOut(request)
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })

@@ -1,5 +1,7 @@
 import { localTime } from '../domain/invoices'
-import { h, hidden, money } from './shared'
+import { attachmentInput } from '../messages/attachments'
+import { messageAttachments } from './messages'
+import { h, hidden, money, select } from './shared'
 
 export const patientForm = (name: string, fields: string, button: string, attrs = '') => `<form method="post" action="/portal/action">${hidden('name', name)}${fields}<button type="submit" ${attrs}>${h(button)}</button></form>`
 const card = (id: string, title: string, body: string) => `<section id="${id}" class="card portal-section"><h2>${title}</h2>${body}</section>`
@@ -26,7 +28,8 @@ function statements(d: any) {
 }
 
 function messages(d: any) {
-  return `<section class="card care" id="messages"><header class="care-header"><h2>Your care team</h2><p>Secure messages with ${h(d.clinic.clinic_name)}.</p></header><div class="thread">${d.messages.map((m: any) => `<article class="message ${m.sender === 'patient' ? 'self' : ''}"><span class="avatar" aria-hidden="true">${m.sender === 'patient' ? h(d.patient.firstName[0]) : 'B'}</span><div><h3 class="message-name">${h(m.authorName)}</h3><time>${h(localTime(m.sentAt, d.clinic.time_zone))}</time><p class="bubble">${h(m.body)}</p></div></article>`).join('') || '<p>No messages yet. Write to your clinic below.</p>'}</div><div class="composer"><form method="post" action="/portal/action">${hidden('name', 'message.send')}<label for="portal-message">Message your care team</label><textarea id="portal-message" name="body" required maxlength="10000" rows="4"></textarea><button type="submit">Send secure message</button><p class="emergency">This inbox is not for emergencies. For an emergency, call 911. The clinic may not read messages immediately.</p></form></div></section>`
+  const choices: [string, string][] = [...d.messageRecipients.map((r: any) => [r.id, r.name]), ['front_desk', 'Front desk — scheduling and billing']]
+  return `<section class="card care" id="messages"><header class="care-header"><h2>Your care team</h2><p>Secure messages with ${h(d.clinic.clinic_name)}.</p></header><div class="thread">${d.messages.map((m: any) => `<article class="message ${m.sender === 'patient' ? 'self' : ''}"><span class="avatar" aria-hidden="true">${m.sender === 'patient' ? h(d.patient.firstName[0]) : 'B'}</span><div><h3 class="message-name">${h(m.authorName)}</h3><time>${h(localTime(m.sentAt, d.clinic.time_zone))}</time><p class="help">${m.route === 'front_desk' ? 'Front desk' : h(m.recipientName ?? 'Care team')}</p><p class="bubble">${h(m.body)}</p>${messageAttachments(m, '/portal/messages/attachments')}</div></article>`).join('') || '<p>No messages yet. Write to your clinic below.</p>'}</div><div class="composer"><form method="post" enctype="multipart/form-data" action="/portal/action">${hidden('name', 'message.send')}${select('recipient', 'Send to', choices, choices[0][0])}<label for="portal-message">Message your care team</label><textarea id="portal-message" name="body" required maxlength="10000" rows="4"></textarea>${attachmentInput}<button type="submit">Send secure message</button><p class="emergency">This inbox is not for emergencies. For an emergency, call 911. The clinic may not read messages immediately.</p></form></div></section>`
 }
 
 export function portalHomeContent(d: any) {

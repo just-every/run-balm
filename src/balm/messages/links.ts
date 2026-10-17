@@ -2,26 +2,27 @@ import type { Bindings } from '../../auth.server'
 import { runtimeBindings } from '../../auth.server'
 import { audit, commit, guard, id, insist, now, one, sha256, stmt, type Actor, type Data } from '../domain/model'
 import { send, type Delivery } from '../mail-out'
+import { type Destination, destinationFields, staffScope } from './routing'
 import { clientAuthority } from './access'
 
 export const MESSAGE_LINK_DAYS = 7
 export const patientActor = { email: 'patient-link', role: 'patient' }
 export const messageUrl = (env: Bindings, value: string) => new URL('/messages/' + value, runtimeBindings(env).AUTH_ORIGIN).href
 
-export async function newLink(clientId: string, who: Actor, delivery: unknown) {
+export async function newLink(clientId: string, who: Actor, delivery: unknown, destination: Destination) {
   insist(delivery === undefined || delivery === 'email' || delivery === 'shown', 'invalid_delivery')
   const value = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  return { id: id(), clientId, createdBy: who.email, token: value, hash: await sha256(value),
+  return { ...destination, id: id(), clientId, createdBy: who.email, token: value, hash: await sha256(value),
     createdAt: now(), expiresAt: new Date(Date.now() + MESSAGE_LINK_DAYS * 86400_000).toISOString(), delivery: delivery ?? 'email' }
 }
 export type NewLink = Awaited<ReturnType<typeof newLink>>
 
-/** Rotation invalidates every earlier link in the same guarded batch. */
+/** Rotation invalidates earlier links for the same destination in the guarded batch. */
 export function linkWrites(db: D1Database, link: NewLink) {
   return [
-    stmt(db, 'UPDATE bm_message_links SET revoked_at=? WHERE client_id=? AND revoked_at IS NULL', link.createdAt, link.clientId),
-    stmt(db, 'INSERT INTO bm_message_links(id,client_id,token_hash,created_by,created_at,expires_at,delivery,delivery_state) VALUES(?,?,?,?,?,?,?,?)',
-      link.id, link.clientId, link.hash, link.createdBy, link.createdAt, link.expiresAt, link.delivery, link.delivery === 'shown' ? 'shown' : 'pending'),
+    stmt(db, 'UPDATE bm_message_links SET revoked_at=? WHERE client_id=? AND route=? AND practitioner_id IS ? AND revoked_at IS NULL', link.createdAt, link.clientId, ...destinationFields(link)),
+    stmt(db, 'INSERT INTO bm_message_links(id,client_id,token_hash,created_by,created_at,expires_at,delivery,delivery_state,route,practitioner_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
+      link.id, link.clientId, link.hash, link.createdBy, link.createdAt, link.expiresAt, link.delivery, link.delivery === 'shown' ? 'shown' : 'pending', ...destinationFields(link)),
   ]
 }
 
@@ -40,18 +41,18 @@ export async function notifyPatient(env: Bindings, to: string | null, link: NewL
 }
 
 export async function revokeLinks(db: D1Database, who: Actor, client: Data) {
-  const at = now()
+  const at = now(), scope = staffScope(who, 'bm_message_links')
   await commit(db, who, [clientAuthority(db, who, client.id as string),
-    stmt(db, 'UPDATE bm_message_links SET revoked_at=? WHERE client_id=? AND revoked_at IS NULL', at, client.id),
+    stmt(db, `UPDATE bm_message_links SET revoked_at=? WHERE client_id=? AND revoked_at IS NULL AND (${scope.sql})`, at, client.id, ...scope.values),
     audit(db, who, 'message.link_revoked', client.id as string),
   ])
   return { clientId: client.id, revoked: true }
 }
 
-export type PatientLink = { id: string; client_id: string; expires_at: string }
+export type PatientLink = { id: string; client_id: string; expires_at: string; route: Destination['route']; practitioner_id: string | null }
 export async function patientLink(db: D1Database, value: string): Promise<PatientLink> {
   insist(typeof value === 'string' && /^[\w-]{43}$/.test(value), 'message_link_not_available', 404)
-  const link = await one<PatientLink>(db, `SELECT l.id,l.client_id,l.expires_at FROM bm_message_links l JOIN bm_clients c ON c.id=l.client_id
+  const link = await one<PatientLink>(db, `SELECT l.id,l.client_id,l.expires_at,l.route,l.practitioner_id FROM bm_message_links l JOIN bm_clients c ON c.id=l.client_id
     WHERE l.token_hash=? AND l.revoked_at IS NULL AND l.expires_at>? AND c.erased_at IS NULL`, await sha256(value), now())
   insist(link, 'message_link_not_available', 404)
   return link
