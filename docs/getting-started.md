@@ -22,7 +22,7 @@ When Balm is ready, the terminal prints:
 - `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
 - `RER_SITE http://127.0.0.1:<port>`: this website, served locally.
 
-To use your own email as the owner, run `rer install`, then `rer setup --owner-email you@example.com`, then `rer dev`.
+To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com` in place of the one line, then `cd run-balm && rer dev`.
 
 ## Start and stop it later
 
