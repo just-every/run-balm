@@ -13,7 +13,8 @@
     {
       "id": "clinic-operations",
       "clauses": [
-        "BALM-001"
+        "BALM-001",
+        "INTAKE-003"
       ]
     },
     {

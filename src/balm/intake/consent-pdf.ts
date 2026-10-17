@@ -5,7 +5,7 @@ const literal = (value: string) => '(' + value.replace(/[^\x20-\x7e]/g, '?').rep
 export type ConsentDocument = {
   clinic: string; patient: string; formTitle: string; formVersion: string; formId: string;
   questions: { id: string; label: string }[]; answers: Record<string, string | boolean>;
-  policyVersion: string; policyText: string; signer: string; relationship: string;
+  policyTitle: string; policyVersion: string; policyText: string; signer: string; relationship: string;
   signature: Signature; signedAt: string; ip: string; responseId: string
 }
 
@@ -27,7 +27,7 @@ export function consentPdf(d: ConsentDocument): Uint8Array<ArrayBuffer> {
       } while (remaining)
     }
   }
-  line(d.clinic, true, 15); line('Signed intake and treatment acknowledgment', true, 16)
+  line(d.clinic, true, 15); line(d.policyTitle, true, 16)
   line(`Patient: ${d.patient}`); line(`Form: ${d.formTitle} (version ${d.formVersion}; ${d.formId})`)
   line(`Response: ${d.responseId}`); line(`Policy version: ${d.policyVersion}`); y -= 10
   line('Acknowledgment', true, 12); line(d.policyText); y -= 10

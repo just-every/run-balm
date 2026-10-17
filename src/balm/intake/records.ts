@@ -1,29 +1,14 @@
 import { clientVisible } from '../domain/clients'
 import { audit, commit, guard, human, id, insist, integer, now, one, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
-import { CONSENT_TEXT, CONSENT_VERSION, photo, signature } from './input'
-import { consentPdf } from './consent-pdf'
+import { photo } from './input'
+import { consentStatements } from './signatures'
+import { pendingPolicies } from './policies'
 
 export type IntakeMetadata = { ip?: string }
 
 /** Prepared inside submitIntake's transaction, so a signature cannot be orphaned. */
 export async function intakeRecordStatements(db: D1Database, appointment: Data, form: Data, answers: Record<string, string | boolean>, responseId: string, input: Data, metadata: IntakeMetadata, at: string) {
-  insist(input.consentVersion === CONSENT_VERSION, 'consent_policy_changed_reload', 409)
-  insist(input.consentAccepted === true || input.consentAccepted === 'on' || input.consentAccepted === 'yes', 'acknowledge_the_consent')
-  const drawn = signature(input), signer = text(input.signerName, 'signer_name', 150)
-  const relationship = text(input.signerRelationship, 'signer_relationship', 20)
-  insist(['patient', 'parent', 'guardian'].includes(relationship), 'invalid_signer_relationship')
-  const ip = typeof metadata.ip === 'string' ? metadata.ip.slice(0, 100) : ''
-  const client = await one(db, 'SELECT first_name,last_name FROM bm_clients WHERE id=?', appointment.client_id)
-  const pdf = consentPdf({ clinic: appointment.clinic_name, patient: `${client!.first_name} ${client!.last_name}`, formTitle: form.title,
-    formVersion: String(form.number), formId: form.id, questions: form.questions, answers, policyVersion: CONSENT_VERSION, policyText: CONSENT_TEXT,
-    signer, relationship, signature: drawn, signedAt: at, ip, responseId })
-  const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', pdf))].map(n => n.toString(16).padStart(2, '0')).join('')
-  const consentId = id()
-  const statements = [
-    stmt(db, `INSERT INTO bm_intake_consents(id,response_id,client_id,form_id,policy_version,policy_text,signer_name,signer_relationship,signature,signed_at,signed_ip,pdf,pdf_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      consentId, responseId, appointment.client_id, form.id, CONSENT_VERSION, CONSENT_TEXT, signer, relationship, JSON.stringify(drawn), at, ip, pdf, digest),
-    audit(db, { email: 'intake link holder', role: 'client' }, 'consent.signed', appointment.client_id, consentId, `policy ${CONSENT_VERSION}`),
-  ]
+  const statements = await consentStatements(db, appointment, form, answers, responseId, input, metadata, at)
   const front = photo(input.insuranceFront), back = photo(input.insuranceBack)
   if (front || back || ['insurancePayer', 'insuranceMemberId', 'insuranceGroup', 'insuranceSubscriber'].some(k => !!input[k])) {
     const fields = insuranceFields(input, 'insurance')
@@ -55,10 +40,10 @@ export async function clinicalClient(db: D1Database, who: Actor, clientId: strin
 export async function intakeChart(db: D1Database, who: Actor, clientId: string) {
   human(who); await clientVisible(db, who, clientId)
   const clinical = who.role === 'owner' || !!practitionerId(who)
-  const consents = clinical ? await rows(db, `SELECT c.id,c.response_id,c.policy_version,c.signer_name,c.signer_relationship,c.signed_at,c.pdf_sha256 FROM bm_intake_consents c JOIN bm_intake_responses r ON r.id=c.response_id JOIN bm_appointments a ON a.id=r.appointment_id WHERE c.client_id=? AND (?='owner' OR a.practitioner_id=?) ORDER BY c.signed_at DESC`, clientId, who.role, practitionerId(who) ?? '') : null
+  const consents = clinical ? await rows(db, `SELECT c.id,c.response_id,c.policy_version,(SELECT version FROM bm_consent_policies WHERE id=c.policy_version) AS policy_number,c.policy_title,c.policy_kind,c.signer_name,c.signer_relationship,c.signed_at,c.pdf_sha256 FROM bm_intake_consents c JOIN bm_intake_responses r ON r.id=c.response_id JOIN bm_appointments a ON a.id=r.appointment_id WHERE c.client_id=? AND (?='owner' OR a.practitioner_id=?) ORDER BY c.signed_at DESC`, clientId, who.role, practitionerId(who) ?? '') : null
   const insurance = await rows(db, `SELECT id,payer,member_id,group_number,subscriber_name,relationship,front IS NOT NULL AS has_front,back IS NOT NULL AS has_back,received_at,version,verified_at,verified_by,ai_draft,ai_read_at FROM bm_intake_insurance WHERE client_id=? ORDER BY received_at DESC`, clientId)
   await commit(db, who, [audit(db, who, 'insurance.read', clientId), ...(consents ?? []).map(c => audit(db, who, 'consent.read', clientId, c.id))])
-  return { consents, insurance: insurance.map(i => ({ ...i, ai_draft: i.ai_draft ? JSON.parse(i.ai_draft) : null })) }
+  return { consents, pendingPolicies: clinical ? await pendingPolicies(db, clientId) : [], insurance: insurance.map(i => ({ ...i, ai_draft: i.ai_draft ? JSON.parse(i.ai_draft) : null })) }
 }
 
 export async function consentDocument(db: D1Database, who: Actor, key: unknown) {

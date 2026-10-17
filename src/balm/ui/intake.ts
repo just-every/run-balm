@@ -1,3 +1,4 @@
+import { policyForms } from './consents'
 import { questionTypes, type BuilderRow } from '../forms'
 import { empty, entry, field, form, h, hidden, panel, rows, stamp, status } from './shared'
 
@@ -37,5 +38,6 @@ export function intakeForms(s: any, notice: any = {}) {
     ${panel(`Current: ${current.title} (version ${current.number})`, `<p>${published(s, current)}</p><ol>${current.questions.map(describe).join('')}</ol>`)}
     ${panel('Prepare a new version', builder(editing.title, editing.rows), 'full')}
     ${panel('Prepared versions', drafts || empty('No prepared versions. An agent or you can prepare one.'))}
+    ${policyForms(s)}
     ${older.length ? panel('Earlier versions', older.map(f => entry(`Version ${f.number}: ${f.title}`, `<p>${published(s, f)}</p>`)).join('')) : ''}</div>`
 }

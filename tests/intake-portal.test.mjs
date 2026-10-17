@@ -3,6 +3,53 @@ import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
 import { bookOnline, clinic, slots } from './clinic.mjs'
 
+const consentFields = page => Object.fromEntries([...page.matchAll(/name="(consentVersion[^"]*)" value="([^"]+)"/g)].flatMap(([,name,value]) => [[name,value], [name.replace('Version','Accepted'),'on']]))
+
+test('a parent signs each clinic policy, then re-signs only the changed version from an emailed link', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya] } = await clinic(h)
+  const desk = await h.staff('Rosa', 'reception')
+  for (const kind of ['hipaa','financial','cancellation','telehealth','sms']) {
+    await h.cmd('consent.publish', { kind, title: `${kind} clinic document`, body: `Clinic ${kind} document. Ask the clinic if you have questions.`, version: 0 })
+  }
+  await h.cmd('consent.publish', { kind:'hipaa',title:'Unauthorized change',body:'Changed',version:1 }, desk.cookie, 403)
+  const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0], { dateOfBirth:'2016-04-02' })
+  const path = booked.location.split('?')[0], page = await h.send(path)
+  const signing = { signerName:'Alex Lee',signerRelationship:'parent',signatureTyped:'Alex Lee' }
+  const fields = { formId:'intake-v1',q_reason:'Private concern',q_emergency:'Alex Lee',q_consent:'yes',...consentFields(page.text),...signing }
+  assert.equal((await h.form(path, {...fields,consentAccepted_hipaa:''})).status,400)
+  assert.equal((await h.form(path, fields)).status,303)
+  const client = (await h.state()).clients.find(c=>c.first_name==='Maya')
+  const file = () => h.send('/api/balm/clients/'+client.id, undefined, h.owner)
+  const before = (await file()).value.intakeDocuments
+  assert.equal(before.consents.length,6)
+  const originals = new Map()
+  for (const consent of before.consents) {
+    assert.equal(consent.signer_relationship,'parent')
+    const pdf = await h.send('/app/intake/consents/'+consent.id+'.pdf',undefined,h.owner)
+    assert.equal(pdf.status,200); assert.match(pdf.text,/Alex Lee/)
+    originals.set(consent.id,pdf.text)
+  }
+  await h.cmd('consent.publish', {kind:'cancellation',title:'Cancellation policy',body:'Please give two business days notice when canceling.',version:1})
+  assert.deepEqual((await file()).value.intakeDocuments.pendingPolicies.map(p=>p.kind),['cancellation'])
+  const requested = await h.cmd('consent.request',{clientId:client.id})
+  assert.equal(requested.mail,'sent')
+  const mail=h.mail.findLast(m=>m.text.includes('/consent/'))
+  assert.ok(!mail.text.includes('Private concern'))
+  const renewalPath=new URL(mail.text.match(/https?:\/\/\S+\/consent\/\S+/)[0]).pathname
+  const renewal=await h.send(renewalPath)
+  assert.equal(Object.keys(consentFields(renewal.text)).length,2)
+  await h.cmd('consent.publish', {kind:'cancellation',title:'Cancellation policy',body:'Please give three business days notice when canceling.',version:2})
+  assert.equal((await h.form(renewalPath,{...consentFields(renewal.text),...signing})).status,409)
+  const latest=await h.send(renewalPath)
+  assert.equal((await h.form(renewalPath,{...consentFields(latest.text),...signing})).status,303)
+  assert.equal((await h.form(renewalPath,{...consentFields(latest.text),...signing})).status,409)
+  const after=(await file()).value.intakeDocuments
+  assert.equal(after.consents.length,7);assert.deepEqual(after.pendingPolicies,[])
+  for(const [id,bytes] of originals) assert.equal((await h.send('/app/intake/consents/'+id+'.pdf',undefined,h.owner)).text,bytes)
+  assert.equal((await h.send('/app/intake/consents/'+after.consents[0].id+'.pdf',undefined,desk.cookie)).status,403)
+}))
+
 test('a parent signs a fixed intake PDF, uploads a card, and staff review AI suggestions without changing the original', () => {
   const requests = []
   const outbound = async request => {
