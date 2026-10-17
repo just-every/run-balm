@@ -1,5 +1,6 @@
 import { calendarGrid, calendarLink, clockLabel, inColumn, moveForm, statusLabel } from './calendar'
 import { bookingResult } from './clients'
+import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
 import { clientName, desk, empty, entry, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
@@ -50,7 +51,7 @@ function selectedPanel(s: any, c: any, notice: any) {
   const back = calendarLink(c, { appt: a.id }), mine = desk(s) || a.practitioner_id === s.actor.staffId
   const started = Date.parse(a.start_at) <= Date.now() + 3600_000
   const series = a.series ? `<p>${status(`Visit ${a.series.position} of ${a.series.total} in a series`)}${a.series.skipped.length ? ` <span class="help">Skipped when booked: ${h(a.series.skipped.map((d: string) => longDate(d, { month: 'short', day: 'numeric' })).join(', '))}</span>` : ''}</p>` : ''
-  let actions = ''
+  let actions = checkInActions(s, a, back)
   if (a.status === 'booked' && mine) {
     actions += started ? `<div class="actions">${form('appointment.attend', back, hidden('id', a.id), 'Mark attended')}${form('appointment.no_show', back, hidden('id', a.id), 'Did not attend', true)}</div>` : ''
     actions += `<details open><summary>Move this visit</summary>${form('appointment.move', back, hidden('id', a.id) + hidden('version', a.version) + moveFields(s, c, a), 'Move visit')}</details>`
@@ -75,7 +76,7 @@ function bookPanel(s: any, c: any, notice: any) {
 
 function listPanel(s: any, c: any) {
   const items = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a))).map((a: any) => entry(`${new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at))} · ${a.client}`,
-    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>`)).join('')
+    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
   return panel(c.view === 'week' ? 'This week as a list' : 'This day as a list', items || empty('No visits.'))
 }
 

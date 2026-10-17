@@ -14,9 +14,9 @@ export async function harness(options = {}) {
   if (!bundles.has(entry)) bundles.set(entry, await build({ entryPoints: [entry], bundle: true, write: false, format: 'esm', platform: 'neutral', conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], target: 'es2023' }))
   const bundle = bundles.get(entry)
   const socket = createServer(); await new Promise(r => socket.listen(0, '127.0.0.1', r)); const port = socket.address().port; await new Promise(r => socket.close(r))
-  const dir = options.root ? join(options.root, '.wrangler/state/v3') : await mkdtemp(join(tmpdir(), 'balm-test-')), origin = `http://127.0.0.1:${port}`, setup = randomBytes(32).toString('hex')
+  const dir = options.root ? join(options.root, '.wrangler/state/v3') : await mkdtemp(join(tmpdir(), 'balm-test-')), origin = `${options.https ? 'https' : 'http'}://127.0.0.1:${port}`, setup = randomBytes(32).toString('hex')
   const auth = { AUTH_LOCAL: 'true', OWNER_EMAIL: 'owner@clinic.example', SESSION_SECRET: randomBytes(32).toString('hex'), SETUP_TOKEN: setup, MAIL_PROVIDER: 'development', MAIL_FROM: 'auth@clinic.example', ...options.auth, AUTH_ORIGIN: origin }
-  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth }), resourcePersistencePath: dir })
+  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, ...(options.outbound ? { outboundService: options.outbound } : {}) }), resourcePersistencePath: dir })
   try {
     const db = await mf.getD1Database('DB')
     if (!options.root) for (const file of (await readdir('migrations/core')).filter(f => f.endsWith('.sql')).sort()) await db.batch(unstable_splitSqlQuery(await readFile('migrations/core/' + file, 'utf8')).map(sql => db.prepare(sql)))
@@ -39,7 +39,7 @@ export async function harness(options = {}) {
       const rows = (await db.prepare('SELECT message FROM rer_mail_development_outbox ORDER BY sequence DESC').all()).results
       const message = rows.map(r => JSON.parse(r.message)).find(m => m.to.includes(email))
       assert.ok(message, 'invitation delivered to the local outbox')
-      const token = new URL(message.text.match(/http:\/\/[^\s]+\/auth\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
+      const token = new URL(message.text.match(/https?:\/\/[^\s]+\/auth\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
       const r = await send('/auth/confirm', { token })
       assert.equal(r.status, 303, JSON.stringify(r.value)); return r.cookie
     }

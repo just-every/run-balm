@@ -18,7 +18,7 @@ export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2
 export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'))}</span>`
 export const entry = (title: string, body: string) => `<article class="entry"><h3>${h(title)}</h3>${body}</article>`
 export const result = (notice: any) => notice.result?.result ?? notice.result
-export const money = (cents: unknown) => `$${(Number(cents ?? 0) / 100).toFixed(2)}`
+export const money = (cents: unknown) => `${Number(cents ?? 0) < 0 ? '-' : ''}$${(Math.abs(Number(cents ?? 0)) / 100).toFixed(2)}`
 /** An instant in the clinic's time zone. */
 export const when = (s: any, iso: unknown) => iso ? `<time datetime="${h(iso)}">${h(localTime(String(iso), s.settings?.time_zone ?? 'Australia/Brisbane'))}</time>` : '—'
 export const stamp = (value: unknown) => {

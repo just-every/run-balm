@@ -1,6 +1,7 @@
 // Mail Balm sends to clients through the clinic's own mail provider: the
 // intake link, waitlist offers, "that time is taken" notices and the
-// confirmation of an accepted offer. Text messages wait for an SMS provider.
+// confirmation of an accepted offer, and pay links and receipts (payments/notify.ts).
+// Text messages wait for an SMS provider.
 import type { Bindings } from '../auth.server'
 import { operatorMail } from '../mail.server.mjs'
 import { localTime } from './domain/invoices'
@@ -9,13 +10,13 @@ import type { OfferMail } from './domain/waitlist'
 export type Delivery = 'sent' | 'no_email' | 'mail_unavailable'
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 
-async function send(env: Bindings, to: string | null | undefined, subject: string, text: string): Promise<Delivery> {
+export async function send(env: Bindings, to: string | null | undefined, subject: string, text: string, attachments?: { filename: string; contentType: string; content: Uint8Array }[]): Promise<Delivery> {
   if (!to) return 'no_email'
   const sender = operatorMail(env)
   if (!sender || !env.MAIL_FROM) return 'mail_unavailable'
   const html = text.split('\n\n').map(part => `<p>${escape(part).replace(/\n/g, '<br>')}</p>`).join('')
   try {
-    const result: any = await sender.send({ deliveryId: crypto.randomUUID(), from: env.MAIL_FROM, to: [to], subject, text, html, headers: { 'Auto-Submitted': 'auto-generated' } })
+    const result: any = await sender.send({ deliveryId: crypto.randomUUID(), from: env.MAIL_FROM, to: [to], subject, text, html, headers: { 'Auto-Submitted': 'auto-generated' }, ...(attachments ? { attachments } : {}) })
     return ['accepted', 'development'].includes(result?.status) ? 'sent' : 'mail_unavailable'
   } catch { return 'mail_unavailable' }
 }

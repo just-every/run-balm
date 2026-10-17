@@ -12,6 +12,9 @@ import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices }
 import { sendIntake, sendOffer, sendTaken } from './mail-out'
 import { importCommand } from './movein'
 import { agentKeys, credentialCommand, fail, principal } from './credentials'
+import { clientBilling, paymentCommand, paymentsState } from './payments'
+import { WEBHOOK_PATH } from './payments/connect'
+import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
@@ -23,7 +26,13 @@ async function state(env: Bindings, who: Actor) {
   const importJobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const localMail = env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' && who.role === 'owner'
   const developmentMail = localMail ? (await env.DB.prepare('SELECT id,created_at AS createdAt,message FROM rer_mail_development_outbox ORDER BY sequence DESC LIMIT 100').all()).results.map((row: any) => ({ id: row.id, createdAt: row.createdAt, ...JSON.parse(row.message) })) : []
-  return { ...await snapshot(env.DB, who), agentKeys: await agentKeys(env, who), importJobs, localMail, developmentMail }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), importJobs, localMail, developmentMail }
+}
+
+/** A client file as the pages show it: the audited file plus its billing. */
+async function fileFor(env: Bindings, who: Actor, clientId: string) {
+  const file = await clientFile(env.DB, who, clientId)
+  return { ...file, billing: await clientBilling(env, env.DB, who, file.client.id as string) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -31,7 +40,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   const [path, query = ''] = target.split('?'), s: any = await state(env, who)
   if (path === '/app') s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
-  return renderApp(s, target, notice, file ? await clientFile(env.DB, who, file[1]).catch(error => { if (status === 200) throw error }) : undefined, status)
+  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1]).catch(error => { if (status === 200) throw error }) : undefined, status)
 }
 /** A same-app page to return to, keeping only a plain calendar query. */
 function returnTarget(requested: string) {
@@ -52,6 +61,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
+  if (name.startsWith('pay.')) return paymentCommand(env, env.DB, who, name, input)
   if (name.startsWith('import.')) {
     if (who.role !== 'owner') fail('only_the_owner_imports', 403)
     return importCommand(env.DB, who, name, input)
@@ -145,12 +155,13 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), error: failure.text }, failure.status)
     }
   }
+  if (path.startsWith('/pay/')) return paymentsPublicResponse(request, env, path, sameOrigin(request, env))
   return null
 }
 
 export async function balmResponse(request: Request, original: Bindings): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname
-  const isPublic = path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/')
+  const isPublic = path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/')
   if (!isPublic && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
   let who: Actor | undefined
@@ -159,6 +170,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (url.origin !== env.AUTH_ORIGIN || (request.headers.has('host') && request.headers.get('host') !== url.host)) fail('wrong_application_origin', 403)
     if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Method not allowed' }, 405)
     if (isPublic) return await publicResponse(request, env, path)
+    // Stripe signs its webhook; it carries no session.
+    if (path === WEBHOOK_PATH) return await paymentsPublicResponse(request, env, path, false) ?? json({ error: 'Not found' }, 404)
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
@@ -166,12 +179,14 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
-      if (file) return json(await clientFile(env.DB, who, file[1]))
+      if (file) return json(await fileFor(env, who, file[1]))
       const invoice = path.match(/^\/api\/balm\/invoices\/([\w-]+)\.html$/)
       if (invoice) {
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
+      const document = await paymentDocument(env.DB, who, path)
+      if (document) return document
       const reminder = path.match(/^\/api\/balm\/reminders\/([\w-]+)\.txt$/)
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
@@ -185,7 +200,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const result = await execute(request, env, who, name, input)
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book'].includes(name)) {
+        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create'].includes(name)) {
           const offered = (result as any)?.waitlist?.people
           return redirect(offered && back.startsWith('/app?') ? `${back}&offered=${offered}` : offered && back === '/app' ? `/app?offered=${offered}` : back)
         }
