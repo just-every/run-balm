@@ -1,4 +1,5 @@
 import { check, field, form, hidden, h, owner, panel, select, textarea } from './shared'
+import { medicareSettings } from './insurance-medicare'
 import { insurancePath as path } from './insurance-shared'
 
 export function insuranceSettings(s: any) {
@@ -15,5 +16,5 @@ export function insuranceSettings(s: any) {
   const payerList = payers.map((p: any) => `<details><summary>${h(p.name)} · ${h(p.payer_id)}</summary>${payerForm(p)}</details>`).join('') + `<details><summary>Add a payer</summary>${payerForm()}</details>`
   const enrollments = payers.length && staff.length ? `<details><summary>Provider enrollment and taxonomy</summary><ul>${(i.enrollments ?? []).map((e: any) => `<li>${h(payers.find((p: any) => p.id === e.payer_id)?.name)} · ${h(staff.find((p: any) => p.id === e.practitioner_id)?.name)} · ${h(e.taxonomy)} · ${e.active ? 'active' : 'inactive'}</li>`).join('')}</ul>${form('insurance.enrollment.save', path,
     select('payerId', 'Payer', payers.map((p: any) => [p.id, p.name])) + select('practitionerId', 'Rendering practitioner', staff.map((p: any) => [p.id, p.name])) + field('taxonomy', 'Taxonomy code', '', 'text', 'required maxlength="10" placeholder="225100000X"') + check('active', 'Enrollment is active', 'checked'), 'Save enrollment')}</details>` : '<p>Add a payer and practitioner to record enrollment.</p>'
-  return panel('Insurance settings', billing + payerList + enrollments, 'full')
+  return panel('Insurance settings', billing + payerList + enrollments + medicareSettings(s,path), 'full')
 }

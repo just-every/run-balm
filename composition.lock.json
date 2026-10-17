@@ -407,7 +407,7 @@
       "source": "editions/balm/AGENTS.md"
     },
     "CONTRACT.md": {
-      "sha256": "3be469b6378bfa729de8458dc4f69e1d980404c66923b71cc19ff8269b6c28bd",
+      "sha256": "3796d978096b119a1d7b35a5663146ed500c44cc2708fe193711df92571c08fb",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -568,14 +568,14 @@
       "source": "modules/operator-auth/accounts/schema/owner-signin.sql"
     },
     "package.json": {
-      "sha256": "28901ef2f932e596d980858aa4298ab825858a15a281336c8567651eb3b3f95e",
+      "sha256": "e1d2d7c6749ea15f4eb1ea55df3379c637b1d319a1130b202039d8f0c827cbfb",
       "mode": 420,
       "component": "balm",
       "repository": "family",
       "source": "editions/balm/package.json"
     },
     "pnpm-lock.yaml": {
-      "sha256": "300399169afe2cd49fad31d80e9228457d11bad4ec44d343c3b37a5720bdaf3d",
+      "sha256": "e570f03152469e12335ef59a3f481c4d1cfdd45a2b6ac47e4585c4ce22b65a60",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -624,7 +624,7 @@
       "source": "editions/balm/scripts/install.mjs"
     },
     "scripts/installer/local.mjs": {
-      "sha256": "589f717bd38844ee75af4aa22ac245b7f2d9e6016512f7a797b313991c48c2ba",
+      "sha256": "dd6f3bb2beca33873dcb468234602f12798a86af2a6fc7b0ae6c8ba6366887d9",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -638,7 +638,7 @@
       "source": "editions/balm/scripts/installer/ui/seed.mjs"
     },
     "seed.json": {
-      "sha256": "9cb900883ea935e0279e75bfc9747e3fdd41cf94c3fcd212b7454e301095a474",
+      "sha256": "a2259968afade2e455d7d1776938177c6ab524f0e912b43f44c91baf33f08ccc",
       "mode": 420,
       "component": "balm",
       "repository": "family",

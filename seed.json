@@ -26,6 +26,12 @@
         "COMM-003",
         "PORTAL-003"
       ]
+    },
+    {
+      "id": "medicare-therapy-rules",
+      "clauses": [
+        "INS-009"
+      ]
     }
   ],
   "nonGoals": [

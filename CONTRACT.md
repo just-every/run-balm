@@ -413,8 +413,8 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 3 | 54 | 37 | 94 |
-| All | 18 | 54 | 37 | 109 |
+| Target and push further | 4 | 53 | 37 | 94 |
+| All | 19 | 53 | 37 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -489,7 +489,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `INS-006` | Claim submission and acknowledgments | target | partial | `src/balm/insurance/batches.ts`; `src/balm/insurance/adapter.ts`; `src/balm/insurance/acknowledgments.ts`; `tests/insurance.test.mjs`; `docs/insurance.md` | Fixed 837P export, batch HTTPS adapter and claim-level 277CA import ship; no Claim.MD/Availity account, payer certification, 999, 276/277 polling, CMS-1500 print or secondary claims; Managed provider calls explicitly unavailable |
 | `INS-007` | ERA posting | target | partial | `src/balm/insurance/remittance-parser.ts`; `src/balm/insurance/remittances.ts`; `src/balm/payments/ledger.ts`; `tests/insurance.test.mjs` | Balanced positive 835 payments, CO writeoffs and PR balances post atomically once; CARC/RARC plain words retained; no live ERA, reversals, PLB, suspense/unmatched queue, split adjudications or secondary reconciliation; unsupported imports refuse without posting |
 | `INS-008` | Denials and A/R work queue | target | partial | `src/balm/insurance/claims.ts`; `src/balm/insurance/codes.ts`; `src/balm/ui/insurance.ts`; `tests/insurance.test.mjs` | Denial/rejection queue names reason and next step, corrected attempts preserve history and original payer control, clinician appeal drafts remain private; no A/R aging, filing deadlines or live clearinghouse resubmission |
-| `INS-009` | Medicare therapy rules | target | partial | `src/balm/insurance/facts.ts`; `src/balm/insurance/scrub.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs`; `docs/insurance.md` | 2026 KX threshold grouped PT+SLP versus OT, external expenses and local allowed estimates, automatic KX with mandatory clinician necessity; recognized beneficiary totals need reconciliation; no targeted-review flag, ABN or CQ/CO automation |
+| `INS-009` | Medicare therapy rules | target | done | `src/balm/insurance/medicare.ts`; `src/balm/insurance/medicare-claim.ts`; `src/balm/insurance/facts.ts`; `src/balm/ui/insurance-medicare.ts`; `tests/insurance.test.mjs`; `tests/archive.test.mjs`; `docs/insurance.md` |  |
 | `INS-010` | Workers' comp, auto and injury cases | target | missing |  | No workers comp, auto or injury cases |
 | `INS-011` | Institutional claims for rehab agencies | target | missing |  | No institutional claims |
 | `INS-012` | Manual payer payment posting | target | missing |  | No payer payment batches, EOB posting or recoupments |

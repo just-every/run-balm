@@ -58,10 +58,3 @@ export async function saveAuthorization(db: D1Database, who: Actor, input: Data)
   await commit(db,who,[...(staff?[guard(db,"EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)",staff)]:[]),...(previous?[guard(db,'EXISTS(SELECT 1 FROM bm_authorizations WHERE id=? AND version=?)',key,previous.version)]:[]),stmt(db,`INSERT INTO bm_authorizations(id,policy_id,number,starts_on,ends_on,visits,practitioner_id,booking_action) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET number=excluded.number,starts_on=excluded.starts_on,ends_on=excluded.ends_on,visits=excluded.visits,practitioner_id=excluded.practitioner_id,booking_action=excluded.booking_action,version=bm_authorizations.version+1`,key,policy.id,text(input.number,'authorization_number',50),start,end,integer(input.visits,'visits',1,10000),staff,action),stmt(db,'UPDATE bm_policies SET version=version+1 WHERE id=?',policy.id),audit(db,who,'insurance.authorization_saved',policy.client_id,key)])
   return { id:key }
 }
-export async function saveMedicare(db: D1Database, who: Actor, input: Data) {
-  const client = await insuranceClient(db,who,input.clientId)
-  const year = integer(input.year,'year',2000,2100), group = input.therapyGroup
-  insist(['pt_slp','ot'].includes(group),'invalid_therapy_group')
-  await commit(db,who,[stmt(db,`INSERT INTO bm_medicare_years(client_id,year,therapy_group,threshold_cents,external_used_cents,source) VALUES(?,?,?,?,?,?) ON CONFLICT(client_id,year,therapy_group) DO UPDATE SET threshold_cents=excluded.threshold_cents,external_used_cents=excluded.external_used_cents,source=excluded.source,version=bm_medicare_years.version+1`,client.id,year,group,integer(input.thresholdCents,'threshold_cents',1),integer(input.externalUsedCents??0,'external_used_cents'),text(input.source,'threshold_source',300)),audit(db,who,'insurance.medicare_saved',client.id)])
-  return { saved:true }
-}

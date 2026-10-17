@@ -3,6 +3,8 @@ import { audit, commit, insist, one, rows, type Actor, type Data } from '../doma
 import { hostDateAt } from '../availability/timezone'
 import { policyFor } from './access'
 import { authorizationsFor } from './authorization'
+import { medicareSpending } from './medicare'
+import { applyMedicareServices } from './medicare-claim'
 import type { ClaimSnapshot } from './types'
 
 const nameParts=(name:string)=>{const parts=name.trim().split(/\s+/);return {first:parts.slice(0,-1).join(' '),last:parts.at(-1)??''}}
@@ -41,19 +43,13 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const lines=billed.filter(l=>l.units>0).map((l,i)=>{
     const saved=codes.find(c=>c.kind==='cpt'&&c.code===l.code),fee=fees.find(f=>f.code===l.code)
     const mods=new Set<string>(String(saved?.modifiers??'').split(/\s+/).filter(Boolean)); mods.add(modifier)
-    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:amounts?.[i]??(fee?fee.cents*l.units:0),diagnosisPointers:diag.length?[1]:[]}
+    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:amounts?.[i]??(fee?fee.cents*l.units:0),allowedCents:fee?fee.cents*l.units:0,diagnosisPointers:diag.length?[1]:[]}
   })
   const total=lines.reduce((sum,l)=>sum+l.amountCents,0)
-  const config=await one(db,'SELECT * FROM bm_medicare_years WHERE client_id=? AND year=? AND therapy_group=?',policy.client_id,year,group)
-  // Posted allowed expense is paid + patient responsibility. Before an ERA,
-  // only an explicitly maintained payer fee schedule estimates incurred expense.
-  const previous=await rows(db,`SELECT c.snapshot,c.amount_cents,c.version,r.paid_cents,r.pr_cents FROM bm_claims c JOIN bm_policies p ON p.id=c.policy_id JOIN bm_payers y ON y.id=p.payer_id
-    LEFT JOIN bm_remittance_claims r ON r.claim_id=c.id WHERE c.client_id=? AND y.medicare=1 AND c.therapy_group=? AND substr(c.service_date,1,4)=? AND c.appointment_id<>? AND c.status IN ('batched','exported','submitted','accepted','paid','partial','denied')`,policy.client_id,group,String(year),visit.id)
-  const local=previous.reduce((sum,c)=>sum+(c.paid_cents!==null?c.paid_cents+c.pr_cents:(JSON.parse(c.snapshot).estimatedAllowedCents??0)),0)
+  const spending=await medicareSpending(db,policy.client_id,year,group,visit.id),config=spending.external,annual=spending.annual
   const estimatedAllowed=lines.reduce((sum,l)=>sum+(fees.find(f=>f.code===l.code)?.cents??0)*l.units,0)
-  const threshold=config?.threshold_cents??(year===2026?248000:null),used=(config?.external_used_cents??0)+local
-  const required=!!policy.medicare && threshold!==null && used+estimatedAllowed>threshold
-  if(required) for(const l of lines)if(!l.modifiers.includes('KX'))l.modifiers.push('KX')
+  const threshold=annual?.threshold_cents??null,used=spending.usedCents
+  const required=!!policy.medicare&&threshold!==null&&used+estimatedAllowed>threshold
   const auth=auths.filter(a=>a.policy_id===policy.id&&a.starts_on<=serviceDate&&a.ends_on>=serviceDate&&(!a.practitioner_id||a.practitioner_id===visit.practitioner_id)).sort((a,b)=>b.starts_on.localeCompare(a.starts_on)||b.id.localeCompare(a.id))[0]
   const rendering=nameParts(visit.practitioner_name)
   const value:ClaimSnapshot & {estimatedAllowedCents:number;policyCovers:boolean;authorizationExhausted:boolean;basis:Data}={
@@ -66,9 +62,9 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     referring:input.referringNpi||input.referringLast?{first:String(input.referringFirst??''),last:String(input.referringLast??''),npi:String(input.referringNpi??'')}:null,
     authorization:auth?.number??null,serviceDate,diagnoses:diag,lines,signedNotes:signed.map(n=>({id:n.id,digest:n.signed_sha256,revision:n.signed_revision})),
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
-    kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
-    basis:{policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,priorClaimsVersion:previous.reduce((sum,c)=>sum+c.version,0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
+    kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
+    basis:{policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
     policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_visits>auth.visits
   }
-  return value
+  return applyMedicareServices(value)
 }

@@ -27,9 +27,19 @@ export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
   if((s as any).policyCovers===false)add('policy_outside_coverage','policy','The policy does not cover the service date.')
   if((s as any).authorizationExhausted)add('authorization_exhausted','authorization','The attended visit exceeds the authorized visits.')
   if(s.payer.medicare&&s.kx.thresholdCents===null)add('medicare_threshold_missing','medicare.year','Configure this service year’s published Medicare KX threshold.')
-  if(s.payer.medicare&&!(s as any).estimatedAllowedCents)add('medicare_allowed_fee_missing','payer.fees','Configure the Medicare allowed fee schedule to track incurred expenses.')
-  if(s.kx.required&&!s.medicalNecessity.trim())add('kx_medical_necessity_required','medicalNecessity','The treating clinician must document medical necessity before using KX.')
-  if(s.kx.required&&s.lines.some(l=>!l.modifiers.includes('KX')))add('kx_modifier_missing','lines.modifiers','Add KX to the medically necessary services above the threshold.')
-  if(s.frequency==='7'&&!s.originalControl)add('original_payer_control_required','originalControl','Enter the original payer claim control number for a replacement.')
+  if(s.payer.medicare&&s.lines.some(l=>(s.medicareServices?.[l.code]?.coverage??'covered')==='covered'&&!l.allowedCents))add('medicare_allowed_fee_missing','payer.fees','Configure the Medicare allowed fee schedule to track incurred expenses.')
+  if(s.kx.required&&s.lines.some(l=>(s.medicareServices?.[l.code]?.coverage??'covered')==='covered')&&!s.medicalNecessity.trim())add('kx_medical_necessity_required','medicalNecessity','The treating clinician must document medical necessity before using KX.')
+  if(s.kx.required&&s.medicalNecessity.trim()&&s.lines.some(l=>(s.medicareServices?.[l.code]?.coverage??'covered')==='covered'&&!l.modifiers.includes('KX')))add('kx_modifier_missing','lines.modifiers','Add KX to the medically necessary services above the threshold.')
+  if(s.payer.medicare){
+    for(const [code,service] of Object.entries(s.medicareServices??{}))if(service.assistantUnits>s.lines.filter(l=>l.code===code).reduce((t,l)=>t+l.units,0))add('assistant_units_changed','medicareServices','Signed units changed. The clinician must review the assistant unit assessment again.')
+    for(const l of s.lines){
+      const service=s.medicareServices?.[l.code]
+      if(l.modifiers.includes('KX')&&!s.medicalNecessity.trim())add('kx_attestation_missing','medicalNecessity','KX requires the treating clinician’s documented medical necessity.')
+      if(service?.abnId&&service.abnOption!==1)add('abn_no_medicare_claim','medicareServices','The beneficiary chose ABN option 2 or 3. Do not submit these services to Medicare.')
+      if(l.modifiers.includes('CQ')&&!l.modifiers.includes('GP')||l.modifiers.includes('CO')&&!l.modifiers.includes('GO'))add('assistant_discipline_mismatch','lines.modifiers','CQ requires GP; CO requires GO.')
+      if((l.modifiers.includes('CQ')||l.modifiers.includes('CO'))&&!service?.assistantBasis)add('assistant_documentation_required','medicareServices','Record the assistant units and the clinician’s CMS de minimis/final-unit assessment.')
+    }
+  }
+  if(s.frequency==='7' &&!s.originalControl)add('original_payer_control_required','originalControl','Enter the original payer claim control number for a replacement.')
   return errors
 }

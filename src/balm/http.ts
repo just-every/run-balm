@@ -149,7 +149,12 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > 1_000_000) fail('The file is larger than 1,000,000 bytes. Export a smaller date range from Cliniko and import each file in turn.', 413)
       if (value.size) {
-        if (key === 'exerciseImage') {
+        if (key === 'abnDocument') {
+          if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
+          const bytes = new Uint8Array(await value.arrayBuffer())
+          let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
+          input.abnDocument = `data:${value.type};base64,${btoa(binary)}`
+        } else if (key === 'exerciseImage') {
           if (!['image/png', 'image/jpeg', 'image/webp'].includes(value.type)) fail('choose_a_png_jpeg_or_webp_image')
           const bytes = new Uint8Array(await value.arrayBuffer())
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -348,7 +353,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
-      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P)\/([\w-]+)$/)
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
