@@ -84,7 +84,7 @@ rer deploy
 
 The dry run builds and validates without contacting Cloudflare and names any missing setting. `rer deploy` creates the Worker and D1 database, applies the migrations, uploads the settings as secrets, checks health and claims the owner. Open the printed address and sign in with the owner email. If mail is not working yet, `rer signin` recovers owner access. Keep the resource names in `wrangler.jsonc` and `deploy.json` unchanged. Add `--environment NAME` to every `rer deploy` command to run a separate copy.
 
-To remove the deployment (export first if you want its records), run:
+To remove the deployment, back up the hosted clinic first if you want to keep its records (`rer run backup:hosted`, above; `rer export` does not save it), then run:
 
 ```sh
 rer deploy --remove --yes

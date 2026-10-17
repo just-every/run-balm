@@ -8,7 +8,7 @@
     "id": "client-file",
     "record": "Client file: appointments, intake answers, treatment notes, invoices and its access audit"
   },
-  "description": "Allied-health clinic: online booking, intake forms, practitioner-only treatment notes, reviewed invoices and an audited client file.",
+  "description": "Practice software for a US outpatient physical, occupational or speech therapy clinic: online booking from real open times, one-use intake links, PT, OT and speech notes signed and locked by their author with addenda and 8-minute-rule CPT units, plans of care certified by the referring physician by link, approved and numbered invoices, cards, copays, pay links and superbills through your own Stripe, automatic email reminders, secure patient messages, a waitlist, an audited client file and Cliniko patient move-in.",
   "capabilities": [
     {
       "id": "clinic-operations",
@@ -27,12 +27,13 @@
     }
   ],
   "nonGoals": [
-    "Medicare, DVA, NDIS or health-fund claiming",
-    "Prescribing",
-    "My Health Record",
+    "Insurance billing: eligibility, authorizations, claims, ERA posting and denials",
+    "Live text messages (built behind the SMS adapter, off until the clinic's A2P registration)",
+    "A signed-in patient portal and home exercise programs",
     "Telehealth video",
+    "Prescribing",
     "Clinical decision support",
-    "Card processing"
+    "A model account held by Balm (the scribe uses the installation's own AI key)"
   ],
   "externals": [
     {
@@ -41,6 +42,48 @@
       "why": "Worker hosting",
       "data": [
         "HTTP requests"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "mail-provider",
+      "required": false,
+      "why": "A hosted Balm emails sign-in links, invitations, intake links, waitlist offers, plan-of-care links, reminders, pay links and message notices through the owner's own SendGrid or Resend account; Balm on your own computer sends no email.",
+      "data": [
+        "Recipient email address",
+        "Private patient, physician and sign-in links",
+        "Appointment time, service and practitioner"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "stripe",
+      "required": false,
+      "why": "Cards on file, copays at check-in and pay links through the clinic's own Stripe account; card numbers never reach Balm.",
+      "data": [
+        "Patient name and email",
+        "Invoice amounts and references",
+        "Card brand, last four and expiry"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "ai-provider",
+      "required": false,
+      "why": "The scribe drafts an unsigned note from the practitioner's dictation with the installation's own Anthropic or OpenAI-compatible key; no patient name or birth date is sent.",
+      "data": [
+        "Dictation or bullet points for one visit",
+        "The visit's note template"
+      ],
+      "adapters": []
+    },
+    {
+      "id": "twilio",
+      "required": false,
+      "why": "Text reminders and pay links once the clinic's US A2P 10DLC registration is approved and its Twilio settings are deployed; off otherwise.",
+      "data": [
+        "Patient mobile number",
+        "Reminder or pay-link text"
       ],
       "adapters": []
     }

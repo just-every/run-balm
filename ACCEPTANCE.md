@@ -18,7 +18,7 @@ These journeys are accepted and covered by `tests/balm.test.mjs`, `tests/schedul
 - The owner moves patients in from a documented-shape Cliniko patient CSV: preview, apply that exact preview, read the journal with the original file, and undo it without losing clients who have since been booked or edited.
 - The owner exports and restores the whole clinic with `rer export` / `rer import` (damaged archives and populated destinations are refused), backs up a hosted clinic with `rer run backup:hosted` (an owner-only SQL file of the hosted database) and restores it into a fresh copy with `rer run restore:hosted`, and erases a client or staff member who has no health records, fenced against older backups.
 
-The released contract still leaves out insurance claiming, live text messages, sent reminders, a patient portal, telehealth video and multi-location clinics. The target below requires each of them; it still excludes prescribing and clinical decision support (see the contract's Honest boundaries).
+The released contract still leaves out insurance claiming, live text messages, a patient portal, telehealth video and multi-location clinics. The target below requires each of them; it still excludes prescribing and clinical decision support (see the contract's Honest boundaries).
 
 # Target journeys
 
