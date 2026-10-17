@@ -1,11 +1,12 @@
 // Reviewed billing adapted from Satchel (src/satchel/billing.ts, just-every/run-satchel
 // @ 2d460e4): a preparation freezes a snapshot, a person approves that exact
 // snapshot, and approval fixes the number and the downloadable bytes forever.
+import { creditStatements } from '../payments/ledger'
 import { approvalStatements } from './approvals'
 import { audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
-export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
+export const dollars = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`
 export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
@@ -51,7 +52,7 @@ export function artifact(number: number, value: any, approvedAt: string) {
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`
     + `<tfoot><tr><th colspan="2">Total</th><th>${dollars(value.amountCents)}</th></tr></tfoot></table>`
-    + '<p>Payment and any insurance claim are made outside Balm. Keep this invoice for your records.</p></body></html>\n'
+    + '<p>Keep this invoice for your records. Insurance claims are made outside Balm.</p></body></html>\n'
 }
 
 export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
@@ -69,6 +70,8 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
       number, bytes, await sha256(bytes), who.email, approvedAt, invoice.id, invoice.version),
     guard(db, "EXISTS(SELECT 1 FROM bm_invoices WHERE id=? AND status='approved' AND number=?)", invoice.id, number),
     ...await approvalStatements(db, who, 'invoice', invoice, invoice.snapshot as string),
+    // A copay taken at check-in, or credit paid ahead, is matched to the invoice now.
+    ...await creditStatements(db, invoice),
     audit(db, who, 'invoice.approved', invoice.client_id as string, invoice.id as string, invoiceNumber(number)),
   ])
   return { id: invoice.id, number: invoiceNumber(number), status: 'approved' }

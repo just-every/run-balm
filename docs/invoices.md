@@ -1,4 +1,4 @@
-Balm invoices the client for a visit. Payment happens outside Balm: you record what you receive.
+Balm invoices the client for a visit. Patients pay by their card on file, from their private pay link (see [Patient payments](/docs/payments)) or at the desk, where you record what you receive.
 
 ## Prepare and approve
 

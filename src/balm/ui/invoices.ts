@@ -11,6 +11,6 @@ export function invoices(s: any) {
   const all = rows(s, 'invoices')
   const drafts = all.filter(i => i.status === 'draft'), issued = all.filter(i => i.status !== 'draft')
   const history = owner(s) ? panel('Approval history', rows(s, 'approvals').length ? rows(s, 'approvals').map(a => entry(`${a.subject_type} approved by ${a.approved_by}`, `<p>${stamp(a.approved_at)} · prepared by ${h(a.prepared_by)} (${h(a.prepared_role)})</p><p class="help">SHA-256 of the approved content: <code>${h(a.sha256)}</code></p>`)).join('') : empty('Approved invoices, reminders and intake forms are recorded here.'), 'full') : ''
-  return `<h1>Invoices and reminders</h1><p>Invoices are prepared from attended appointments, by staff or an agent, and numbered only when a person approves them. Payment and any insurance claim happen outside Balm; record payments you receive here.</p>
+  return `<h1>Invoices and reminders</h1><p>Invoices are prepared from attended appointments, by staff or an agent, and numbered only when a person approves them. Patients pay by their card on file, from their private pay link, or at the desk: record desk payments here. Insurance claims happen outside Balm.</p>
     <div class="grid">${panel('Waiting for approval', drafts.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('Nothing waiting.'))}${panel('Issued invoices', issued.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('No invoices issued yet.'))}${reminders(s)}${history}</div>`
 }

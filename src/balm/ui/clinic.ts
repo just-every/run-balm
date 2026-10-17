@@ -1,3 +1,4 @@
+import { clinicPayments } from './payments'
 import { empty, entry, field, form, h, hidden, money, panel, rows, select, status, textarea } from './shared'
 
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -24,7 +25,7 @@ export function clinic(s: any) {
     + `<details><summary>Erase staff member</summary><p>Only staff never invited and never used in clinic work can be erased. Deactivate anyone else to remove their access at once.</p>${form('staff.erase', '/app/clinic', hidden('id', p.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases their personal details.</span></label>', 'Erase staff member', true)}</details>`)).join('')
   const roomList = rows(s, 'rooms').map(r => entry(r.name, `<p>${r.active ? '' : status('Inactive')}</p><details><summary>Edit room</summary>${form('room.save', '/app/clinic', hidden('id', r.id) + roomFields(r), 'Save room')}</details>`)).join('')
   const rooms = panel('Rooms', '<p class="help">Optional. A room holds one visit at a time, and the schedule can show each room’s day.</p>' + (roomList || empty('No rooms yet.')) + `<details><summary>Add a room</summary>${form('room.save', '/app/clinic', roomFields(), 'Add room')}</details>`)
-  return `<h1>Clinic</h1><p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${settings}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}</div>`
+  return `<h1>Clinic</h1><p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${settings}${clinicPayments(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}</div>`
 }
 
 function serviceFields(x?: any) {
