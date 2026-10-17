@@ -32,6 +32,12 @@
       "clauses": [
         "INS-009"
       ]
+    },
+    {
+      "id": "documentation-compliance",
+      "clauses": [
+        "CHART-007"
+      ]
     }
   ],
   "nonGoals": [

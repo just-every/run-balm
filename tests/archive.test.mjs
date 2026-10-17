@@ -69,19 +69,19 @@ test('public CLI archive round trip refuses damaged or populated stores and resp
     // Checksum damage is a transfer failure (1); restore policy conflicts remain 4.
     await Promise.all([
       command(restored,['import','--input',old,'--yes','--no-queue']),
-      command(erased,['import','--input',corrupt,'--yes','--no-queue'],1),
+      (async()=>{
+        await command(erased,['import','--input',corrupt,'--yes','--no-queue'],1)
+        await command(source,['import','--input',old,'--yes','--no-queue'],4)
+      })(),
     ])
     await Promise.all([
-      (async()=>{
-        await command(restored,['export','--output',again,'--no-queue'])
-        assert.deepEqual(rows(await readFile(again,'utf8')),rows(bytes))
-        await command(restored,['import','--input',old,'--yes','--no-queue'],4)
-      })(),
+      command(restored,['export','--output',again,'--no-queue']),
       (async()=>{
         h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
         await command(source,['export','--output',later,'--no-queue'])
       })(),
     ])
+    assert.deepEqual(rows(await readFile(again,'utf8')),rows(bytes))
     await Promise.all([
       command(refused,['import','--input',old,'--journal',later,'--yes','--no-queue'],4),
       command(erased,['import','--input',later,'--yes','--no-queue']),

@@ -1,3 +1,4 @@
+import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
 import { eraseStaff, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
 import { eraseClient, listClients, saveClient } from './clients'
@@ -17,6 +18,7 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
+  'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
   'settings.save': saveSettings, 'staff.save': saveStaff, 'staff.erase': eraseStaff, 'service.save': saveService, 'hours.save': saveHours, 'room.save': saveRoom,
   'client.save': saveClient, 'client.erase': eraseClient,
   'appointment.book': bookForClient, 'appointment.move': moveAppointment,
@@ -64,5 +66,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

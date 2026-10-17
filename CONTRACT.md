@@ -400,7 +400,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 50 | Telehealth: Video visits from the same calendar | `TELE-001` | missing |
 | 51 | Home exercise programs | `PORTAL-002`, `PORTAL-007` | partial |
 | 52 | Secure messaging | `PORTAL-003` | done |
-| 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | partial |
+| 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | done |
 | 54 | Plan of care signatures | `BALM-004`, `CHART-003` | partial |
 | 55 | Audit log: Every chart view and change, recorded | `AUDIT-001` | done |
 | 56 | Open source practice management for US therapy clinics | `OWN-001`, `US-001` | partial |
@@ -413,8 +413,8 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 4 | 53 | 37 | 94 |
-| All | 19 | 53 | 37 | 109 |
+| Target and push further | 5 | 52 | 37 | 94 |
+| All | 20 | 52 | 37 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -455,7 +455,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `CHART-004` | Draft, sign, lock and amend | target | partial | `src/balm/domain/signing.ts`; `src/balm/domain/notes.ts`; `migrations/core/0019_balm_charting.sql`; `tests/charting.test.mjs` | Drafts, signing with name, credentials and time, a database lock and signed addenda ship, and unsigned notes are listed on the schedule; no practice deadline or daily close |
 | `CHART-005` | Objective measures and flowsheets | target | missing |  | No structured measures or flowsheets |
 | `CHART-006` | Billing captured from the note | target | partial | `src/balm/charting/cpt.ts`; `src/balm/payments/codes.ts`; `tests/charting.test.mjs` | CPT minutes on the note and CMS 8-minute units on the invoice ship, with the first listed code taking a tie; no AMA/CPT or fixed-threshold methods, clinician tie choice, automatic modifiers, diagnosis pointers or secondary re-unitising |
-| `CHART-007` | Documentation compliance alerts | target | partial | `src/balm/insurance/scrub.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs` | KX holds a claim until clinician medical necessity is recorded; other documentation compliance alerts and plan certification checks remain outstanding |
+| `CHART-007` | Documentation compliance alerts | target | done | `src/balm/charting/compliance.ts`; `src/balm/domain/signing.ts`; `src/balm/ui/documentation.ts`; `tests/charting.test.mjs`; `docs/documentation.md` |  |
 | `CHART-008` | Supervision and co-signature | target | missing |  | No supervision or co-signature |
 | `CHART-009` | Attachments and searchable history | target | partial | `src/balm/domain/clients.ts`; `src/balm/domain/notes.ts` | Per-patient note and intake history; no attachments or search |
 | `CHART-010` | Alerts and precautions | target | missing |  | No alerts or precautions |

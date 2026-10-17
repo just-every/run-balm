@@ -407,7 +407,7 @@
       "source": "editions/balm/AGENTS.md"
     },
     "CONTRACT.md": {
-      "sha256": "3796d978096b119a1d7b35a5663146ed500c44cc2708fe193711df92571c08fb",
+      "sha256": "539bd4aa69c3d74d81b2f127472852046d35a0db4ff5c2c1388bf49e042ddea2",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -568,7 +568,7 @@
       "source": "modules/operator-auth/accounts/schema/owner-signin.sql"
     },
     "package.json": {
-      "sha256": "e1d2d7c6749ea15f4eb1ea55df3379c637b1d319a1130b202039d8f0c827cbfb",
+      "sha256": "9bcb063524719ba0f94d51441b16a7d2360cbaeaea2332ee7bf7047835ffc20f",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -638,7 +638,7 @@
       "source": "editions/balm/scripts/installer/ui/seed.mjs"
     },
     "seed.json": {
-      "sha256": "a2259968afade2e455d7d1776938177c6ab524f0e912b43f44c91baf33f08ccc",
+      "sha256": "ae1da96ad2bb1d6b485ed015931cdecc326beb9589ad0c76519c57a9935a5f59",
       "mode": 420,
       "component": "balm",
       "repository": "family",

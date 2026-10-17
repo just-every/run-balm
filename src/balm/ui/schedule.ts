@@ -2,6 +2,7 @@ import { calendarGrid, calendarLink, clockLabel, inColumn, moveForm, statusLabel
 import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
+import { documentationDailyClose } from './documentation'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
 import { zoneLabel } from './time-zone'
 import { cancelForm, clientName, desk, empty, entry, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
@@ -87,5 +88,5 @@ export function schedule(s: any, notice: any = {}) {
   const intro = owner(s) ? `<p>The whole clinic’s calendar. Your public booking page is <a href="/book">/book</a>; clients waiting for a time are on the <a href="/app/waitlist">Waitlist</a>.</p>`
     : desk(s) ? '<p>Everyone’s calendar. Clinical notes and intake answers stay with practitioners.</p>' : '<p>Your calendar.</p>'
   const offered = c.offered ? `<div class="notice" role="status">The freed time was offered by email to ${c.offered} ${c.offered === 1 ? 'person' : 'people'} on the waitlist. The first to accept is booked.</div>` : ''
-  return `<h1>Schedule</h1>${intro}${offered}${owner(s) ? setupChecklist(s) : ''}${notesToSign(s)}${toolbar(s, c)}${calendarGrid(s, c)}${moveForm(c)}<div class="grid cal-panels">${selectedPanel(s, c, notice)}${desk(s) || s.actor.staffId ? bookPanel(s, c, notice) : ''}${listPanel(s, c)}</div>`
+  return `<h1>Schedule</h1>${intro}${offered}${owner(s) ? setupChecklist(s) : ''}${notesToSign(s)}${documentationDailyClose(s)}${toolbar(s, c)}${calendarGrid(s, c)}${moveForm(c)}<div class="grid cal-panels">${selectedPanel(s, c, notice)}${desk(s) || s.actor.staffId ? bookPanel(s, c, notice) : ''}${listPanel(s, c)}</div>`
 }
