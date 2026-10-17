@@ -1,13 +1,180 @@
-# First release
+# Acceptance
+
+Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause is judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026): 15 done, 39 partial and 55 missing of 109 clauses.
+
+## First release
+
+These journeys are accepted and covered by `tests/balm.test.mjs`, `tests/schedule.test.mjs`, `tests/payments.test.mjs`, `tests/charting.test.mjs` and `tests/archive.test.mjs`:
 
 - The owner sets up the clinic (name, time zone, services, practitioners and their weekly hours) and invites practitioners and reception, who each see and change only what their role allows.
 - A new client books online at `/book` from the practitioner's real open times, gets a private link to the intake form, and sends it once; a taken slot is refused, even when two people race for it.
+- Staff work from a day or week calendar by practitioner or room, move visits by drag or form, and book recurring series whose conflicting dates are shown before saving; a canceled visit is offered by email to the waitlist and the first acceptance is booked.
 - A practitioner reads the intake and writes a treatment note for their client. Only that practitioner and the owner can read it; amendments keep every earlier revision.
 - Reception or the owner prepares the invoice for an attended visit, a person approves it, and it is numbered and exported as the same bytes every time; payments received elsewhere are recorded once per reference.
 - On a self-hosted install connected to the clinic's own Stripe account, a patient saves a card from their private link with the clinic's authorization, the desk checks them in and charges the copay in one action with a receipt, an approved invoice is paid by the card or from a pay link sent by email, each payment posts to invoices once, and the patient opens a statement across visits and per-visit superbills (CPT, ICD-10, NPI, tax ID) as PDFs. RER Managed says online payment is not available yet.
+- A practitioner writes a note from the visit's PT, OT or speech template, signs the exact latest revision with name and credentials (refused while a required section is empty), and later adds signed addenda to the locked note; CPT minutes give 8-minute-rule units on the note and its invoice; a plan of care is signed by its therapist and certified once by the referring physician from a private link, shown as signed or not on the case and the schedule; and the scribe drafts an unsigned note from dictation with the install's own AI key.
 - An agent key can prepare invoices, appointment reminder text and new intake-form versions; only a signed-in person approves them, and each approval is recorded with the digest of what was approved. Agents never read notes or intake answers.
 - Every opening of a client file, every read of intake answers or notes, every change, download and agent read appears in that file's access audit, which only the owner reads.
 - The owner moves patients in from a documented-shape Cliniko patient CSV: preview, apply that exact preview, read the journal with the original file, and undo it without losing clients who have since been booked or edited.
 - The owner exports and restores the whole clinic with `rer export` / `rer import` (damaged archives and populated destinations are refused) and erases a client or staff member who has no health records, fenced against older backups.
 
-Not needed in this release: Medicare, DVA, NDIS or health-fund claiming, live text messages (pay links go by email until the clinic's US A2P registration), sending email reminders, prescribing, My Health Record, telehealth video, clinical decision support, multi-location clinics, recurring appointments, a client portal, a domain purchase, real provider calls or the visual design round. The Cliniko fixture is synthetic; no real export compatibility is claimed. Real patient data waits for a privacy review.
+The released contract still leaves out insurance claiming, live text messages, sent reminders, a patient portal, telehealth video and multi-location clinics. The target below requires each of them; it still excludes prescribing and clinical decision support (see the contract's Honest boundaries).
+
+# Target journeys
+
+Each clause below is listed with its status and the journey that accepts it.
+
+## Clinic setup, roles and security
+
+- **BALM-001 — Live roles and server-side authority** (done). Call every page and handler signed out, as each role, with a deactivated staff member and with a revoked or foreign agent key; each is refused or scoped by role, and an agent-prepared item is approved only by a signed-in person whose approval records the digest.
+- **SETUP-001 — Clinic, services, practitioners and hours** (done). From a fresh install, complete the checklist through the app, invite a practitioner and a receptionist, and see the public booking page offer only the practitioner's hours.
+- **ROLE-002 — Billing, assistant, student and supervisor roles** (partial). Sign in as each new role and attempt every read and write in the access matrix; allowed actions succeed, others are refused with no write, and each refusal is audited.
+- **SEC-001 — Two-step sign-in and session control** (partial). Enforce two-step sign-in, sign in with and without the second step, let a session idle past the timeout, and sign out a device remotely; the next request from each refused session is denied.
+- **SEC-002 — Public doors that refuse abuse** (partial). Post to each public door cross-origin, replay a used intake link, exceed the booking cap and the rate limit, and inspect storage; each is refused and no raw token is stored.
+- **US-001 — US clinic defaults** (partial). Set up a clinic in America/Chicago, book, invoice and import a patient file with US dates; every screen, file and message shows USD, en-US dates, +1 numbers and the practice's EIN and NPI.
+- **OWN-001 — Owned, open-source and free** (partial). Install from a clean checkout with the documented commands, run the clinic loop, and observe no outbound request other than the declared integrations the owner enabled.
+
+## Scheduling
+
+- **BALM-002 — Calendar, recurring series and waitlist offers** (done). Book a recurring series whose date overlaps an existing visit, see that date shown before saving, move or skip it and book the series in one step; move one visit, then move and cancel the rest of the series; cancel a visit at least two hours ahead, see it offered by email to every fitting waitlist entry, accept as one, see the visit booked, a second acceptance refused and the others emailed that it is taken.
+- **SCHED-001 — Online booking from real open times** (done). Book online for a new patient, see the slot disappear and the intake email sent, book a taken or off-grid slot and be refused, and race two bookings for one slot and see exactly one succeed.
+- **SCHED-002 — Practitioner, room and equipment calendar** (partial). Book two practitioners into one room at the same time and see the second refused; move a visit by drag and see its history; read the week view for three practitioners with each visit's flags; book two patients at 9:00 for a PT whose capacity is 2 and see both side by side in the PT's column.
+- **SCHED-003 — Recurring visit series** (partial). Book a 12-visit series that collides with a holiday and an existing visit; see the conflicts named, resolve them, and cancel "this and following" from visit 8 with earlier visits untouched.
+- **SCHED-004 — Reschedule, cancel and no-show policy** (partial). Reschedule a visit and see one appointment with its history; cancel inside the late window and see the fee proposed, approved and charged once; mark a no-show and see it in attendance reports.
+- **SCHED-005 — Waitlist that fills openings** (partial). Put three patients on the waitlist, cancel a matching visit, accept from the second patient's text reply after the first lets the hold lapse, and see one booking and a "slot taken" message to the third.
+- **SCHED-006 — Patient self-service scheduling** (partial). As a returning patient, book at `/book` and land in the same file; as a portal patient, book a follow-up, reschedule it inside the rules, and be refused outside notice or past the authorized visit count; book through the page embedded on a test website.
+- **SCHED-007 — Service types, locations and availability rules** (partial). Create two locations, an evaluation and a follow-up service and a day off; online booking offers each service only where and when its rules allow.
+- **SCHED-008 — Check-in, attendance and change history** (partial). Book, check in and mark attended, then mark another visit no-show and another cancelled; each visit's history lists every change and its actor.
+- **SCHED-009 — Calendar subscription** (missing). Subscribe to the feed, book and cancel a visit, see the feed follow; revoke the feed and see the old address refused.
+- **SCHED-010 — Practitioner capacity and double-booking** (partial). Set one PT's capacity to 2; as reception book two patients at 9:00 and see both succeed and show side by side; book a third at 9:00 and be refused; race two staff bookings for the last place and see exactly one succeed; open `/book` and the portal for that PT and see 9:00 not offered; book two Medicare patients at 10:00 for the PT and see the warning before saving and the override recorded on both visits; import a WebPT scheduler fixture with an overlapping pair for a practitioner whose capacity is 1 and see both visits land and the pair named in the reconciliation.
+
+## Intake and patient portal
+
+- **INTAKE-001 — One-use intake bound to its form version** (done). Book online, open the emailed link, submit the intake, replay the link and be refused; read the answers as the treating practitioner and be refused as reception and as another practitioner.
+- **INTAKE-002 — Intake packets and outcome questionnaires** (partial). Publish a PT packet with the LEFS, answer it as a patient, see the score in the chart, publish a new version and see earlier answers still bound to the old one.
+- **INTAKE-003 — Signed consents and policies** (partial). Sign each consent as a parent for a minor, download the fixed PDF, change the policy and see the patient asked to re-sign the new version only.
+- **INTAKE-004 — Insurance and identity capture** (missing). Complete intake with two policies and card photos; see the policies on the file, missing subscriber fields refused, and an eligibility request created.
+- **PORTAL-001 — Patient portal** (missing). Sign in as a patient and as a guardian of two children, see only their own records, complete a form, and update insurance with the change audited.
+- **PORTAL-002 — Home exercise programs** (missing). On a fresh install with no practice-made exercises, assign a 5-exercise program from the shipped library in a daily note, open it as the patient, log three sessions, and see adherence in the next note.
+- **PORTAL-007 — Shipped exercise library** (missing). On a fresh install, count the library by discipline and region and see every minimum met; search "resistance band" filtered to shoulder and see only matching shoulder exercises; open any exercise and read its licence; import three practice exercises from a CSV and find them in search.
+- **PORTAL-003 — Secure messaging** (missing). Send a message with a photo as a patient, see an alert with no clinical text, reply as the practitioner, and find the thread in the file and the audit.
+- **PORTAL-004 — Statements, receipts and superbills in the portal** (partial). After a paid visit and an unpaid one, open the portal and download the receipt and superbill, then pay the balance and see it at zero.
+- **PORTAL-005 — Accessible, English and Spanish patient pages** (missing). Complete booking and intake in Spanish with a screen reader and keyboard only; axe-core reports zero serious or critical violations on each patient page in English and Spanish; the manual checklist passes for each page and its record is kept.
+- **PORTAL-006 — Patient access to their record** (missing). Request the record as a patient, see the due date on the staff work queue, release it, and download both formats from the portal.
+
+## Clinical documentation
+
+- **BALM-004 — Templates, signed notes, plan-of-care link and scribe drafts** (done). Write a PT daily note from the visit's template, try to sign with a required section empty and be refused, sign it and see it locked with an addendum allowed; record 38 minutes across two timed codes and see 3 billed units on the note and its invoice; send a plan of care by link, sign it as the physician and see it signed with the date on the case and the schedule; draft a note with the scribe from dictation with a faked model and see an unsigned draft, and without a key see the one line.
+- **CHART-001 — Private revisioned treatment notes** (done). Write and amend a note as a practitioner; read every revision as the author and the owner, and be refused as reception and another practitioner.
+- **CHART-002 — PT, OT and SLP templates** (partial). Run the same journey for PT, OT and SLP: sign an evaluation, three daily notes, a progress report and a discharge summary in that discipline's templates. Each daily note opens with the diagnoses, goals, precautions and flowsheet carried forward and the subjective blank; signing a daily note with an intervention missing its minutes, and an evaluation without goals, is refused with the element named; the progress report and discharge show each goal's status; changing a template leaves every signed note byte-identical.
+- **CHART-003 — Plan of care and physician certification** (partial). Sign an evaluation and its plan of care, send it by fax, and see it locked and marked pending with the fax confirmation. Edit it and see a new version that must be sent again, the sent version unchanged. Receive the physician's signed fax, file it to that plan version, and see the plan signed with the signer, the signature date, the certification date and the signed image attached in the chart; file a second copy to it and be refused. Send another plan by link and sign it as the physician. Leave a third plan unsigned 30 days past its first treatment and see it marked late on the work list and the daily close; set the practice's threshold to 21 days and see a plan 22 days past its first treatment marked late. Let a certified plan pass its recertification date and see the next visit flagged.
+- **CHART-004 — Draft, sign, lock and amend** (partial). Sign a note, try to edit it and be offered an addendum, add one, and read both the original and the addendum; an unsigned note past 24 hours appears on the daily close.
+- **CHART-005 — Objective measures and flowsheets** (missing). Record knee flexion and LEFS at evaluation and three later visits; the progress report shows the change and the graph matches the entries.
+- **CHART-006 — Billing captured from the note** (partial). Document 38 minutes across 97110 and 97140 and one untimed 97161 for a Medicare patient; the charge shows 3 timed units distributed by the rule, the right modifiers and diagnosis pointers. Sign the same note with 8 minutes of 97110 and 8 minutes of 97140 for a CMS-method payer and an AMA-method payer: the first charge bills 1 unit, to the code the clinician picks on the tie, and the second bills 2 units, one per code. With 10 minutes of 97110 and 8 of 97140, the CMS charge bills its 1 unit to 97110. Under a fixed 15-minute threshold the 8-and-8 note bills no timed unit and the scrubber names both codes. A charge whose primary uses the CMS method and whose secondary uses the AMA method sends the secondary claim with 2 units and the primary with 1.
+- **CHART-007 — Documentation compliance alerts** (missing). Reach the 10th visit without a progress report, an expired certification and a KX-threshold patient; each warning appears before signing and on the daily close. Configure a payer that requires total treatment minutes on every daily note, leave them out, and see signing blocked with the element and the payer named.
+- **CHART-008 — Supervision and co-signature** (missing). Document as a student, co-sign as the supervisor, and see the note locked with both signatures and the claim under the supervisor.
+- **CHART-009 — Attachments and searchable history** (partial). Attach a faxed MRI report and two photos, search the chart for "MRI", and open the result; reception without clinical rights is refused.
+- **CHART-010 — Alerts and precautions** (missing). Add a weight-bearing precaution and see it on the calendar visit, check-in and the next note.
+- **CHART-011 — Clinical letters and exports** (missing). Send a progress letter to the referring physician by fax and to the patient by portal; both sends appear on the file with their content fixed.
+- **CHART-012 — Ambient scribe** (partial). Record a consented visit, review the draft, change one statement and sign; the signed note shows the clinician as author, the audio is gone, and a visit without consent offers no recording.
+- **CHART-013 — Care team access with audited emergency access** (partial). Grant a covering clinician access, read as them, revoke and be refused; break glass as another clinician and see the owner's notice and the audit row.
+
+## Referrals and care coordination
+
+- **REF-001 — Referrals and referring providers** (missing). Enter three referrals with NPI lookup, schedule two and mark one lost; the referral report shows conversion by provider and source.
+- **REF-002 — Fax in and out** (missing). Receive a referral fax, file it to a new referral, send a plan of care by fax and see the confirmation on the file; receive the physician's signed plan of care by fax, file it to that plan and see the plan signed with the fax kept in the chart.
+- **REF-003 — Episodes of care** (missing). Open two episodes for one patient, document in both, and see visit counts, authorization use and outcomes kept apart.
+
+## Reminders and patient communication
+
+- **REMIND-001 — Reminder content a person approves** (done). Prepare a reminder with an agent key, approve it as a person, and export the exact approved text with the approval digest recorded.
+- **COMM-001 — Delivered email confirmations and reminders** (partial). Book a visit and see the confirmation and intake email delivered; advance the clock and see the reminders sent once each with delivery recorded; a failed delivery shows on the file.
+- **COMM-002 — Two-way text messages** (partial). Send a reminder by SMS, reply C and see the visit confirmed, reply R and see a reschedule request, reply STOP and see no further texts; a patient without consent gets none.
+- **COMM-003 — Communication history on the file** (partial). Exchange an email, a text, a portal message and a fax with one patient and log a call; the file lists all five with their states.
+- **COMM-004 — Follow-ups and recalls** (missing). Leave a patient with an open plan of care and no next visit, see the outreach sent, book a visit and see the sequence stop.
+
+## Telehealth
+
+- **TELE-001 — Video visits from the calendar** (missing). Book a video visit, join as patient and clinician, document and sign; the claim shows POS 10 and modifier 95 for a commercial payer that requires them.
+
+## Patient billing and payments
+
+- **BILL-001 — Approved, numbered invoices with fixed bytes** (done). Prepare, change the visit, see approval refused, re-prepare and approve; download the invoice twice and get identical bytes.
+- **PAY-001 — Payments recorded once per reference** (done). Record a check payment, record the same reference again and be refused, and try to exceed the invoice and be refused.
+- **BALM-003 — Patient payments through the clinic's own Stripe account** (done). On a self-hosted install with Stripe faked at its HTTP edge, save a card from the patient's link with the authorization, check the patient in and charge the copay in one action with a receipt, send a pay link by email and pay the balance, and see each payment posted to its invoice once, on the statement and on the superbill; replay the Stripe webhook and see nothing posted twice; on RER Managed see the one line.
+- **PAY-002 — Cards on file and payments at check-in** (partial). Save a card in intake, charge a $30 copay at check-in, refund it with approval, and see the Stripe charge and refund mirrored on the patient's ledger.
+- **PAY-003 — Payment links and online prepayment** (partial). Text a link for a $120 balance, pay it, and see the balance at zero; book a prepaid service online and see the payment on the visit.
+- **PAY-004 — Statements, receipts, adjustments and refunds** (partial). Bill three visits, pay one, write off part of another with approval, and send a statement that matches the ledger.
+- **PAY-005 — Superbills** (partial). Produce a superbill for a month of visits and check every required field against the signed notes and ledger.
+- **PAY-006 — Payment plans and balance reminders** (missing). Create a 3-month plan and see each charge post; leave a balance unpaid and see the reminder sequence and the review-list entry.
+- **PAY-007 — Good Faith Estimates** (missing). Book a self-pay evaluation 4 business days ahead and see the estimate issued within 1 business day; book another 12 business days ahead and see it issued within 3 business days; request an estimate without booking and see it issued within 3 business days; each estimate is kept on the file, and billing above one by $400 raises the flag.
+- **PAY-008 — Packages, memberships, products and gift cards** (missing). Sell a 5-visit package, attend two visits and see three left; sell a brace with sales tax and redeem a gift card.
+- **PAY-009 — Statement runs by mail, email and portal** (missing). Run a cycle with one email-preference patient and one mail-preference patient; see one emailed notice opening the portal statement and one statement in the mailed PDF batch and the vendor file, the batch's per-patient amounts and total matching the ledger, both deliveries on the ledger, and a second run producing nothing new.
+
+## Insurance billing
+
+- **INS-001 — Payers, plans, fee schedules and providers** (missing). Set up Medicare, a commercial payer and a fee schedule, enrol two providers, and see a charge priced from the right schedule. See Medicare default to CMS total-time, set the commercial payer to AMA/CPT per-service, and bill one note with 8 minutes each of 97110 and 97140 to each: Medicare's charge has 1 timed unit and the commercial payer's has 2. Add a payer with no method and see its timed charge held by the scrubber with the payer named.
+- **INS-002 — Eligibility and benefits checks** (missing). Run eligibility for a test patient through the clearinghouse sandbox and see benefits, copay and remaining deductible stored on the policy. Run the next-day batch with one policy the sandbox returns as inactive and one moved to a Medicare Advantage plan, and see both visits flagged before the day starts.
+- **INS-003 — Authorization and visit tracking** (missing). Add a 12-visit authorization, attend 8, see "4 left", try to book past the end date and be warned or blocked per setting.
+- **INS-004 — Prior authorization requests** (missing). Prepare a request from a signed evaluation, record its submission and approval, and see the authorization created from the decision.
+- **INS-005 — Claim creation and scrubbing** (missing). Create a claim from a signed visit with a missing referring NPI and a 97140 and 97530 pair that the loaded NCCI table edits; the scrubber names both with the table version, and the fixed claim, with the clinician's distinct-service attestation and modifier 59, passes.
+- **INS-006 — Claim submission and acknowledgements** (missing). Submit a batch in the clearinghouse sandbox, receive acceptance for one and a rejection for another, correct and resubmit, and print a CMS-1500 for a paper payer.
+- **INS-007 — ERA posting** (missing). Import a sandbox 835 covering paid, partly paid and denied lines; each line posts correctly and the deposit total matches the remittance.
+- **INS-008 — Denials and A/R work queue** (missing). Receive a denial for a missing KX modifier, see it queued with the fix, send the corrected claim and see it paid.
+- **INS-009 — Medicare therapy rules** (missing). Bill a beneficiary across the threshold and see KX applied with the documentation check; record an ABN for a maintenance visit and see the claim modifier.
+- **INS-010 — Workers' comp, auto and injury cases** (missing). Open a workers' comp case, bill a visit to the carrier with the claim number and a PWK-referenced progress note, and send the required progress report to the adjuster.
+- **INS-011 — Institutional claims for rehab agencies** (missing). Configure a rehab-agency practice, bill a Medicare visit, and see an accepted 837I in the clearinghouse sandbox.
+- **INS-012 — Manual payer payment posting** (missing). Post a workers' comp check covering two claims (one with a CARC 45 contractual adjustment, one with deductible), with interest and a recoupment against a third claim; see the batch refuse to close while it is unbalanced and close once it balances to the check, each line show its CARC codes, the recouped claim reopen with its balance, and the deposit report match the check.
+- **INS-013 — Secondary, tertiary and crossover claims** (missing). A Medicare-primary claim for a patient with a Medigap plan returns a primary 835 forwarded to that plan; no secondary claim is created and the Medigap 835 posts. A commercial-primary claim with a commercial secondary sends a secondary 837P whose 2320 and 2430 loops carry the primary's paid amounts and adjustments and that validates as X12 5010 837P; the secondary posts from its own 835, and a tertiary claim follows the same way. The patient statement appears only after the last payer posts.
+- **CODE-001 — Versioned code sets and edit tables** (missing). Load two quarterly NCCI releases where a pair's edit starts in the later quarter, and scrub one claim dated before and one after; only the later is flagged, naming the table version. Point a header ICD-10-CM code and be refused with its billable children; see modifier 59 proposed only after the attestation; run the update command twice and see the second change nothing.
+
+## Reporting and accounting
+
+- **REPORT-001 — Operational reports** (partial). Run a month of synthetic visits and see each figure match a hand count; export each report and reopen it.
+- **REPORT-002 — Financial reports** (missing). Bill, post an ERA and card payments for a month, and see the A/R aging and deposit report match the ledger.
+- **REPORT-003 — Outcomes and MIPS quality reporting** (missing). Record outcome measures across 20 episodes and see the change by practitioner; sign notes for eligible Medicare encounters and see the quality data codes on each claim line pass the scrubber; export the year's measurement sets and see the file accepted by the QPP Submissions API sandbox, with each performance rate matching a hand count.
+- **REPORT-004 — Daily close** (partial). End a day with one unsigned note, one late plan of care, one uncollected copay and one unsent claim; the daily close lists all four, and clearing each empties the list.
+- **ACCT-001 — Accounting handoff** (missing). Connect a QuickBooks Online sandbox, sync a day with card, ERA and cash payments, run it again, and see the books match without duplicates.
+
+## HIPAA, audit, retention and portability
+
+- **AUDIT-001 — Append-only access audit** (done). Open a file, read intake and notes, download an invoice and read names with an agent key; the file's audit lists each, and an attempt to update or delete an audit row is refused.
+- **ERASE-001 — Erasure fenced against old backups** (done). Erase an unused patient and staff member, restore an older archive and re-import the patient, and see both refused; try to erase a treated patient and be refused.
+- **PORT-001 — Whole-clinic export and restore** (done). Export, damage a copy and see it refused, import into a populated store and see it refused, import into an empty one and see the clinic intact.
+- **HIPAA-001 — HIPAA deployment readiness** (missing). Enable SMS without a recorded BAA and be refused; record the BAAs and the risk analysis, and see the readiness check pass and its record exportable.
+- **HIPAA-002 — Retention and destruction** (partial). Choose the practice's state and see its adult and minor periods applied from the shipped table with the source named; set a 7-year retention, try to erase a treated patient and be refused, advance past retention, approve destruction and see the destruction record.
+- **HIPAA-003 — Disclosure accounting and access reports** (partial). Release records to an attorney and a referring provider, then produce the patient's accounting of disclosures and access report listing each.
+- **HIPAA-004 — Backups and recovery** (partial). Enable automatic backups, change data, restore the last backup to a scratch deployment and see the change present.
+- **HIPAA-005 — BAA-covered hosting and real-patient mode** (missing). On a deployment with no hosting BAA recorded, try to create a patient in the app, book at `/book` and import a patient CSV outside demo mode, and see each refused with no patient written; record a Cloudflare BAA that omits R2 on a deployment using R2 and still be refused; deploy the documented AWS stack, see the readiness check list each AWS service it uses as HIPAA-eligible, record the AWS BAA, and create a patient; read the audit row for the switch to real-patient mode.
+
+## Moving in
+
+- **MOVE-001 — Reviewed patient import with undo** (done). Preview, apply and undo a synthetic Cliniko file in which one patient was booked after import; the booked patient is kept and the journal says why.
+- **MOVE-002 — WebPT migration** (missing). Import fixtures built from each documented layout (a Data Export package, a scheduler report and an A/R aging and balance report) and reconcile counts and balances under `MOVE-006`; see future appointments on the calendar with the right practitioner, service and authorization link, an overlapping pair for one practitioner landing as booked (`SCHED-010`), and an unmappable practitioner named in the report; open a migrated chart PDF in its episode; book and attend against a migrated authorization and see its remaining visits drop.
+- **MOVE-003 — Jane migration** (missing). Import fixtures built from each documented layout (a patient CSV, an appointments CSV, a batch chart export, two per-patient intake PDFs, and the invoice and A/R reports). See future appointments on the calendar with the right practitioner and service, and each chart PDF on the right patient, with a PDF that matches nobody held for filing. Reconcile patient, appointment, document and balance totals under `MOVE-006`, with the patients whose intake was not exported and the opening-balance treatment named in the report.
+- **MOVE-004 — SimplePractice migration** (missing). Import fixtures built from each documented layout (an all-clients data export, the appointments and client details report CSVs, and the billing and insurance reports). See future appointments with the right practitioner and service, and each client's notes and documents on the right patient. Reconcile counts and balances under `MOVE-006`. Import a second export made with separated data excluded and see the reconciliation name it incomplete and list the affected clients.
+- **MOVE-005 — Full Cliniko migration** (partial). Import a Cliniko account with US dates through each named endpoint, from a fixture built from Cliniko's public API documentation, and reconcile it under `MOVE-006`; import the same account from the CSV exports and see the missing notes and attachments named.
+- **MOVE-006 — Reconciled cutover** (partial). Run a migration with one unmappable record and one balance difference; the report names both and cutover waits for the owner's approval.
+- **MOVE-007 — Pre-cutover A/R run-out** (missing). Import an 835 mixing one migrated claim, one Balm claim and one line matching neither; the first two post to their claims, the third waits in the unmatched queue, the deposit balances, and the migrated balance reconciles to the imported A/R aging. Correct a denied migrated claim and see it resubmitted as frequency 7 with its original payer claim control number.
+
+## Mobile and integrations
+
+- **MOBILE-001 — Tablet-first clinician web app** (partial). Complete a visit end to end on a tablet viewport, drop the network mid-note and see the draft kept and saved on reconnect.
+- **MOBILE-002 — Native clinician and patient apps** (missing). Install both apps from TestFlight and an Android test track, record a scribe visit, sign the note and see a push alert with no clinical text.
+- **INTEG-001 — API, webhooks, agent keys and FHIR export** (partial). Create a scoped key, read appointments and prepare an invoice through the documented commands, receive a webhook for a booking, and export a patient as FHIR that validates against US Core.
+- **INTEG-002 — Opt-in marketing contact sync** (missing). Opt one patient in and one out, sync, and see only the opted-in contact with no clinical fields.
+
+## Push further with agents
+
+- **AGENT-001 — Referral-to-collection case agent** (missing). Run a referral whose certification stalls and whose claim is denied; the agent cites each blocker, prepares the follow-ups for approval, waits on unapproved steps, and shows the case closed only after the paid ERA and zero patient balance.
+- **AGENT-002 — Care continuity agent** (missing). Cancel two visits in a patient's plan; the agent proposes a sequence inside the authorization, the clinician approves, the patient accepts by text, and the bookings and remaining authorization agree.
+- **AGENT-003 — Documentation defensibility check** (missing). Draft a note billing 4 units with 40 minutes of mostly unskilled exercise; the agent names the unsupported unit and the missing skilled rationale with sources, and the clinician's edit clears them.
+- **AGENT-004 — Denial resolver** (missing). Feed a sandbox denial for a missing authorization; the agent prepares an appeal citing the authorization and note, the biller approves, and the agent marks it resolved only when payment posts.
+- **AGENT-005 — Month-end reconciliation** (missing). Run a month with one missing ERA and one duplicated card payment; the agent explains both, requests the missing ERA and prepares the refund for approval.
+- **AGENT-006 — Outcome follow-through** (missing). Run an episode with one missed questionnaire; the agent follows up once within limits and drafts a brief that the clinician edits into the progress report.
+- **AGENT-007 — Front-desk inbox agent** (missing). Send one of each message type; each is sorted and drafted correctly, the clinical one reaches the clinician without a drafted answer, and nothing is sent before approval.
+- **AGENT-008 — Migration agent** (missing). Give the agent the `MOVE-002` to `MOVE-005` fixtures, one with two unusual custom fields added; it proposes a mapping, flags both fields with examples, and the import applies only after the owner approves.
+
+## Before real patient data
+
+Real patient data waits for `HIPAA-005` and `HIPAA-001`: a supported deployment with its hosting BAA (or practice-owned hardware) recorded, the readiness check, the other recorded BAAs and the risk analysis; until then the deployment refuses to create real patients. The Cliniko fixture is synthetic; real export compatibility is claimed only when `MOVE-005` and `MOVE-006` pass on fixtures built from Cliniko's documented API and export layouts. Provider journeys (clearinghouse, Stripe, Twilio, fax, video, accounting) run against each provider's sandbox; a passing sandbox journey does not establish production enrolment with a payer.
