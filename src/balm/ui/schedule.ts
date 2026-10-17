@@ -3,7 +3,7 @@ import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
-import { cancelForm, clientName, desk, empty, entry, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
+import { avatar, cancelForm, clientName, desk, empty, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
 function setupChecklist(s: any) {
   const steps: [boolean, string][] = [
@@ -68,17 +68,17 @@ function bookPanel(s: any, c: any, notice: any) {
   if (!services(s).length || !choices.length) return ''
   const practitioner = c.by === 'practitioner' ? (c.col ?? c.subject) : undefined, room = c.by === 'room' && c.col !== 'none' ? c.col : undefined
   const back = calendarLink(c), clientSelect = clients.length ? select('clientId', 'Client', clients.map(x => [x.id, clientName(x)])) : ''
-  const one = clients.length ? form('appointment.book', back, clientSelect + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), practitioner)
-    + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`])) + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : '')
+  const one = clients.length ? form('appointment.book', back, `<div class="pair">${clientSelect}${select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), practitioner)}</div>`
+    + `<div class="pair">${select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))}${rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : ''}</div>`
     + `<div class="pair">${field('date', 'Date', date ?? c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div>`, 'Book visit') : empty('Add a client first on the Clients page.')
   return `<div id="book">` + panel(c.newSlot ? `Book ${clockLabel(+time.slice(0, 2) * 60 + +time.slice(3))}, ${longDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Book a visit',
     `${bookingResult(notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date ?? c.date, time })}</details>` : ''}`) + '</div>'
 }
 
 function listPanel(s: any, c: any) {
-  const items = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a))).map((a: any) => entry(`${new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at))} · ${a.client}`,
-    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
-  return panel(c.view === 'week' ? 'This week as a list' : 'This day as a list', notesTally(c.appointments) + (items || empty('No visits.')))
+  const items = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a))).map((a: any) => `<article class="entry visit-row">${avatar(a.client)}<div class="visit-what"><h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at)))} · ${h(a.client)}</h3>`
+    + `<p class="help">${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}</p></div><p class="chips">${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p><p class="visit-links"><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}</article>`).join('')
+  return `<section class="panel day-list"><div class="panel-head"><h2>${c.view === 'week' ? 'This week as a list' : 'This day as a list'}</h2>${notesTally(c.appointments)}</div>${items || empty('No visits.')}</section>`
 }
 
 export function schedule(s: any, notice: any = {}) {
@@ -86,5 +86,5 @@ export function schedule(s: any, notice: any = {}) {
   const intro = owner(s) ? `<p>The whole clinic’s calendar. Your public booking page is <a href="/book">/book</a>; clients waiting for a time are on the <a href="/app/waitlist">Waitlist</a>.</p>`
     : desk(s) ? '<p>Everyone’s calendar. Clinical notes and intake answers stay with practitioners.</p>' : '<p>Your calendar.</p>'
   const offered = c.offered ? `<div class="notice" role="status">The freed time was offered by email to ${c.offered} ${c.offered === 1 ? 'person' : 'people'} on the waitlist. The first to accept is booked.</div>` : ''
-  return `<h1>Schedule</h1>${intro}${offered}${owner(s) ? setupChecklist(s) : ''}${notesToSign(s)}${toolbar(s, c)}${calendarGrid(s, c)}${moveForm(c)}<div class="grid cal-panels">${selectedPanel(s, c, notice)}${desk(s) || s.actor.staffId ? bookPanel(s, c, notice) : ''}${listPanel(s, c)}</div>`
+  return `<div class="page-head"><div><h1>Schedule</h1>${intro}</div>${notesToSign(s)}</div>${offered}${owner(s) ? setupChecklist(s) : ''}<section class="panel cal-card">${toolbar(s, c)}${calendarGrid(s, c)}</section>${moveForm(c)}<div class="cal-panels"><div class="cal-side">${selectedPanel(s, c, notice)}${desk(s) || s.actor.staffId ? bookPanel(s, c, notice) : ''}</div>${listPanel(s, c)}</div>`
 }

@@ -60,7 +60,7 @@ export function calendarGrid(s: any, c: any) {
       const movable = a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId)
       html += `<a class="appt st-${h(a.status)} rs${row(start)} re${span} cs${i + 2}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${movable ? ` draggable="true" data-id="${h(a.id)}" data-version="${h(a.version)}"` : ' draggable="false"'} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}`)}">`
         + `<span class="appt-time">${h(time)}</span> <strong>${h(a.client)}</strong><span class="appt-meta">${h(a.service)}${where ? ` · ${h(where)}` : ''}</span>`
-        + `<span class="appt-tags"><span class="tag">${h(statusLabel[a.status] ?? a.status)}</span>${a.series_id ? '<span class="tag">Series</span>' : ''}${a.offer_id ? '<span class="tag">Waitlist</span>' : ''}${a.note_status === 'signed' ? '<span class="tag">Note signed ✓</span>' : a.note_status === 'unsigned' || a.status === 'attended' ? '<span class="tag">Note to sign</span>' : ''}</span></a>`
+        + `<span class="appt-tags"><span class="tag">${h(statusLabel[a.status] ?? a.status)}</span>${a.series_id ? '<span class="tag">Series</span>' : ''}${a.offer_id ? '<span class="tag">Waitlist</span>' : ''}${a.note_status === 'signed' ? '<span class="tag done">Note signed ✓</span>' : a.note_status === 'unsigned' || a.status === 'attended' ? '<span class="tag todo">Note to sign</span>' : ''}</span></a>`
     }
   })
   return `<div class="cal-wrap"><div class="cal n${n}" data-calendar data-by="${h(c.by)}">${html}</div></div>`

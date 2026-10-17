@@ -1,71 +1,7 @@
-/* The run site's tokens, defined once: the homepage, the docs, /run and the 404
-   link this file (Base's Run and not-found pages read its --rer-* tokens).
-   Balm's look (design desk, 16 Oct 2026): warm ivory paper, deep navy-teal ink,
-   teal, amber and leaf green as accents, Newsreader headings over
-   Inter body text, white hairline cards with soft shadows. */
-:root {
-  --rer-font-body: 'Inter', 'Inter Fallback', Arial, sans-serif;
-  --rer-font-heading: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
-  --rer-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --rer-page: #faf7f2;
-  --rer-surface: #ffffff;
-  --rer-text: #17323a;
-  --rer-muted: #56636b;
-  --rer-border: #8f9a9c;
-  --rer-focus: #1e907e;
-  --rer-link: #17323a;
-  --rer-accent: #16403d;
-  --rer-accent-text: #ffffff;
-  --rer-code-background: #13262f;
-  --rer-code-text: #e8eeec;
-  --rer-wordmark-weight: 500;
-  --rer-wordmark-tracking: -.02em;
-  --rer-logo: url('/brand/mark.svg');
-
-  --paper: var(--rer-page);
-  --surface: var(--rer-surface);
-  --ink: var(--rer-text);
-  --navy: #0a3e3c;
-  --body: #4b5862;
-  --soft: #6b767d;
-  --faint: #9aa3a7;
-  --line: #ece7de;
-  --line-strong: #e0dacf;
-  --row: #f5f2ec;
-
-  --pill: #16403d;
-  --pill-hover: #1f5450;
-  --teal: #1e907e;
-  --teal-ink: #17675b;
-  --sage: #6e9d77;
-  --sage-ink: #3d6e48;
-  --sage-tint: #e6f0e4;
-  --check: #3f8c55;
-  --honey: #f8b842;
-  --honey-ink: #b8751a;
-  --honey-tint: #fdf1d9;
-  --honey-wash: #fef8ea;
-  --sky: #7fb4e6;
-  --sky-ink: #1f5d96;
-  --sky-tint: #e3eefa;
-  --coral: #e0573f;
-  --coral-tint: #fde9e4;
-  --bubble: #eef0f2;
-  --terminal: #13262f;
-  --terminal-ink: #e8eeec;
-  --terminal-prompt: #7fd18e;
-
-  --font-head: var(--rer-font-heading);
-  --font-body: var(--rer-font-body);
-  --font-mono: var(--rer-font-mono);
-
-  --radius-card: 16px;
-  --radius-chip: 999px;
-  --shadow-card: 0 1px 2px rgba(23, 50, 58, .04), 0 16px 36px -20px rgba(23, 50, 58, .20);
-  --shadow-float: 0 2px 4px rgba(23, 50, 58, .05), 0 22px 44px -18px rgba(23, 50, 58, .26);
-  --wrap: 1296px;
-  --gutter: clamp(16px, 5vw, 72px);
-}
+/* What Base's Run and not-found pages on the run site link: Balm's tokens (defined
+   once in /rer-theme.css and /tokens.css) and these pages' dressing. */
+@import url('/rer-theme.css');
+@import url('/tokens.css');
 
 /* Base's Run page (/run) and not-found page, in the same look: the serif display
    headline, white hairline step cards on ivory, deep teal numerals and code cards. */

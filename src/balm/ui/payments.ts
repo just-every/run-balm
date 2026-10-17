@@ -1,6 +1,7 @@
 // Patient payments in the staff pages: Stripe and NPIs in Clinic, check-in with
 // the copay on the day view, and a client file's ledger, card, links and codes.
 import { cptText } from '../payments/codes'
+import { icons } from './icons'
 import { desk, empty, entry, field, form, h, hidden, money, panel, result, stamp, status, when } from './shared'
 
 const dollarsField = (cents: unknown) => cents === null || cents === undefined ? '' : (Number(cents) / 100).toFixed(2)
@@ -22,7 +23,7 @@ export function clinicPayments(s: any) {
       + '<p class="help">In the Stripe Dashboard: Developers → API keys. A test-mode key (sk_test_…) lets you try everything with Stripe’s test cards first. Balm keeps the key sealed and never shows it again.</p>', 'Connect Stripe')
   const texts = `<p class="help">${p.smsBlock ? h(p.smsBlock) : 'Pay links can also go by text.'}</p>`
   const npis = p.npis.length ? `<ul class="plain">${p.npis.map((x: any) => `<li>${form('pay.npi.save', '/app/clinic', hidden('staffId', x.id) + field('npi', `${x.name}: NPI`, x.npi, 'text', 'inputmode="numeric" maxlength="10" pattern="\\d{10}"'), 'Save NPI', true)}</li>`).join('')}</ul>` : empty('Add a practitioner first.')
-  return panel('Online payments', body + texts) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer.</p>${npis}`)
+  return panel('Online payments', body + texts, '', icons.card) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer.</p>${npis}`, '', icons.note)
 }
 
 /** The day view's check-in: one action checks the patient in and charges their copay to the card on file. */
@@ -66,10 +67,11 @@ function codesPanel(s: any, f: any, path: string) {
   return panel('Visit codes', list || empty('No visits yet.'))
 }
 
-export function billingPanels(s: any, f: any, notice: any) {
+/** The client file's billing cards: the ledger and codes beside the visits (`main`), the card and superbills with the facts (`side`). */
+export function billingPanels(s: any, f: any, notice: any): { notice: string; main: string; side: string } {
   const b = f.billing, path = `/app/clients/${f.client.id}`
-  if (!b) return ''
-  if (!desk(s)) return codesPanel(s, f, path)
+  if (!b) return { notice: '', main: '', side: '' }
+  if (!desk(s)) return { notice: '', main: codesPanel(s, f, path), side: '' }
   const blocked = b.stripe.block, l = b.ledger
   const lines = l.lines.length ? `<div class="table"><table class="ledger"><thead><tr><th>Date</th><th>Description</th><th>Charges</th><th>Payments</th><th>Balance</th></tr></thead><tbody>${l.lines.map((x: any) => `<tr><td>${stamp(s, x.at).replace(/ \d\d:\d\d:\d\d UTC/, '')}</td><td>${h(x.description)}</td><td data-label="Charge">${x.chargeCents ? money(x.chargeCents) : ''}</td><td data-label="Payment">${x.paymentCents ? money(x.paymentCents) : ''}</td><td data-label="Balance">${money(x.balanceCents)}</td></tr>`).join('')}</tbody></table></div>` : empty('No charges or payments yet.')
   const balance = `<p><strong>${l.balanceCents < 0 ? `Credit ${money(-l.balanceCents)}` : `Balance ${money(l.balanceCents)}`}</strong>${l.creditCents > 0 ? ` <span class="help">(${money(l.creditCents)} paid ahead, applied when the next invoice is approved)</span>` : ''} · <a href="/api/balm/statements/${h(f.client.id)}.pdf">Statement (PDF)</a></p>`
@@ -86,9 +88,8 @@ export function billingPanels(s: any, f: any, notice: any) {
   const links = b.links.length ? `<details><summary>Patient links (${b.links.length})</summary><ul class="plain">${b.links.map((x: any) => `<li>${h(x.purpose === 'card' ? 'Card form' : 'Statement and pay')} · ${h(x.delivery === 'shown' ? 'opened at the desk' : `${x.delivery}: ${x.delivery_result}`)} · ${stamp(s, x.created_at)}${x.opened_at ? ` · opened ${stamp(s, x.opened_at)}` : ''}</li>`).join('')}</ul></details>` : ''
   const superbills = b.superbills.length ? `<ul class="plain">${b.superbills.map((x: any) => `<li>INV-${String(x.number).padStart(6, '0')} · ${h(x.serviceDate)}<br>${x.missing.length ? `<span class="help">Needs ${h(x.missing.join(', '))}.</span>` : `<a href="/api/balm/superbills/${h(x.invoiceId)}.pdf">Superbill (PDF)</a>`}</li>`).join('')}</ul>` : empty('Superbills appear once a visit’s invoice is approved.')
   const copay = form('pay.copay.save', path, hidden('clientId', f.client.id) + field('copay', 'Copay per visit ($)', dollarsField(b.copayCents), 'text', 'inputmode="decimal" maxlength="10" placeholder="30.00"'), 'Save copay', true)
-  return `${linkResult(notice)}` + panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.balanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.balanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full')
-    + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
-    + panel('Superbills', `<p>One per visit, with CPT and ICD-10 codes, the practitioner’s NPI and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
-    + codesPanel(s, f, path)
+  return { notice: linkResult(notice), main: panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.balanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.balanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full')
+    + codesPanel(s, f, path), side: panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
+    + panel('Superbills', `<p>One per visit, with CPT and ICD-10 codes, the practitioner’s NPI and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`) }
 }
 

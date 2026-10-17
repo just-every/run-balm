@@ -1,5 +1,5 @@
 /* The run site's frame: page base, header, footer and the actions. Tokens come from
-   /site/theme.css (defined once there); every page links it before this sheet. */
+   /rer-theme.css and /tokens.css (defined once there); every page links them before this sheet. */
 :root { --u: 1px; }
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }

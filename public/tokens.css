@@ -1,0 +1,65 @@
+/* Balm's design tokens beyond Base's grammar, defined once: the app, the run
+   site and Base's Run and not-found pages read them over /rer-theme.css (which
+   holds the --rer-* colours, fonts and logo).
+   Balm's look (design desk, 16 Oct 2026): warm ivory paper, deep navy-teal ink,
+   teal, sage, honey and sky as meaning-bearing accents, Newsreader headings
+   over Inter text, white hairline cards with soft shadows. */
+:root {
+  --rer-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --rer-code-background: #13262f;
+  --rer-code-text: #e8eeec;
+  --rer-wordmark-weight: 500;
+  --rer-wordmark-tracking: -.02em;
+  --rer-button-radius: 999px;
+
+  --paper: var(--rer-page);
+  --surface: var(--rer-surface);
+  --ink: var(--rer-text);
+  --muted: var(--rer-muted);
+  --navy: #0a3e3c;
+  --body: #4b5862;
+  --soft: #6b767d;
+  --faint: #9aa3a7;
+  --line: #ece7de;
+  --line-strong: #e0dacf;
+  --field: var(--rer-border);
+  --row: #f5f2ec;
+
+  --pill: var(--rer-accent);
+  --pill-hover: #1f5450;
+  --teal: var(--rer-focus);
+  --teal-ink: #17675b;
+  --sage: #6e9d77;
+  --sage-ink: #3d6e48;
+  --sage-tint: #e6f0e4;
+  --check: #3f8c55;
+  --honey: #f8b842;
+  --honey-ink: #b8751a;
+  --honey-text: #8a5a12;
+  --honey-tint: #fdf1d9;
+  --honey-wash: #fef8ea;
+  --sky: #7fb4e6;
+  --sky-ink: #1f5d96;
+  --sky-tint: #e3eefa;
+  --coral: #e0573f;
+  --coral-ink: #b03a26;
+  --coral-tint: #fde9e4;
+  --bubble: #eef0f2;
+  --terminal: var(--rer-code-background);
+  --terminal-ink: var(--rer-code-text);
+  --terminal-prompt: #7fd18e;
+
+  --font-head: var(--rer-font-heading);
+  --font-body: var(--rer-font-body);
+  --font-mono: var(--rer-font-mono);
+
+  --radius-card: 16px;
+  --radius-field: 10px;
+  --radius-chip: 999px;
+  --shadow-card: 0 1px 2px rgba(23, 50, 58, .04), 0 16px 36px -20px rgba(23, 50, 58, .20);
+  --shadow-float: 0 2px 4px rgba(23, 50, 58, .05), 0 22px 44px -18px rgba(23, 50, 58, .26);
+  --ring: 0 0 0 3px rgba(30, 144, 126, .22);
+  --glow: radial-gradient(55% 45% at 92% 0%, rgba(248, 184, 66, .12), transparent 70%), radial-gradient(45% 40% at 0% 35%, rgba(110, 157, 119, .08), transparent 70%);
+  --wrap: 1296px;
+  --gutter: clamp(16px, 5vw, 72px);
+}

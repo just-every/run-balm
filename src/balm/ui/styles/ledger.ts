@@ -1,0 +1,2 @@
+// A ledger (statement) table that stacks into labeled rows on phones.
+export const ledgerStyle = `@media(max-width:700px){.rer-themed .ledger td:empty{display:none}.rer-themed .ledger thead{display:none}.rer-themed .ledger tr{display:block;padding:10px 12px;border-bottom:1px solid var(--line)}.rer-themed .ledger tr:last-child{border-bottom:0}.rer-themed .ledger td{display:block;border:0;padding:2px 0}.rer-themed .ledger td[data-label]::before{content:attr(data-label) ' ';font-weight:600;color:var(--soft)}}`

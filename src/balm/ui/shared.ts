@@ -15,10 +15,22 @@ export const form = (command: string, path: string, body: string, button: string
 /** A cancel button that first asks: the person ticks to confirm, and is told who gets emailed. */
 export const cancelForm = (command: string, path: string, fields: string, summary: string, button: string, client: string, count = 1) => `<details class="confirm"><summary>${h(summary)}</summary>${form(command, path, fields
   + `<label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel ${count === 1 ? 'this visit' : `these ${count} visits`}. Balm emails ${h(client)} that ${count === 1 ? 'it is' : 'they are'} canceled, if their file has an email address.</span></label>`, button, true)}</details>`
-export const panel = (title: string, body: string, extra = '') => `<section class="panel${extra ? ' ' + extra : ''}"><h2>${h(title)}</h2>${body}</section>`
+/** A card; `icon` (from icons.ts) sits in a tinted disc beside the title, `extra` adds classes (`full`, `facts`). */
+export const panel = (title: string, body: string, extra = '', icon = '') => `<section class="panel${extra ? ' ' + extra : ''}"><h2>${icon ? `<span class="disc">${icon}</span>` : ''}${h(title)}</h2>${body}</section>`
 export const empty = (message: string) => `<p class="empty">${h(message)}</p>`
 export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2))}</pre>`
-export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'))}</span>`
+/** What a chip's words mean, for its tint: closed (grey), refused (coral), needs a look (honey), done (sage), else booked or informational (sky). */
+const tone = (text: string) => /^(canceled|void|inactive|revoked|expired|removed|closed|no show|did not attend|taken)/i.test(text) ? 'closed'
+  : /(failed|declined|refused)/i.test(text) ? 'refused'
+    : /(not signed|no note|not yet|no intake|outstanding|^draft|waiting|sent to|no key|not available|pending)/i.test(text) ? 'todo'
+      : /(^attended|signed|^paid|paid$|^approved|^active|^done|received|^ready|succeeded|checked in|^booked from|accepted)/i.test(text) ? 'done' : 'info'
+export const status = (value: unknown) => { const text = String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled').replace(/^./, c => c.toUpperCase()); return `<span class="status ${tone(text)}">${h(text)}</span>` }
+/** A person as initials in a tinted circle; the tint follows the name, so a person keeps theirs on every page. */
+export const avatar = (name: string, size = '') => {
+  const initials = name.split(/\s+/).filter(Boolean).map(part => part[0]).slice(0, 2).join('').toUpperCase()
+  const tint = ['', 'sage', 'sky'][[...name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 3]
+  return `<span class="avatar${tint ? ' ' + tint : ''}${size ? ' ' + size : ''}" aria-hidden="true">${h(initials)}</span>`
+}
 export const entry = (title: string, body: string) => `<article class="entry"><h3>${h(title)}</h3>${body}</article>`
 export const result = (notice: any) => notice.result?.result ?? notice.result
 export const money = (cents: unknown) => `${Number(cents ?? 0) < 0 ? '-' : ''}$${(Math.abs(Number(cents ?? 0)) / 100).toFixed(2)}`
