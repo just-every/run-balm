@@ -3,6 +3,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 // @ts-ignore The CLI and Worker share this JavaScript archive policy.
 import archivePolicy from '../archive-policy.mjs'
 import { template } from '../charting/templates'
+import { validNpi } from '../payments/codes'
 import { audit, commit, email, guard, human, id, insist, integer, need, now, one, optional, sha256, stmt, text, type Actor, type Data } from './model'
 
 export function validTimeZone(value: unknown) {
@@ -39,15 +40,17 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
   const active = input.active === undefined ? (previous ? previous.active : 1) : (input.active === true || input.active === 'true' ? 1 : 0)
   insist(!await one(db, 'SELECT 1 FROM bm_staff WHERE lower(email)=? AND id<>?', address, previous?.id ?? ''), 'email_already_used', 409)
   const identity = await sha256('staff:' + address)
-  const staffId = previous?.id ?? id()
+  const staffId = previous?.id ?? id(), providerNumber = optional(input.providerNumber, 'provider_number', 40) ?? ''
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_erasure_journal WHERE identity_hash=?)', identity),
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=?)', previous.id, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
     stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials,active,version) VALUES(?,?,?,?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,email=excluded.email,role=excluded.role,profession=excluded.profession,
       provider_number=excluded.provider_number,credentials=excluded.credentials,active=excluded.active,version=bm_staff.version+1`,
-    staffId, text(input.name, 'name', 160), address, role, optional(input.profession, 'profession', 80) ?? '', optional(input.providerNumber, 'provider_number', 40) ?? '',
+    staffId, text(input.name, 'name', 160), address, role, optional(input.profession, 'profession', 80) ?? '', providerNumber,
     input.credentials === undefined ? previous?.credentials ?? '' : optional(input.credentials, 'credentials', 60) ?? '', active),
+    // A provider number that is an NPI also fills the practitioner's empty NPI (Billing identifiers), so it is asked once.
+    ...(role === 'practitioner' && validNpi(providerNumber) ? [stmt(db, "UPDATE bm_staff SET npi=? WHERE id=? AND npi=''", providerNumber, staffId)] : []),
     audit(db, who, previous ? 'staff.updated' : 'staff.added', null, staffId),
   ])
   return { id: staffId, name: input.name, email: address, role, active: !!active }

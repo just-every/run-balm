@@ -1,13 +1,14 @@
+import { smsNotSetUp } from '../sms'
 import { empty, entry, field, form, h, hidden, panel, stamp, status, when } from './shared'
 
 export function reminderSettingsPanel(s: any) {
   const r = s.reminders
   if (!r) return ''
-  return panel('Automatic visit reminders', '<p>Balm emails reminders on this schedule, without an approval step. Moved visits get a new schedule; canceled visits stop their reminders. Patients confirm or ask for a new time from the email’s private link.</p>'
+  return panel('Automatic visit reminders', '<p>Balm emails these reminders to patients itself, on this schedule, without an approval step. Moved visits get a new schedule; canceled visits stop their reminders. Patients confirm or ask for a new time from the email’s private link. (A reminder prepared under <a href="/app/invoices">Invoices and reminders</a> is different: Balm never sends that one; you download it and send it yourself.)</p>'
     + form('reminders.settings', '/app/clinic', field('leadMinutes', 'Minutes before the visit (up to three, separated by commas)', JSON.parse(r.reminder_leads).join(', '), 'text', 'placeholder="1440, 120"')
-      + '<p class="help">1440 is one day; 120 is two hours. Leave empty to turn reminders off. Newly booked visits inside a lead time are reminded at the next minute.</p>'
+      + '<p class="help">1440 is one day; 120 is two hours. Leave empty to turn reminders off. Each time sends one reminder. A visit booked after one or more of these times has passed gets a single reminder at the next minute, never two at once, and the later times still send on schedule.</p>'
       + `<label class="check"><input type="checkbox" name="sms"${r.reminder_sms ? ' checked' : ''}${r.smsBlocked ? ' disabled' : ''}><span>Also text patients who have given consent</span></label>`
-      + `<p class="help">${h(r.smsBlocked ?? 'Texts use the clinic’s registered SMS provider. Record patient consent on their file.')}</p>`, 'Save reminder schedule'))
+      + `<p class="help">${r.smsBlocked === smsNotSetUp ? `${h(r.smsBlocked)} <a href="https://run-balm.com/docs/deploy#the-settings">Texting settings in the deploy guide</a>.` : r.smsBlocked ? h(r.smsBlocked) : 'Texts use the clinic’s registered SMS provider. Record patient consent on their file.'}</p>`, 'Save reminder schedule'))
 }
 
 export function reminderPanel(s: any, f: any) {

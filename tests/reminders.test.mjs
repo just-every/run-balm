@@ -50,6 +50,22 @@ test('booked visit is reminded on schedule, confirmed in one reply, moved and ca
     await tick(due + 86400_000 + 3660_000)
     assert.equal(reminders().length, 2, 'canceled visit gets no more reminders')
 
+    // One reminder per lead time, never two at once: a visit booked inside both windows gets one now.
+    await h.cmd('reminders.settings', { leadMinutes: '1440, 60', sms: false })
+    const soon = await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-03-10', time: '10:00' })
+    const later = await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-03-12', time: '10:00' })
+    const sentFor = async id => (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value.reminderHistory.filter(r => r.appointment_id === id && r.state === 'sent').map(r => r.lead_minutes)
+    await tick(Date.parse(soon.startAt) - 55 * 60_000)
+    await tick(Date.parse(soon.startAt) - 54 * 60_000)
+    assert.deepEqual(await sentFor(soon.appointmentId), [60], 'booked 55 minutes ahead: one reminder, not one per passed lead time')
+    assert.equal(reminders().length, 3)
+    // Booked three hours ahead: the day-before reminder goes now, and the hour-before one still goes on time.
+    await tick(Date.parse(later.startAt) - 180 * 60_000)
+    assert.deepEqual(await sentFor(later.appointmentId), [1440])
+    await tick(Date.parse(later.startAt) - 60 * 60_000)
+    assert.deepEqual((await sentFor(later.appointmentId)).sort((a, b) => a - b), [60, 1440])
+    assert.equal(reminders().length, 5)
+
     const clinical = 'Please continue the prescribed shoulder exercises, stopping if pain increases.'
     await h.cmd('message.send', { clientId: client.id, body: clinical }, reception.cookie, 403)
     await h.cmd('message.send', { clientId: client.id, body: clinical }, sam.cookie, 404)

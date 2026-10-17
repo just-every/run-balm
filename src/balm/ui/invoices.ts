@@ -4,7 +4,7 @@ import { empty, entry, form, h, hidden, owner, panel, rows, stamp, status } from
 function reminders(s: any) {
   const list = rows(s, 'drafts').filter(d => d.type === 'reminder').map(d => entry(`Reminder to ${d.payload.to}`, `<p>${status(d.status)} Prepared by ${h(d.prepared_by)} (${h(d.prepared_role)}) ${stamp(s, d.prepared_at)}</p><pre>Subject: ${h(d.payload.subject)}\n\n${h(d.payload.body)}</pre>`
     + (d.status === 'draft' ? form('reminder.approve', '/app/invoices', hidden('id', d.id), 'Approve this exact text') : `<p><a href="/api/balm/reminders/${h(d.id)}.txt">Download approved reminder</a></p>`))).join('')
-  return panel('Appointment reminders', '<p>Balm prepares the exact reminder text; after approval you download it and send it your usual way. Balm sends nothing.</p>' + (list || empty('No reminders yet. Prepare one from an upcoming appointment in a client file.')))
+  return panel('Prepared reminders', '<p>A prepared reminder is exact text you approve, download and send your own way; Balm does not send it. This is separate from the automatic visit reminders Balm emails to patients itself on the schedule the owner sets on Clinic.</p>' + (list || empty('No reminders yet. Prepare one from an upcoming appointment in a client file.')))
 }
 
 export function invoices(s: any) {

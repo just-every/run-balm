@@ -31,9 +31,10 @@ You do not create `SESSION_SECRET` or `SETUP_TOKEN`: rer generates them for a ne
 
 ## Deploy
 
-From your Balm folder:
+From your Balm folder, stop Balm on your computer first (`rer deploy` refuses while `rer dev` runs, and names this command):
 
 ```sh
+rer dev --stop
 rer deploy --dry-run
 rer deploy
 ```
@@ -48,13 +49,16 @@ To deploy a newer version of Balm later, update your Balm folder (`git pull`) an
 
 ## Remove a deployment
 
-Export the clinic first if you want to keep its records ([Back up and restore](/docs/backup)): removing deletes the hosted database.
+Removing deletes the hosted database. Back up the hosted clinic first if you want to keep its records:
 
 ```sh
-rer deploy --remove --yes
+rer run backup:hosted -- --environment NAME
+rer deploy --remove --yes --environment NAME
 ```
 
-This deletes the Worker and the D1 database that `rer deploy` created for this environment, checks with Cloudflare that each is gone, and touches nothing else in your account. Add `--environment NAME` to remove a named environment. The address stops working at once.
+The backup is one SQL file in `exports/`, readable only by you, that restores into a fresh copy of Balm ([Back up a hosted Balm](/docs/backup#back-up-a-hosted-balm)). `rer export` does not do this: it saves only the clinic on your computer, and refuses a hosted address. Leave out `--environment NAME` if you deployed without one.
+
+This deletes the Worker and the D1 database that `rer deploy` created for this environment, checks with Cloudflare that each is gone, and touches nothing else in your account. The address stops working at once.
 
 ## If something goes wrong
 

@@ -10,10 +10,11 @@ function messageEntry(s: any, message: SecureMessage, clinicView: boolean) {
 }
 
 /** Command results contain a private URL only when a person chose "show once". */
-export function messageResult(notice: any) {
+export function messageResult(state: any, notice: any) {
   const value = result(notice)
   if (!value?.linkId || !value?.expiresAt) return ''
   if (value.url) return `<div class="notice" role="status"><strong>Private message link, shown once.</strong><p>Give this link only to the patient. It replaces every earlier message link.</p><p><a href="${h(value.url)}">${h(value.url)}</a></p></div>`
+  if (state.local && value.mail === 'sent') return '<div class="notice" role="status">The message is saved. Balm on this computer sends no email, so the patient got no notice: choose <strong>Show a private link once to give to the patient</strong> to open it for them.</div>'
   return `<div class="notice${value.mail === 'sent' ? '' : ' error'}" role="${value.mail === 'sent' ? 'status' : 'alert'}">${value.mail === 'sent'
     ? 'The patient was emailed a private link. The email contains no clinical content.'
     : 'The message page is saved, but its email notice could not be sent. Check the clinic mail settings, then send a new link or show a private link to the patient.'}</div>`
@@ -36,7 +37,7 @@ export function messagePanel(state: any, file: any, notice?: any) {
     + '<p class="help">The message stays on this private page. Only a generic notice and the private link go by email. Sending replaces the patient’s earlier message link; the conversation is retained.</p>', 'Send secure message')
   const link = `<details><summary>${live ? 'Replace the private message link' : 'Give the patient a private message link'}</summary>${form('message.link', path, fields + delivery()
     + '<p class="help">The link opens this patient’s conversation and expires after 7 days. Every earlier message link stops working.</p>', 'Create a new private link', true)}</details>`
-  return panel('Secure messages', messageResult(notice) + emergencyNotice + conversation + compose + access + link, 'full')
+  return panel('Secure messages', messageResult(state, notice) + emergencyNotice + conversation + compose + access + link, 'full')
 }
 
 export type PatientMessageData = {

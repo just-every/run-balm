@@ -49,6 +49,8 @@ rer dev --stop
 rer export --output exports/balm.rer
 ```
 
+A hosted Balm keeps its clinic in your Cloudflare account, and `rer export` never saves it (it refuses a hosted address). Back it up from the folder you deploy from with `rer run backup:hosted -- --environment NAME`: one SQL file in `exports/`, readable only by you, that `rer run restore:hosted -- --input FILE` restores into a fresh copy ([Back up and restore](docs/backup.md#back-up-a-hosted-balm)).
+
 To restore, use a fresh clone of the same revision, before setup or any data:
 
 ```sh
@@ -92,7 +94,7 @@ It deletes the Worker and D1 database rer created for that environment, confirms
 
 ## Develop
 
-Balm pins `@runeditrun/rer@0.2.40` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
+Balm pins `@runeditrun/rer@0.2.43` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
 
 ```sh
 pnpm run test:balm

@@ -10,7 +10,7 @@ import { movein } from './import'
 import { patientMessagePage } from './messages'
 import { visitReplyPage } from './reminders'
 import { payPage } from './pay'
-import { bookPage, intakePage, localLinkPage, missingPage, offerPage, planPage } from './public'
+import { bookPage, intakePage, localLinkPage, missingPage, offerPage, planPage, refusedPage } from './public'
 import { dragScript } from './drag'
 import { schedule } from './schedule'
 import { desk, h, owner, zoneOf } from './shared'
@@ -54,10 +54,10 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
 }
 
-export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'visit' | 'messages' | 'missing' | 'local-link', data: any, status = 200): Promise<Response> {
+export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'visit' | 'messages' | 'missing' | 'local-link' | 'refused', data: any, status = 200): Promise<Response> {
   const clinicName = data.clinic?.clinic_name ?? data.appointment?.clinic_name ?? data.offer?.clinic_name ?? data.content?.clinic.name ?? branding.name
-  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : kind === 'visit' ? visitReplyPage(data) : kind === 'messages' ? patientMessagePage(data) : kind === 'local-link' ? localLinkPage() : missingPage()
-  const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span><span class="identity">${h(clinicName)}</span></header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
+  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : kind === 'visit' ? visitReplyPage(data) : kind === 'messages' ? patientMessagePage(data) : kind === 'local-link' ? localLinkPage() : kind === 'refused' ? refusedPage(data) : missingPage()
+  const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span>${clinicName === branding.name ? '' : `<span class="identity">${h(clinicName)}</span>`}</header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
   // The pay page's forms continue on Stripe's own checkout page.
-  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : kind === 'visit' ? 'Your visit' : kind === 'messages' ? 'Secure messages' : kind === 'local-link' ? 'Open this link on this computer' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
+  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : kind === 'visit' ? 'Your visit' : kind === 'messages' ? 'Secure messages' : kind === 'local-link' ? 'Open this link on this computer' : kind === 'refused' ? 'No access' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
 }

@@ -19,10 +19,10 @@ export function clientList(s: any) {
   return `<h1>Clients</h1><p>${intro}</p><div class="grid">${panel('Client files', list ? `<ul class="plain">${list}</ul>` : empty(desk(s) ? 'No clients yet. They appear when someone books online, when you add one, or after a move-in.' : 'No clients yet. Clients appear here once they are booked with you.'))}${desk(s) ? panel('Add a client', form('client.save', '/app/clients', clientFields(), 'Add client')) : ''}</div>`
 }
 
-export function bookingResult(notice: any) {
+export function bookingResult(s: any, notice: any) {
   const r = result(notice)
   if (!r?.appointmentId || r.seriesId || !r.intake) return ''
-  const line = intakeLine(r)
+  const line = intakeLine(r, '', s.local)
   return `<div class="notice" role="status"><strong>Appointment booked.</strong> ${h(line.text)}${line.link}</div>`
 }
 
@@ -39,7 +39,7 @@ function appointments(s: any, f: any, notice: any) {
   const book = services(s).length && choices.length ? `<details><summary>Book an appointment</summary>${form('appointment.book', path, hidden('clientId', f.client.id)
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
     + (rows(s, 'rooms').length ? select('roomId', 'Room', [['', 'No room'], ...rows(s, 'rooms').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][], '', '') : '')
-    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}), inside the practitioner's hours.</p>`, 'Book appointment')}</details>`
+    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}): any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>`, 'Book appointment')}</details>`
     + `<details${result(notice)?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, path, { clientId: f.client.id })}</details>`
     + (f.client.email ? `<details><summary>Add to the waitlist</summary>${waitlistForm(s, path, hidden('clientId', f.client.id))}</details>` : '') : ''
   return panel('Appointments', seriesResult(s, notice, path) + (list || empty('No appointments yet.')) + book)
@@ -66,12 +66,20 @@ export function invoiceEntry(s: any, i: any, path: string) {
     + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
 }
 
+/** Audit actions in words; the stored code stays in the archive and the JSON door. */
+const auditWords: Record<string, string> = {
+  'file.viewed': 'Opened the file', 'intake.read': 'Read intake answers', 'note.read': 'Read a treatment note', 'plan.read': 'Read a plan of care',
+  'message.thread_read': 'Read secure messages', 'message.read': 'Patient read secure messages', 'agent.context': 'Agent read clinic context',
+  'paylink.opened_at_desk': 'Opened a pay page at the desk', 'paylink.sent': 'Sent a pay link', 'sms.consent_recorded': 'Text consent recorded', 'sms.consent_removed': 'Text consent removed',
+}
+const auditAction = (code: string) => auditWords[code] ?? (code.replace(/[._]/g, ' ').replace(/^\w/, c => c.toUpperCase()))
+
 function auditPanel(s: any, f: any) {
   if (!f.audit) return ''
   const pg = f.auditPage, path = `/app/clients/${f.client.id}`, shown = f.audit.length
-  const range = pg.before ? `Older entries, ${shown} shown` : `The ${shown === pg.total ? '' : `newest ${shown} of `}${pg.total} ${pg.total === 1 ? 'entry' : 'entries'}`
+  const range = pg.before ? `Older entries, ${shown} shown` : pg.total === 1 ? 'One entry' : shown === pg.total ? `All ${pg.total} entries` : `The newest ${shown} of ${pg.total} entries`
   const pager = `<nav class="pager" aria-label="Access audit pages"><span class="help">${range}. Times are in ${h(zoneLabel(zoneOf(s)))}.</span>${pg.before ? `<a href="${h(path)}#audit">Newest entries</a>` : ''}${pg.older ? `<a href="${h(path)}?auditBefore=${h(pg.older)}#audit">Older entries</a>` : ''}</nav>`
-  return panel('Access audit', `<p id="audit">Every opening of this file, every read of intake answers and notes, every change and every download, newest first, ${pg.size} to a page. Your own view of this page is recorded too.</p>${pager}<div class="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.audit.map((a: any) => `<tr><td>${stamp(s, a.at)}</td><td>${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td>${h(a.action)}</td><td>${h(String(a.detail ?? '').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))}</td></tr>`).join('')}</tbody></table></div>${pg.older || pg.before ? pager : ''}`, 'full')
+  return panel('Access audit', `<p id="audit">Every opening of this file, every read of intake answers and notes, every change and every download, newest first, ${pg.size} to a page. Your own view of this page is recorded too.</p>${pager}<div class="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.audit.map((a: any) => `<tr><td>${stamp(s, a.at)}</td><td>${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td title="${h(a.action)}">${h(auditAction(a.action))}</td><td>${h(String(a.detail ?? '').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))}</td></tr>`).join('')}</tbody></table></div>${pg.older || pg.before ? pager : ''}`, 'full')
 }
 
 export function clientFilePage(s: any, f: any, notice: any) {
@@ -79,5 +87,5 @@ export function clientFilePage(s: any, f: any, notice: any) {
   const details = `<p>${c.date_of_birth ? `Born ${h(usDate(c.date_of_birth, zoneOf(s)))}<br>` : ''}${c.email ? `${h(c.email)}<br>` : ''}${c.phone ? `${h(c.phone)}<br>` : ''}Added ${stamp(s, c.created_at)} (${h(c.created_via)})</p>`
     + (desk(s) ? `<details><summary>Edit details</summary>${form('client.save', path, hidden('id', c.id) + hidden('version', c.version) + clientFields(c), 'Save details')}</details>` : '')
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
-  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(notice)}${planResult(notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${billingPanels(s, f, notice)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
+  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${billingPanels(s, f, notice)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
 }

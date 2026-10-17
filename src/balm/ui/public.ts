@@ -72,6 +72,8 @@ export const localLinkPage = () => `<h1>Open this link in a browser that already
   <h2>To sign in as the invited person</h2><ol class="steps"><li>In the Balm folder, run <code>rer dev --as person@example.com</code>, with the email the invitation went to in place of person@example.com.</li><li>Open the <code>RER_OPEN</code> link it prints, in this browser. Balm opens signed in as that person.</li></ol>
   <p>To use this invitation link instead, open the owner’s <code>RER_OPEN</code> link in this browser once, sign out, then open the invitation link again. Once Balm is hosted, invitation emails open in any browser.</p>`
 
+/** A signed-in person Balm refuses outright, such as staff the owner set inactive. */
+export const refusedPage = (d: any) => `<h1>You can’t open Balm right now</h1><p>${h(d.reason)}</p>`
 export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was canceled. Please contact the clinic.</p>'
 
 /** The referring physician's page: read the plan of care and sign it, no account needed. */

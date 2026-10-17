@@ -38,7 +38,7 @@ export function seriesForm(s: any, back: string, d: Defaults) {
 export function seriesResult(s: any, notice: any, back: string) {
   const r = result(notice)
   if (r?.seriesId && r.booked) {
-    const line = intakeLine(r, ' for the first visit')
+    const line = intakeLine(r, ' for the first visit', s.local)
     return `<div class="notice" role="status"><strong>Series booked: ${r.booked} visits.</strong>${r.skipped.length ? ` Skipped by you: ${h(r.skipped.map(dateLabel).join(', '))}.` : ''} ${h(line.text)}${line.link}</div>`
   }
   if (!r?.preview) return ''

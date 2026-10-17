@@ -30,7 +30,8 @@ export async function connectStripe(env: Bindings, db: D1Database, who: Actor, i
   need(who, 'owner'); human(who)
   insist(!managedInstall(env), MANAGED_LINE, 409)
   const key = text(input.secretKey, 'stripe_key', 300)
-  insist(/^(sk|rk)_(test|live)_[A-Za-z0-9]{16,}$/.test(key), 'Paste a Stripe secret key (sk_live_… or sk_test_…) or a restricted key (rk_…)')
+  insist(/^(sk|rk)_(test|live)_/.test(key), 'Paste a Stripe secret key (sk_live_… or sk_test_…) or a restricted key (rk_…)')
+  insist(/^(sk|rk)_(test|live)_[A-Za-z0-9]{16,}$/.test(key), 'That Stripe key is incomplete or mistyped. In the Stripe Dashboard, open Developers → API keys and copy the whole key with its copy button.')
   const account = await stripeCall(key, 'GET', '/account')
   const existing = await stripeSettings(db), origin = runtimeBindings(env).AUTH_ORIGIN
   // A reconnect often replaces a revoked key, so the old webhook may no longer be reachable to remove.

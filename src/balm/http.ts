@@ -145,7 +145,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
         const mail = await sendIntake(env, booked.clientId, booked.token, booked.startAt)
-        return redirect(`/intake/${booked.token}?booked=1&mail=${mail}`)
+        // Balm on this computer sends no email: the patient keeps this page's address instead.
+        return redirect(`/intake/${booked.token}?booked=1&mail=${mail === 'sent' && env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' ? 'local' : mail}`)
       } catch (error) {
         const failure = message(error), code = (error as any)?.code ?? (error as Error)?.message
         // The patient's details come back filled in; a taken or missing time offers the open times instead.
@@ -326,6 +327,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (path === '/app/action' && who && failure.status !== 401) return page(env, who, back, { error: failure.text, ...(detail ? { result: detail } : {}) }, failure.status)
     if ((pages.test(path) || path === '/app/action') && failure.status === 401) return redirect('/signin?returnTo=' + encodeURIComponent(pages.test(path) ? path : back))
     if (pages.test(path) && who) return page(env, who, '/app', { error: failure.text }, failure.status)
+    // Refused before any page could load (staff set inactive): a page to read, not JSON.
+    if ((pages.test(path) || path === '/app/action') && failure.status === 403) return renderPublic('refused', { reason: failure.text }, 403)
     return json({ error: failure.text, code: (error as any)?.code ?? (error as Error)?.message, ...(detail ? { detail } : {}) }, failure.status)
   }
 }

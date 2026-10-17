@@ -19,9 +19,9 @@ export function clinicPayments(s: any) {
   } else body = '<p>Connect your clinic’s own Stripe account to save patients’ cards with their consent, charge copays at check-in and let patients pay balances from a link. Money goes straight to your Stripe account; Balm never sees card numbers.</p>'
     + form('pay.stripe.connect', '/app/clinic', field('secretKey', 'Stripe secret key', '', 'password', 'required autocomplete="off" spellcheck="false" placeholder="sk_live_… or sk_test_…"')
       + '<p class="help">In the Stripe Dashboard: Developers → API keys. A test-mode key (sk_test_…) lets you try everything with Stripe’s test cards first. Balm keeps the key sealed and never shows it again.</p>', 'Connect Stripe')
-  const texts = `<p class="help">${p.smsBlock ? h(p.smsBlock) : 'Pay links can also go by text.'}</p>`
+  const texts = `<p class="help">${p.smsBlock ? 'Pay links go by email until texting is set up (see Automatic visit reminders above).' : 'Pay links can also go by text.'}</p>`
   const npis = p.npis.length ? `<ul class="plain">${p.npis.map((x: any) => `<li>${form('pay.npi.save', '/app/clinic', hidden('staffId', x.id) + field('npi', `${x.name}: NPI`, x.npi, 'text', 'inputmode="numeric" maxlength="10" pattern="\\d{10}"'), 'Save NPI', true)}</li>`).join('')}</ul>` : empty('Add a practitioner first.')
-  return panel('Online payments', body + texts) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer.</p>${npis}`)
+  return panel('Online payments', body + texts) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer. A practitioner whose provider number (in Staff) is their NPI has it filled in here already.</p>${npis}`)
 }
 
 /** The day view's check-in: one action checks the patient in and charges their copay to the card on file. */
@@ -43,11 +43,12 @@ export function checkInActions(s: any, a: any, back: string) {
     : `${form('pay.checkin', back, hidden('appointmentId', a.id), 'Check in')}${why ? `<p class="help">${h(why)}</p>` : ''}`
 }
 
-function linkResult(notice: any) {
+function linkResult(s: any, notice: any) {
   const r = result(notice)
   if (!r?.purpose || !r.delivery) return ''
   const what = r.purpose === 'card' ? 'card form' : 'statement and pay link'
   return r.url ? `<div class="notice" role="status"><strong>Patient link ready.</strong> Hand the patient this screen or open the ${what} for them now (shown once): <a href="${h(r.url)}">${h(r.url)}</a></div>`
+    : s.local ? `<div class="notice" role="status">Balm on this computer sends no email, so nothing reached the patient. Use <strong>${r.purpose === 'card' ? 'Open the card form here' : 'Open the pay page here'}</strong> instead.</div>`
     : `<div class="notice" role="status">The ${what} went to the patient by ${r.delivery === 'text' ? 'text' : 'email'}.</div>`
 }
 
@@ -56,7 +57,7 @@ function codesPanel(s: any, f: any, path: string) {
   const visits = f.appointments.filter((a: any) => a.status !== 'cancelled' && (desk(s) || a.practitioner_id === s.actor.staffId)).slice(0, 12)
   const list = visits.map((a: any) => {
     const c = codes[a.id] ?? { cpt: [], icd10: [] }
-    return entry(`${a.service} · ${usDate(a.start_at, zoneOf(s))}`, `<p>${when(s, a.start_at)} with ${h(a.practitioner)}<br>CPT: ${c.cpt.length ? h(cptText(c.cpt)) : '—'}<br>ICD-10: ${c.icd10.length ? h(c.icd10.join(', ')) : '—'}</p>`
+    return entry(`${a.service} · ${usDate(a.start_at, zoneOf(s))}`, `<p>${when(s, a.start_at)} with ${h(a.practitioner)}<br>CPT: ${c.cpt.length ? h(cptText(c.cpt)) : a.note_billed ? 'billed from the signed note (its units go on the invoice and superbill)' : '—'}<br>ICD-10: ${c.icd10.length ? h(c.icd10.join(', ')) : a.note_billed ? '— (add the note’s diagnosis codes here for the superbill)' : '—'}</p>`
       + `<details><summary>${c.cpt.length || c.icd10.length ? 'Change codes' : 'Add codes'}</summary>${form('pay.codes.save', path, hidden('appointmentId', a.id)
         + field('cpt', 'CPT codes with units and modifiers', cptText(c.cpt), 'text', 'placeholder="97110 GP x2, 97140 GP x1" maxlength="400"')
         + field('icd10', 'ICD-10 diagnoses, primary first', c.icd10.join(', '), 'text', 'placeholder="M25.561, M54.50" maxlength="300"')
@@ -81,11 +82,11 @@ export function billingPanels(s: any, f: any, notice: any) {
     : '<p>No card on file.</p>'
   const charge = b.card && !blocked ? b.open.map((i: any) => form('pay.invoice.charge', path, hidden('invoiceId', i.id), `Charge ${money(i.open_cents)} for INV-${String(i.number).padStart(6, '0')} to ${card(b.card)}`, true)).join('') : ''
   const payments = b.payments.length ? `<ul class="plain">${b.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${h(p.kind === 'copay' ? 'copay' : p.kind === 'link' ? 'paid from link' : 'card charge')} · ${p.card_brand ? card({ brand: p.card_brand, last4: p.card_last4 }) + ' · ' : ''}${status(p.status.replace('_', ' '))} ${stamp(s, p.succeeded_at ?? p.created_at)}`
-    + (p.status === 'succeeded' ? ` · <a href="/api/balm/receipts/${h(p.id)}.pdf">Receipt ${h(receipt(p.receipt_number))}</a>${p.receipt_delivery === 'sent' ? ' (emailed)' : ''}` : '') + (p.failure && p.status !== 'succeeded' ? `<br><span class="help">${h(p.failure)}</span>` : '') + '</li>').join('')}</ul>` : ''
+    + (p.status === 'succeeded' ? ` · <a href="/api/balm/receipts/${h(p.id)}.pdf">Receipt ${h(receipt(p.receipt_number))}</a>${p.receipt_delivery === 'sent' && !s.local ? ' (emailed)' : ''}` : '') + (p.failure && p.status !== 'succeeded' ? `<br><span class="help">${h(p.failure)}</span>` : '') + '</li>').join('')}</ul>` : ''
   const links = b.links.length ? `<details><summary>Patient links (${b.links.length})</summary><ul class="plain">${b.links.map((x: any) => `<li>${h(x.purpose === 'card' ? 'Card form' : 'Statement and pay')} · ${h(x.delivery === 'shown' ? 'opened at the desk' : `${x.delivery}: ${x.delivery_result}`)} · ${stamp(s, x.created_at)}${x.opened_at ? ` · opened ${stamp(s, x.opened_at)}` : ''}</li>`).join('')}</ul></details>` : ''
   const superbills = b.superbills.length ? `<ul class="plain">${b.superbills.map((x: any) => `<li>INV-${String(x.number).padStart(6, '0')} · ${h(x.serviceDate)}<br>${x.missing.length ? `<span class="help">Needs ${h(x.missing.join(', '))}.</span>` : `<a href="/api/balm/superbills/${h(x.invoiceId)}.pdf">Superbill (PDF)</a>`}</li>`).join('')}</ul>` : empty('Superbills appear once a visit’s invoice is approved.')
   const copay = form('pay.copay.save', path, hidden('clientId', f.client.id) + field('copay', 'Copay per visit ($)', dollarsField(b.copayCents), 'text', 'inputmode="decimal" maxlength="10" placeholder="30.00"'), 'Save copay', true)
-  return `${linkResult(notice)}` + panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.balanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.balanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full')
+  return `${linkResult(s, notice)}` + panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.balanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.balanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>One per visit, with CPT and ICD-10 codes, the practitioner’s NPI and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
     + codesPanel(s, f, path)

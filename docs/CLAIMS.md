@@ -54,7 +54,7 @@ Status key: **code** = the capability exists and runs today; **partly** = a narr
 | 44 | Moving in | "appointments, notes and balances" | contract | Only client details move. |
 | 45 | Moving in | "from WebPT, SimplePractice, Jane" | contract | Cliniko only. |
 | 46 | Moving in | "check every total before you switch" | partly | The preview lists every row, diagnostics and conflicts before anything is written (`src/balm/movein/index.ts`); no totals to reconcile because balances do not move. |
-| 47 | Ownership | "Run Balm on your own computer" (the five commands) | code | `rer install`, `rer setup`, `rer dev` via `@runeditrun/rer` 0.2.40 (`package.json`, `OPERATIONS.json`, `README.md`). |
+| 47 | Ownership | "Run Balm on your own computer" (the five commands) | code | `rer install`, `rer setup`, `rer dev` via `@runeditrun/rer` 0.2.43 (`package.json`, `OPERATIONS.json`, `README.md`). |
 | 48 | Ownership | "keep every chart" / "Your charts, your database" | code | The local D1 database in the checkout (`wrangler.jsonc`, `.wrangler/state`). |
 | 49 | Ownership | "Export everything, any time" | code | `rer export` / `rer import` with the archive policy `src/balm/archive-policy.mjs` (tested in `tests/archive.test.mjs`). |
 | 50 | Quiet details | Telehealth: "Video visits from the same calendar" | contract | `seed.json` lists telehealth as a non-goal of the first release. |

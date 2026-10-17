@@ -27,12 +27,12 @@ function planEntry(s: any, f: any, p: any) {
 }
 
 /** What a send returned: the link went by email, or is shown once to pass on. */
-export function planResult(notice: any) {
+export function planResult(s: any, notice: any) {
   const r = result(notice)
   if (!r?.token || !r.physicianEmail) return ''
-  return r.mail === 'sent'
+  return r.mail === 'sent' && !s.local
     ? `<div class="notice" role="status"><strong>Plan of care sent.</strong> ${h(r.physicianName)} was emailed a private link to sign it at ${h(r.physicianEmail)}.</div>`
-    : `<div class="notice" role="status"><strong>Plan of care signed and ready.</strong> Mail is not configured, so send ${h(r.physicianName)} this private link yourself (shown once): <a href="/plan/${h(r.token)}">/plan/${h(r.token)}</a></div>`
+    : `<div class="notice" role="status"><strong>Plan of care signed and ready.</strong> ${s.local ? 'Balm on this computer sends no email' : 'Mail is not configured'}, so send ${h(r.physicianName)} this private link yourself (shown once): <a href="/plan/${h(r.token)}">/plan/${h(r.token)}</a></div>`
 }
 
 function writePlan(s: any, f: any) {

@@ -12,14 +12,22 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
   const db = env.DB, at = new Date(scheduledTime).toISOString(), settings = await one(db, 'SELECT reminder_leads,reminder_sms FROM bm_settings WHERE id=1')
   if (!settings) return { sent: 0 }
   // Records are derived from the live visit, including bookings made by waitlist and recurring visits.
-  for (const lead of JSON.parse(settings.reminder_leads) as number[]) {
+  // One reminder per lead time, never two at once: a lead time is skipped when the next shorter one is
+  // already due (a visit booked inside both windows gets the shorter one now, and nothing twice).
+  const leads = (JSON.parse(settings.reminder_leads) as number[]).sort((a, b) => b - a)
+  for (const [index, lead] of leads.entries()) {
+    const shorter = leads[index + 1], unlessShorterDue = shorter === undefined ? '' : new Date(scheduledTime + shorter * 60_000).toISOString()
     for (const channel of settings.reminder_sms ? ['email','sms'] : ['email']) {
       await stmt(db, `INSERT INTO bm_visit_reminders(id,appointment_id,start_at,lead_minutes,channel,due_at)
         SELECT lower(hex(randomblob(16))),a.id,a.start_at,?,?,strftime('%Y-%m-%dT%H:%M:%fZ',a.start_at,?) FROM bm_appointments a
-        JOIN bm_clients c ON c.id=a.client_id WHERE a.status='booked' AND a.start_at>? AND c.erased_at IS NULL
-        AND (?='email' OR c.sms_reminder_consent=1) ON CONFLICT(appointment_id,start_at,lead_minutes,channel) DO UPDATE SET state='pending',outcome=NULL WHERE bm_visit_reminders.state='cancelled'`, lead, channel, `-${lead} minutes`, at, channel).run()
+        JOIN bm_clients c ON c.id=a.client_id WHERE a.status='booked' AND a.start_at>? AND a.start_at>? AND c.erased_at IS NULL
+        AND (?='email' OR c.sms_reminder_consent=1) ON CONFLICT(appointment_id,start_at,lead_minutes,channel) DO UPDATE SET state='pending',outcome=NULL WHERE bm_visit_reminders.state='cancelled'`, lead, channel, `-${lead} minutes`, at, unlessShorterDue, channel).run()
     }
   }
+  // Reminders left pending past their time (the scheduler did not run) give way to a shorter one due now.
+  await stmt(db, `UPDATE bm_visit_reminders SET state='cancelled',outcome='Not sent: a later reminder for this visit was due at the same time' WHERE state='pending' AND due_at<=?
+    AND EXISTS(SELECT 1 FROM bm_visit_reminders o WHERE o.appointment_id=bm_visit_reminders.appointment_id AND o.start_at=bm_visit_reminders.start_at AND o.channel=bm_visit_reminders.channel
+      AND o.lead_minutes<bm_visit_reminders.lead_minutes AND o.due_at<=? AND o.state IN ('pending','sending','sent','uncertain'))`, at, at).run()
   // A crash after a claim may have reached the provider. Keep this distinct from a definite failure.
   await stmt(db, "UPDATE bm_visit_reminders SET state='uncertain',outcome='Delivery outcome unknown; contact the patient before resending' WHERE state='sending' AND attempted_at<?", new Date(scheduledTime-15*60_000).toISOString()).run()
   const due = await rows(db, `SELECT r.id FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id

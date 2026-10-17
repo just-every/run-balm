@@ -54,6 +54,7 @@ const sentences: Record<string, string> = {
   this_invoice_is_already_paid: 'This invoice is already paid.',
   only_unused_uninvited_staff_can_be_erased: 'Only staff never invited and never used in clinic work can be erased. Set them inactive instead.',
   activate_the_staff_member_before_inviting: 'Set the staff member active before inviting them.',
+  active_staff_required: 'Your access to this clinic is turned off. If you still need it, ask the clinic owner to set you active again.',
   outside_practitioner_hours: 'That time is outside the practitioner’s weekly hours.',
   practitioner_already_booked: 'The practitioner already has a visit at that time.',
   room_in_use: 'That room is booked at that time.',

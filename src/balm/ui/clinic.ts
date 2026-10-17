@@ -38,4 +38,6 @@ function serviceFields(x?: any) {
 const roomFields = (r?: any) => field('name', 'Room name', r?.name, 'text', 'required maxlength="80" placeholder="Treatment room 1"') + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], r ? String(!!r.active) : 'true')
 
 /** On this computer an emailed link opens only in a browser that already opened Balm, so say how to sign in as this person instead. */
-const localSignIn = (s: any, p: any) => s.local ? `<p class="help">Balm is running on this computer, so no email leaves it. To work as ${h(p.name)} in another browser, run <code>rer dev --as ${h(p.email)}</code> in the Balm folder and open the RER_OPEN link it prints.</p>` : ''
+const localSignIn = (s: any, p: any) => !s.local ? '' : p.can_sign_in
+  ? `<p class="help">Balm is running on this computer, so no email leaves it. To work as ${h(p.name)} in another browser, run <code>rer dev --as ${h(p.email)}</code> in the Balm folder and open the RER_OPEN link it prints.</p>`
+  : `<p class="help">Balm is running on this computer, so no email leaves it. To work as ${h(p.name)}, first select <strong>Invite to sign in</strong>; then run <code>rer dev --as ${h(p.email)}</code> in the Balm folder and open the RER_OPEN link it prints, in another browser.</p>`

@@ -55,7 +55,8 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const client = await clientVisible(db, who, key)
   const own = practitionerId(who), all = who.role === 'owner' || who.staffRole === 'reception'
   const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,s.note_template,
-    (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file
+    (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
+    EXISTS(SELECT 1 FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND json_array_length(COALESCE(r.charges,'[]'))>0) AS note_billed
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id WHERE a.client_id=? ORDER BY a.start_at DESC`, client.id)
   const visibleAppointments = appointments.filter(a => all || a.practitioner_id === own)
   const intake = (await intakeFor(db, who, client.id as string))?.filter(r => who.role === 'owner' || visibleAppointments.some(a => a.id === r.appointmentId)) ?? null

@@ -37,14 +37,14 @@ test('a recurring series shows its overlapping date before saving, books in one 
   assert.equal((week.text.match(/class="appt st-booked/g) ?? []).length, 3, 'the week shows both series visits and Noah’s')
   // The room holds one visit at a time, even for another practitioner's booking.
   await h.cmd('appointment.book', { clientId: other.id, practitionerId: (await h.staff('Sam')).id, serviceId: service.id, roomId: room.id, date: first, time: '09:15' }, h.owner, 409)
-  // One visit moves; a move onto another visit is refused as at booking.
+  // One visit moves, to any 5-minute start inside hours; a move onto another visit is refused as at booking.
   await h.cmd('appointment.move', { id: series[0].id, date: second, time: '09:30' }, h.owner, 409)
-  await h.cmd('appointment.move', { id: series[0].id, date: first, time: '14:00' })
+  await h.cmd('appointment.move', { id: series[0].id, date: first, time: '14:10' })
   // The rest of the series moves together, or not at all.
   await h.cmd('series.move_rest', { appointmentId: series[1].id, time: '09:30' }, h.owner, 409)
   assert.equal((await h.cmd('series.move_rest', { appointmentId: series[2].id, time: '15:00' })).moved, 10)
   series = await visits()
-  assert.deepEqual(series.map(a => brisbane(Date.parse(a.start_at)).slice(11, 16)), ['14:00', '11:00', ...Array(10).fill('15:00')])
+  assert.deepEqual(series.map(a => brisbane(Date.parse(a.start_at)).slice(11, 16)), ['14:10', '11:00', ...Array(10).fill('15:00')])
   // Cancel one visit, then this and the rest.
   await h.cmd('appointment.cancel', { id: series[3].id })
   assert.equal((await h.cmd('series.cancel_rest', { appointmentId: series[6].id })).cancelled.length, 6)

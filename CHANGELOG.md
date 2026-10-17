@@ -1,0 +1,13 @@
+# Changelog
+
+## Unreleased
+
+- **Back up a hosted clinic**: `rer run backup:hosted -- --environment NAME` saves the hosted clinic's whole database as one SQL file in `exports/`, readable only by you, and `rer run restore:hosted -- --input FILE` restores it into a fresh copy of Balm before setup (a copy that already holds data is refused). The deploy page's take-down steps and Back up and restore name these commands; `rer export` saves only the clinic on your computer and refuses a hosted address.
+- **Automatic reminders**: each lead time sends one reminder, never two at once. A visit booked after one or more lead times have passed gets a single reminder at the next minute, and later lead times still send on schedule. The Clinic page says so.
+- **Reminders say one thing**: Clinic's automatic visit reminders are the ones Balm emails; **Invoices and reminders → Prepared reminders** is text you approve, download and send yourself, and each page says how it differs from the other.
+- **Booking**: staff can book or move a visit to any 5-minute start inside the practitioner's hours (4:10 is no longer refused as "outside weekly hours"); online booking still offers quarter hours, and the forms say both.
+- **Staff on your computer**: the Clinic page says to select **Invite to sign in** before `rer dev --as their@email`, and says only the command once they are invited.
+- **Texting**: the hint links to the deploy guide's settings where texting is set up, and is no longer repeated under Online payments.
+- **On your computer, Balm no longer says it emailed anyone**: bookings, plans of care, secure messages, pay links, receipts, the waitlist and the patient's booking page say no email leaves this computer, and show the private link where there is one.
+- **Smaller fixes**: deactivated staff see a page that says their access is off instead of raw JSON; an NPI entered as a provider number fills Billing identifiers; Visit codes shows CPT billed from a signed note; the access audit names actions in words ("Opened the file") and counts "All N entries"; the Stripe refusal says when a key is incomplete; the physician's signed page shows the Balm header once; Check in and Mark attended no longer touch; the built-in intake form has no made-up publish date; time zones show their current names (Asia/Kolkata, Europe/Kyiv); the deploy page says to stop `rer dev` first; the restore refusals are explained in plain words.
+- Pinned `@runeditrun/rer` 0.2.43.

@@ -16,7 +16,7 @@ These journeys are accepted and covered by `tests/balm.test.mjs`, `tests/schedul
 - An agent key can prepare invoices, appointment reminder text and new intake-form versions; only a signed-in person approves them, and each approval is recorded with the digest of what was approved. Agents never read notes or intake answers.
 - Every opening of a client file, every read of intake answers or notes, every change, download and agent read appears in that file's access audit, which only the owner reads.
 - The owner moves patients in from a documented-shape Cliniko patient CSV: preview, apply that exact preview, read the journal with the original file, and undo it without losing clients who have since been booked or edited.
-- The owner exports and restores the whole clinic with `rer export` / `rer import` (damaged archives and populated destinations are refused) and erases a client or staff member who has no health records, fenced against older backups.
+- The owner exports and restores the whole clinic with `rer export` / `rer import` (damaged archives and populated destinations are refused), backs up a hosted clinic with `rer run backup:hosted` (an owner-only SQL file of the hosted database) and restores it into a fresh copy with `rer run restore:hosted`, and erases a client or staff member who has no health records, fenced against older backups.
 
 The released contract still leaves out insurance claiming, live text messages, sent reminders, a patient portal, telehealth video and multi-location clinics. The target below requires each of them; it still excludes prescribing and clinical decision support (see the contract's Honest boundaries).
 

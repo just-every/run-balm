@@ -30,7 +30,7 @@ Add each person under **Add a staff member**:
 
 Select **Invite to sign in** next to each person. A deployed Balm emails the invitation and says so at the top of the page (“Invitation sent to …”); the person opens it in any browser. Select it again to send a new link. Once your clinic links Auth under **Sign-in settings**, invited staff can also sign in with their Auth account: see [People and the access audit](/docs/people-and-audit).
 
-Balm on your computer sends no email, and its links open only in a browser that has opened Balm with rer's link. To work as a staff member there, run `rer dev --as person@example.com` (with their email) in the Balm folder and open the `RER_OPEN` link it prints, in another browser or browser profile. The **Clinic** page says this under each person.
+Balm on your computer sends no email, and its links open only in a browser that has opened Balm with rer's link. To work as a staff member there, first select **Invite to sign in** next to them, then run `rer dev --as person@example.com` (with their email) in the Balm folder and open the `RER_OPEN` link it prints, in another browser or browser profile. The **Clinic** page says this under each person.
 
 ## Weekly hours
 

@@ -26,7 +26,8 @@ export async function roomFor(db: D1Database, key: unknown) {
   insist(room, 'room_not_found', 404)
   return room.id as string
 }
-/** Dial's engine input for one practitioner; `exclude` leaves out visits being moved. */
+/** Dial's engine input for one practitioner; `exclude` leaves out visits being moved. Online booking offers quarter-hour
+ * starts; staff may place a visit at any start time inside the practitioner's hours. */
 async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = []) {
   const [hours, claims] = await Promise.all([
     rows(db, 'SELECT weekday,start_minute AS startMinute,end_minute AS endMinute FROM bm_hours WHERE practitioner_id=?', practitioner),
@@ -34,7 +35,7 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
   ])
   return {
     hostTimeZone: zone, recurringWindows: hours as any[], overrides: [],
-    constraints: { ...onlineRules, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false } : {}) },
+    constraints: { ...onlineRules, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     internalClaims: claims.filter(c => !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) })), calendarBusy: [],
   }
 }
