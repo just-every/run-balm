@@ -9,11 +9,13 @@
 // idempotent; nothing is fetched or sent.
 import type { Bindings } from './auth.server'
 import { artifact, invoiceNumber, snapshot } from './balm/domain/invoices'
+import { signedDigest } from './balm/domain/signing'
 import { currentForm, questions } from './balm/domain/intake'
 import { sha256 } from './balm/domain/model'
 import { hostDateAt } from './balm/availability/timezone'
 import { facts, reminderPayload, reminderText } from './balm/domain/reminders'
 import { amendment, intakeAnswers, noteBody } from './balm/demo/notes'
+import { awaitingSignature, signedAt } from './balm/demo/signing'
 import { clients, clinic, former, movedIn, practitioners, reception, rooms, series, services, zone } from './balm/demo/people'
 import { DAY, HOUR, MIN, plan, seriesStart, type Visit } from './balm/demo/visits'
 
@@ -32,14 +34,14 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
     q(`INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) SELECT ?,?,?,?,?,?,?
       WHERE NOT EXISTS(SELECT 1 FROM bm_audit WHERE action=? AND subject_id=? AND at=?)`, iso(at), who.email, who.role, action, clientId, subjectId, detail, action, subjectId, iso(at))
   const visits = plan(now), form = await currentForm(db)
-  const firstSeen = new Map<string, Visit>()
+  const unsigned = awaitingSignature(visits, now), firstSeen = new Map<string, Visit>()
   for (const v of visits) if (!firstSeen.has(v.client.id)) firstSeen.set(v.client.id, v)
 
   // The clinic, its people and its week, in one batch.
   const clinicRows = [
     q("UPDATE bm_settings SET clinic_name=?,time_zone=?,abn=?,address=?,version=version+1 WHERE id=1 AND clinic_name='My clinic'", clinic.name, zone, clinic.taxId, clinic.address),
     q('INSERT INTO oa_first_run(singleton,completed_by,completed_at) VALUES(1,?,?) ON CONFLICT(singleton) DO NOTHING', owner.id, now - 30 * DAY),
-    ...practitioners.map(p => q("INSERT INTO bm_staff(id,name,email,role,profession,provider_number) VALUES(?,?,?,'practitioner',?,?) ON CONFLICT DO NOTHING", p.id, p.name, p.email ?? ownerEmail.toLowerCase(), p.profession, p.providerNumber)),
+    ...practitioners.map(p => q("INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials) VALUES(?,?,?,'practitioner',?,?,?) ON CONFLICT DO NOTHING", p.id, p.name, p.email ?? ownerEmail.toLowerCase(), p.profession, p.providerNumber, p.credentials)),
     q("INSERT INTO bm_staff(id,name,email,role) VALUES(?,?,?,'reception') ON CONFLICT DO NOTHING", reception.id, reception.name, reception.email),
     q("INSERT INTO bm_staff(id,name,email,role,profession,provider_number,active) VALUES(?,?,?,'practitioner',?,?,0) ON CONFLICT DO NOTHING", former.id, former.name, former.email, former.profession, former.providerNumber),
     ...rooms.map(r => q('INSERT INTO bm_rooms(id,name) VALUES(?,?) ON CONFLICT DO NOTHING', r.id, r.name)),
@@ -81,12 +83,23 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
     if (v.status === 'attended') {
       const noteId = 'demo-note-' + v.id, written = Math.min(v.end + 10 * MIN, now - 5 * MIN), author = actorOf(v.practitioner.id), fix = amendment(v)
       const before = visits.filter(o => o.client.id === c.id && o.start < v.start), seen = before.filter(o => o.intakeAt).length + 1, earlier = before.filter(o => o.status === 'attended').length
-      if (v.intakeAt) rows.push(log(v.start - 10 * MIN, author, 'file.viewed', c.id, c.id, `intake ${seen}; ${earlier ? `notes ${earlier}` : 'no notes'}`), log(v.start - 10 * MIN + 1000, author, 'intake.read', c.id, 'demo-intake-' + v.id))
+      // The access audit keeps the last few days of chart reads; older ones have aged out of the demo's history.
+      if (v.intakeAt && v.start > now - 3 * DAY) rows.push(log(v.start - 10 * MIN, author, 'file.viewed', c.id, c.id, `intake ${seen}; ${earlier ? `notes ${earlier}` : 'no notes'}`), log(v.start - 10 * MIN + 1000, author, 'intake.read', c.id, 'demo-intake-' + v.id))
+      // A signed note is locked, so a note that is already signed is not written again.
+      const open = (sql: string, ...values: unknown[]) => q(`${sql} AND NOT EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NOT NULL) ON CONFLICT DO NOTHING`, ...values, noteId)
+      const amendedAt = fix && written + DAY < now - 2 * HOUR ? written + DAY : null
       rows.push(q('INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING', noteId, c.id, v.id, v.practitioner.id, iso(written)),
-        q("INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at) VALUES(?,1,?,'',?) ON CONFLICT DO NOTHING", noteId, noteBody(v), iso(written)),
+        open("INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at) SELECT ?,1,?,'',? WHERE 1", noteId, noteBody(v), iso(written)),
         log(written, author, 'note.written', c.id, noteId))
-      if (fix && written + DAY < now) rows.push(q('INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at) VALUES(?,2,?,?,?) ON CONFLICT DO NOTHING', noteId, fix.body, fix.reason, iso(written + DAY)),
-        log(written + DAY, author, 'note.amended', c.id, noteId, 'revision 2'))
+      if (fix && amendedAt !== null) rows.push(open('INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at) SELECT ?,2,?,?,? WHERE 1', noteId, fix.body, fix.reason, iso(amendedAt)),
+        log(amendedAt, author, 'note.amended', c.id, noteId, 'revision 2'))
+      if (!unsigned.has(v.id)) {
+        // Signed as signNote seals it: the typed name and credentials, the revision signed and its digest.
+        const signed = signedAt(v, written, amendedAt, now), at = iso(signed), revision = { number: amendedAt === null ? 1 : 2, body: amendedAt === null ? noteBody(v) : fix!.body, charges: null }
+        const by = { name: v.practitioner.name, credentials: v.practitioner.credentials }
+        rows.push(q('UPDATE bm_notes SET signed_at=?,signed_revision=?,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=? AND signed_at IS NULL', at, revision.number, by.name, by.credentials,
+          await signedDigest({ id: noteId, template: '' }, revision, null, by, at), noteId), log(signed, author, 'note.signed', c.id, noteId, `revision ${revision.number}`))
+      }
     }
     return rows
   }))

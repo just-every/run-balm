@@ -25,6 +25,10 @@ function signer(staff: Data, input: Data) {
   return { name: staff.name as string, credentials: text(credentials, 'credentials', 60) }
 }
 
+/** What a signature seals: the note, the exact revision, its content and the signer, at the time of signing. */
+export const signedDigest = (note: Data, revision: Data, sections: unknown, by: { name: string; credentials: string }, signedAt: string) =>
+  sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, signer: by, signedAt }))
+
 export async function signNote(db: D1Database, who: Actor, input: Data) {
   const { note, staff } = await authored(db, who, input.id)
   insist(!note.signed_at, 'note_already_signed', 409)
@@ -42,7 +46,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
     insist(!blank, `complete_${blank?.id}_before_signing`)
   } else insist(String(latest.body).trim(), 'note_is_empty')
   const by = signer(staff, input), signedAt = now()
-  const digest = await sha256(JSON.stringify({ note: note.id, revision: latest.number, template: note.template, body: latest.body, sections, charges: latest.charges, signer: by, signedAt }))
+  const digest = await signedDigest(note, latest, sections, by, signedAt)
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)', note.id, latest.number),
     ...(visit ? [guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status!='cancelled')", note.appointment_id)] : []),

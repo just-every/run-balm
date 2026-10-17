@@ -23,16 +23,16 @@ export const rooms = [
   { id: 'demo-room-1', name: 'Treatment room 1' }, { id: 'demo-room-2', name: 'Treatment room 2' },
   { id: 'demo-room-massage', name: 'Massage room' }, { id: 'demo-room-hand', name: 'Hand therapy room' },
 ]
-export type Practitioner = { id: string; name: string; email?: string; profession: string; providerNumber: string; kind: Kind; room: string; hours: Window[]; first: string; then: string[] }
+export type Practitioner = { id: string; name: string; email?: string; profession: string; credentials: string; providerNumber: string; kind: Kind; room: string; hours: Window[]; first: string; then: string[] }
 /** The owner treats clients too; her staff row carries the demo owner's email. */
 export const practitioners: Practitioner[] = [
-  { id: 'demo-staff-maya', name: 'Maya Ellison', profession: 'Physical therapist, DPT', providerNumber: 'PT-24817', kind: 'pt', room: 'demo-room-1',
+  { id: 'demo-staff-maya', name: 'Maya Ellison', profession: 'Physical therapist, DPT', credentials: 'PT, DPT', providerNumber: 'PT-24817', kind: 'pt', room: 'demo-room-1',
     hours: [...days([1, 2, 3, 4], h(8), h(12)), ...days([1, 2, 3, 4], h(13), h(17)), [5, h(8), h(12)]], first: 'demo-svc-initial', then: ['demo-svc-followup', 'demo-svc-extended'] },
-  { id: 'demo-staff-daniel', name: 'Daniel Okafor', email: 'daniel.okafor@cedargrove.example', profession: 'Physical therapist, DPT', providerNumber: 'PT-31952', kind: 'pt', room: 'demo-room-2',
+  { id: 'demo-staff-daniel', name: 'Daniel Okafor', email: 'daniel.okafor@cedargrove.example', profession: 'Physical therapist, DPT', credentials: 'PT, DPT', providerNumber: 'PT-31952', kind: 'pt', room: 'demo-room-2',
     hours: [...days([1, 3, 5], h(7), h(11)), ...days([1, 3, 5], h(11, 30), h(15)), ...days([2, 4], h(11), h(15)), ...days([2, 4], h(15, 30), h(19))], first: 'demo-svc-initial', then: ['demo-svc-extended', 'demo-svc-followup'] },
-  { id: 'demo-staff-lena', name: 'Lena Fischer', email: 'lena.fischer@cedargrove.example', profession: 'Licensed massage therapist', providerNumber: 'LMT-18240', kind: 'massage', room: 'demo-room-massage',
+  { id: 'demo-staff-lena', name: 'Lena Fischer', email: 'lena.fischer@cedargrove.example', profession: 'Licensed massage therapist', credentials: 'LMT', providerNumber: 'LMT-18240', kind: 'massage', room: 'demo-room-massage',
     hours: [...days([2, 3, 4, 5], h(10), h(18)), [6, h(9), h(13)]], first: 'demo-svc-massage', then: ['demo-svc-massage'] },
-  { id: 'demo-staff-marcus', name: 'Marcus Bell', email: 'marcus.bell@cedargrove.example', profession: 'Occupational therapist, CHT', providerNumber: 'OT-9031', kind: 'hand', room: 'demo-room-hand',
+  { id: 'demo-staff-marcus', name: 'Marcus Bell', email: 'marcus.bell@cedargrove.example', profession: 'Occupational therapist, CHT', credentials: 'OTR/L, CHT', providerNumber: 'OT-9031', kind: 'hand', room: 'demo-room-hand',
     hours: days([1, 2, 4], h(9), h(17)), first: 'demo-svc-initial', then: ['demo-svc-hand'] },
 ]
 export const reception = { id: 'demo-staff-hannah', name: 'Hannah Brooks', email: 'hannah.brooks@cedargrove.example' }
