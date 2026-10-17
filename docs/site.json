@@ -3,7 +3,7 @@
     {
       "title": "Start here",
       "pages": [
-        { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in two lines and sign in as the owner." },
+        { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in one line and sign in as the owner." },
         { "slug": "set-up-your-clinic", "title": "Set up your clinic", "file": "set-up-your-clinic.md", "summary": "Your clinic details, services, practitioners and reception, weekly hours and sign-in invitations." }
       ]
     },
