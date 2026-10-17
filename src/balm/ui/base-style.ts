@@ -101,6 +101,8 @@ pre{max-width:100%;margin:0 0 12px;padding:12px 14px;white-space:pre-wrap;overfl
 dl.answers{display:block;margin:0}.answers dt{margin-top:10px;font-size:13px;font-weight:600;color:var(--ink)}.answers dd{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--body)}
 .signature{margin-top:10px}
 .copy{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;align-items:end;margin:8px 0 12px}.copy label{grid-column:1/-1}.copy input,.copy textarea{font-family:var(--rer-font-mono);font-size:12.5px}
+.copy input{min-width:0;width:100%}.notice .copy{margin:10px 0 4px}.notice .copy label{font-weight:600;color:var(--ink)}.notice .copy input{background:var(--rer-surface)}.notice a{overflow-wrap:anywhere}.open-intake{font-size:13.5px}
+small.code{margin-left:4px;font-size:11.5px;font-weight:400;color:var(--soft);font-variant-numeric:tabular-nums;white-space:nowrap}
 nav.pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:12px 0}
 .slots{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .slot{display:inline-flex;min-height:36px;align-items:center;padding:0 14px;border:1px solid var(--line-strong);border-radius:9px;background:var(--rer-surface);color:var(--ink);font-weight:500;text-decoration:none;font-variant-numeric:tabular-nums}.slot:hover{border-color:var(--teal);background:var(--hover)}

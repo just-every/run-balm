@@ -14,7 +14,7 @@ export const calendarLink = (c: any, extra: Record<string, string> = {}) => {
   for (const [key, value] of [...params]) if (!value) params.delete(key)
   return `/app?${params}`
 }
-const local = (iso: string, zone: string) => { const p = zonedParts(new Date(iso), zone); return { date: `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`, minute: p.hour * 60 + p.minute } }
+export const local = (iso: string, zone: string) => { const p = zonedParts(new Date(iso), zone); return { date: `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`, minute: p.hour * 60 + p.minute } }
 export const clockLabel = (minute: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' }).format(new Date(Date.UTC(2026, 0, 1, 0, minute)))
 const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 /** 9:00 – 9:45 for a card; the period shows only when the visit crosses noon. */
@@ -37,14 +37,14 @@ function openWindows(c: any, column: any) {
   return c.hours.filter((w: any) => w.practitioner_id === column.subject && w.weekday === weekday)
 }
 
-/** A visit's colour: coral when the patient has a denied claim or is past Medicare's KX threshold, sage when attended with a signed note, honey while its note waits, sky when booked. */
+/** A visit's colour: coral when this visit's claim was denied or the patient is past Medicare's KX threshold, sage when attended with a signed note, honey while its note waits, sky when booked. */
 export function visitTone(a: any) {
   if (Number(a.claims_to_fix) > 0 || Number(a.kx_required) === 1) return 'coral'
   if (a.status === 'attended') return a.note_status === 'signed' ? 'sage' : 'honey'
   if (a.status === 'no_show') return 'muted'
   return 'sky'
 }
-const toneIcon: Record<string, string> = { coral: 'warning', sage: 'checked', honey: 'pen', muted: 'x', sky: 'calendar' }
+export const toneIcon: Record<string, string> = { coral: 'warning', sage: 'checked', honey: 'pen', muted: 'x', sky: 'calendar' }
 
 /** The chips a card carries, most important first; narrow cards keep only the first ones. */
 export function visitChips(s: any, a: any) {
@@ -82,7 +82,20 @@ export function openSlots(c: any, column: any, live: any[], now = Date.now()) {
   }
   return out
 }
-const waitingFor = (s: any, column: any) => (s.waitlist?.entries ?? []).filter((e: any) => e.status === 'waiting' && (!e.practitioner_id || e.practitioner_id === column.subject) && e.earliest_date <= column.date && e.latest_date >= column.date).length
+export const waitingFor = (s: any, column: any) => (s.waitlist?.entries ?? []).filter((e: any) => e.status === 'waiting' && (!e.practitioner_id || e.practitioner_id === column.subject) && e.earliest_date <= column.date && e.latest_date >= column.date).length
+
+/** A visit card's time: the start, then the end in its own span so a narrow half-hour card can keep the start alone. */
+const timeSpans = (time: string) => { const [from, to] = time.split(' – '); return `<span class="appt-time"><span class="t-from">${h(from)}</span><span class="t-to"> – ${h(to)}</span></span>` }
+
+/** A visit card's link attributes and content: status glyph, time, name and chips. The grid places it; the phone agenda lists it. */
+export function visitCard(s: any, c: any, a: any, classes: string, extra = '') {
+  const time = span(a.start_at, a.end_at, c.zone), tone = visitTone(a), chips = visitChips(s, a)
+  return `<a class="appt st-${h(a.status)} tone-${tone} ${classes}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${extra} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}`)}">`
+    + `${icon(toneIcon[tone], 'mark')}<span class="appt-copy">${timeSpans(time)}<strong>${h(a.client)}</strong>`
+    + `<span class="appt-tags">${chips.map(([text, t], k) => `<span class="tag${t ? ' ' + t : ''} k${Math.min(k, 3)}">${h(text)}</span>`).join('')}</span></span>${icon('chevron', 'go')}</a>`
+}
+/** A practitioner's name with the credential kept whole on one line ("CCC-SLP" never breaks). */
+export const practitionerName = (column: any) => `${h(column.label)}${column.credentials ? `, <span class="cred">${h(column.credentials)}</span>` : ''}`
 
 export function calendarGrid(s: any, c: any) {
   if (!c.columns.length) return `<div class="empty-state">${icon('people')}<h2>${c.by === 'room' ? 'No rooms yet' : 'No practitioners yet'}</h2><p>${c.by === 'room' ? 'No rooms yet. The owner adds rooms on the Clinic page.' : 'No practitioners yet. The owner adds them on the Clinic page.'}</p>${s.actor.role === 'owner' ? '<a class="button secondary" href="/app/clinic">Open Clinic</a>' : ''}</div>`
@@ -102,7 +115,7 @@ export function calendarGrid(s: any, c: any) {
     const count = live.filter((a: any) => inColumn(c, column, a)).length, tally = `<small>${count === 1 ? '1 appointment' : `${count} appointments`}</small>`
     const label = c.view === 'week'
       ? `<a href="${h(calendarLink({ ...c, view: 'day', date: column.date }, { id: '' }))}"><strong>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(column.date + 'T00:00:00Z')))}</strong></a>${tally}`
-      : `${c.by === 'practitioner' ? avatar(column.label) : ''}<span><strong>${h(column.label)}${column.credentials ? `, ${h(column.credentials)}` : ''}</strong>${tally}</span>`
+      : `${c.by === 'practitioner' ? avatar(column.label) : ''}<span><strong>${practitionerName(column)}</strong>${tally}</span>`
     html += `<div class="cal-head rs1 cs${i + 2}${column.date === c.today && c.view === 'week' ? ' today' : ''}">${label}</div>`
   })
   for (let minute = lo; minute < hi; minute += 30) html += `<div class="cal-time rs${row(minute)} re${Math.min(2, (hi - minute) / step)} cs1">${h(clockLabel(minute))}</div>`
@@ -119,15 +132,11 @@ export function calendarGrid(s: any, c: any) {
     }
     for (const a of live.filter((a: any) => inColumn(c, column, a))) {
       const start = Math.max(lo, local(a.start_at, c.zone).minute), spanRows = Math.max(1, Math.min(rowsCount - (row(start) - 2), Math.ceil((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000 / step)))
-      const time = span(a.start_at, a.end_at, c.zone), tone = visitTone(a)
       const movable = a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId)
-      const chips = visitChips(s, a)
-      html += `<a class="appt st-${h(a.status)} tone-${tone} size${Math.min(3, spanRows)} rs${row(start)} re${spanRows} cs${i + 2}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${movable ? ` draggable="true" data-id="${h(a.id)}" data-version="${h(a.version)}"` : ' draggable="false"'} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}`)}">`
-        + `${icon(toneIcon[tone], 'mark')}<span class="appt-copy"><span class="appt-time">${h(time)}</span><strong>${h(a.client)}</strong>`
-        + `<span class="appt-tags">${chips.map(([text, t], k) => `<span class="tag${t ? ' ' + t : ''} k${Math.min(k, 3)}">${h(text)}</span>`).join('')}</span></span>${icon('chevron', 'go')}</a>`
+      html += visitCard(s, c, a, `size${Math.min(3, spanRows)} rs${row(start)} re${spanRows} cs${i + 2}`, movable ? ` draggable="true" data-id="${h(a.id)}" data-version="${h(a.version)}"` : ' draggable="false"')
     }
   })
-  return `<div class="cal-wrap"><div class="cal n${n}" data-calendar data-by="${h(c.by)}">${html}</div></div>`
+  return `<div class="cal-wrap"><div class="cal n${n}${c.view === 'week' ? ' wk' : ''}" data-calendar data-by="${h(c.by)}">${html}</div></div>`
 }
 
 /** The hidden form a drag fills in; the edit panel's form does the same without JavaScript. */

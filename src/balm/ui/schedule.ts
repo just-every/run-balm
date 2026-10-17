@@ -2,6 +2,7 @@
 // counts, the clinician columns, and the selected visit's patient panel beside
 // them; the booking panel takes that place when no visit is selected.
 import { calendarGrid, calendarLink, clockLabel, inColumn, moveForm, openSlots, span, statusLabel } from './calendar'
+import { calendarAgenda } from './agenda'
 import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
@@ -49,10 +50,13 @@ function viewControls(s: any, c: any) {
 function heading(s: any, c: any) {
   const live = c.appointments.filter((a: any) => a.status !== 'cancelled' && c.columns.some((column: any) => inColumn(c, column, a)))
   const open = canBook(s) && c.view === 'day' ? c.columns.reduce((n: number, column: any) => n + openSlots(c, column, live).length, 0) : 0
-  const who = c.view === 'week' ? 'Week view' : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
+  // The week shows one practitioner's (or room's) visits: the heading names whose, and the switcher beside it changes it.
+  const subject = c.subjects.find((x: any) => x.id === c.subject)
+  const who = c.view === 'week' ? (subject ? `For ${subject.name}${subject.credentials ? `, ${subject.credentials}` : ''}` : 'Week view') : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
   const title = c.view === 'week' ? (c.dates.includes(c.today) ? 'This week' : `Week of ${longDate(c.dates[0], { month: 'short', day: 'numeric' })}`) : c.date === c.today ? 'Today' : longDate(c.date, { weekday: 'long' })
   const parts = [who, `${live.length} ${live.length === 1 ? 'appointment' : 'appointments'}`, ...(open ? [`${open} open ${open === 1 ? 'slot' : 'slots'}`] : [])]
-  return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div><details class="view-options"><summary>${c.view === 'week' ? 'Week view' : 'Day view'}${icon('chevron')}</summary>${viewControls(s, c)}</details></div>`
+  const switcher = c.view === 'week' && c.subjects.length > 1 ? `<nav class="cal-nav week-who" aria-label="${c.by === 'room' ? 'Room' : 'Practitioner'}">${c.subjects.map((x: any) => `<a class="seg${x.id === c.subject ? ' on' : ''}" href="${h(calendarLink({ ...c, subject: x.id }))}"${x.id === c.subject ? ' aria-current="true"' : ''}>${h(x.name)}</a>`).join('')}</nav>` : ''
+  return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div>${switcher}<details class="view-options"><summary>${c.view === 'week' ? 'Week view' : 'Day view'}${icon('chevron')}</summary>${viewControls(s, c)}</details></div>`
 }
 
 function moveFields(s: any, c: any, a: any, prefix = '') {
@@ -123,7 +127,7 @@ export function schedule(s: any, notice: any = {}) {
   const offered = c.offered ? `<div class="notice" role="status">The freed time was offered by email to ${c.offered} ${c.offered === 1 ? 'person' : 'people'} on the waitlist. The first to accept is booked.</div>` : ''
   const side = selectedPanel(s, c, notice) || (canBook(s) ? bookPanel(s, c, notice) : '')
   const how = `<p class="help cal-help">Times are in ${h(zoneLabel(c.zone))}. ${canBook(s) ? 'Select a visit to change it, drag it to a new time, or select an empty time to book.' : ''} Shaded times are outside the practitioner’s hours.</p>`
-  return `<div class="today${side ? '' : ' single'}"><div class="today-main">${heading(s, c)}${offered}${owner(s) ? setupChecklist(s) : ''}${calendarGrid(s, c)}${moveForm(c)}${how}${intro}</div>${side ? `<aside class="today-side">${side}</aside>` : ''}</div>`
+  return `<div class="today${side ? '' : ' single'}${c.view === 'week' ? ' week' : ''}"><div class="today-main">${heading(s, c)}${offered}${owner(s) ? setupChecklist(s) : ''}${calendarGrid(s, c)}${calendarAgenda(s, c)}${moveForm(c)}${how}${intro}</div>${side ? `<aside class="today-side">${side}</aside>` : ''}</div>`
     + `<div class="grid today-more">${notesToSign(s)}${listPanel(s, c)}</div>`
 }
 

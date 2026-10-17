@@ -4,7 +4,9 @@
 export const todayStyle = `
 .today{display:grid;grid-template-columns:minmax(0,1fr) 426px;gap:14px;align-items:start}
 .today.single{grid-template-columns:minmax(0,1fr)}
-@media(min-width:1181px){.today:has(.cal:is(.n4,.n5,.n6,.n7,.n8)){grid-template-columns:minmax(0,1fr) 340px}}
+@media(min-width:1181px){.today:not(.week):has(.cal:is(.n4,.n5,.n6,.n7,.n8)){grid-template-columns:minmax(0,1fr) 340px}}
+.today.week{grid-template-columns:minmax(0,1fr)}.today.week .today-side{position:static;max-width:640px}
+.week-who{flex-wrap:wrap;align-self:center;margin-left:auto}
 .today-main{min-width:0}
 .today-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px 20px;min-height:96px;padding:8px 8px 0 12px;margin:0 0 14px}
 .today-head h1{font-size:58px;line-height:1.02;letter-spacing:-.035em;margin:0 0 6px}

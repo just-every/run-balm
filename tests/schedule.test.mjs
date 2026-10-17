@@ -34,7 +34,8 @@ test('a recurring series shows its overlapping date before saving, books in one 
   assert.ok(series.every(a => a.room_id === room.id && a.status === 'booked'))
   const week = await h.send(`/app?view=week&date=${second}&id=${priya.id}`, undefined, h.owner)
   assert.equal(week.status, 200)
-  assert.equal((week.text.match(/class="appt st-booked/g) ?? []).length, 3, 'the week shows both series visits and Noah’s')
+  assert.equal((week.text.match(/class="appt st-booked tone-\w+ size/g) ?? []).length, 3, 'the week grid shows both series visits and Noah’s')
+  assert.equal((week.text.match(/class="appt st-booked tone-\w+ ag/g) ?? []).length, 3, 'the phone agenda shows the same three')
   // The room holds one visit at a time, even for another practitioner's booking.
   await h.cmd('appointment.book', { clientId: other.id, practitionerId: (await h.staff('Sam')).id, serviceId: service.id, roomId: room.id, date: first, time: '09:15' }, h.owner, 409)
   // One visit moves, to any 5-minute start inside hours; a move onto another visit is refused as at booking.

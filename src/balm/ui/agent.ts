@@ -2,11 +2,8 @@
 // what a key lets an assistant do, gives the key once with a copy button, walks
 // through ChatGPT and command-line assistants step by step, and lists what the
 // clinic never shares.
-import { empty, entry, field, form, h, hidden, panel, result, rows, stamp, status } from './shared'
+import { copyBox, empty, entry, field, form, h, hidden, panel, result, rows, stamp, status } from './shared'
 
-const copyBox = (id: string, label: string, value: string, lines = 1) => `<div class="copy"><label for="${h(id)}">${h(label)}</label>${lines > 1
-  ? `<textarea id="${h(id)}" readonly rows="${lines}" spellcheck="false">${h(value)}</textarea>`
-  : `<input id="${h(id)}" type="text" readonly value="${h(value)}" autocomplete="off" spellcheck="false">`}<button type="button" class="secondary" data-copy="${h(id)}">Copy</button></div>`
 
 const can = '<ul class="plain"><li><strong>Can read:</strong> the schedule, clients’ names, email addresses and phone numbers, services, practitioners’ hours, invoices and drafts waiting for approval. Each read is recorded in the access audit of every client it names.</li>'
   + '<li><strong>Can prepare, for a person to approve:</strong> invoices for attended visits (on Invoices and reminders), reminder texts for upcoming visits (on Invoices and reminders) and new intake form versions (on Intake form).</li>'

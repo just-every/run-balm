@@ -4,6 +4,7 @@
 // dated trail and the case agent's proposed fix waiting for a person's approval,
 // and a quiet case agent strip that cites the records it used.
 import { usDay } from '../cases/stages'
+import { payerReason } from '../insurance/codes'
 import { icon } from './icons'
 import { avatar } from './shell'
 import { check, desk, h, hidden, money, status, usDate, zoneOf } from './shared'
@@ -45,20 +46,20 @@ function denial(s: any, sum: any, a: any) {
   const d = sum?.denied
   if (!d) return ''
   const c = d.claim, snapshot = c.snapshot ?? {}, file = `/app/clients/${a.client_id}`
-  // The payer's reason as Balm labels it: "CO-4: Procedure and modifier do not agree… . Review the billed modifiers…".
-  const message = String(c.errors?.[0]?.message ?? c.reason ?? ''), [label, ...rest] = message.split('. ')
-  const [code, reason] = label.includes(': ') ? [label.slice(0, label.indexOf(': ')), label.slice(label.indexOf(': ') + 2)] : ['', label || 'see the payer reason']
+  // The payer's reason in plain words, with its codes (CO-4, remark codes) kept for small print.
+  const first = c.errors?.[0], payer = /^carc_/.test(String(first?.code)) ? payerReason(first.code, first.message) : null
+  const reason = payer?.reason ?? String(first?.message ?? 'See the payer reason in the claim'), code = payer?.codes.join(', ') ?? ''
   const lines = (snapshot.lines ?? []).map((l: any) => `${l.code} ×${l.units}`).join(', ')
   const word = c.status === 'rejected' ? 'Claim rejected' : c.status === 'partial' ? 'Claim partly denied' : 'Claim denied'
   const step = (sum.case?.steps ?? []).find((x: any) => x.kind === 'denial.fix' && x.key === `denial.fix:${c.id}`)
-  const trail = `<ol class="trail">${d.trail.map((t: any) => `<li${t.fault ? ' class="fault"' : ''}><span class="dot" aria-hidden="true"></span><time datetime="${h(t.at)}">${h(usDay(t.at, zoneOf(s)))}</time><span>${h(t.fault && code ? `${t.text} (${code})` : t.text)}</span></li>`).join('')}</ol>`
-  const next = rest.join('. ').trim().replace(/^RARC[^.]*\.?\s*/, '')
+  const trail = `<ol class="trail">${d.trail.map((t: any) => `<li${t.fault ? ' class="fault"' : ''}><span class="dot" aria-hidden="true"></span><time datetime="${h(t.at)}">${h(usDay(t.at, zoneOf(s)))}</time><span>${h(t.text)}</span></li>`).join('')}</ol>`
+  const next = payer ? [...payer.remarks.map(x => `${x}.`), payer.next].join(' ') : ''
   const back = `/app?${new URLSearchParams({ view: 'day', date: s.calendar.date, appt: a.id })}`
   const fix = step
     ? `<div class="fix"><strong>Proposed fix</strong><p>${h(step.title)}.${next ? ` ${h(next)}` : ''}</p>${step.blocked ? `<p class="help">${h(step.blocked)}</p>`
       : `<form method="post" action="/app/action?name=case.approve&amp;returnTo=${encodeURIComponent(back)}">${hidden('caseId', sum.case.referral.id) + hidden('key', step.key) + hidden('digest', step.digest) + check('reviewed', 'I reviewed this step and the records it cites.')}<div class="fix-actions"><button type="submit">${h(step.button)}</button><span class="approval">Needs your approval</span></div></form>`}</div>`
     : `<div class="fix"><strong>Next step</strong><p>${h(c.nextStep ?? 'Review the payer reason, then correct and resubmit or draft an appeal.')}</p><a href="${h(file)}#claim-${h(c.id)}">Open the claim to correct or draft an appeal</a></div>`
-  return `<section class="claim-alert" aria-label="${h(word)}"><header>${icon('warning')}<div><strong>${h(word)}${code ? ` · ${h(code)}` : ''}</strong><p class="why">${h(reason)}</p><p>${h(a.client)}${lines ? ` · ${h(lines)}` : ''} · ${h(money(c.amount_cents))}</p></div><a class="go" href="${h(file)}#claim-${h(c.id)}" aria-label="Open the claim in the patient file">${icon('chevron')}</a></header>${trail}${fix}</section>`
+  return `<section class="claim-alert" aria-label="${h(word)}"><header>${icon('warning')}<div><strong>${h(word)}${code ? ` <small class="code">${h(code)}</small>` : ''}</strong><p class="why">${h(reason)}</p><p>${h(a.client)}${lines ? ` · ${h(lines)}` : ''} · ${h(money(c.amount_cents))}</p></div><a class="go" href="${h(file)}#claim-${h(c.id)}" aria-label="Open the claim in the patient file">${icon('chevron')}</a></header>${trail}${fix}</section>`
 }
 
 /** The case agent: where the case stands, the records it cited, and the next step a person approves. */

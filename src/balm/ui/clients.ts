@@ -26,7 +26,7 @@ export function clientList(s: any) {
 export function bookingResult(s: any, notice: any) {
   const r = result(notice)
   if (!r?.appointmentId || r.seriesId || !r.intake) return ''
-  const line = intakeLine(r, '', s.local)
+  const line = intakeLine(r, '', s.local, s.origin)
   return `<div class="notice" role="status"><strong>Appointment booked.</strong> ${h(line.text)}${line.link}</div>`
 }
 

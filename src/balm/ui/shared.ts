@@ -62,7 +62,12 @@ export const services = (s: any) => rows(s, 'services').filter(x => x.active)
 export const practitioners = (s: any) => rows(s, 'staff').filter(x => x.role === 'practitioner' && (x.active === undefined || x.active))
 
 /** What a staff booking did about intake and email, in one or two sentences, with the private link when one was made. */
-export function intakeLine(r: any, first = '', local = false) {
+/** A value shown for copying whole: a read-only field that never widens its card, with a Copy button (copyScript). */
+export const copyBox = (id: string, label: string, value: string, lines = 1) => `<div class="copy"><label for="${h(id)}">${h(label)}</label>${lines > 1
+  ? `<textarea id="${h(id)}" readonly rows="${lines}" spellcheck="false">${h(value)}</textarea>`
+  : `<input id="${h(id)}" type="text" readonly value="${h(value)}" autocomplete="off" spellcheck="false">`}<button type="button" class="secondary" data-copy="${h(id)}">Copy</button></div>`
+
+export function intakeLine(r: any, first = '', local = false, origin = '') {
   // Balm on this computer sends no email, so it never says it emailed anyone; it shows the link instead.
   const mail = local && r.mail === 'sent' ? 'local' : r.mail
   const timeMail = mail === 'sent' ? ' The booking time was emailed to them.' : ''
@@ -70,5 +75,6 @@ export function intakeLine(r: any, first = '', local = false) {
   if (r.intake === 'on_file') return { text: 'Their intake form is already on file, so none was asked for.' + timeMail, link: '' }
   if (r.intake === 'link_open') return { text: 'They already have an intake link for an upcoming visit, so no new one was sent.' + timeMail, link: '' }
   const text = mail === 'sent' ? `The intake link${first} was emailed to the client.` : mail === 'local' ? `Balm on this computer sends no email, so give the client the intake link${first} yourself.` : mail === 'no_email' ? `The client has no email address: give them the intake link${first} yourself.` : `Mail is not set up: give the client the intake link${first} yourself.`
-  return { text, link: r.token ? ` Private intake link (shown once): <a href="/intake/${h(r.token)}">/intake/${h(r.token)}</a>` : '' }
+  // The one-time link sits in a copy field inside the notice, so a long token never runs past the card on a phone.
+  return { text, link: r.token ? `${copyBox('intake-link', 'Private intake link (shown once)', `${origin}/intake/${r.token}`)}<a class="open-intake" href="/intake/${h(r.token)}">Open the intake form</a>` : '' }
 }

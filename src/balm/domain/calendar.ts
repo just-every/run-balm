@@ -5,10 +5,10 @@ import { visibleAppointment } from './booking'
 import { one, practitionerId, rows, type Actor } from './model'
 
 /** Each visit's coverage as the day view's chips show it: the primary payer (none is self-pay), whether Medicare's KX threshold
- * applies to the patient's latest claim, and how many of the patient's claims a payer denied or rejected. No clinical text. */
+ * applies to the patient's latest claim, and how many of this visit's own claims a payer denied or rejected. No clinical text. */
 const coverage = `(SELECT y.name FROM bm_policies po JOIN bm_payers y ON y.id=po.payer_id WHERE po.client_id=a.client_id AND po.priority=1 ORDER BY po.starts_on DESC LIMIT 1) AS payer,
     (SELECT json_extract(cl.snapshot,'$.kx.required') FROM bm_claims cl WHERE cl.client_id=a.client_id AND cl.status<>'corrected' ORDER BY cl.created_at DESC LIMIT 1) AS kx_required,
-    (SELECT COUNT(*) FROM bm_claims cl WHERE cl.client_id=a.client_id AND cl.status IN ('denied','rejected','partial')) AS claims_to_fix`
+    (SELECT COUNT(*) FROM bm_claims cl WHERE cl.appointment_id=a.id AND cl.status IN ('denied','rejected','partial')) AS claims_to_fix`
 const isDay = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d\d-\d\d$/.test(value) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 
 export async function calendarView(db: D1Database, who: Actor, params: Record<string, string>) {

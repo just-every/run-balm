@@ -1,6 +1,7 @@
 // Where a case stands, stage by stage, from referral to paid or denied. Each
 // stage is a rule over the case's records and cites the record it rests on.
 import { dollars } from '../domain/invoices'
+import { payerReason } from '../insurance/codes'
 import { template } from '../charting/templates'
 import type { Data } from '../domain/model'
 import type { CaseFacts, Citation, Stage } from './types'
@@ -74,7 +75,7 @@ export function stages(f: CaseFacts): Stage[] {
       : pending.length ? { id: 'era', label: 'ERA posted', state: 'waiting', text: `${pending.length} claim${pending.length === 1 ? '' : 's'} waiting on the payer`, cite: cite.claim(f, pending[0]) } : { id: 'era', label: 'ERA posted', state: 'none', text: 'No remittance yet' })
   }
   const fix = f.claims.filter(c => FIX.includes(c.status)), paid = f.claims.filter(c => c.status === 'paid')
-  out.push(fix.length ? { id: 'outcome', label: 'Paid or denied', state: 'stalled', text: `${fix[0].status === 'rejected' ? 'Rejected' : fix[0].status === 'partial' ? 'Partly denied' : 'Denied'}: ${fix[0].errors.map((x: any) => x.code.replace(/^carc_/, 'CARC ')).join(', ') || 'see the payer reason'}`, cite: fix[0].era_trace ? cite.era(f, fix[0]) : cite.claim(f, fix[0]) }
+  out.push(fix.length ? { id: 'outcome', label: 'Paid or denied', state: 'stalled', text: `${fix[0].status === 'rejected' ? 'Rejected' : fix[0].status === 'partial' ? 'Partly denied' : 'Denied'}: ${fix[0].errors.map((x: any) => /^carc_/.test(x.code) ? `${payerReason(x.code).reason} (${payerReason(x.code).codes[0]})` : x.message).join('; ') || 'see the payer reason'}`, cite: fix[0].era_trace ? cite.era(f, fix[0]) : cite.claim(f, fix[0]) }
     : f.balanceCents > 0 && (paid.length || !p) ? { id: 'outcome', label: 'Paid or denied', state: 'waiting', text: `Patient owes ${dollars(f.balanceCents)}`, cite: cite.statement(f) }
       : paid.length && paid.length === f.claims.length && !unclaimed(f).length ? { id: 'outcome', label: 'Paid or denied', state: 'done', text: `Paid · patient balance ${dollars(Math.max(0, f.balanceCents))}`, cite: cite.era(f, paid[paid.length - 1]) }
         : { id: 'outcome', label: 'Paid or denied', state: 'none', text: paid.length ? `${paid.length} of ${f.claims.length} claims paid` : 'Nothing paid yet' })

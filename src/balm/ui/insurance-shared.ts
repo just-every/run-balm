@@ -1,4 +1,15 @@
+import { payerReason } from '../insurance/codes'
 import { form, h, hidden, result, check } from './shared'
+
+/** A claim's short number for people: the first eight characters of its id, upper case. The full id stays in the title and in the 837P. */
+export const claimNumber = (id: string) => `<span title="${h(id)}">${h(String(id).slice(0, 8).toUpperCase())}</span>`
+/** A claim problem in plain words. A payer's denial (carc_<code>) reads as its reason, the remarks and the next step, with the payer's
+ * codes in small print; Balm's own checks are already a plain sentence and carry no code. */
+export function reasonHtml(e: any) {
+  if (!/^carc_/.test(String(e.code))) return `<strong>${h(e.message ?? e.reason ?? '')}</strong>`
+  const r = payerReason(e.code, e.message)
+  return `<strong>${h(r.reason)}.</strong> ${r.remarks.map(x => `${h(x)}.`).join(' ')} ${h(r.next)} <small class="code">Payer ${r.codes.length > 1 ? 'codes' : 'code'} ${h(r.codes.join(', '))}</small>`
+}
 
 export const insurancePath = '/app/insurance'
 export const x12Link = (kind: '270' | '837P', id: string) => `/api/balm/insurance/${kind}/${encodeURIComponent(id)}`

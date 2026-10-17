@@ -36,6 +36,12 @@ const rarc:Record<string,string>={
 }
 export const adjustmentLabel=(group:string,code:string)=>`${group}-${code}: ${carc[code]??'Review this payer adjustment reason in the remittance'}`
 export const remarkLabel=(code:string)=>`RARC ${code}: ${rarc[code]??'Review this payer remark in the remittance'}`
+/** A denial Balm stored as carc_<code> (CO group, from an 835) in plain words: the reason, what each remark code in its
+ * message asks for, the next step, and the payer's codes for small print. */
+export function payerReason(code:string,message='') {
+  const reason=code.replace(/^carc_/,''),remarks=[...new Set([...message.matchAll(/RARC ([A-Z]+\d+)/g)].map(m=>m[1]))]
+  return {reason:carc[reason]??'The payer adjusted this claim; read the remittance for the reason',remarks:remarks.map(r=>rarc[r]??'Review this payer remark in the remittance'),next:denialNextStep(reason),codes:[`CO-${reason}`,...remarks]}
+}
 export function denialNextStep(code:string) {
   switch(code) {
     case '197':return 'Verify authorization, correct the claim reference and resubmit, or appeal with the approval.'
