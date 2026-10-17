@@ -1,6 +1,7 @@
 import { hostDateAt } from '../availability/timezone'
 import { seriesForm, seriesResult } from './series'
 import { waitlistForm } from './waitlist'
+import { billingPanels } from './payments'
 import { clinician, clientName, desk, empty, entry, field, form, h, hidden, money, owner, panel, practitioners, result, rows, select, services, stamp, status, textarea, when } from './shared'
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
@@ -67,7 +68,7 @@ export function invoiceEntry(s: any, i: any, path: string) {
   }
   return entry(title, `<p>${status(i.status)} ${i.status === 'approved' ? status(outstanding > 0 ? `${money(outstanding)} outstanding` : 'Paid') : ''}</p><p>${h(v.client.name)} · ${h(v.service.name)} · ${h(v.serviceDate)}<br>${h(v.practitioner.name)}${v.practitioner.providerNumber ? ` (provider ${h(v.practitioner.providerNumber)})` : ''} · <strong>${money(i.amount_cents)}</strong></p>`
     + `<p class="help">Prepared by ${h(i.prepared_by)} (${h(i.prepared_role)}) ${stamp(i.prepared_at)}${i.approved_by ? ` · approved by ${h(i.approved_by)} ${stamp(i.approved_at)}` : ''}${i.void_reason ? ` · void: ${h(i.void_reason)}` : ''}</p>`
-    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${h(p.reference)} · ${stamp(p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
+    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference)} · ${stamp(p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
 }
 
 function auditPanel(f: any) {
@@ -80,5 +81,5 @@ export function clientFilePage(s: any, f: any, notice: any) {
   const details = `<p>${c.date_of_birth ? `Born ${h(c.date_of_birth)}<br>` : ''}${c.email ? `${h(c.email)}<br>` : ''}${c.phone ? `${h(c.phone)}<br>` : ''}Added ${stamp(c.created_at)} (${h(c.created_via)})</p>`
     + (desk(s) ? `<details><summary>Edit details</summary>${form('client.save', path, hidden('id', c.id) + hidden('version', c.version) + clientFields(c), 'Save details')}</details>` : '')
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
-  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${intake(f)}${notes(s, f)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${auditPanel(f)}</div>`
+  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${intake(f)}${notes(s, f)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${billingPanels(s, f, notice)}${auditPanel(f)}</div>`
 }

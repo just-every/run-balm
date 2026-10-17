@@ -24,8 +24,10 @@ async function connected(options = {}) {
 
 /** The patient opens their card link, accepts the authorization and saves a card in Stripe Checkout. */
 async function saveCard(h, stripe, reception, clientId) {
-  const link = await h.cmd('pay.link.create', { clientId, purpose: 'card', delivery: 'shown' }, reception.cookie)
-  const token = tokenOf(link.url), page = await h.send(`/pay/${token}`)
+  // From the client file's card panel: the page shows the link once.
+  const shown = await h.form(`/app/action?name=pay.link.create&returnTo=/app/clients/${clientId}`, { clientId, purpose: 'card', delivery: 'shown' }, reception.cookie)
+  assert.equal(shown.status, 200, shown.text)
+  const token = shown.text.match(/href="https?:\/\/[^"]+\/pay\/([\w-]+)"/)[1], page = await h.send(`/pay/${token}`)
   assert.equal(page.status, 200)
   assert.match(page.text, /I authorize Riverside Physio to save this card/)
   assert.equal((await h.form(`/pay/${token}?do=card`, {})).status, 400)
