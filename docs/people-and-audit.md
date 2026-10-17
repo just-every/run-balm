@@ -9,7 +9,7 @@
 
 ## Sign in with Auth
 
-By default everyone signs in with an email link. A clinic that runs [Auth](https://run-auth.com), the open-source sign-in service from Run Edit Run, can link it so invited staff sign in with their Auth account (a passkey or Auth's own email link), and turning someone off in Auth signs them out of Balm too. Balm links only to Auth; Google Workspace, Microsoft 365 and Okta cannot be linked directly.
+By default everyone signs in with an email link. A clinic that runs [Auth](https://run-auth.com), the open-source sign-in service from Run Edit Run, can link it so invited staff sign in with their Auth account (a passkey or Auth's own email link), and turning someone off in Auth signs them out of Balm too. Balm links only to Auth; Google Workspace, Microsoft 365 and Okta cannot be linked to Balm directly, but Auth can pass sign-in on to them.
 
 Linking needs a deployed Balm and a deployed Auth, both at `https://` addresses:
 

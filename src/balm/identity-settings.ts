@@ -26,7 +26,7 @@ const notices: Record<string, [string, boolean]> = {
 }
 
 const what = '<p>A <strong>linked identity provider</strong> is a separate sign-in service your clinic runs for all its apps. Once linked, staff you invited to Balm can sign in with that one account (a passkey or Auth’s own email link) instead of waiting for Balm’s email link, and turning someone off there signs them out of Balm too.</p>'
-  + '<p><strong>Which providers work:</strong> Balm links to <a href="https://run-auth.com">Auth</a>, the open-source sign-in service from Run Edit Run, deployed to your own Cloudflare account. Google Workspace, Microsoft 365 and Okta cannot be linked directly. Without a provider, everyone signs in with email links, which always keeps working.</p>'
+  + '<p><strong>Which providers work:</strong> Balm links to <a href="https://run-auth.com">Auth</a>, the open-source sign-in service from Run Edit Run, deployed to your own Cloudflare account. Google Workspace, Microsoft 365 and Okta cannot be linked to Balm directly; Auth can pass sign-in on to them. Without a provider, everyone signs in with email links, which always keeps working.</p>'
 
 function steps(v: View) {
   // Base links only to a provider at an https address, so a Balm on this computer has nothing to link yet.
