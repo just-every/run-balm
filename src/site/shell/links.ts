@@ -2,5 +2,5 @@
 // "Try the demo" opens the hosted demo: a visitor's own throwaway clinic, signed in.
 import run from '../run.json'
 
-export const links = { home: '/', run: '/run', docs: '/docs', source: run.repository, demo: 'https://demo.run-balm.com/', licence: `${run.repository}/blob/main/LICENSE` }
+export const links = { home: '/', run: '/run', docs: '/docs', contract: '/contract', source: run.repository, demo: 'https://demo.run-balm.com/', licence: `${run.repository}/blob/main/LICENSE` }
 export const docsPath = (slug: string) => `/docs/${slug}`

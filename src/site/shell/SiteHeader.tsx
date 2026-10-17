@@ -3,7 +3,7 @@ import { links } from './links'
 /** The lockup: the mark and the "Balm" wordmark in the heading face. */
 export const Lockup = ({ light = false }: { light?: boolean }) => <a className="site-brand" href={links.home}><img src={light ? '/brand/mark-light.svg' : '/brand/mark.svg'} alt="" width="34" height="34" /><span>Balm</span></a>
 
-/** The header on every run-site page: the lockup on the left; Docs and Source on the right, one row on phones too.
+/** The header on every run-site page: the lockup on the left; Docs, Contract and Source on the right, one row on phones too.
  * `overArt` lays it over the homepage's painted hero. */
 export function SiteHeader({ current, overArt = false }: { current?: 'docs'; overArt?: boolean }) {
   return <header className={`site-header${overArt ? ' over-art' : ''}`}>
@@ -12,6 +12,7 @@ export function SiteHeader({ current, overArt = false }: { current?: 'docs'; ove
       <Lockup />
       <nav aria-label="Main">
         <a href={links.docs} aria-current={current === 'docs' ? 'page' : undefined}>Docs</a>
+        <a href={links.contract}>Contract</a>
         <a href={links.source}>Source</a>
       </nav>
     </div></div>
