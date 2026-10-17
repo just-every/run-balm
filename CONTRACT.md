@@ -368,9 +368,9 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 18 | offers the slot to your waitlist by text / Confirmed by text | `BALM-002`, `SCHED-005`, `COMM-002` | partial |
 | 19 | Patients fill in intake … from one link | `INTAKE-001` | done |
 | 20 | sign consent | `INTAKE-003` | partial |
-| 21 | add their insurance card | `INTAKE-004` | missing |
-| 22 | Their home exercises … live in the same portal | `PORTAL-001`, `PORTAL-002`, `PORTAL-007` | missing |
-| 23 | and messages | `PORTAL-003` | missing |
+| 21 | add their insurance card | `INTAKE-004` | partial |
+| 22 | Their home exercises … live in the same portal | `PORTAL-001`, `PORTAL-002`, `PORTAL-007` | partial |
+| 23 | and messages | `PORTAL-003` | partial |
 | 24 | PT, OT and speech templates for evaluations, daily notes, progress and discharge | `BALM-004`, `CHART-002` | partial |
 | 25 | The scribe drafts from the visit | `BALM-004`, `CHART-012` | partial |
 | 26 | you review and sign | `BALM-004`, `CHART-004`, `CHART-012` | partial |
@@ -398,7 +398,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 48 | keep every chart / Your charts, your database | `OWN-001`, `PORT-001` | partial |
 | 49 | Export everything, any time | `PORT-001` | done |
 | 50 | Telehealth: Video visits from the same calendar | `TELE-001` | missing |
-| 51 | Home exercise programs | `PORTAL-002`, `PORTAL-007` | missing |
+| 51 | Home exercise programs | `PORTAL-002`, `PORTAL-007` | partial |
 | 52 | Secure messaging | `PORTAL-003` | done |
 | 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | partial |
 | 54 | Plan of care signatures | `BALM-004`, `CHART-003` | partial |
@@ -408,13 +408,13 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 
 ## Status
 
-Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete.
+Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete. The intake and portal round (17 October 2026) adds signed treatment acknowledgment PDFs, insurance cards and verification, patient email sessions and practice-made home exercises; INTAKE-004, PORTAL-001 and PORTAL-002 move from missing to partial. The consent-to-chart and exercise-to-portal flows pass public-door tests and local/temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email; separate policy consents, guardian access and the shipped exercise library remain incomplete.
 
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 0 | 52 | 42 | 94 |
-| All | 15 | 52 | 42 | 109 |
+| Target and push further | 0 | 55 | 39 | 94 |
+| All | 15 | 55 | 39 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -440,12 +440,12 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `SCHED-010` | Practitioner capacity and double-booking | target | partial | `src/balm/domain/booking.ts`; `tests/balm.test.mjs` | The race-safe overlap refusal ships at a fixed capacity of one; no per-practitioner or per-service capacity, side-by-side overlapping visits, online double-booking setting, Medicare overlap warning or overlap-tolerant import |
 | `INTAKE-001` | One-use intake bound to its form version | published | done | `src/balm/domain/intake.ts`; `src/balm/http.ts`; `tests/balm.test.mjs` |  |
 | `INTAKE-002` | Intake packets and outcome questionnaires | target | partial | `src/balm/domain/intake.ts`; `src/balm/ui/intake.ts` | One versioned form, edited with a form builder, with four question types; no packets per service or scored outcome questionnaires |
-| `INTAKE-003` | Signed consents and policies | target | partial | `migrations/core/0015_balm.sql` | A required consent checkbox only; no signatures, guardian signer, fixed PDF or re-signing |
-| `INTAKE-004` | Insurance and identity capture | target | missing |  | No insurance policies, card photos or ID capture |
-| `PORTAL-001` | Patient portal | target | missing |  | No patient portal |
-| `PORTAL-002` | Home exercise programs | target | missing |  | No exercise library or home programs |
-| `PORTAL-003` | Secure messaging | target | partial | `src/balm/messages/`; `src/balm/ui/messages.ts`; `tests/reminders.test.mjs` | Patient and clinic exchange private messages with expiring, revocable links, clinical role checks and an append-only audit; generic email notices contain no clinical content. The patient page states the emergency advice. No attachments or front-desk routing yet. |
-| `PORTAL-004` | Statements, receipts and superbills in the portal | target | partial | `src/balm/ui/pay.ts`; `src/balm/payments/documents.ts`; `tests/payments.test.mjs` | The patient's private pay link shows the balance and statement, gives statement, receipt and superbill PDFs and takes payment; there is no signed-in portal holding every document |
+| `INTAKE-003` | Signed consents and policies | target | partial | `src/balm/intake/`; `tests/intake-portal.test.mjs` | A treatment/records acknowledgment is signed with a drawn or typed signature, patient/parent/guardian signer, time, IP and form/policy version; its fixed PDF is stored in the chart. Separate HIPAA, financial, cancellation, telehealth and SMS policies and version re-signing remain incomplete. |
+| `INTAKE-004` | Insurance and identity capture | target | partial | `src/balm/intake/`; `tests/intake-portal.test.mjs` | One insurance policy captures front/back photos and payer, member ID, group and subscriber fields; staff verify corrections. The install AI key can suggest fields without replacing them. No secondary policy, ID capture or eligibility. |
+| `PORTAL-001` | Patient portal | target | partial | `src/balm/portal/`; `src/balm/ui/portal.ts`; `tests/portal.test.mjs` | One-use emailed links create expiring patient-only sessions for visits, intake, home exercises, secure messages, statements, receipts and superbills. No guardian access, SMS sign-in or contact/insurance updates in the portal. Managed email sign-in is not available yet. |
+| `PORTAL-002` | Home exercise programs | target | partial | `src/balm/portal/programs.ts`; `src/balm/ui/portal-chart.ts`; `tests/portal.test.mjs` | Clinicians assign practice-made exercises with sets, reps, frequency, instructions and uploaded images; patients log daily completion and clinicians see adherence. No shipped library, note assignment, printable program PDF or pain log. |
+| `PORTAL-003` | Secure messaging | target | partial | `src/balm/messages/`; `src/balm/portal/data.ts`; `tests/portal.test.mjs`; `tests/reminders.test.mjs` | Patient and clinic exchange secure messages in the signed-in portal and private links, with clinical role checks and audit. Generic email notices contain no clinical content; the emergency advice is shown. No attachments or front-desk routing. |
+| `PORTAL-004` | Statements, receipts and superbills in the portal | target | partial | `src/balm/portal/data.ts`; `src/balm/payments/documents.ts`; `tests/portal.test.mjs`; `tests/payments.test.mjs` | The signed-in patient sees their ledger balance and downloads statements, card receipts and superbills, and opens the existing Stripe payment/card door when connected. Historical issued statement runs remain incomplete. |
 | `PORTAL-005` | Accessible, English and Spanish patient pages | target | missing |  | Patient pages are English only and unaudited against WCAG 2.2 AA |
 | `PORTAL-006` | Patient access to their record | target | missing |  | No record request workflow or FHIR export |
 | `PORTAL-007` | Shipped exercise library | target | missing |  | No exercise library ships |

@@ -40,6 +40,14 @@ To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every
 
 To remove someone's access at once, set them **Inactive** under **Clinic**. Erasing a client or staff member is only possible when they have no health records or clinic work; everyone else is kept, as health records must be.
 
+## Patient portal and signed intake
+
+Patients open `/portal` and request a sign-in link using the email on their patient file. A link can be used once and expires after 15 minutes; the patient session lasts eight hours. Shared email addresses need the clinic’s help: guardian access is not implemented yet. Local development suppresses email; self-hosted deployments send through the clinic’s configured mail provider. RER Managed portal email sign-in is not available yet.
+
+Intake accepts a drawn or typed treatment acknowledgment signature and front/back insurance card photos. The chart keeps the signed PDF with the signer, time, IP and form/policy version. Staff check the insurance fields before verifying them; **Read card with AI** uses the install’s key configured under **Clinic → Scribe**, and keeps its suggestions separate from the submitted fields.
+
+In the client file, clinicians assign their own home exercises with sets, reps, instructions and an uploaded image. The patient sees the program beside visits, intake forms, statements and secure messages, and marks exercises done; the chart shows the completed days. The shipped exercise library, program PDF, pain log, message attachments and separate policy consents remain incomplete.
+
 ## Back up and restore
 
 Stop the app first, and keep exports private: they contain health records. The `exports/` folder and every `.rer` file are git-ignored, so `git add .` never commits a backup; copy them somewhere encrypted that only you can open.

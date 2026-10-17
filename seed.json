@@ -98,9 +98,11 @@
       "/intake/*",
       "/signin",
       "/visit/*",
-      "/messages/*"
+      "/messages/*",
+      "/portal",
+      "/portal/*"
     ],
-    "notes": "Native sessions guard clinic pages and commands. Patient intake, visit-reply, secure-message, waitlist, physician and pay links authenticate through expiring private tokens."
+    "notes": "Native sessions guard clinic pages and commands. Patient intake, visit-reply, secure-message, waitlist, physician and pay links authenticate through expiring private tokens. The patient portal uses one-use emailed links and a separate expiring patient session."
   },
   "extensionPoints": {
     "contributions": [],

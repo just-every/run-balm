@@ -2,6 +2,8 @@
 // binds a response to its flow revision (src/core/features/responses/service.ts,
 // just-every/run-pencil @ 5469766). A token is a one-use bearer link.
 import { approvalStatements } from './approvals'
+import { intakeRecordStatements, type IntakeMetadata } from '../intake/records'
+import { CONSENT_TEXT, CONSENT_VERSION } from '../intake/input'
 import { audit, commit, guard, human, id, insist, need, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 export type Question = { id: string; label: string; type: 'short' | 'long' | 'yes' | 'date'; required: boolean }
@@ -43,10 +45,10 @@ async function byToken(db: D1Database, token: unknown) {
 export async function intakeView(db: D1Database, token: unknown) {
   const appointment = await byToken(db, token)
   const submitted = await one(db, 'SELECT submitted_at FROM bm_intake_responses WHERE appointment_id=?', appointment.id)
-  return { appointment, submittedAt: submitted?.submitted_at ?? null, form: submitted ? null : await currentForm(db) }
+  return { appointment, submittedAt: submitted?.submitted_at ?? null, form: submitted ? null : await currentForm(db), consent: { version: CONSENT_VERSION, text: CONSENT_TEXT } }
 }
 
-export async function submitIntake(db: D1Database, token: unknown, input: Data) {
+export async function submitIntake(db: D1Database, token: unknown, input: Data, metadata: IntakeMetadata = {}) {
   const appointment = await byToken(db, token)
   insist(!await one(db, 'SELECT 1 FROM bm_intake_responses WHERE appointment_id=?', appointment.id), 'intake_already_received', 409)
   const form = await currentForm(db)
@@ -66,11 +68,13 @@ export async function submitIntake(db: D1Database, token: unknown, input: Data) 
     if (q.type === 'date' && value) insist(/^\d{4}-\d\d-\d\d$/.test(value), `invalid_date_${q.id}`)
     if (value) answers[q.id] = value
   }
-  const responseId = id()
+  const responseId = id(), at = now()
+  const records = await intakeRecordStatements(db, appointment, form, answers, responseId, input, metadata, at)
   await commit(db, null, [
     guard(db, "NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE appointment_id=?) AND EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status<>'cancelled')", appointment.id, appointment.id),
     guard(db, '(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1)=?', form.id),
-    stmt(db, 'INSERT INTO bm_intake_responses(id,appointment_id,client_id,form_id,answers,submitted_at) VALUES(?,?,?,?,?,?)', responseId, appointment.id, appointment.client_id, form.id, JSON.stringify(answers), now()),
+    stmt(db, 'INSERT INTO bm_intake_responses(id,appointment_id,client_id,form_id,answers,submitted_at) VALUES(?,?,?,?,?,?)', responseId, appointment.id, appointment.client_id, form.id, JSON.stringify(answers), at),
+    ...records,
     audit(db, { email: 'intake link holder', role: 'client' }, 'intake.submitted', appointment.client_id as string, responseId, `form v${form.number}`),
   ])
   return { id: responseId }

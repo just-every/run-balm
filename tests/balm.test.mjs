@@ -37,7 +37,7 @@ test('intake answers reach only the treating practitioner and the owner, once, a
   const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
   const token = intakeToken(booked.location), page = await h.send(booked.location)
   assert.equal(page.status, 200); assert.ok(page.text.includes('What brings you in?'))
-  const answers = { formId: 'intake-v1', q_reason: 'Left knee pain when running', q_emergency: 'Sam Lee 0400 111 222', q_consent: 'yes' }
+  const answers = { formId: 'intake-v1', q_reason: 'Left knee pain when running', q_emergency: 'Sam Lee 0400 111 222', q_consent: 'yes', consentVersion: page.text.match(/name="consentVersion" value="([^"]+)"/)[1], consentAccepted: 'on', signerName: 'Maya Lee', signerRelationship: 'patient', signatureTyped: 'Maya Lee' }
   assert.equal((await h.form(`/intake/${token}`, { ...answers, q_consent: '' })).status, 400)
   assert.equal((await h.form(`/intake/${token}`, answers)).status, 303)
   assert.equal((await h.form(`/intake/${token}`, answers)).status, 409)

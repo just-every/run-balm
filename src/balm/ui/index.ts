@@ -19,6 +19,7 @@ import { desk, h, owner, zoneOf } from './shared'
 import { style } from './style'
 import { waitlist } from './waitlist'
 import { browserZoneScript, timeZoneStep } from './time-zone'
+import { intakeSignatureScript } from './intake-patient'
 
 type Notice = { message?: string; error?: string; result?: any; invited?: string | null; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
 
@@ -26,7 +27,7 @@ const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Arra
 /** `script` is one inline script the page runs, allowed by its hash alone. */
 async function documentFor(title: string, body: string, status: number, script = '', formTargets = '') {
   const frame = await themeFrame({ href: '/rer-theme.css', productName: branding.name, accentColor: branding.primaryColor })
-  const policy = frame.policy.replace("style-src 'self'", `style-src 'self' 'sha256-${await digest(style)}'`) + (script ? `; script-src 'sha256-${await digest(script)}'` : '')
+  const policy = frame.policy.replace("img-src 'self'", "img-src 'self' data:").replace("style-src 'self'", `style-src 'self' 'sha256-${await digest(style)}'`) + (script ? `; script-src 'sha256-${await digest(script)}'` : '')
   const html = `<!doctype html><html lang="en-US"${frame.htmlClass}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title>${fontHead}${frame.head}<style>${style}</style></head><body>${body.replace('{{brand}}', frame.brand)}${script ? `<script>${script}</script>` : ''}</body></html>`
   return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `default-src 'none'; ${policy}; base-uri 'none'; form-action 'self'${formTargets}; frame-ancestors 'none'`, 'referrer-policy': 'same-origin', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' } })
 }
@@ -62,5 +63,5 @@ export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | '
   const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : kind === 'visit' ? visitReplyPage(data) : kind === 'messages' ? patientMessagePage(data) : kind === 'local-link' ? localLinkPage() : kind === 'refused' ? refusedPage(data) : missingPage()
   const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span>${clinicName === branding.name ? '' : `<span class="identity">${h(clinicName)}</span>`}</header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
   // The pay page's forms continue on Stripe's own checkout page.
-  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : kind === 'visit' ? 'Your visit' : kind === 'messages' ? 'Secure messages' : kind === 'local-link' ? 'Open this link on this computer' : kind === 'refused' ? 'No access' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
+  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : kind === 'visit' ? 'Your visit' : kind === 'messages' ? 'Secure messages' : kind === 'local-link' ? 'Open this link on this computer' : kind === 'refused' ? 'No access' : 'Link not found'} · ${clinicName}`, body, status, kind === 'intake' ? intakeSignatureScript : '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
 }

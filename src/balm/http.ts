@@ -30,6 +30,9 @@ import { DomainError, human, insist, need } from './domain/model'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
 import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
 import { visitReply, visitReplyView } from './reminders/replies'
+import { portalResponse } from './portal/http'
+import { portalCommand, portalExercisesFor } from './portal'
+import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
@@ -45,7 +48,7 @@ async function state(env: Bindings, who: Actor) {
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
+  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -75,6 +78,9 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
+  if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
+  if (name === 'insurance.read') return readInsurance(env, who, input)
   if (name.startsWith('insurance.')) {
     if (name === 'insurance.batch.prepare' && !Array.isArray(input.claimIds)) input.claimIds = Object.keys(input).filter(k => k.startsWith('claim_') && input[k] === 'on').map(k => k.slice(6))
     if (name === 'insurance.payer.save' && typeof input.feeSchedule === 'string') input.fees = input.feeSchedule.split(/\r?\n/).filter(line => line.trim()).map(line => {
@@ -135,7 +141,14 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
     for (const [key, value] of await request.formData()) {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > 1_000_000) fail('The file is larger than 1,000,000 bytes. Export a smaller date range from Cliniko and import each file in turn.', 413)
-      if (value.size) { input[key] = await value.text(); input[key + 'Name'] = value.name }
+      if (value.size) {
+        if (key === 'exerciseImage') {
+          if (!['image/png', 'image/jpeg', 'image/webp'].includes(value.type)) fail('choose_a_png_jpeg_or_webp_image')
+          const bytes = new Uint8Array(await value.arrayBuffer())
+          let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
+          input.image = `data:${value.type};base64,${btoa(binary)}`
+        } else { input[key] = await value.text(); input[key + 'Name'] = value.name }
+      }
     }
     return input
   }
@@ -218,7 +231,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     try {
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
-        await submitIntake(env.DB, intake[1], await inputBody(request))
+        await submitIntake(env.DB, intake[1], await parseIntakeInput(request), { ip: request.headers.get('CF-Connecting-IP') ?? '' })
         return redirect(`/intake/${intake[1]}`)
       }
       return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), booked: url.searchParams.get('booked') === '1', mail: url.searchParams.get('mail') })
@@ -270,14 +283,17 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
 
 export async function balmResponse(request: Request, original: Bindings): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname
-  const isPublic = path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
-  if (!isPublic && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
+  const isPortal = path === '/portal' || path.startsWith('/portal/')
+  const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance)\/([\w-]+)(\.pdf|\/(front|back))$/)
+  const isPublic = isPortal || path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
+  if (!isPublic && !intakeDocumentPath && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
   let who: Actor | undefined
   const back = returnTarget(url.searchParams.get('returnTo') ?? '')
   try {
     if (url.origin !== env.AUTH_ORIGIN || (request.headers.has('host') && request.headers.get('host') !== url.host)) fail('wrong_application_origin', 403)
     if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Method not allowed' }, 405)
+    if (isPortal) return portalResponse(request, env)
     if (isPublic) return await publicResponse(request, env, path)
     // The agent door's schema, for assistants that import one; it holds no clinic data.
     if (path === '/api/balm/agent/openapi.json' && request.method === 'GET') return json(agentOpenApi(env.AUTH_ORIGIN))
@@ -286,6 +302,12 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
+      if (intakeDocumentPath) {
+        const [, kind, id, suffix, side] = intakeDocumentPath
+        if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side)) fail('not_found', 404)
+        const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
+        return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
+      }
       if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })

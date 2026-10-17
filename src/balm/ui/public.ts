@@ -3,6 +3,7 @@ import { localTime } from '../domain/invoices'
 import { h, money, usDate } from './shared'
 import { frequency } from './plans'
 import { zoneLabel } from './time-zone'
+import { intakePatientEnhancement } from './intake-patient'
 
 const option = (value: unknown, label: unknown, current: unknown) => `<option value="${h(value)}" ${value === current ? 'selected' : ''}>${h(label)}</option>`
 
@@ -55,7 +56,7 @@ export function intakePage(d: any) {
   const booked = d.booked ? `<div class="notice" role="status"><strong>You're booked.</strong> ${h(a.service_name)} with ${h(a.practitioner_name)} on ${h(when)}. ${d.mail === 'sent' ? 'We emailed you this private link.' : 'Keep this page’s address: it is your private link to the form.'}</div>` : ''
   if (d.submittedAt) return `${booked}<h1>Thank you, ${h(a.first_name)}</h1><p>${h(a.clinic_name)} received your intake form on ${h(localTime(d.submittedAt, a.time_zone))}. Your practitioner will read it before your visit.</p><p>Appointment: ${h(a.service_name)} with ${h(a.practitioner_name)}, ${h(when)}.</p>`
   return `${booked}<h1>Intake form</h1><p>Hello ${h(a.first_name)}. Please complete this before your ${h(a.service_name)} appointment with ${h(a.practitioner_name)} on ${h(when)}. Only your treating practitioner and the clinic owner can read your answers.</p>
-    <section class="panel"><h2>${h(d.form.title)}</h2><form method="post" action=""><input type="hidden" name="formId" value="${h(d.form.id)}">${d.form.questions.map(question).join('')}<button type="submit">Send my intake form</button></form></section>`
+    <section class="panel"><h2>${h(d.form.title)}</h2><form method="post" enctype="multipart/form-data" action=""><input type="hidden" name="formId" value="${h(d.form.id)}">${d.form.questions.map(question).join('')}${intakePatientEnhancement(d)}<button type="submit">Send my intake form</button></form></section>`
 }
 
 export function offerPage(d: any) {
