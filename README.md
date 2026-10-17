@@ -26,15 +26,15 @@ To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every
 
 ## Your first week
 
-1. **Clinic**: enter your clinic's name, time zone (an IANA name such as `America/Chicago`; it is fixed after the first booking), tax ID and address. Add a service with its length and price in cents (for example `9500` for $95.00). Add each practitioner with their profession and provider number, which appear on invoices, and any reception staff. If you treat clients yourself, add yourself as a practitioner using your own sign-in email. Under each practitioner, **Set weekly hours** (weekday 0 is Sunday; times are 24-hour clinic time).
-2. **Invite staff**: select **Invite to sign in** next to each person. To try a second person on this computer, open the terminal's `RER_OPEN` link in a separate browser profile first, then **Sign out** there. Back in your own browser, open **Local mail**, and open the invitation link in the second profile. A deployed Balm emails invitations instead.
+1. **Clinic**: enter your clinic's name, time zone (Balm fills in your browser's time zone; choose another from the list if needed), tax ID and address. Add a service with its length and price in cents (for example `9500` for $95.00). Add each practitioner with their profession and provider number, which appear on invoices, and any reception staff. If you treat clients yourself, add yourself as a practitioner using your own sign-in email. Under each practitioner, **Set weekly hours**: tick the days they work, and enter a start time, an end time and any break for each.
+2. **Invite staff**: select **Invite to sign in** next to each person. A deployed Balm emails the invitation, and it opens in any browser. On your computer, work as a staff member by running `rer dev --as person@example.com` (with their email) in the Balm folder and opening the `RER_OPEN` link it prints, in another browser or profile.
 3. **Online booking**: share `/book` on your app's address (`http://127.0.0.1:<port>/book` locally). A new client picks a service, a practitioner and an open time (at least two hours ahead, up to 60 days), enters their details and agrees to the clinic keeping their records. They land on their private intake link, which is also emailed to them. A slot someone else just took is refused.
 4. **Intake**: the client completes the form once. Their answers appear in the client file for their practitioner and the owner. Reception sees only that the form was received. Edit the questions under **Intake form**: you prepare a new version, then publish it.
-5. **Treatment notes**: the practitioner opens **Clients**, then the client's file, and writes a note against the appointment. Only that practitioner and the owner can read it. **Amend this note** keeps every earlier revision, with your reason.
+5. **Treatment notes**: the practitioner opens **Clients**, then the client's file, and writes a note against the appointment. Only that practitioner and the owner can read it. **Edit draft** keeps every earlier revision; once signed, a note changes only by **Add an addendum**.
 6. **Invoices**: after the visit, mark the appointment **attended** on the **Schedule**. In the client file, **Prepare invoice**; then reception or the owner reviews and **Approve and number invoice**. **Download invoice** always returns the same file, for the client to pay. Record payments you receive elsewhere with a unique reference.
 7. **Access audit**: as the owner, the bottom of every client file lists who opened the file, read intake answers or notes, changed something or downloaded an invoice, and when.
 
-**Move in** brings a patient list across from a [Cliniko patient export](docs/MOVE-IN.md): preview, apply, then read the journal, or undo the import. Try it with [the synthetic example](tests/fixtures/cliniko-patients.csv).
+**Move in** brings a patient list across from Cliniko: upload Cliniko's patient export file, check the preview table (dates of birth are read as US MM/DD/YYYY unless you choose another format, and a date that could be read either way is flagged), import it, read the journal, or undo the import. See [Move in from Cliniko](docs/MOVE-IN.md) and try it with [the synthetic example](tests/fixtures/cliniko-export-us.csv).
 
 **Agent access** creates a key so an assistant can prepare invoices, reminder text and intake form versions for a person to approve. Agents never read notes or intake answers. See the [agent commands](docs/AGENT-COMMANDS.md).
 
@@ -62,10 +62,17 @@ Clinic settings, staff, clients, appointments, intake answers, notes with all re
 
 ## Deploy to your own Cloudflare account
 
-You need a Cloudflare account, an API token for Workers and D1, and a verified sender address with [Resend](https://resend.com) for sign-in links and intake emails. No domain is needed: Balm runs on its workers.dev address, and a custom domain is optional.
+You need a Cloudflare account with an API token for Workers and D1, and a SendGrid or Resend account with a verified sender address. No domain is needed: Balm runs on its `workers.dev` address. The full steps, with where to find each value, are in [Deploy to your own Cloudflare account](docs/deploy.md).
 
-1. Set `MAIL_FROM` in `deploy.json` to your verified sender and commit that change.
-2. Provide these as environment variables from your secret manager (never in commands or files): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `OWNER_EMAIL`, `SESSION_SECRET`, `SETUP_TOKEN` and `MAIL_API_KEY`.
+1. Set up Balm on your computer with your own email as the owner (`npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com`, then `cd run-balm`).
+2. Provide these as environment variables from your secret manager, or in a private `chmod 600` file passed with `--env-file PATH` (never in commands or committed files):
+   - `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`;
+   - `MAIL_PROVIDER`: required, `sendgrid` or `resend`;
+   - `MAIL_API_KEY`: that provider's API key;
+   - `MAIL_FROM`: the sender address every Balm email comes from, verified with that provider;
+   - `OWNER_EMAIL` only if the hosted owner should differ from the one you set up.
+
+   rer generates `SESSION_SECRET` and `SETUP_TOKEN` itself and keeps them in `.rer/deploy/` (mode 0600).
 3. Check, then deploy:
 
 ```sh
@@ -73,11 +80,19 @@ rer deploy --dry-run
 rer deploy
 ```
 
-The dry run builds and validates without contacting Cloudflare. `rer deploy` creates the Worker and D1 database, applies the migrations, uploads the secrets, checks health and claims the owner. Open the printed address and sign in with the owner email. If mail is not working yet, `rer signin` recovers owner access. Keep the resource names in `wrangler.jsonc` and `deploy.json` unchanged.
+The dry run builds and validates without contacting Cloudflare and names any missing setting. `rer deploy` creates the Worker and D1 database, applies the migrations, uploads the settings as secrets, checks health and claims the owner. Open the printed address and sign in with the owner email. If mail is not working yet, `rer signin` recovers owner access. Keep the resource names in `wrangler.jsonc` and `deploy.json` unchanged. Add `--environment NAME` to every `rer deploy` command to run a separate copy.
+
+To remove the deployment (export first if you want its records), run:
+
+```sh
+rer deploy --remove --yes
+```
+
+It deletes the Worker and D1 database rer created for that environment, confirms each is gone, and touches nothing else.
 
 ## Develop
 
-Balm pins `@runeditrun/rer@0.2.37` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
+Balm pins `@runeditrun/rer@0.2.40` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
 
 ```sh
 pnpm run test:balm

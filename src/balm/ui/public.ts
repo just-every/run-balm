@@ -1,7 +1,7 @@
 // The two pages a client sees: online booking and the private intake link.
 import { localTime } from '../domain/invoices'
-import { h, money } from './shared'
-import { frequency, usDate } from './plans'
+import { h, money, usDate } from './shared'
+import { frequency } from './plans'
 
 const option = (value: unknown, label: unknown, current: unknown) => `<option value="${h(value)}" ${value === current ? 'selected' : ''}>${h(label)}</option>`
 
@@ -14,20 +14,29 @@ export function bookPage(d: any) {
     <label>Practitioner<select name="practitionerId" required><option value="">Choose a practitioner</option>${d.practitioners.map((s: any) => option(s.id, s.profession ? `${s.name} (${s.profession})` : s.name, p.practitionerId)).join('')}</select></label>
     <label>From date<input type="date" name="from" value="${h(p.from ?? '')}"></label><button type="submit">Show available times</button></form></section>`
   let times = ''
-  if (d.slots) {
+  if (d.slots && !d.retime) {
     const byDay = new Map<string, any[]>()
     for (const slot of d.slots.slots) byDay.set(slot.hostDate, [...(byDay.get(slot.hostDate) ?? []), slot])
     const link = (start: string) => `/book?${new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.from, start })}`
     times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic's time zone (${h(zone)}).</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
       <p><a href="/book?${h(new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.next }))}">Show the next week</a></p></section>`
   }
-  const details = p.start && d.slots ? `<section class="panel"><h2>3. Your details</h2><p>Booking <strong>${h(d.slots.service.name)}</strong> with <strong>${h(d.slots.practitioner.name)}</strong> on <strong>${h(localTime(p.start, zone))}</strong>.</p>
-    <form method="post" action="/book"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}"><input type="hidden" name="start" value="${h(p.start)}">
-    <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name"></label></div>
-    <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday"></label><label>Mobile (optional)<input name="phone" maxlength="40" autocomplete="tel"></label></div>
-    <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email"></label>
+  // After a refusal the patient's typed details come back filled in; a taken time is swapped for a list of open times.
+  const typed = d.typed ?? {}, value = (name: string) => h(typed[name] ?? '')
+  const retime = d.retime && d.slots
+  const timeChoice = retime ? (d.slots.slots.length
+    ? `<label>Time<select name="start" required><option value="">Choose another time</option>${d.slots.slots.map((s: any) => option(s.startAt, localTime(s.startAt, zone), '')).join('')}</select></label>`
+    : '<p class="empty">No other times are open this week. Choose another week above; your details stay here.</p>')
+    : `<input type="hidden" name="start" value="${h(p.start)}">`
+  const heading = retime ? `<p>Booking <strong>${h(d.slots.service.name)}</strong> with <strong>${h(d.slots.practitioner.name)}</strong>.</p>`
+    : `<p>Booking <strong>${h(d.slots?.service.name)}</strong> with <strong>${h(d.slots?.practitioner.name)}</strong> on <strong>${h(p.start ? localTime(p.start, zone) : '')}</strong>.</p>`
+  const details = (p.start || retime) && d.slots ? `<section class="panel" id="details"><h2>3. Your details</h2>${heading}
+    <form method="post" action="/book#details"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
+    <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" value="${value('firstName')}"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name" value="${value('lastName')}"></label></div>
+    <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
+    <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email" value="${value('email')}"></label>
     <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
-    <label class="check"><input type="checkbox" name="privacy" value="on" required><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>
+    <label class="check"><input type="checkbox" name="privacy" value="on" required${typed.privacy === 'on' ? ' checked' : ''}><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>
     <button type="submit">Book this appointment</button></form><p class="help">Next you will get a private link to your intake form.</p></section>` : ''
   return `<h1>Book an appointment</h1><p>New clients can book online. You will complete a short intake form before your first visit.</p>${chooser}${times}${details}`
 }
@@ -56,16 +65,21 @@ export function offerPage(d: any) {
     <form method="post" action=""><button type="submit">Book this time</button></form>`
 }
 
+/** Balm on this computer: a sign-in or invitation link opens only in a browser that already opened Balm with rer's link. */
+export const localLinkPage = () => `<h1>Open this link in a browser that already has Balm open</h1><p>This copy of Balm runs on this computer only. To keep other programs out, a sign-in or invitation link works only in a browser that first opened Balm with the link <code>rer dev</code> prints. The link itself is fine.</p>
+  <h2>To sign in as the invited person</h2><ol class="steps"><li>In the Balm folder, run <code>rer dev --as person@example.com</code>, with the email the invitation went to in place of person@example.com.</li><li>Open the <code>RER_OPEN</code> link it prints, in this browser. Balm opens signed in as that person.</li></ol>
+  <p>To use this invitation link instead, open the owner’s <code>RER_OPEN</code> link in this browser once, sign out, then open the invitation link again. Once Balm is hosted, invitation emails open in any browser.</p>`
+
 export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was canceled. Please contact the clinic.</p>'
 
 /** The referring physician's page: read the plan of care and sign it, no account needed. */
 export function planPage(d: any) {
-  if (d.status === 'certified') return `<h1>Plan of care signed</h1><p>Thank you, ${h(d.certifierName)}. You signed this plan of care on ${h(usDate(d.certifiedAt))}. The clinic has your certification; you can close this page.</p>`
+  if (d.status === 'certified') return `<h1>Plan of care signed</h1><p>Thank you, ${h(d.certifierName)}. You signed this plan of care on ${h(usDate(d.certifiedAt, d.timeZone))}. The clinic has your certification; you can close this page.</p>`
   const c = d.content
   return `<h1>Plan of care to sign</h1><p>${h(c.clinic.name)} asks you, ${h(d.physicianName)}, to review and certify this therapy plan of care.</p>
-    <section class="panel"><h2>${h(c.patient.name)}</h2><p>${c.patient.dateOfBirth ? `Date of birth ${h(usDate(c.patient.dateOfBirth))}<br>` : ''}${h(c.clinic.name)}${c.clinic.address ? ` · ${h(c.clinic.address)}` : ''}</p>
+    <section class="panel"><h2>${h(c.patient.name)}</h2><p>${c.patient.dateOfBirth ? `Date of birth ${h(usDate(c.patient.dateOfBirth, d.timeZone))}<br>` : ''}${h(c.clinic.name)}${c.clinic.address ? ` · ${h(c.clinic.address)}` : ''}</p>
     <dl class="answers"><dt>Diagnoses</dt><dd>${h(c.diagnoses)}</dd><dt>Short-term goals</dt><dd>${h(c.shortTermGoals)}</dd><dt>Long-term goals</dt><dd>${h(c.longTermGoals)}</dd>
-    <dt>Frequency and duration</dt><dd>${h(frequency(c))}, starting ${h(usDate(c.startDate))}</dd><dt>Certification period</dt><dd>${h(usDate(c.startDate))} to ${h(usDate(c.certifiedThrough))}</dd><dt>Planned interventions</dt><dd>${h(c.interventions)}</dd></dl>
+    <dt>Frequency and duration</dt><dd>${h(frequency(c))}, starting ${h(usDate(c.startDate, d.timeZone))}</dd><dt>Certification period</dt><dd>${h(usDate(c.startDate, d.timeZone))} to ${h(usDate(c.certifiedThrough, d.timeZone))}</dd><dt>Planned interventions</dt><dd>${h(c.interventions)}</dd></dl>
     <p>Signed by the treating therapist <strong>${h(c.therapist.name)}, ${h(c.therapist.credentials)}</strong>.</p></section>
     <section class="panel"><h2>Sign</h2><form method="post" action=""><div class="pair"><label>Your full name<input name="name" required maxlength="160" autocomplete="name"></label><label>Credentials<input name="credentials" required maxlength="40" placeholder="MD, DO, NP or PA-C"></label></div>
     <label>NPI (optional)<input name="npi" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></label>

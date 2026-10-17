@@ -3,7 +3,7 @@ import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
-import { clientName, desk, empty, entry, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
+import { cancelForm, clientName, desk, empty, entry, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
 function setupChecklist(s: any) {
   const steps: [boolean, string][] = [
@@ -57,9 +57,9 @@ function selectedPanel(s: any, c: any, notice: any) {
     actions += started ? `<div class="actions">${form('appointment.attend', back, hidden('id', a.id), 'Mark attended')}${form('appointment.no_show', back, hidden('id', a.id), 'Did not attend', true)}</div>` : ''
     actions += `<details open><summary>Move this visit</summary>${form('appointment.move', back, hidden('id', a.id) + hidden('version', a.version) + moveFields(s, c, a), 'Move visit')}</details>`
     if (a.series && a.series.remaining > 1) actions += `<details><summary>Move this and the later visits in the series (${a.series.remaining})</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + moveFields(s, c, a, 'rest'), `Move ${a.series.remaining} visits`)}<p class="help">Each keeps its date. If any would overlap or fall outside hours, nothing moves and the dates are listed.</p></details>`
-    actions += `<div class="actions">${form('appointment.cancel', calendarLink(c), hidden('id', a.id), 'Cancel this visit', true)}${a.series && a.series.remaining > 1 ? form('series.cancel_rest', calendarLink(c), hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, true) : ''}</div><p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
+    actions += `${cancelForm('appointment.cancel', calendarLink(c), hidden('id', a.id), 'Cancel this visit', 'Cancel visit', a.client)}${a.series && a.series.remaining > 1 ? cancelForm('series.cancel_rest', calendarLink(c), hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, `Cancel ${a.series.remaining} visits`, a.client, a.series.remaining) : ''}<p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
   }
-  return `<div id="visit">` + panel('Selected visit', `${conflicts(c, notice)}<p><strong>${h(a.client)}</strong><br>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${when(s, a.start_at)}</p><p>${status(statusLabel[a.status] ?? a.status)} ${a.booked_via === 'online' ? status(a.offer_id ? 'From the waitlist' : 'Booked online') : ''} ${noteChip(a)} ${planChip(a)}</p>${series}<p><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p>${actions}`) + '</div>'
+  return `<div id="visit">` + panel('Selected visit', `${conflicts(c, notice)}<p><strong>${h(a.client)}</strong><br>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${when(s, a.start_at)}</p><p>${status(statusLabel[a.status] ?? a.status)} ${a.booked_via === 'online' ? status(a.offer_id ? 'From the waitlist' : 'Booked online') : ''} ${noteChip(a)} ${planChip(s, a)}</p>${series}<p><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p>${actions}`) + '</div>'
 }
 
 function bookPanel(s: any, c: any, notice: any) {
@@ -77,7 +77,7 @@ function bookPanel(s: any, c: any, notice: any) {
 
 function listPanel(s: any, c: any) {
   const items = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a))).map((a: any) => entry(`${new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at))} · ${a.client}`,
-    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(a)}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
+    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
   return panel(c.view === 'week' ? 'This week as a list' : 'This day as a list', notesTally(c.appointments) + (items || empty('No visits.')))
 }
 

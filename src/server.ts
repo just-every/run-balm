@@ -10,6 +10,7 @@ import { setupStateResponse } from './base/setup-state'
 import { authResponse, runtimeBindings, type Bindings } from './auth.server'
 import { identity } from './identity'
 import { balmResponse } from './balm/http'
+import { localLinkResponse } from './balm/local-link'
 import { seedDemo } from './demo'
 
 const api = new Hono<{ Bindings: Bindings }>()
@@ -28,6 +29,8 @@ export default withDemo<Bindings, ExportedHandler<Bindings>>({
   async fetch(request, env, execution) {
     const asset = await staticAssetResponse(request, env)
     if (asset) return asset
+    const local = await localLinkResponse(request, runtimeBindings(env))
+    if (local) return local
     const auth = await authResponse(request, env)
     if (auth) return auth
     const app = await balmResponse(request, env)

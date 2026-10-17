@@ -1,0 +1,77 @@
+// What a person reads when Balm refuses something. Commands refuse with a stable
+// code (the JSON doors return it as `code`); pages show the sentence for it.
+const sentences: Record<string, string> = {
+  slot_unavailable: 'Sorry, that time was just taken. Choose another time; your details are kept.',
+  time_taken: 'That time is already booked. Choose another time.',
+  online_booking_closed: 'Online booking is closed. Please contact the clinic.',
+  too_many_online_bookings: 'Too many bookings were made from here recently. Please contact the clinic.',
+  booking_refused: 'This booking could not be made. Please contact the clinic.',
+  privacy_acknowledgement_required: 'Tick the box to agree to how the clinic keeps your details.',
+  invalid_start: 'Choose a time from the list.',
+  invalid_time: 'Enter a time.',
+  invalid_email: 'Enter a valid email address.',
+  invalid_first_name: 'Enter a first name.',
+  invalid_last_name: 'Enter a last name.',
+  invalid_date_of_birth: 'Enter a valid date of birth.',
+  invalid_date: 'Enter a valid date.',
+  invalid_name: 'Enter a name.',
+  invalid_clinic_name: 'Enter the clinic’s name.',
+  invalid_time_zone: 'Choose a time zone from the list.',
+  confirm_the_time_zone_change: 'Upcoming visits will show at new clock times in the new time zone. Tick the box under Time zone to confirm the change.',
+  payment_reference_used: 'That payment reference is already recorded. Check the payment was not entered twice, or use the reference from your bank or card statement.',
+  email_already_used: 'Someone on the staff list already uses that email address.',
+  role_cannot_do_this: 'Your role cannot do this.',
+  only_the_owner_imports: 'Only the clinic owner can move patients in.',
+  only_the_owner_manages_access: 'Only the clinic owner can manage access.',
+  a_person_must_approve: 'A signed-in person has to approve this; an agent key can only prepare it.',
+  sign_in_required: 'Sign in to continue.',
+  changed_refresh_and_retry: 'Someone changed this at the same time. Refresh the page and try again.',
+  owner_access_changed: 'Your access changed. Refresh the page and try again.',
+  cross_site_request_refused: 'This form was sent from another site, so it was refused. Open the page again and resend it.',
+  already_decided: 'This was already approved or decided.',
+  overlapping_hours: 'Two blocks of hours on the same day overlap.',
+  invalid_hours: 'Check the weekly hours: each block needs a start before its end.',
+  practitioner_not_found: 'That practitioner is no longer on the staff list.',
+  practitioners_book_their_own_diary: 'Practitioners can only book visits in their own diary.',
+  appointment_not_booked: 'This visit is no longer booked.',
+  appointment_not_found: 'That visit was not found.',
+  client_not_found: 'That client was not found.',
+  client_has_no_email: 'This client has no email address. Add one to their file first.',
+  client_needs_an_email_for_offers: 'Waitlist offers go by email: add the client’s email address first.',
+  intake_already_received: 'This intake form was already sent. Thank you.',
+  intake_form_changed_reload: 'The clinic just updated its intake form. Reload the page to see the current questions.',
+  intake_link_not_found: 'This link is not available.',
+  invalid_questions: 'Check the questions: each needs its wording and an answer type.',
+  invalid_question_id: 'Two questions ended up with the same id. Change the wording of one of them.',
+  invalid_question_type: 'Choose an answer type for each question.',
+  draft_not_found: 'That draft was not found.',
+  invoice_needs_an_attended_appointment: 'Mark the visit attended before preparing its invoice.',
+  invoice_facts_changed_prepare_again: 'The visit changed since this invoice was prepared. Prepare it again.',
+  this_invoice_is_already_paid: 'This invoice is already paid.',
+  only_unused_uninvited_staff_can_be_erased: 'Only staff never invited and never used in clinic work can be erased. Set them inactive instead.',
+  activate_the_staff_member_before_inviting: 'Set the staff member active before inviting them.',
+  outside_practitioner_hours: 'That time is outside the practitioner’s weekly hours.',
+  practitioner_already_booked: 'The practitioner already has a visit at that time.',
+  room_in_use: 'That room is booked at that time.',
+  start_too_far_in_past: 'That time has already passed.',
+  series_has_conflicts: 'Some dates in this series need a new time or to be skipped first.',
+  review_fingerprint_mismatch: 'The file or your clinic changed since the preview. Preview the file again before importing.',
+  import_conflict: 'This import conflicts with records changed since. Read the journal: later edits are kept.',
+  import_job_not_found: 'That import was not found.',
+  request_too_large: 'That is too large to send in one go.',
+  use_json_or_a_form: 'Send this as a form.',
+  wrong_application_origin: 'This address is not the clinic’s Balm address.',
+  link_expired: 'This link has expired. Ask the clinic for a new one.',
+  link_not_found: 'This link is not available.',
+}
+
+/** The sentence for a refusal code; a refusal that is already a sentence passes through. */
+export function plain(code: string): string {
+  if (sentences[code]) return sentences[code]
+  const answer = code.match(/^(answer_required|answer_too_long|invalid_date)_(.+)$/)
+  if (answer) return answer[1] === 'answer_required' ? 'Please answer every required question.' : answer[1] === 'answer_too_long' ? 'One of your answers is too long.' : 'Enter dates with the date picker.'
+  if (!/^[a-z0-9_]+$/.test(code)) return code
+  // Codes written as words (for example "tick_the_authorization_to_save_a_card") read as a sentence.
+  const words = code.replace(/^invalid_/, 'check the ').replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1) + '.'
+}

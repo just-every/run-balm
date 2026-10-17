@@ -11,11 +11,12 @@ import { receiptPdf, statementPdf, superbillFacts, superbillPdf } from './docume
 import { ledger, parseDollars, receiptNumber } from './ledger'
 import { linkFor, linkUrl } from './links'
 import { unseal, verifySignature } from './stripe-api'
+import { plain } from '../refusals'
 
 const patient = { email: 'patient link', role: 'patient' }
 const noStore = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const pdfResponse = (doc: { name: string; bytes: Uint8Array<ArrayBuffer> }) => new Response(doc.bytes, { headers: { ...noStore, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
-const failureText = (error: unknown) => { const status = Number((error as any)?.status) || 500; return { status, text: status < 500 ? String((error as Error).message).replace(/_/g, ' ') : 'Something went wrong. Refresh and try again.' } }
+const failureText = (error: unknown) => { const status = Number((error as any)?.status) || 500; return { status, text: status < 500 ? plain(String((error as Error).message)) : 'Something went wrong. Refresh and try again.' } }
 
 /** Bring this link's unfinished Stripe sessions up to date (the patient may have closed the tab). */
 async function syncLink(env: Bindings, db: D1Database, link: any, url: URL) {

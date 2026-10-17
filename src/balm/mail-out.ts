@@ -50,3 +50,15 @@ export async function sendPlanLink(env: Bindings, to: string, token: string): Pr
   return send(env, to, `Plan of care to sign from ${clinic!.clinic_name}`,
     `Hello,\n\n${clinic!.clinic_name} asks you to review and sign a therapy plan of care for a patient you referred.\n\nOpen the plan and sign it here (no account needed):\n${link(env, '/plan/' + token)}\n\nThis link is private to you and expires in 30 days.\n`)
 }
+
+/** The patient hears when the clinic cancels their visit; a series' canceled dates go in one message. */
+export async function sendCanceled(env: Bindings, appointmentIds: string[]): Promise<Delivery> {
+  if (!appointmentIds.length) return 'no_email'
+  const list = (await env.DB.prepare(`SELECT a.start_at,c.email,c.first_name,s.name AS service,p.name AS practitioner FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id
+    JOIN bm_services s ON s.id=a.service_id JOIN bm_staff p ON p.id=a.practitioner_id WHERE a.id IN (${appointmentIds.map(() => '?').join(',')}) ORDER BY a.start_at`).bind(...appointmentIds).all<any>()).results
+  if (!list.length) return 'no_email'
+  const clinic = await clinicRow(env), first = list[0]
+  const visits = list.map(v => `${v.service} with ${v.practitioner} on ${localTime(v.start_at, clinic!.time_zone)}`).join('\n')
+  return send(env, first.email, `Your appointment at ${clinic!.clinic_name} is canceled`,
+    `Hello ${first.first_name},\n\n${clinic!.clinic_name} has canceled ${list.length === 1 ? 'your appointment' : 'these appointments'}:\n${visits}\n\nPlease contact the clinic to book a new time.\n`)
+}

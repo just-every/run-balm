@@ -47,12 +47,12 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
   return { id: invoiceId, status: 'draft', snapshot: value }
 }
 
-/** The downloadable bytes an approval fixes. */
-export function artifact(number: number, value: any, approvedAt: string) {
+/** The downloadable bytes an approval fixes; the issue date is the clinic-local date of approval (the demo's sample invoices pass no zone and date in UTC). */
+export function artifact(number: number, value: any, approvedAt: string, zone = 'UTC') {
   const line = (label: string, v: unknown) => v ? `<p><strong>${escape(label)}:</strong> ${escape(v)}</p>` : ''
   return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><title>${invoiceNumber(number)}</title>`
     + '<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1d2a26}table{width:100%;border-collapse:collapse;margin:24px 0}td,th{border-bottom:1px solid #ccd;padding:8px;text-align:left}td:last-child,th:last-child{text-align:right}</style></head><body>'
-    + `<h1>Invoice ${invoiceNumber(number)}</h1><p>Issued ${escape(approvedAt.slice(0, 10))}</p>`
+    + `<h1>Invoice ${invoiceNumber(number)}</h1><p>Issued ${escape(new Intl.DateTimeFormat('en-US', { timeZone: zone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(approvedAt)))}</p>`
     + `<h2>${escape(value.clinic.name)}</h2>${line('Tax ID', value.clinic.abn)}${line('Address', value.clinic.address)}`
     + `<h2>Client</h2>${line('Name', value.client.name)}${line('Date of birth', value.client.dateOfBirth)}`
     + `<h2>Provider</h2>${line('Practitioner', value.practitioner.name)}${line('Profession', value.practitioner.profession)}${line('Provider number', value.practitioner.providerNumber)}`
@@ -72,7 +72,7 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
   const { row, value } = await snapshot(db, invoice.appointment_id as string, invoice.amount_cents as number)
   insist(row.status === 'attended' && JSON.stringify(value) === invoice.snapshot, 'invoice_facts_changed_prepare_again', 409)
   const number = ((await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_invoices'))?.n ?? 0) + 1
-  const approvedAt = now(), bytes = artifact(number, value, approvedAt)
+  const approvedAt = now(), bytes = artifact(number, value, approvedAt, row.time_zone as string)
   await commit(db, who, [
     stmt(db, "UPDATE bm_invoices SET status='approved',number=?,artifact=?,artifact_sha256=?,approved_by=?,approved_at=?,version=version+1 WHERE id=? AND status='draft' AND version=?",
       number, bytes, await sha256(bytes), who.email, approvedAt, invoice.id, invoice.version),

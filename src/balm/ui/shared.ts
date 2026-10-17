@@ -12,6 +12,9 @@ export const textarea = (name: string, label: string, value: unknown = '', attrs
 export const select = (name: string, label: string, choices: [unknown, unknown][], value: unknown = '', attrs = 'required') => `<label>${h(label)}<select name="${h(name)}" ${attrs}>${choices.map(([id, text]) => `<option value="${h(id)}" ${id === value ? 'selected' : ''}>${h(text)}</option>`).join('')}</select></label>`
 export const check = (name: string, label: string, attrs = 'required') => `<label class="check"><input type="checkbox" name="${h(name)}" value="on" ${attrs}><span>${h(label)}</span></label>`
 export const form = (command: string, path: string, body: string, button: string, secondary = false) => `<form method="post" action="/app/action?name=${encodeURIComponent(command)}&amp;returnTo=${encodeURIComponent(path)}">${body}<button type="submit"${secondary ? ' class="secondary"' : ''}>${h(button)}</button></form>`
+/** A cancel button that first asks: the person ticks to confirm, and is told who gets emailed. */
+export const cancelForm = (command: string, path: string, fields: string, summary: string, button: string, client: string, count = 1) => `<details class="confirm"><summary>${h(summary)}</summary>${form(command, path, fields
+  + `<label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel ${count === 1 ? 'this visit' : `these ${count} visits`}. Balm emails ${h(client)} that ${count === 1 ? 'it is' : 'they are'} canceled, if their file has an email address.</span></label>`, button, true)}</details>`
 export const panel = (title: string, body: string, extra = '') => `<section class="panel${extra ? ' ' + extra : ''}"><h2>${h(title)}</h2>${body}</section>`
 export const empty = (message: string) => `<p class="empty">${h(message)}</p>`
 export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2))}</pre>`
@@ -19,12 +22,22 @@ export const status = (value: unknown) => `<span class="status">${h(String(value
 export const entry = (title: string, body: string) => `<article class="entry"><h3>${h(title)}</h3>${body}</article>`
 export const result = (notice: any) => notice.result?.result ?? notice.result
 export const money = (cents: unknown) => `${Number(cents ?? 0) < 0 ? '-' : ''}$${(Math.abs(Number(cents ?? 0)) / 100).toFixed(2)}`
-/** An instant in the clinic's time zone. */
-export const when = (s: any, iso: unknown) => iso ? `<time datetime="${h(iso)}">${h(localTime(String(iso), s.settings?.time_zone ?? 'Australia/Brisbane'))}</time>` : '—'
-export const stamp = (value: unknown) => {
+/** The clinic's IANA time zone; every date and time on a page is shown in it. */
+export const zoneOf = (s: any): string => s.settings.time_zone
+/** An instant in the clinic's time zone, with the weekday. */
+export const when = (s: any, iso: unknown) => iso ? `<time datetime="${h(iso)}">${h(localTime(String(iso), zoneOf(s)))}</time>` : '—'
+/** A recorded moment (an ISO string or epoch milliseconds) in the clinic's time zone, for example Oct 16, 2026, 10:28 PM CDT. */
+export const stamp = (s: any, value: unknown) => {
   if (!value) return '—'
   const iso = typeof value === 'number' ? new Date(value).toISOString() : String(value)
-  return `<time datetime="${h(iso)}">${h(iso.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC').replace(/Z$/, ' UTC'))}</time>`
+  const text = new Intl.DateTimeFormat('en-US', { timeZone: zoneOf(s), month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
+  return `<time datetime="${h(iso)}">${h(text)}</time>`
+}
+/** A calendar date (YYYY-MM-DD) as is, or the clinic-local date of an instant: Oct 16, 2026. */
+export const usDate = (value: unknown, zone: string) => {
+  if (!value) return '—'
+  const plain = /^\d{4}-\d\d-\d\d$/.test(String(value))
+  return new Intl.DateTimeFormat('en-US', { timeZone: plain ? 'UTC' : zone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(plain ? value + 'T00:00:00Z' : String(value)))
 }
 export const clientName = (c: any) => `${c.first_name} ${c.last_name}`
 export const services = (s: any) => rows(s, 'services').filter(x => x.active)

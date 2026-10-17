@@ -67,6 +67,7 @@ test('a canceled visit is offered to the waitlist by email; the first to accept 
   const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId }, h.owner)
   assert.equal(cancelled.status, 303)
   assert.match(cancelled.location, /offered=2$/)
+  assert.ok((await outbox(h)).some(m => m.to.includes('ava@client.example') && m.subject.endsWith('is canceled')), 'the patient is told by email')
   const offers = (await outbox(h)).filter(m => m.subject.startsWith('A time opened up'))
   assert.deepEqual(offers.map(m => m.to[0]).sort(), ['ben@client.example', 'cara@client.example'], 'only entries whose practitioner fits')
   const link = email => new URL(offers.find(m => m.to.includes(email)).text.match(/http:\/\/\S+\/offer\/[\w-]+/)[0]).pathname

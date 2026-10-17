@@ -101,7 +101,7 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     const dictation = 'Pt reports L knee 3/10 after stairs. Ther ex 23 min SLR 3x10. Manual 10 min patellar mobs. Progress step height.'
     const ask = { clientId: client.id, appointmentId: visit, template: 'pt.daily', dictation }
     const missing = await h.send('/api/balm/command', { name: 'note.scribe', input: ask }, priya.cookie)
-    assert.deepEqual([missing.status, missing.value.error], [409, 'add a key to use the scribe'])
+    assert.deepEqual([missing.status, missing.value.code], [409, 'add_a_key_to_use_the_scribe'])
     assert.equal(seen.length, 0)
     await h.cmd('scribe.save', { provider: 'anthropic', key: 'sk-ant-test-key-4242' }, priya.cookie, 403)
     await h.cmd('scribe.save', { provider: 'anthropic', key: 'sk-ant-test-key-4242' })

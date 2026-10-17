@@ -10,9 +10,12 @@ import { invoiceDownload } from './domain/invoices'
 import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices } from './domain/waitlist'
 import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
-import { sendIntake, sendOffer, sendPlanLink, sendTaken } from './mail-out'
+import { sendCanceled, sendIntake, sendOffer, sendPlanLink, sendTaken } from './mail-out'
 import { scribeCommand, scribeStatus } from './scribe'
-import { importCommand } from './movein'
+import { importCommand, importOriginal } from './movein'
+import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
+import { plain } from './refusals'
+import { hostDateAt } from './availability/timezone'
 import { agentKeys, credentialCommand, fail, principal } from './credentials'
 import { clientBilling, paymentCommand, paymentsState } from './payments'
 import { WEBHOOK_PATH } from './payments/connect'
@@ -28,7 +31,7 @@ async function state(env: Bindings, who: Actor) {
   const importJobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const localMail = env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' && who.role === 'owner'
   const developmentMail = localMail ? (await env.DB.prepare('SELECT id,created_at AS createdAt,message FROM rer_mail_development_outbox ORDER BY sequence DESC LIMIT 100').all()).results.map((row: any) => ({ id: row.id, createdAt: row.createdAt, ...JSON.parse(row.message) })) : []
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), importJobs, localMail, developmentMail, scribe: await scribeStatus(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', localMail, developmentMail, scribe: await scribeStatus(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -75,12 +78,26 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   }
   const result: any = await command(env.DB, who, name, input)
   if (name === 'appointment.book' || name === 'series.book') result.mail = await sendIntake(env, String(input.clientId), result.token, result.startAt)
-  if (name === 'appointment.cancel') result.waitlist = await offerFreed(env, [result.id])
-  if (name === 'series.cancel_rest') result.waitlist = await offerFreed(env, result.cancelled)
+  if (name === 'appointment.cancel' || name === 'series.cancel_rest') {
+    const canceled: string[] = name === 'appointment.cancel' ? [result.id] : result.cancelled
+    result.mail = await sendCanceled(env, canceled)
+    result.waitlist = await offerFreed(env, canceled)
+  }
   return result
 }
 
 async function inputBody(request: Request): Promise<Record<string, unknown>> {
+  // An uploaded file (Move in) arrives as its text, with its name beside it.
+  if (request.headers.get('content-type')?.includes('multipart/form-data')) {
+    if (Number(request.headers.get('content-length') ?? 0) > 2_100_000) fail('request_too_large', 413)
+    const input: Record<string, unknown> = {}
+    for (const [key, value] of await request.formData()) {
+      if (typeof value === 'string') { input[key] = value; continue }
+      if (value.size > 1_000_000) fail('The file is larger than 1,000,000 bytes. Export a smaller date range from Cliniko and import each file in turn.', 413)
+      if (value.size) { input[key] = await value.text(); input[key + 'Name'] = value.name }
+    }
+    return input
+  }
   const raw = await request.text()
   if (new TextEncoder().encode(raw).length > 2_100_000) fail('request_too_large', 413)
   if (request.headers.get('content-type')?.includes('application/json')) {
@@ -95,7 +112,7 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
 const sameOrigin = (request: Request, env: Bindings) => request.headers.get('origin') === env.AUTH_ORIGIN && request.headers.get('sec-fetch-site') !== 'cross-site'
 const message = (error: unknown) => {
   const status = Number((error as any)?.status) || 500
-  return { status, text: status < 500 ? String((error as Error).message).replace(/_/g, ' ') : 'Could not complete this change. Refresh and try again.' }
+  return { status, text: status < 500 ? plain(String((error as Error).message)) : 'Could not complete this change. Refresh and try again.' }
 }
 
 async function publicResponse(request: Request, env: Bindings, path: string): Promise<Response | null> {
@@ -106,16 +123,23 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     const options = { clinic, services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 ORDER BY name').all()).results,
       practitioners: (await env.DB.prepare("SELECT id,name,profession FROM bm_staff WHERE role='practitioner' AND active=1 AND erased_at IS NULL ORDER BY name").all()).results }
     if (request.method === 'POST') {
+      let input: Record<string, unknown> = {}
       try {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
-        const input = await inputBody(request)
+        input = await inputBody(request)
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
         const mail = await sendIntake(env, booked.clientId, booked.token, booked.startAt)
         return redirect(`/intake/${booked.token}?booked=1&mail=${mail}`)
       } catch (error) {
-        const failure = message(error)
-        return renderPublic('book', { ...options, params, error: failure.text }, failure.status)
+        const failure = message(error), code = (error as any)?.code ?? (error as Error)?.message
+        // The patient's details come back filled in; a taken or missing time offers the open times instead.
+        const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
+        const chosen = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
+        const retime = code === 'slot_unavailable' || code === 'invalid_start' || !chosen.start
+        const from = Number.isNaN(Date.parse(chosen.start)) ? undefined : hostDateAt(new Date(chosen.start), clinic!.time_zone)
+        const slots = chosen.serviceId && chosen.practitionerId ? await openSlots(env.DB, { ...chosen, from }).catch(() => null) : null
+        return renderPublic('book', { ...options, params: chosen, slots, typed, retime, error: failure.text }, failure.status)
       }
     }
     let slots = null, error = ''
@@ -209,6 +233,12 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       }
       const document = await paymentDocument(env.DB, who, path)
       if (document) return document
+      const original = path.match(/^\/api\/balm\/imports\/([\w-]+)\/original\.csv$/)
+      if (original) {
+        if (who.role !== 'owner') fail('only_the_owner_imports', 403)
+        const file = await importOriginal(env.DB, who, original[1])
+        return new Response(file.bytes, { headers: { ...headers, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="cliniko-import-${original[1].slice(0, 12)}.csv"` } })
+      }
       const reminder = path.match(/^\/api\/balm\/reminders\/([\w-]+)\.txt$/)
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
@@ -219,6 +249,15 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })
         }
         for (const key of ['amountCents', 'durationMinutes', 'priceCents', 'version', 'revision', 'noteId']) if (input[key] === '') delete input[key]
+        if (name === 'hours.save' && input.hoursForm === 'on') input.hours = hoursFromForm(input)
+        if (name === 'intake.prepare' && 'questionCount' in input) {
+          // Builder edits (move, remove, add) only redraw the form; preparing saves the draft.
+          const rows = builderRows(input), builder = { title: String(input.title ?? ''), rows }
+          if (typeof input.edit === 'string' && input.edit) return await page(env, who, '/app/intake', { builder: { ...builder, rows: editRows(rows, input.edit) } })
+          try { input.questions = questionsFromRows(rows) } catch (error) { return await page(env, who, '/app/intake', { error: message(error).text, builder }, 400) }
+        }
+        if (name === 'import.preview' && typeof input.file === 'string') input.csv = input.file
+        if ((name === 'import.preview' || name === 'import.apply') && typeof input.csvBase64 === 'string') input.csv = fileFromField(input.csvBase64)
         const result = await execute(request, env, who, name, input)
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
@@ -226,7 +265,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           const offered = (result as any)?.waitlist?.people
           return redirect(offered && back.startsWith('/app?') ? `${back}&offered=${offered}` : offered && back === '/app' ? `/app?offered=${offered}` : back)
         }
-        return await page(env, who, back, { ...(name === 'series.preview' ? {} : { message: 'Saved.' }), result: name === 'import.preview' ? { ...(result as object), csv: input.csv } : result })
+        return await page(env, who, back, { ...(['series.preview', 'import.preview', 'import.journal'].includes(name) ? {} : { message: 'Saved.' }), result: name === 'import.preview' ? { ...(result as object), csv: input.csv } : result })
       }
       if (path === '/api/balm/command' || path === '/api/balm/agent/command') {
         const body = await inputBody(request)

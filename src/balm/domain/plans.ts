@@ -72,7 +72,8 @@ async function byToken(db: D1Database, link: string) {
 export async function planView(db: D1Database, link: string) {
   const plan = await byToken(db, link)
   if (plan.status === 'sent') await commit(db, null, [audit(db, physician(plan), 'plan.opened', plan.client_id as string, plan.id as string)])
-  return { status: plan.status, physicianName: plan.physician_name, certifiedAt: plan.certified_at, certifierName: plan.certifier_name, content: plan.status === 'sent' ? JSON.parse(plan.content as string) : null }
+  const zone = (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
+  return { timeZone: zone, status: plan.status, physicianName: plan.physician_name, certifiedAt: plan.certified_at, certifierName: plan.certifier_name, content: plan.status === 'sent' ? JSON.parse(plan.content as string) : null }
 }
 
 export async function certifyPlan(db: D1Database, link: string, input: Data) {

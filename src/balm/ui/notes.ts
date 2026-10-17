@@ -34,11 +34,11 @@ const me = (s: any) => (s.staff ?? []).find((x: any) => x.id === s.actor.staffId
 function noteEntry(s: any, f: any, n: any) {
   const path = `/app/clients/${f.client.id}`, [latest, ...older] = n.revisions, visit = f.appointments.find((a: any) => a.id === n.appointmentId)
   const t = template(n.template), values = Object.fromEntries((latest.sections ?? []).map((x: any) => [x.id, x.text]))
-  const head = `<p>${n.status === 'signed' ? status('Signed') : status('Draft · not signed')} ${visit ? `${h(visit.service)} · ${when(s, visit.start_at)}` : ''}<br><span class="help">By ${h(n.authorName)} · started ${stamp(n.createdAt)} · revision ${latest.number}</span></p>`
+  const head = `<p>${n.status === 'signed' ? status('Signed') : status('Draft · not signed')} ${visit ? `${h(visit.service)} · ${when(s, visit.start_at)}` : ''}<br><span class="help">By ${h(n.authorName)} · started ${stamp(s, n.createdAt)} · revision ${latest.number}</span></p>`
   const scribe = n.status !== 'signed' && latest.draftedBy === 'scribe' ? `<div class="notice" role="note"><strong>Drafted by the scribe from your dictation.</strong> Review and correct every section and code before you sign. The scribe never signs.${latest.reason.length > 21 ? ` <br>${h(latest.reason)}` : ''}</div>` : ''
-  const signature = n.signature ? `<p class="signature">Electronically signed by <strong>${h(n.signature.name)}, ${h(n.signature.credentials)}</strong> · ${stamp(n.signature.signedAt)} · revision ${h(n.signature.revision)}<br><span class="help">Locked. Signature digest ${h(String(n.signature.sha256).slice(0, 16))}…</span></p>` : ''
-  const addenda = n.addenda.length ? `<h4>Addenda</h4>${n.addenda.map((a: any) => `<div class="note">${h(a.body)}</div><p class="help">Addendum signed by ${h(a.name)}, ${h(a.credentials)} · ${stamp(a.writtenAt)}</p>`).join('')}` : ''
-  const history = older.length ? `<details><summary>Earlier revisions (${older.length})</summary>${older.map((r: any) => `<p class="help">Revision ${r.number} · ${stamp(r.writtenAt)}${r.reason ? ' · ' + h(r.reason) : ''}</p>${content(r)}`).join('')}</details>` : ''
+  const signature = n.signature ? `<p class="signature">Electronically signed by <strong>${h(n.signature.name)}, ${h(n.signature.credentials)}</strong> · ${stamp(s, n.signature.signedAt)} · revision ${h(n.signature.revision)}<br><span class="help">Locked. Signature digest ${h(String(n.signature.sha256).slice(0, 16))}…</span></p>` : ''
+  const addenda = n.addenda.length ? `<h4>Addenda</h4>${n.addenda.map((a: any) => `<div class="note">${h(a.body)}</div><p class="help">Addendum signed by ${h(a.name)}, ${h(a.credentials)} · ${stamp(s, a.writtenAt)}</p>`).join('')}` : ''
+  const history = older.length ? `<details><summary>Earlier revisions (${older.length})</summary>${older.map((r: any) => `<p class="help">Revision ${r.number} · ${stamp(s, r.writtenAt)}${r.reason ? ' · ' + h(r.reason) : ''}</p>${content(r)}`).join('')}</details>` : ''
   let actions = ''
   if (n.mine && n.status !== 'signed') {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')

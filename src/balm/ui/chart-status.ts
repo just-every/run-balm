@@ -1,15 +1,14 @@
 // Documentation status on the schedule: each visit's note (signed, not signed
 // or missing once attended), the client's plan of care, and the visits whose
 // note still needs a signature. Statuses only: no note text reaches these views.
-import { usDate } from './plans'
-import { desk, h, panel, rows, status, when } from './shared'
+import { desk, h, panel, rows, status, usDate, when, zoneOf } from './shared'
 
 export const noteChip = (a: any) => a.note_status === 'signed' ? status('Note signed') : a.note_status === 'unsigned' ? status('Note not signed') : a.status === 'attended' ? status('No note yet') : ''
 
-export function planChip(a: any) {
+export function planChip(s: any, a: any) {
   if (!a.plan_of_care) return ''
   const [state, at, physician] = String(a.plan_of_care).split('|')
-  return state === 'certified' ? status(`Plan of care signed by ${physician} · ${usDate(at)}`) : status(`Plan of care sent to ${physician} · not signed`)
+  return state === 'certified' ? status(`Plan of care signed by ${physician} · ${usDate(at, zoneOf(s))}`) : status(`Plan of care sent to ${physician} · not signed`)
 }
 
 /** "All 14 notes signed" or "12 of 14 notes signed" for the attended visits shown. */

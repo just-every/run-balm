@@ -1,6 +1,7 @@
 // Recurring visits: the pattern form, the per-date review a person sees before
 // anything is saved, and the result once the series is booked.
 import { field, form, h, hidden, practitioners, result, rows, select, services } from './shared'
+import { plain } from '../refusals'
 
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const action = (name: string, back: string) => `/app/action?name=${encodeURIComponent(name)}&amp;returnTo=${encodeURIComponent(back)}`
@@ -16,7 +17,7 @@ export function problemText(o: any, zone: string) {
     case 'outside_practitioner_hours': return 'Outside the practitioner’s hours'
     case 'overlaps_another_visit_in_this_series': return 'Overlaps another visit in this series'
     case 'start_too_far_in_past': return 'In the past'
-    default: return String(o.problem).replace(/_/g, ' ')
+    default: return plain(String(o.problem))
   }
 }
 

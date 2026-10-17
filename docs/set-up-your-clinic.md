@@ -3,7 +3,8 @@ Until these steps are done, the owner's **Schedule** page shows them under **Fin
 ## Clinic details
 
 1. Enter the **Clinic name**.
-2. Enter the **Time zone** as an IANA name, for example `America/New_York`, `America/Chicago`, `America/Denver` or `America/Los_Angeles`. Every time Balm shows is in this zone. It cannot change after the first booking.
+2. Check the **Time zone**. Until you save it, Balm fills in your browser's time zone; US zones are listed first by name (Eastern, Central, Mountain, Arizona, Pacific, Alaska, Hawaii), then every other zone. Every date and time Balm shows, on pages, emails, invoices and plans of care, is in this zone.
+   You can change it later. Booked visits keep their exact moment and show at the matching clock time in the new zone, so the page asks you to tick a box confirming that when visits are booked. Weekly hours stay the same clock times.
 3. Add a **Tax ID** and the **Address**: both appear on invoices, and the address on reminders.
 4. Leave **Online booking** on **Open** to take bookings at `/book`, or set it to **Closed**.
 5. Select **Save clinic details**.
@@ -23,17 +24,20 @@ Add each person under **Add a staff member**:
 - **Practitioner**: treats clients. Their **Profession** (for example `Physical Therapist`) and **Provider number** (for example their NPI) appear on invoices. Their **Credentials** (for example `PT, DPT`, `OTR/L` or `CCC-SLP`) appear in their signature on notes and plans of care. If you treat clients yourself, add yourself as a practitioner with your own sign-in email.
 - **Reception**: runs the front desk. They see every client file, but never intake answers or treatment notes.
 
-Select **Invite to sign in** next to each person. Balm on your computer puts the invitation under **Local mail**; a deployed Balm emails it.
+Select **Invite to sign in** next to each person. A deployed Balm emails the invitation, and the person opens it in any browser.
+
+Balm on your computer sends no email, and its links open only in a browser that has opened Balm with rer's link. To work as a staff member there, run `rer dev --as person@example.com` (with their email) in the Balm folder and open the `RER_OPEN` link it prints, in another browser or browser profile. The **Clinic** page says this under each person.
 
 ## Weekly hours
 
-Under each practitioner, open **Set weekly hours**. Hours are one entry per block of time: `weekday` 0 is Sunday, 1 is Monday and so on to 6 for Saturday; `start` and `end` are 24-hour clinic times.
+Under each practitioner, open **Set weekly hours**. For each day of the week:
 
-```json
-[{"weekday":1,"start":"08:00","end":"16:00"},{"weekday":4,"start":"08:00","end":"18:00"}]
-```
+1. Tick **Works on Monday** (and so on) for the days they work, and untick the others.
+2. Enter **Starts** and **Ends**, for example 8:00 AM and 4:00 PM.
+3. For a lunch or other break, enter **Break from** and **Break until**. Nobody can book inside a break. After you save, another empty break row appears for a second break.
+4. Select **Save hours**.
 
-That is Monday 08:00–16:00 and Thursday 08:00–18:00. A practitioner with no hours cannot be booked.
+A new practitioner starts with Monday to Friday, 9:00 AM to 5:00 PM ticked, so check it before saving. The saved hours are listed under their name, for example "Monday 9:00 AM–12:00 PM, 1:00 PM–5:00 PM". Times are clock times in the clinic's time zone. A practitioner with no hours cannot be booked.
 
 ## Scribe
 

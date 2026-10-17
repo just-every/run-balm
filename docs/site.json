@@ -4,7 +4,8 @@
       "title": "Start here",
       "pages": [
         { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in one line and sign in as the owner." },
-        { "slug": "set-up-your-clinic", "title": "Set up your clinic", "file": "set-up-your-clinic.md", "summary": "Your clinic details, services, practitioners and reception, weekly hours and sign-in invitations." }
+        { "slug": "set-up-your-clinic", "title": "Set up your clinic", "file": "set-up-your-clinic.md", "summary": "Your clinic details, services, practitioners and reception, weekly hours and sign-in invitations." },
+        { "slug": "deploy", "title": "Deploy to your own Cloudflare account", "file": "deploy.md", "summary": "Put Balm online in your own Cloudflare account with SendGrid or Resend for email, and remove it again with one command." }
       ]
     },
     {
@@ -12,7 +13,7 @@
       "pages": [
         { "slug": "bookings", "title": "Bookings and the schedule", "file": "bookings.md", "summary": "The calendar by day or week and by practitioner or room, online booking at /book, moving and canceling visits, and recurring visits." },
         { "slug": "waitlist", "title": "The waitlist", "file": "waitlist.md", "summary": "Keep clients waiting for a time; a canceled visit is offered to them by email and the first to accept is booked." },
-        { "slug": "intake", "title": "Intake forms", "file": "intake.md", "summary": "The private intake link each new booking gets, who reads the answers, and publishing a new version of the form." },
+        { "slug": "intake", "title": "Intake forms", "file": "intake.md", "summary": "The private intake link each new booking gets, who reads the answers, and changing the questions with the form builder." },
         { "slug": "notes", "title": "Treatment notes", "file": "notes.md", "summary": "PT, OT and speech templates, CPT units by the 8-minute rule, drafting with the scribe, signing, addenda and unsigned notes on the schedule." },
         { "slug": "plan-of-care", "title": "Plan of care", "file": "plan-of-care.md", "summary": "Sign a plan of care with goals, frequency and duration, and have the referring physician certify it from an emailed link." },
         { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },
@@ -25,7 +26,7 @@
       "pages": [
         { "slug": "people-and-audit", "title": "People, roles and the access audit", "file": "people-and-audit.md", "summary": "Owner, practitioners and reception, removing access at once, erasing records, and the audit on every client file." },
         { "slug": "agent-commands", "title": "Agent commands", "file": "AGENT-COMMANDS.md", "summary": "Give an assistant a key so it can prepare invoices, reminder text and intake versions for a person to approve." },
-        { "slug": "move-in", "title": "Move in from Cliniko", "file": "MOVE-IN.md", "summary": "Preview a Cliniko patient CSV, apply that exact preview, read the journal and undo it if needed." },
+        { "slug": "move-in", "title": "Move in from Cliniko", "file": "MOVE-IN.md", "summary": "Upload Cliniko's patient export, check the preview with US dates, import it, read the journal and undo it if needed." },
         { "slug": "backup", "title": "Back up and restore", "file": "backup.md", "summary": "Export the whole clinic to one archive and restore it into a fresh copy." }
       ]
     }

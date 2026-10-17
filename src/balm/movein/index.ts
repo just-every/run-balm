@@ -4,7 +4,7 @@ import {
   readD1ImportJob, readD1ImportOriginals, readD1ImportUndoReport, rollbackD1Import, d1RequestContext,
 } from '../../modules/import-kit/src/d1/index.ts'
 import type { D1ImportContext, D1Database as KitDatabase, ImportMapping, ImportPlan } from '../../modules/import-kit/src/d1/index.ts'
-import { formatName, namespace, patientSource } from './csv.ts'
+import { dateFormat, formatName, namespace, patientSource } from './csv.ts'
 import { destination, mappingVersion, clientTargets, nativeConflicts } from './targets.ts'
 import { ImportError, requiredText } from './errors.ts'
 export { ImportError } from './errors.ts'
@@ -41,13 +41,13 @@ export async function importCommand(db: D1Database, actor: ImportActor, name: st
   if (!owner) throw new ImportError('owner_required', 403)
   try {
     if (name === 'import.preview' || name === 'import.apply') {
-      const plan = await planD1Import(patientSource(input.csv), mapping, context)
+      const format = dateFormat(input.dateFormat), plan = await planD1Import(patientSource(input.csv, format), mapping, context)
       const clients = clientValues(plan), conflicts = await nativeConflicts(db, clients)
-      if (name === 'import.preview') return { format: formatName, fingerprint: plan.fingerprint,
+      if (name === 'import.preview') return { format: formatName, dateFormat: format, fileName: typeof input.fileName === 'string' ? input.fileName.slice(0, 200) : null, fingerprint: plan.fingerprint,
         counts: plan.counts, diagnostics: plan.diagnostics, clients, conflicts }
       const reviewedFingerprint = requiredText(input.fingerprint, 'fingerprint')
-      if (reviewedFingerprint !== plan.fingerprint) throw new ImportError('review_fingerprint_mismatch', 409, 'Preview this exact CSV again before applying')
-      if (conflicts.length) throw new ImportError(conflicts[0].reason, 409, 'Resolve the listed conflicts before applying: existing clients need review and erased identities cannot be imported again')
+      if (reviewedFingerprint !== plan.fingerprint) throw new ImportError('review_fingerprint_mismatch', 409, 'The file or your clinic changed since the preview. Preview the file again before importing.')
+      if (conflicts.length) throw new ImportError(conflicts[0].reason, 409, 'Some patients in the file are already in Balm or were erased. Remove those rows from the file and preview it again.')
       const job = await createD1ImportJob(plan, { ...context, reviewedFingerprint })
       return { job: await applyD1ImportBatches(job.id, context) }
     }
@@ -57,7 +57,8 @@ export async function importCommand(db: D1Database, actor: ImportActor, name: st
     if (name === 'import.undo') return { job: await undoD1Import(jobId, context) }
     if (name === 'import.resume') return { job: await resumeD1Import(jobId, context) }
     const job = await readD1ImportJob(jobId, context)
-    const originals = await readD1ImportOriginals(jobId, context)
+    // The original file is a download (importOriginal); the journal names it.
+    const originals = (await readD1ImportOriginals(jobId, context)).map(({ original, ...file }) => ({ ...file, available: original.status === 'retained' }))
     const { results: batches } = await db.prepare('SELECT action,position,end_position,fence FROM ik_batches WHERE job_id=? ORDER BY rowid').bind(jobId).all()
     const undo = await readD1ImportUndoReport(jobId, context, { limit: 1000 })
     await readD1ImportJob(jobId, context)
@@ -72,4 +73,14 @@ export async function importCommand(db: D1Database, actor: ImportActor, name: st
     if (/IMPORT_D1_REQUEST_LIMIT|IMPORT_D1_TRANSPORT_LIMIT/.test(message)) throw new ImportError('import_request_limit', 409, 'Resume this import in a new request')
     throw error
   }
+}
+
+/** The exact file an import read, as the owner uploaded it. */
+export async function importOriginal(db: D1Database, actor: ImportActor, jobId: string) {
+  const [file] = await readD1ImportOriginals(jobId, d1RequestContext(importContext(db, actor))).catch(error => {
+    if (String((error as Error)?.message).includes('IMPORT_JOB_NOT_FOUND')) throw new ImportError('import_job_not_found', 404)
+    throw error
+  })
+  if (!file || file.original.status !== 'retained') throw new ImportError('import_job_not_found', 404, 'The original file of this import is no longer kept.')
+  return { name: file.name, bytes: Uint8Array.from(atob(file.original.base64), c => c.charCodeAt(0)) }
 }

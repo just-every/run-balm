@@ -9,14 +9,15 @@ import { invoices } from './invoices'
 import { movein } from './import'
 import { mail } from './mail'
 import { payPage } from './pay'
-import { bookPage, intakePage, missingPage, offerPage, planPage } from './public'
+import { bookPage, intakePage, localLinkPage, missingPage, offerPage, planPage } from './public'
 import { dragScript } from './drag'
 import { schedule } from './schedule'
 import { desk, h, owner } from './shared'
 import { style } from './style'
 import { waitlist } from './waitlist'
+import { browserZoneScript } from './time-zone'
 
-type Notice = { message?: string; error?: string; result?: any; ask?: Record<string, string> }
+type Notice = { message?: string; error?: string; result?: any; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
 
 const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))
 /** `script` is one inline script the page runs, allowed by its hash alone. */
@@ -40,7 +41,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
       : current === '/app/clients' ? clientList(state)
         : current === '/app/invoices' ? invoices(state)
           : current === '/app/clinic' ? clinic(state, notice)
-            : current === '/app/intake' ? intakeForms(state)
+            : current === '/app/intake' ? intakeForms(state, notice)
               : current === '/app/import' ? movein(state, notice)
                 : current === '/app/agent' ? agent(state, notice)
                   : current === '/app/mail' ? mail(state)
@@ -48,13 +49,13 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
                       : schedule(state, notice)
   const clinicName = state.settings?.clinic_name ?? branding.name
   const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header><nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav><div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
-  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, allowed && current === '/app' ? dragScript : '')
+  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, !allowed ? '' : current === '/app' ? dragScript : current === '/app/clinic' ? browserZoneScript : '')
 }
 
-export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'missing', data: any, status = 200): Promise<Response> {
+export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'missing' | 'local-link', data: any, status = 200): Promise<Response> {
   const clinicName = data.clinic?.clinic_name ?? data.appointment?.clinic_name ?? data.offer?.clinic_name ?? data.content?.clinic.name ?? branding.name
-  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : missingPage()
+  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : kind === 'local-link' ? localLinkPage() : missingPage()
   const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span><span class="identity">${h(clinicName)}</span></header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
   // The pay page's forms continue on Stripe's own checkout page.
-  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
+  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : kind === 'local-link' ? 'Open this link on this computer' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
 }

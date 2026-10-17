@@ -1,28 +1,28 @@
 // Plan of care on a client file: its physician signature status and dates for
 // everyone who opens the file, its content for the owner and practitioners, and
 // the therapist's form to sign it and send it to the referring physician.
-import { clinician, empty, entry, field, form, h, hidden, panel, result, status, textarea, when } from './shared'
+import { hostDateAt } from '../availability/timezone'
+import { clinician, empty, entry, field, form, h, hidden, panel, result, status, textarea, usDate, when, zoneOf } from './shared'
 
-export const usDate = (value: unknown) => value ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(String(value).length === 10 ? value + 'T00:00:00Z' : String(value))) : '—'
 export const frequency = (c: any) => `${c.frequencyPerWeek} ${c.frequencyPerWeek === 1 ? 'time' : 'times'} a week for ${c.durationWeeks} ${c.durationWeeks === 1 ? 'week' : 'weeks'}`
 
 /** One line for the case: signed by whom and when, or sent and waiting. */
-export function planLine(p: any) {
+export function planLine(p: any, zone: string) {
   return p.status === 'certified'
-    ? `${status('Plan of care signed')} by ${h(p.certifierName)}${p.certifierCredentials ? ', ' + h(p.certifierCredentials) : ''} on ${h(usDate(p.certifiedAt))}`
-    : `${status('Plan of care not signed yet')} sent to ${h(p.physicianName)} on ${h(usDate(p.sentAt))}`
+    ? `${status('Plan of care signed')} by ${h(p.certifierName)}${p.certifierCredentials ? ', ' + h(p.certifierCredentials) : ''} on ${h(usDate(p.certifiedAt, zone))}`
+    : `${status('Plan of care not signed yet')} sent to ${h(p.physicianName)} on ${h(usDate(p.sentAt, zone))}`
 }
 
-export function planContent(c: any) {
+export function planContent(c: any, zone: string) {
   return `<dl class="answers"><dt>Diagnoses</dt><dd>${h(c.diagnoses)}</dd><dt>Short-term goals</dt><dd>${h(c.shortTermGoals)}</dd><dt>Long-term goals</dt><dd>${h(c.longTermGoals)}</dd>`
-    + `<dt>Frequency and duration</dt><dd>${h(frequency(c))}, from ${h(usDate(c.startDate))}; certification period through ${h(usDate(c.certifiedThrough))}</dd><dt>Planned interventions</dt><dd>${h(c.interventions)}</dd></dl>`
+    + `<dt>Frequency and duration</dt><dd>${h(frequency(c))}, from ${h(usDate(c.startDate, zone))}; certification period through ${h(usDate(c.certifiedThrough, zone))}</dd><dt>Planned interventions</dt><dd>${h(c.interventions)}</dd></dl>`
     + `<p class="signature">Signed by the treating therapist <strong>${h(c.therapist.name)}, ${h(c.therapist.credentials)}</strong></p>`
 }
 
 function planEntry(s: any, f: any, p: any) {
-  const path = `/app/clients/${f.client.id}`
-  const sent = p.status === 'sent' ? `<p class="help">Sent to ${h(p.physicianName)} (${h(p.physicianEmail)}) ${h(usDate(p.sentAt))}; the link expires ${h(usDate(p.linkExpiresAt))}.</p>` : `<p class="help">Certified ${p.certifierNpi ? `· NPI ${h(p.certifierNpi)} ` : ''}· ${when(s, p.certifiedAt)}</p>`
-  return entry(p.content ? `Plan of care from ${usDate(p.content.startDate)}` : 'Plan of care', `<p>${planLine(p)}</p>${sent}${p.content ? planContent(p.content) : ''}`
+  const path = `/app/clients/${f.client.id}`, zone = zoneOf(s)
+  const sent = p.status === 'sent' ? `<p class="help">Sent to ${h(p.physicianName)} (${h(p.physicianEmail)}) ${h(usDate(p.sentAt, zone))}; the link expires ${h(usDate(p.linkExpiresAt, zone))}.</p>` : `<p class="help">Certified ${p.certifierNpi ? `· NPI ${h(p.certifierNpi)} ` : ''}· ${when(s, p.certifiedAt)}</p>`
+  return entry(p.content ? `Plan of care from ${usDate(p.content.startDate, zone)}` : 'Plan of care', `<p>${planLine(p, zone)}</p>${sent}${p.content ? planContent(p.content, zone) : ''}`
     + (p.mine && p.status === 'sent' ? form('plan.resend', path, hidden('id', p.id) + '<p class="help">A new link replaces the one sent before.</p>', 'Send a new link to the physician', true) : ''))
 }
 
@@ -41,7 +41,7 @@ function writePlan(s: any, f: any) {
   // The latest signed evaluation of mine fills the diagnoses and goals.
   const evaluation = (f.notes ?? []).find((n: any) => n.mine && n.status === 'signed' && /\.evaluation$/.test(n.template))
   const part = (id: string) => evaluation?.revisions[0].sections?.find((x: any) => x.id === id)?.text ?? ''
-  const today = new Date().toISOString().slice(0, 10)
+  const today = hostDateAt(new Date(), zoneOf(s))
   const weekly = Array.from({ length: 7 }, (_, n) => `<option value="${n + 1}"${n === 1 ? ' selected' : ''}>${n + 1} ${n ? 'times' : 'time'} a week</option>`).join('')
   return `<details><summary>Write a plan of care</summary>${form('plan.send', `/app/clients/${f.client.id}`, hidden('clientId', f.client.id) + hidden('noteId', evaluation?.id ?? '')
     + (evaluation ? '<p class="help">Diagnoses and goals are filled from your signed evaluation; edit them as needed.</p>' : '')
