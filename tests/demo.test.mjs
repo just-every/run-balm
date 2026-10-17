@@ -29,6 +29,12 @@ test('a demo opens on a lived-in clinic: its drafts are approvable and a booking
     assert.equal(booked.mail, 'sent')
     // A staff invitation is an email to a person too: it completes and nothing is kept.
     await h.cmd('staff.invite', { id: s.staff.find(p => p.name === 'Daniel Okafor').id })
+    // Canceling a massage this week offers the freed time to the waitlist by (simulated) email.
+    const sophie = s.clients.find(c => c.first_name === 'Sophie')
+    const freed = s.appointments.find(a => a.status === 'booked' && a.service_id === 'demo-svc-massage' && a.client_id !== sophie.id && Date.parse(a.start_at) > Date.now() + 3 * 3600_000 && Date.parse(a.start_at) < Date.now() + 6 * 86400_000)
+    const cancelled = await h.cmd('appointment.cancel', { id: freed.id })
+    assert.ok(cancelled.waitlist.people >= 1)
+    assert.deepEqual((await h.db.prepare('SELECT DISTINCT delivery FROM bm_offer_recipients').all()).results.map(r => r.delivery), ['sent'])
     assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM rer_mail_development_outbox').first()).n, 0)
     const page = await h.send('/app', undefined, h.owner)
     assert.equal(page.status, 200)

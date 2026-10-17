@@ -19,16 +19,20 @@ type Window = [number, number, number]
 const h = (hour: number, minute = 0) => hour * 60 + minute
 const days = (weekdays: number[], start: number, end: number): Window[] => weekdays.map(d => [d, start, end])
 
-export type Practitioner = { id: string; name: string; email?: string; profession: string; providerNumber: string; kind: Kind; hours: Window[]; first: string; then: string[] }
+export const rooms = [
+  { id: 'demo-room-1', name: 'Treatment room 1' }, { id: 'demo-room-2', name: 'Treatment room 2' },
+  { id: 'demo-room-massage', name: 'Massage room' }, { id: 'demo-room-hand', name: 'Hand therapy room' },
+]
+export type Practitioner = { id: string; name: string; email?: string; profession: string; providerNumber: string; kind: Kind; room: string; hours: Window[]; first: string; then: string[] }
 /** The owner treats clients too; her staff row carries the demo owner's email. */
 export const practitioners: Practitioner[] = [
-  { id: 'demo-staff-maya', name: 'Maya Ellison', profession: 'Physical therapist, DPT', providerNumber: 'PT-24817', kind: 'pt',
+  { id: 'demo-staff-maya', name: 'Maya Ellison', profession: 'Physical therapist, DPT', providerNumber: 'PT-24817', kind: 'pt', room: 'demo-room-1',
     hours: [...days([1, 2, 3, 4], h(8), h(12)), ...days([1, 2, 3, 4], h(13), h(17)), [5, h(8), h(12)]], first: 'demo-svc-initial', then: ['demo-svc-followup', 'demo-svc-extended'] },
-  { id: 'demo-staff-daniel', name: 'Daniel Okafor', email: 'daniel.okafor@cedargrove.example', profession: 'Physical therapist, DPT', providerNumber: 'PT-31952', kind: 'pt',
+  { id: 'demo-staff-daniel', name: 'Daniel Okafor', email: 'daniel.okafor@cedargrove.example', profession: 'Physical therapist, DPT', providerNumber: 'PT-31952', kind: 'pt', room: 'demo-room-2',
     hours: [...days([1, 3, 5], h(7), h(11)), ...days([1, 3, 5], h(11, 30), h(15)), ...days([2, 4], h(11), h(15)), ...days([2, 4], h(15, 30), h(19))], first: 'demo-svc-initial', then: ['demo-svc-extended', 'demo-svc-followup'] },
-  { id: 'demo-staff-lena', name: 'Lena Fischer', email: 'lena.fischer@cedargrove.example', profession: 'Licensed massage therapist', providerNumber: 'LMT-18240', kind: 'massage',
+  { id: 'demo-staff-lena', name: 'Lena Fischer', email: 'lena.fischer@cedargrove.example', profession: 'Licensed massage therapist', providerNumber: 'LMT-18240', kind: 'massage', room: 'demo-room-massage',
     hours: [...days([2, 3, 4, 5], h(10), h(18)), [6, h(9), h(13)]], first: 'demo-svc-massage', then: ['demo-svc-massage'] },
-  { id: 'demo-staff-marcus', name: 'Marcus Bell', email: 'marcus.bell@cedargrove.example', profession: 'Occupational therapist, CHT', providerNumber: 'OT-9031', kind: 'hand',
+  { id: 'demo-staff-marcus', name: 'Marcus Bell', email: 'marcus.bell@cedargrove.example', profession: 'Occupational therapist, CHT', providerNumber: 'OT-9031', kind: 'hand', room: 'demo-room-hand',
     hours: days([1, 2, 4], h(9), h(17)), first: 'demo-svc-initial', then: ['demo-svc-hand'] },
 ]
 export const reception = { id: 'demo-staff-hannah', name: 'Hannah Brooks', email: 'hannah.brooks@cedargrove.example' }
@@ -72,5 +76,8 @@ export const clients: Client[] = [
   client('frank', 'Frank', 'DeLuca', '1955-07-14', 62, 'demo-staff-marcus', { reason: 'My ring finger catches and locks in the morning', history: 'Two months; it clicks when I make a fist.', conditions: 'Type 2 diabetes', medications: 'Metformin, lisinopril', emergency: 'Teresa DeLuca (wife) (608) 555-0163', finding: 'Palpable nodule at the A1 pulley of the right ring finger, triggering on full fist.', diagnosis: 'trigger finger (right ring finger)', goal: 'grip tools without locking' }),
   client('maria', 'Maria', 'Santos', '1964-11-19', 64, 'demo-staff-marcus', { reason: 'Aching at the base of both thumbs, worse opening jars', history: 'A year or more; worse in cold weather.', conditions: 'Hand osteoarthritis', medications: 'Topical diclofenac', emergency: 'Luis Santos (husband) (608) 555-0165', finding: 'Positive grind test at both thumb CMC joints, pinch strength reduced, mild subluxation on the right.', diagnosis: 'thumb CMC osteoarthritis', goal: 'garden and open jars with less pain' }),
 ]
+/** Henry's rehab is booked as one recurring series: Tuesdays and Thursdays at 4 PM with Daniel, for four weeks. */
+export const series = { id: 'demo-series-henry', client: 'demo-client-henry', practitioner: 'demo-staff-daniel', service: 'demo-svc-extended', weekdays: [2, 4], minute: 16 * 60, weeks: 4 }
+
 /** Moved in from the clinic's previous system and not booked yet. */
 export const movedIn = { id: 'demo-client-lucas', first: 'Lucas', last: 'Bennett', dob: '1996-06-30', email: 'lucas.bennett@mail.example', phone: '(608) 555-0166' }
