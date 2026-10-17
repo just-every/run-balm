@@ -62,7 +62,7 @@ export const calendarStyle = placement + `
 .agenda{display:none}
 @media(max-width:600px){
 .cal-wrap{display:none}.agenda{display:block}
-.ag-pick{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding:2px}
+.ag-pick{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:2px}
 .ag-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 .ag-pick label{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:36px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--rer-surface);color:var(--body);font-size:13.5px;font-weight:500;cursor:pointer}
 .ag-pick label small{font-size:12px;color:var(--soft);font-variant-numeric:tabular-nums}
