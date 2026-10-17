@@ -1,3 +1,5 @@
+import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
+import { bundleFormInput } from './movein/form-input'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
@@ -37,13 +39,13 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
+  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -98,6 +100,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
   if (name.startsWith('pay.')) return paymentCommand(env, env.DB, who, name, input)
+  if (name.startsWith('movein.')) return bundleCommand(env.DB, who, name, input)
   if (name.startsWith('import.')) {
     if (who.role !== 'owner') fail('only_the_owner_imports', 403)
     return importCommand(env.DB, who, name, input)
@@ -127,7 +130,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
 async function inputBody(request: Request): Promise<Record<string, unknown>> {
   // An uploaded file (Move in) arrives as its text, with its name beside it.
   if (request.headers.get('content-type')?.includes('multipart/form-data')) {
-    if (Number(request.headers.get('content-length') ?? 0) > 2_100_000) fail('request_too_large', 413)
+    if (Number(request.headers.get('content-length') ?? 0) > 7_100_000) fail('request_too_large', 413)
     const input: Record<string, unknown> = {}
     for (const [key, value] of await request.formData()) {
       if (typeof value === 'string') { input[key] = value; continue }
@@ -137,7 +140,7 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
     return input
   }
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).length > 2_100_000) fail('request_too_large', 413)
+  if (new TextEncoder().encode(raw).length > 7_100_000) fail('request_too_large', 413)
   if (request.headers.get('content-type')?.includes('application/json')) {
     let input; try { input = JSON.parse(raw) } catch { fail('invalid_json') }
     if (!input || Array.isArray(input) || typeof input !== 'object') fail('expected_an_object')
@@ -310,7 +313,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
       if (path === '/app/action') {
-        const input = await inputBody(request), name = url.searchParams.get('name') ?? ''
+        let input = await inputBody(request); const name = url.searchParams.get('name') ?? ''
         if (name === 'session.signout') {
           const response = await operatorAuth(env).signOut(request)
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })
@@ -329,15 +332,23 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         }
         if (name === 'import.preview' && typeof input.file === 'string') input.csv = input.file
         if ((name === 'import.preview' || name === 'import.apply') && typeof input.csvBase64 === 'string') input.csv = fileFromField(input.csvBase64)
-        const result = await execute(request, env, who, name, input)
+        if (name.startsWith('movein.')) input = bundleFormInput(input)
+        let result: unknown
+        try { result = await execute(request, env, who, name, input) } catch (error) {
+          const failure = message(error)
+          if (name !== 'movein.apply' || failure.status >= 500) throw error
+          const preview = await bundleCommand(env.DB, who, 'movein.preview', input)
+          return await page(env, who, back, { error: failure.text, result: { ...preview, reviewInput: input } }, failure.status)
+        }
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
+        if (!['movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people
           return redirect(offered && back.startsWith('/app?') ? `${back}&offered=${offered}` : offered && back === '/app' ? `/app?offered=${offered}` : back)
         }
+        if (name === 'movein.preview') return await page(env, who, back, { result: { ...(result as object), reviewInput: input } })
         return await page(env, who, back, { ...(['series.preview', 'import.preview', 'import.journal'].includes(name) ? {} : { message: 'Saved.' }), result: name === 'import.preview' ? { ...(result as object), csv: input.csv } : result })
       }
       if (path === '/api/balm/command' || path === '/api/balm/agent/command') {

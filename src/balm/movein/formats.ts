@@ -1,0 +1,62 @@
+import { readCsv } from './formats/reader.ts'
+import { normalizeRows } from './formats/rows.ts'
+
+export type Provider = 'cliniko' | 'webpt' | 'simplepractice' | 'jane'
+export type FileKind = 'patients' | 'appointments' | 'notes' | 'balances' | 'insurance'
+export type DateFormat = 'MDY' | 'DMY' | 'YMD'
+export type BundleFile = { kind: FileKind; name: string; csv: string }
+export type BundleInput = { provider: Provider; files: BundleFile[]; dateFormat?: DateFormat; practitionerId?: string; serviceId?: string }
+export type Location = { row: number; file: string }
+export type BundleDiagnostic = { severity: 'error' | 'warning'; code: string; message: string; file: string; row?: number; column?: string }
+export type Bundle = {
+  provider: Provider
+  files: BundleFile[]
+  patients: (Location & { sourceId: string; firstName: string; lastName: string; dateOfBirth: string | null; email: string | null; phone: string | null })[]
+  appointments: (Location & { sourceId: string; patientId: string; startAt: string; endAt: string; status: 'booked' | 'attended' | 'cancelled' | 'no_show' })[]
+  notes: (Location & { sourceId: string; patientId: string; title: string; body: string; date: string })[]
+  balances: (Location & { patientId: string; cents: number })[]
+  insurance: (Location & { sourceId: string; patientId: string; payer: string; memberId: string; groupNumber: string })[]
+  diagnostics: BundleDiagnostic[]
+  unmappedColumns: { file: string; column: string }[]
+  unmappedRows: (Location & { reason: string })[]
+}
+
+/** Pure preview normalization. It neither writes records nor infers patient identity. */
+export function normalizeBundle(value: unknown): Bundle {
+  const input = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>
+  const bundle: Bundle = { provider: String(input.provider ?? '') as Provider, files: [], patients: [], appointments: [], notes: [], balances: [], insurance: [], diagnostics: [], unmappedColumns: [], unmappedRows: [] }
+  const issue = (code: string, message: string, file = '') => bundle.diagnostics.push({ severity: 'error', code, message, file })
+  if (!['cliniko', 'webpt', 'simplepractice', 'jane'].includes(bundle.provider)) issue('unsupported_provider', 'Choose Cliniko, WebPT, SimplePractice or Jane.')
+  if (input.dateFormat !== undefined && !['MDY', 'DMY', 'YMD'].includes(String(input.dateFormat))) issue('invalid_date_format', 'Date format must be MDY, DMY or YMD.')
+  if (!Array.isArray(input.files) || !input.files.length) { issue('missing_files', 'Upload at least one CSV file.'); return bundle }
+  if (input.files.length > 25) { issue('too_many_files', 'Upload at most 25 files per bundle.'); return bundle }
+  const names = new Set<string>()
+  let rowCount = 0
+  for (const raw of input.files) {
+    if (!raw || typeof raw !== 'object' || typeof raw.name !== 'string' || typeof raw.kind !== 'string' || typeof raw.csv !== 'string') { issue('invalid_file', 'Every file must have string kind, name and csv fields.'); continue }
+    const file = { kind: raw.kind, name: raw.name, csv: raw.csv } as BundleFile
+    bundle.files.push(file)
+    if (!file.name || names.has(file.name)) { issue('duplicate_file', 'Every file needs a unique nonempty name.', file.name); continue }
+    names.add(file.name)
+    if (!['patients', 'appointments', 'notes', 'balances', 'insurance'].includes(file.kind)) { issue('unsupported_kind', 'This CSV category is unsupported.', file.name); continue }
+    try {
+      const rows = readCsv(file.csv)
+      rowCount += rows.slice(1).filter(r => r.cells.some(c => c.trim())).length
+      if (rowCount > 100) { issue('too_many_rows', 'A bundle may contain at most 100 nonempty data rows across all CSV files.', file.name); continue }
+      normalizeRows(bundle, file, rows, (input.dateFormat ?? 'MDY') as DateFormat)
+    }
+    catch (error) { issue('invalid_csv', error instanceof Error ? error.message : 'The CSV could not be read.', file.name) }
+  }
+  const patients = new Set(bundle.patients.map(p => p.sourceId))
+  for (const kind of ['appointments', 'notes', 'balances', 'insurance'] as const) {
+    for (const record of bundle[kind]) if (!patients.has(record.patientId)) {
+      bundle.diagnostics.push({ severity: 'error', code: 'missing_patient_reference', message: `The ${kind} row references a patient ID absent from this bundle.`, file: record.file, row: record.row, column: 'Patient ID' })
+      bundle.unmappedRows.push({ file: record.file, row: record.row, reason: 'missing_patient_reference' })
+    }
+  }
+  if (bundle.patients.length + bundle.appointments.length + bundle.notes.length + bundle.balances.length + bundle.insurance.length > 100) issue('too_many_records', 'A bundle may normalize to at most 100 records, including insurance extracted from patient report rows.')
+  if (!bundle.files.some(f => f.kind === 'notes')) bundle.diagnostics.push({ severity: 'warning', code: 'notes_not_supplied', message: 'No historical text notes CSV was supplied. Clinical notes are not established as migrated by this bundle.', file: '' })
+  if (bundle.provider === 'simplepractice') bundle.diagnostics.push({ severity: 'warning', code: 'separated_data_unverified', message: 'CSV files cannot establish whether separated data for restricted clients was included. Review the original export settings and affected client list; this bundle is not evidence of a complete export.', file: '' })
+  bundle.diagnostics.push({ severity: 'warning', code: 'document_import_not_supported', message: 'This CSV normalizer does not import PDF charts, intake forms, attachments, ZIP archives, authorizations or claims. Retain and reconcile those originals separately.', file: '' })
+  return bundle
+}

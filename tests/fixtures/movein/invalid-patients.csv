@@ -1,0 +1,4 @@
+Patient ID,First Name,Last Name,Date of Birth,Email
+bad-dob,Synthetic,Invalid,02/30/1988,invalid@patients.example
+duplicate,Maya,Santos,04/12/1988,maya@patients.example
+duplicate,Maya,Santos,04/12/1988,maya@patients.example

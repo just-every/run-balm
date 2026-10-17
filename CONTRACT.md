@@ -392,7 +392,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 42 | spots what stalled, cites the record and lines up the next step / Send to payer | `AGENT-001`, `AGENT-004` | missing |
 | 43 | Import patients … from … Cliniko | `MOVE-001`, `MOVE-005` | partial |
 | 44 | appointments, notes and balances | `MOVE-002`, `MOVE-003`, `MOVE-004`, `MOVE-005` | partial |
-| 45 | from WebPT, SimplePractice, Jane | `MOVE-002`, `MOVE-003`, `MOVE-004` | missing |
+| 45 | from WebPT, SimplePractice, Jane | `MOVE-002`, `MOVE-003`, `MOVE-004` | partial |
 | 46 | check every total before you switch | `MOVE-006` | partial |
 | 47 | Run Balm on your own computer (the five commands) | `OWN-001` | partial |
 | 48 | keep every chart / Your charts, your database | `OWN-001`, `PORT-001` | partial |
@@ -408,13 +408,13 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 
 ## Status
 
-Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below.
+Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete.
 
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 0 | 49 | 45 | 94 |
-| All | 15 | 49 | 45 | 109 |
+| Target and push further | 0 | 52 | 42 | 94 |
+| All | 15 | 52 | 42 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -509,11 +509,11 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `HIPAA-004` | Backups and recovery | target | partial | `src/balm/archive-policy.mjs`; `tests/archive.test.mjs` | Manual export and restore only; no automatic encrypted backups or restore drill |
 | `HIPAA-005` | BAA-covered hosting and real-patient mode | target | missing |  | Demo mode exists for synthetic data, but no hosting BAA record, AWS deployment or real-patient gate |
 | `MOVE-001` | Reviewed patient import with undo | published | done | `src/balm/movein/index.ts`; `src/balm/movein/csv.ts`; `src/balm/ui/import.ts`; `tests/balm.test.mjs`; `tests/setup.test.mjs` |  |
-| `MOVE-002` | WebPT migration | target | missing |  | No WebPT import |
-| `MOVE-003` | Jane migration | target | missing |  | No Jane import |
-| `MOVE-004` | SimplePractice migration | target | missing |  | No SimplePractice import |
-| `MOVE-005` | Full Cliniko migration | target | partial | `src/balm/movein/csv.ts`; `docs/MOVE-IN.md` | The patient export uploaded as a file and read by its headers with US dates by default, from synthetic fixtures only (no real export tried); no API endpoints, appointments, notes, attachments or balances |
-| `MOVE-006` | Reconciled cutover | target | partial | `src/balm/movein/index.ts` | The preview lists every row, diagnostic and conflict; no counts or balance totals against the source, no cutover approval |
+| `MOVE-002` | WebPT migration | target | partial | `src/balm/movein/formats.ts`; `src/balm/movein/bundle.ts`; `docs/MOVE-IN-FORMATS.md`; `tests/movein.test.mjs` | Reviewed Balm conversion CSVs import patients, appointments with one practitioner/service mapping, read-only historical text, patient opening balances and policy identifiers. Synthetic flow proves reconciliation, atomic apply, unchanged re-import and undo. No verified native WebPT package/report schema, chart PDFs, episodes, referring providers, source staff mapping, authorizations or migrated claims. |
+| `MOVE-003` | Jane migration | target | partial | `src/balm/movein/formats.ts`; `src/balm/movein/bundle.ts`; `docs/MOVE-IN-FORMATS.md`; `tests/movein.test.mjs` | Supported patient report fields and explicit reviewed conversion CSVs import patients, appointments, historical text, opening balances and policy identifiers; source totals, omissions, atomic apply and guarded undo are retained. Synthetic proof only; no native chart/intake PDFs, mapping spreadsheet, full appointment report conversion, claims or export-completeness accounting. |
+| `MOVE-004` | SimplePractice migration | target | partial | `src/balm/movein/formats.ts`; `src/balm/movein/bundle.ts`; `docs/MOVE-IN-FORMATS.md`; `tests/movein.test.mjs` | Documented Client details fields and reviewed conversion CSVs import patients, appointments, historical text, opening balances and policies, with reconciliation and atomic undo. Synthetic proof only; no all-clients ZIP/vCard/PDF extraction, diagnoses, billing documents, messages, migrated claims or verified separated-data completeness; this omission is flagged for owner review. |
+| `MOVE-005` | Full Cliniko migration | target | partial | `src/balm/movein/csv.ts`; `src/balm/movein/bundle.ts`; `docs/MOVE-IN-FORMATS.md`; `tests/movein.test.mjs`; `tests/setup.test.mjs` | Direct patient CSV subset with US dates remains; reviewed conversion CSVs additionally import appointments, historical text, opening balances and policy identifiers with source totals, one-batch apply, re-import and undo. Synthetic proof only; no Cliniko API, calendar-event/attendee join, group appointments, attachments, source practitioner/service/location mapping or native invoice migration. |
+| `MOVE-006` | Reconciled cutover | target | partial | `src/balm/movein/bundle-plan.ts`; `src/balm/movein/bundle-storage.ts`; `src/balm/ui/movein-bundle.ts`; `tests/movein.test.mjs` | Saved side-by-side patient counts, appointments by month, historical-document/policy counts and open balances per patient compare mapped files with editable source controls. Every unmapped row/column is named; errors block apply, discrepancies/omissions require an owner reason bound to the preview. Apply and undo use single guarded D1 batches; native edits or dependent work block the entire undo. Native package completeness, invoice counts, carried claims/authorizations and A/R run-out remain outstanding. |
 | `MOVE-007` | Pre-cutover A/R run-out | target | missing |  | No migrated claims, remittance matching to them or unmatched-remittance queue |
 | `MOBILE-001` | Tablet-first clinician web app | target | partial | `src/balm/ui/style.ts` | One responsive breakpoint; no tested tablet journey or offline draft |
 | `MOBILE-002` | Native clinician and patient apps | target | missing |  | No native apps |

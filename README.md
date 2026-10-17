@@ -34,7 +34,7 @@ To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every
 6. **Invoices**: after the visit, mark the appointment **attended** on the **Schedule**. In the client file, **Prepare invoice**; then reception or the owner reviews and **Approve and number invoice**. **Download invoice** always returns the same file, for the client to pay. Record payments you receive elsewhere with a unique reference.
 7. **Access audit**: as the owner, the bottom of every client file lists who opened the file, read intake answers or notes, changed something or downloaded an invoice, and when.
 
-**Move in** brings a patient list across from Cliniko: upload Cliniko's patient export file, check the preview table (dates of birth are read as US MM/DD/YYYY unless you choose another format, and a date that could be read either way is flagged), import it, read the journal, or undo the import. See [Move in from Cliniko](docs/MOVE-IN.md) and try it with [the synthetic example](tests/fixtures/cliniko-export-us.csv).
+**Move in** imports reviewed CSV bundles of patients, appointments, read-only historical text, opening balances and insurance, with source totals, an atomic apply, duplicate-free re-import and one-step undo. Cliniko patient headers are supported directly; WebPT, SimplePractice and Jane reports require the [supported fields or explicit conversion layouts](docs/MOVE-IN-FORMATS.md). Native chart PDFs, ZIPs, claims and authorizations remain unsupported. The legacy Cliniko patient-only path is also available: upload Cliniko's patient export file, check the preview table (dates of birth are read as US MM/DD/YYYY unless you choose another format, and a date that could be read either way is flagged), import it, read the journal, or undo the import. See [Move in from Cliniko](docs/MOVE-IN.md) and try it with [the synthetic example](tests/fixtures/cliniko-export-us.csv).
 
 **Agent access** creates a key so an assistant can prepare invoices, reminder text and intake form versions for a person to approve. Agents never read notes or intake answers. See the [agent commands](docs/AGENT-COMMANDS.md).
 
@@ -94,7 +94,7 @@ It deletes the Worker and D1 database rer created for that environment, confirms
 
 ## Develop
 
-Balm pins `@runeditrun/rer@0.2.43` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
+Balm pins `@runeditrun/rer@0.2.45` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
 
 ```sh
 pnpm run test:balm

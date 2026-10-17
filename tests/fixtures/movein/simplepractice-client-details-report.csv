@@ -1,0 +1,3 @@
+Client,Client type,Clinician,Date added,Last appointment,Next appointment,Address,City,State,ZIP,Phone number,Email,Primary insurance,Insurance ID,Status
+Maya Santos,Adult,Avery Chen,2025-02-05,2026-10-05,2026-11-02,101 Example Lane,Washington,DC,20001,202-555-0101,maya@patients.example,Example Health Plan,EX-SYNTH-1001,Active
+Elliot Reed,Adult,Avery Chen,2024-07-02,2026-09-28,2026-11-02,102 Example Lane,Washington,DC,20001,202-555-0102,elliot@patients.example,,,Active

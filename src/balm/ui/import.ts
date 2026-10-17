@@ -1,5 +1,6 @@
 // Move in from Cliniko: upload Cliniko's patient export, read the preview as a
 // table, apply that exact preview, then read each import's result and journal.
+import { bundleMovein } from './movein-bundle'
 import { dateFormats } from '../movein/csv'
 import { fileField } from '../forms'
 import { clientName, empty, entry, form, h, hidden, panel, result, rows, usDate, zoneOf } from './shared'
@@ -62,5 +63,5 @@ export function movein(s: any, notice: any) {
   const upload = `<form method="post" enctype="multipart/form-data" action="/app/action?name=import.preview&amp;returnTo=%2Fapp%2Fimport"><label>Cliniko patient export (.csv)<input type="file" name="file" accept=".csv,text/csv" required></label>`
     + `<label>Dates in the file are written as<select name="dateFormat">${dateFormats.map(([value, label]) => `<option value="${value}"${value === (result(notice)?.dateFormat ?? 'MDY') ? ' selected' : ''}>${h(label)}</option>`).join('')}</select></label>`
     + '<p class="help">Up to 1000 patients and 1 MB per file; for more, export a smaller date range in Cliniko and import each file in turn.</p><button type="submit">Preview patients</button></form>'
-  return `<h1>Move in from Cliniko</h1><p>Bring your patient list across from Cliniko. You see every patient before anything is imported, and you can undo an import later: anyone booked, edited or given notes in Balm since is kept. Only patient details move; appointments, notes and invoices stay in Cliniko.</p>${preview(s, notice)}${journal(s, notice)}<div class="grid">${panel('Upload your Cliniko export', how + upload)}${panel('Imports', jobs || empty('No imports yet.'))}</div>`
+  return `${bundleMovein(s, notice)}<details><summary>Legacy Cliniko patient-only import</summary><h2>Move in from Cliniko</h2><p>Bring your patient list across from Cliniko. You see every patient before anything is imported, and you can undo an import later: anyone booked, edited or given notes in Balm since is kept. Only patient details move; appointments, notes and invoices stay in Cliniko.</p>${preview(s, notice)}${journal(s, notice)}<div class="grid">${panel('Upload your Cliniko export', how + upload)}${panel('Imports', jobs || empty('No imports yet.'))}</div></details>`
 }

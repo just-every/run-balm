@@ -1,3 +1,7 @@
+Move-in bundles now accept patients, appointments, historical text, opening balances and insurance with reviewed mapping, reconciled totals and a whole-bundle undo. See [Move-in formats and reconciliation](/docs/move-in-formats) for supported reports, conversion columns and the native formats that remain unsupported.
+
+The **Legacy Cliniko patient-only import** section on Move in keeps the earlier workflow described below.
+
 Bring your patient list across from Cliniko. You upload Cliniko's patient export, check every patient in a preview table, then import them. You can read each import's journal and download the exact file it read, and undo an import later. Only patient details move: appointments, notes and invoices stay in Cliniko.
 
 ## Export your patients from Cliniko
