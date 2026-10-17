@@ -6,7 +6,7 @@ Balm invoices the client for a visit. Patients pay by their card on file, from t
 2. In the client's file, under **Appointments**, select **Prepare invoice**. Leave **Amount ($)** blank for the service's price, or enter another amount in dollars, such as `80.00`. An assistant with an agent key can prepare it too.
 3. Reception or the owner opens the draft, under **Waiting for approval** on **Invoices and reminders** or in the client's file, checks **I reviewed this exact invoice.** and selects **Approve and number invoice**.
 
-Approval gives the invoice the next number, such as `INV-000014`, and fixes its file for good. If anything the draft froze has changed since (the client, practitioner, service, time or amount), approval is refused: prepare it again.
+Approval gives the invoice the next number, such as `INV-000014`, and fixes its file for good. If anything the draft froze has changed since (the client, practitioner, service, time or amount), approval is refused. In the prepared invoice, open **Prepare again from the current visit**, check the amount and select **Re-prepare invoice**. The earlier preparation stays in the file as void, and the new draft needs a fresh review and approval. Approved invoices cannot be replaced this way.
 
 ## Download
 

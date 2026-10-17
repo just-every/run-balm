@@ -568,14 +568,14 @@
       "source": "modules/operator-auth/accounts/schema/owner-signin.sql"
     },
     "package.json": {
-      "sha256": "784ac8a93711b75a21fa78b0309738fb9ca8d8fd7bf826457447596db4f8814c",
+      "sha256": "28901ef2f932e596d980858aa4298ab825858a15a281336c8567651eb3b3f95e",
       "mode": 420,
       "component": "balm",
       "repository": "family",
       "source": "editions/balm/package.json"
     },
     "pnpm-lock.yaml": {
-      "sha256": "50d2ff7492e751c6054917a853b31a411353cc89122e6869c60f5bc988334914",
+      "sha256": "300399169afe2cd49fad31d80e9228457d11bad4ec44d343c3b37a5720bdaf3d",
       "mode": 420,
       "component": "balm",
       "repository": "family",

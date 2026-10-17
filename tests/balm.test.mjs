@@ -130,6 +130,19 @@ test('invoices: prepared from an attended visit, approved by a person, numbered 
   const draft = await h.cmd('invoice.prepare', { appointmentId: second }, reception.cookie)
   await h.cmd('staff.save', { id: priya.id, name: 'Priya Shah', email: priya.email, role: 'practitioner', profession: 'Physiotherapist', providerNumber: '2534567A', active: true })
   await h.cmd('invoice.approve', { id: draft.id }, reception.cookie, 409)
+  await h.finishSetup()
+  const clientPath = '/app/clients/' + client.id
+  const page = await h.send(clientPath, undefined, reception.cookie)
+  assert.match(page.text, /name="replacesId"/)
+  const refreshed = await h.form('/app/action?name=invoice.prepare&returnTo=' + encodeURIComponent(clientPath), { appointmentId: second, replacesId: draft.id, amount: '120.00' }, reception.cookie)
+  assert.equal(refreshed.status, 303, refreshed.text)
+  const file = (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value
+  const fresh = file.invoices.find(i => i.appointment_id === second && i.status === 'draft')
+  assert.ok(fresh); assert.notEqual(fresh.id, draft.id)
+  assert.equal(file.invoices.find(i => i.id === draft.id).status, 'void')
+  await h.cmd('invoice.approve', { id: draft.id }, reception.cookie, 409)
+  await h.cmd('invoice.approve', { id: fresh.id }, reception.cookie)
+  await h.cmd('invoice.prepare', { appointmentId: second, replacesId: fresh.id }, reception.cookie, 404)
   const owner = await h.send('/api/balm/clients/' + client.id, undefined, h.owner)
   assert.equal(owner.value.audit.filter(a => a.action === 'invoice.downloaded').length, 2)
   const approvals = (await h.state()).approvals

@@ -40,8 +40,16 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
   const amount = input.amountCents === undefined || input.amountCents === '' ? undefined : integer(input.amountCents, 'amount_cents', 0, 10_000_000)
   const { row, value } = await snapshot(db, appointmentId, amount)
   insist(row.status === 'attended', 'invoice_needs_an_attended_appointment', 409)
+  const replacing = input.replacesId ? await one(db, "SELECT * FROM bm_invoices WHERE id=? AND appointment_id=? AND status='draft'", text(input.replacesId, 'invoice', 100), appointmentId) : null
+  insist(!input.replacesId || replacing, 'draft_invoice_not_found', 404)
   const invoiceId = id()
   await commit(db, who, [
+    // Retain the earlier preparation; a concurrently approved draft cannot be replaced.
+    ...(replacing ? [
+      stmt(db, "UPDATE bm_invoices SET status='void',void_reason=?,version=version+1 WHERE id=? AND status='draft' AND version=?", 'Re-prepared from the current visit', replacing.id, replacing.version),
+      guard(db, 'changes()=1'),
+      audit(db, who, 'invoice.reprepared', row.client_id as string, invoiceId, replacing.id as string),
+    ] : []),
     stmt(db, `INSERT INTO bm_invoices(id,appointment_id,client_id,status,amount_cents,snapshot,prepared_by,prepared_role,prepared_at) VALUES(?,?,?,'draft',?,?,?,?,?)`,
       invoiceId, appointmentId, row.client_id, value.amountCents, JSON.stringify(value), who.email, who.role, now()),
     audit(db, who, 'invoice.prepared', row.client_id as string, invoiceId, `${value.amountCents} cents`),

@@ -55,9 +55,10 @@ function intake(s: any, f: any) {
 
 export function invoiceEntry(s: any, i: any, path: string) {
   const v = i.snapshot, outstanding = i.amount_cents - i.paid_cents - (i.adjusted_cents ?? 0)
-  const title = i.number ? `Invoice INV-${String(i.number).padStart(6, '0')}` : 'Prepared invoice'
+  const title = i.number ? `Invoice INV-${String(i.number).padStart(6, '0')}` : i.status === 'void' ? 'Earlier invoice preparation' : 'Prepared invoice'
   let actions = ''
   if (i.status === 'draft' && desk(s)) actions += form('invoice.approve', path, hidden('id', i.id) + '<label class="check"><input type="checkbox" required><span>I reviewed this exact invoice.</span></label>', 'Approve and number invoice')
+  if (i.status === 'draft' && desk(s)) actions += `<details><summary>Prepare again from the current visit</summary><p>Use this after signing the visit note or correcting its details. The earlier preparation is retained, and the new draft needs your review and approval.</p>${form('invoice.prepare', path, hidden('appointmentId', i.appointment_id) + hidden('replacesId', i.id) + field('amount', 'Amount ($)', dollarsField(i.amount_cents), 'text', 'required inputmode="decimal" maxlength="12"'), 'Re-prepare invoice')}</details>`
   if (i.status === 'approved' && desk(s)) {
     actions += `<p><a href="/api/balm/invoices/${h(i.id)}.html">Download invoice</a></p>`
     if (outstanding > 0) actions += `<details><summary>Record a payment received</summary>${form('payment.record', path, hidden('invoiceId', i.id) + field('amount', 'Amount received ($)', dollarsField(outstanding), 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"') + field('reference', 'Payment reference (unique)', '', 'text', 'required maxlength="120"'), 'Record payment')}</details>`
