@@ -4,7 +4,7 @@ import { saveAuthorization, saveEnrollment, saveInsuranceSettings, savePayer, sa
 import { saveMedicareSettings, saveMedicareExpenses, saveRecognizedExpense } from './medicare'
 import { saveMedicareService } from './medicare-claim'
 export { medicareSpending, medicarePosition } from './medicare'
-import { importEligibility, prepareEligibility, submitEligibility } from './eligibility'
+import { importEligibility, prepareEligibility, recordEligibility, submitEligibility } from './eligibility'
 import { correctClaim, documentNecessity, draftAppeal, prepareClaim, scrubStoredClaim } from './claims'
 import { prepareBatch, submitBatch } from './batches'
 import { importAcknowledgment } from './acknowledgments'
@@ -34,6 +34,7 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.eligibility.prepare':return prepareEligibility(db,who,input)
     case 'insurance.eligibility.submit':return submitEligibility(env,who,input)
     case 'insurance.eligibility.import':return importEligibility(db,who,input)
+    case 'insurance.eligibility.record':return recordEligibility(db,who,input)
     case 'insurance.claim.prepare':return prepareClaim(db,who,input)
     case 'insurance.claim.correct':return correctClaim(db,who,input)
     case 'insurance.claim.scrub':return scrubStoredClaim(db,who,input)

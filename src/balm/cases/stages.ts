@@ -9,6 +9,7 @@ export const STALE_DAYS = 30
 export const LOW_VISITS = 2
 export const EXPIRY_DAYS = 14
 const SENT = ['batched', 'exported', 'submitted', 'accepted', 'paid', 'partial', 'denied', 'rejected']
+const ERA = '/app/insurance#era'
 export const FIX = ['denied', 'rejected', 'partial']
 
 /** A calendar date (YYYY-MM-DD) or an instant, as Oct 3, 2026 in the clinic's zone. */
@@ -45,9 +46,9 @@ export function stages(f: CaseFacts): Stage[] {
   out.push(f.intakeAt ? { id: 'intake', label: 'Intake', state: 'done', text: `Intake received ${usDay(f.intakeAt, f.zone)}` } : { id: 'intake', label: 'Intake', state: 'waiting', text: 'Intake form not returned yet' })
   const p = f.policy, e = f.eligibility
   if (!p) out.push({ id: 'eligibility', label: 'Eligibility', state: 'none', text: 'Self-pay: no insurance policy on this case' })
-  else if (e && !e.checked_at) out.push({ id: 'eligibility', label: 'Eligibility', state: 'waiting', text: `Inquiry for ${usDay(e.service_date, f.zone)} prepared ${usDay(e.created_at, f.zone)}; waiting for the payer’s 271`, cite: cite.eligibility(f) })
-  else if (!p.eligibility_checked_at) out.push({ id: 'eligibility', label: 'Eligibility', state: 'waiting', text: `${p.payer_name} coverage not checked yet`, cite: e ? cite.eligibility(f) : cite.policy(f) })
-  else if (p.eligibility_status !== 'active') out.push({ id: 'eligibility', label: 'Eligibility', state: 'stalled', text: `Latest response: coverage ${p.eligibility_status}`, cite: e ? cite.eligibility(f) : cite.policy(f) })
+  else if (e && !e.checked_at) out.push({ id: 'eligibility', label: 'Eligibility', state: 'waiting', text: `Inquiry for ${usDay(e.service_date, f.zone)} prepared ${usDay(e.created_at, f.zone)}; waiting for the payer’s 271`, cite: cite.eligibility(f), next: { text: 'Upload the payer’s 271 answer, or record a check made by phone or on its website, in the patient file', href: file(f, 'insurance') } })
+  else if (!p.eligibility_checked_at) out.push({ id: 'eligibility', label: 'Eligibility', state: 'waiting', text: `${p.payer_name} coverage not checked yet`, cite: e ? cite.eligibility(f) : cite.policy(f), next: { text: 'Call the payer or check its website, then record what it said in the patient file', href: file(f, 'insurance') } })
+  else if (p.eligibility_status !== 'active') out.push({ id: 'eligibility', label: 'Eligibility', state: 'stalled', text: `Latest response: coverage ${p.eligibility_status}`, cite: e ? cite.eligibility(f) : cite.policy(f), next: { text: 'Confirm coverage with the payer and record the check, or add the patient’s current policy', href: file(f, 'insurance') } })
   else if (days(p.eligibility_checked_at.slice(0, 10), f.today) > STALE_DAYS) out.push({ id: 'eligibility', label: 'Eligibility', state: 'waiting', text: `Active, but last checked ${usDay(p.eligibility_checked_at, f.zone)}`, cite: e ? cite.eligibility(f) : cite.policy(f) })
   else out.push({ id: 'eligibility', label: 'Eligibility', state: 'done', text: `Active · checked ${usDay(p.eligibility_checked_at, f.zone)}`, cite: e ? cite.eligibility(f) : cite.policy(f) })
   const a = currentAuthorization(f)
@@ -65,19 +66,22 @@ export function stages(f: CaseFacts): Stage[] {
     : seen.length ? { id: 'notes', label: 'Notes signed', state: 'done', text: `${seen.length === 1 ? 'Note' : `All ${seen.length} notes`} signed${lastSigned ? ` · latest ${usDay(lastSigned.signed_at, f.zone)}` : ''}`, cite: lastSigned ? cite.note(f, lastSigned) : undefined } : { id: 'notes', label: 'Notes signed', state: 'none', text: 'No attended visits yet' })
   if (!p) { out.push({ id: 'claim', label: 'Claim sent', state: 'none', text: 'Self-pay: no claims' }, { id: 'era', label: 'ERA posted', state: 'none', text: 'Self-pay: no remittances' }) }
   else {
-    const sent = f.claims.filter(c => SENT.includes(c.status)), held = f.claims.filter(c => c.status === 'draft'), waiting = unclaimed(f)
-    out.push(held.length ? { id: 'claim', label: 'Claim sent', state: 'stalled', text: `${held.length} claim${held.length === 1 ? '' : 's'} held by the scrubber`, cite: cite.claim(f, held[0]) }
+    const sent = f.claims.filter(c => SENT.includes(c.status)), held = f.claims.filter(c => c.status === 'draft'), waiting = unclaimed(f), filed = sent.filter(c => c.status === 'batched')
+    const kept = sent.filter(c => c.status === 'exported').length, out1 = sent.length - filed.length - kept
+    out.push(held.length ? { id: 'claim', label: 'Claim sent', state: 'stalled', text: `${held.length} claim${held.length === 1 ? '' : 's'} held: ${held[0].errors.length} thing${held[0].errors.length === 1 ? '' : 's'} to fix before it can go to the payer`, cite: cite.claim(f, held[0]), next: { text: `Fix: ${held[0].errors.map((x: any) => x.message).join(' ')}`, href: file(f, `claim-${held[0].id}`) } }
       : waiting.length ? { id: 'claim', label: 'Claim sent', state: 'waiting', text: `${waiting.length} signed visit${waiting.length === 1 ? '' : 's'} not claimed yet`, cite: cite.visit(f, waiting[0]) }
-        : sent.length ? { id: 'claim', label: 'Claim sent', state: 'done', text: `${sent.length} claim${sent.length === 1 ? '' : 's'} sent`, cite: cite.claim(f, sent[sent.length - 1]) } : { id: 'claim', label: 'Claim sent', state: 'none', text: 'No claims yet' })
+        : filed.length ? { id: 'claim', label: 'Claim sent', state: 'waiting', text: `${filed.length} claim${filed.length === 1 ? ' is' : 's are'} in a claim file not downloaded yet`, cite: cite.claim(f, filed[0]), next: { text: 'Download the 837P claim file and upload it to your clearinghouse or the payer’s portal', href: '/app/insurance#batches' } }
+          : sent.length ? { id: 'claim', label: 'Claim sent', state: 'done', text: [out1 ? `${out1} claim${out1 === 1 ? '' : 's'} sent` : '', kept ? `${kept} claim file${kept === 1 ? '' : 's'} downloaded for you to upload (Balm did not send ${kept === 1 ? 'it' : 'them'})` : ''].filter(Boolean).join(' · '), cite: cite.claim(f, sent[sent.length - 1]) } : { id: 'claim', label: 'Claim sent', state: 'none', text: 'No claims yet' })
     const posted = f.claims.filter(c => c.era_trace), pending = sent.filter(c => !c.era_trace)
-    out.push(posted.length ? { id: 'era', label: 'ERA posted', state: pending.length ? 'waiting' : 'done', text: `${posted.length} ERA line${posted.length === 1 ? '' : 's'} posted${pending.length ? ` · ${pending.length} waiting on the payer` : ''}`, cite: cite.era(f, posted[posted.length - 1]) }
-      : pending.length ? { id: 'era', label: 'ERA posted', state: 'waiting', text: `${pending.length} claim${pending.length === 1 ? '' : 's'} waiting on the payer`, cite: cite.claim(f, pending[0]) } : { id: 'era', label: 'ERA posted', state: 'none', text: 'No remittance yet' })
+    const upload = { text: 'When the payer answers, upload its 835 (payment or denial) on the Insurance page', href: ERA }
+    out.push(posted.length ? { id: 'era', label: 'ERA posted', state: pending.length ? 'waiting' : 'done', text: `${posted.length} ERA line${posted.length === 1 ? '' : 's'} posted${pending.length ? ` · ${pending.length} waiting on the payer` : ''}`, cite: cite.era(f, posted[posted.length - 1]), ...(pending.length ? { next: upload } : {}) }
+      : pending.length ? { id: 'era', label: 'ERA posted', state: 'waiting', text: `${pending.length} claim${pending.length === 1 ? '' : 's'} waiting on the payer`, cite: cite.claim(f, pending[0]), next: upload } : { id: 'era', label: 'ERA posted', state: 'none', text: 'No remittance yet' })
   }
   const fix = f.claims.filter(c => FIX.includes(c.status)), paid = f.claims.filter(c => c.status === 'paid')
   out.push(fix.length ? { id: 'outcome', label: 'Paid or denied', state: 'stalled', text: `${fix[0].status === 'rejected' ? 'Rejected' : fix[0].status === 'partial' ? 'Partly denied' : 'Denied'}: ${fix[0].errors.map((x: any) => x.code.replace(/^carc_/, 'CARC ')).join(', ') || 'see the payer reason'}`, cite: fix[0].era_trace ? cite.era(f, fix[0]) : cite.claim(f, fix[0]) }
     : f.balanceCents > 0 && (paid.length || !p) ? { id: 'outcome', label: 'Paid or denied', state: 'waiting', text: `Patient owes ${dollars(f.balanceCents)}`, cite: cite.statement(f) }
       : paid.length && paid.length === f.claims.length && !unclaimed(f).length ? { id: 'outcome', label: 'Paid or denied', state: 'done', text: `Paid · patient balance ${dollars(Math.max(0, f.balanceCents))}`, cite: cite.era(f, paid[paid.length - 1]) }
-        : { id: 'outcome', label: 'Paid or denied', state: 'none', text: paid.length ? `${paid.length} of ${f.claims.length} claims paid` : 'Nothing paid yet' })
+        : { id: 'outcome', label: 'Paid or denied', state: 'none', text: `${paid.length ? `${paid.length} of ${f.claims.length} claims paid` : 'Nothing paid yet'}${p ? ': a claim becomes paid or denied when its 835 is posted' : ''}` })
   return out
 }
 

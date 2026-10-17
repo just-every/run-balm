@@ -66,10 +66,10 @@ export async function draftAppeal(db:D1Database,who:Actor,input:Data) {
 }
 
 /** Refresh unsigned billing facts; the clinician's necessity statement is kept,
- * while changed coverage, signed charges and incurred expenses are rechecked. */
+ * while changed coverage, signed charges, fee schedule and incurred expenses are rechecked. */
 export async function refreshClaimFacts(db:D1Database,who:Actor,claim:Data) {
   const old=JSON.parse(claim.snapshot) as ClaimSnapshot
-  const fresh=await claimFacts(db,who,{appointmentId:claim.appointment_id,policyId:claim.policy_id,therapyGroup:claim.therapy_group,referringFirst:old.referring?.first,referringLast:old.referring?.last,referringNpi:old.referring?.npi,lineAmountsCents:old.lines.every(l=>l.amountCents>0)?[...old.lines.reduce((m,l)=>m.set(l.code,(m.get(l.code)??0)+l.amountCents),new Map<string,number>()).values()]:undefined})
+  const fresh=await claimFacts(db,who,{appointmentId:claim.appointment_id,policyId:claim.policy_id,therapyGroup:claim.therapy_group,referringFirst:old.referring?.first,referringLast:old.referring?.last,referringNpi:old.referring?.npi})
   applyMedicareServices(fresh,old.medicareServices,old.medicalNecessity);fresh.frequency=old.frequency;fresh.originalControl=old.originalControl
   return fresh
 }

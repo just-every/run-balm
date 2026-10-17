@@ -4,7 +4,8 @@ import type { Data } from '../domain/model'
 export type Citation = { kind: 'referral' | 'policy' | 'eligibility' | 'authorization' | 'visit' | 'note' | 'claim' | 'era' | 'invoice' | 'statement'; label: string; href: string }
 export type StageId = 'referral' | 'intake' | 'eligibility' | 'authorization' | 'visits' | 'notes' | 'claim' | 'era' | 'outcome'
 /** done: complete; waiting: on someone else or a date; stalled: needs a person; none: does not apply or has not started. */
-export type Stage = { id: StageId; label: string; state: 'done' | 'waiting' | 'stalled' | 'none'; text: string; cite?: Citation }
+/** `next` is what a person does to move a stage that waits on the clinic, and where. */
+export type Stage = { id: StageId; label: string; state: 'done' | 'waiting' | 'stalled' | 'none'; text: string; cite?: Citation; next?: { text: string; href: string } }
 export type StepKind = 'eligibility.check' | 'authorization.request' | 'claim.send' | 'denial.fix' | 'statement.send'
 /** One proposed step: what it does, why, the records it rests on, and what it sends. */
 export type Step = {

@@ -61,7 +61,7 @@ function codesPanel(s: any, f: any, path: string) {
       + `<details><summary>${c.cpt.length || c.icd10.length ? 'Change codes' : 'Add codes'}</summary>${form('pay.codes.save', path, hidden('appointmentId', a.id)
         + field('cpt', 'CPT codes with units and modifiers', cptText(c.cpt), 'text', 'placeholder="97110 GP x2, 97140 GP x1" maxlength="400"')
         + field('icd10', 'ICD-10 diagnoses, primary first', c.icd10.join(', '), 'text', 'placeholder="M25.561, M54.50" maxlength="300"')
-        + '<p class="help">These print on the visit’s superbill. CPT units billed from a signed note take their place.</p>', 'Save codes')}</details>`)
+        + '<p class="help">These print on the visit’s superbill. CPT units billed from a signed note take their place.</p>', 'Save codes')}</details>`, `codes-${a.id}`)
   }).join('')
   return panel('Visit codes', list || empty('No visits yet.'))
 }

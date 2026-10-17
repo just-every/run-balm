@@ -5,10 +5,12 @@ import { problemText, seriesForm, seriesResult } from './series'
 import { documentationDailyClose } from './documentation'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
 import { zoneLabel } from './time-zone'
+import { fullName } from '../domain/model'
 import { cancelForm, clientName, desk, empty, entry, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
 function setupChecklist(s: any) {
   const steps: [boolean, string][] = [
+    [!s.me || fullName(s.me.name), 'Enter your first and last name in <a href="/app/clinic#you">Clinic</a>: it goes on your signed notes and insurance claims.'],
     [s.settings.clinic_name !== 'My clinic', 'Name your clinic in <a href="/app/clinic">Clinic</a>.'],
     [services(s).length > 0, 'Add at least one service with its length and price in <a href="/app/clinic">Clinic</a>.'],
     [practitioners(s).length > 0, 'Add a practitioner (yourself too, if you treat clients) in <a href="/app/clinic">Clinic</a>.'],

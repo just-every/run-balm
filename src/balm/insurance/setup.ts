@@ -1,4 +1,4 @@
-import { audit, commit, day, guard, id, insist, integer, now, one, optional, rows, stmt, text, type Actor, type Data } from '../domain/model'
+import { audit, commit, day, DomainError, guard, id, insist, integer, one, optional, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { validNpi } from '../payments/codes'
 import { insuranceClient, policyFor, yes } from './access'
 
@@ -10,10 +10,14 @@ export async function saveInsuranceSettings(db: D1Database, who: Actor, input: D
   insist(validNpi(npi), 'invalid_billing_npi'); insist(/^\d{9}$/.test(tax), 'invalid_tax_id')
   const phone = text(input.contactPhone, 'contact_phone', 20).replace(/\D/g, '')
   insist(/^\d{10}$/.test(phone), 'invalid_contact_phone')
-  const sender = text(input.senderId, 'sender_id', 15).toUpperCase(); insist(/^[A-Za-z0-9]+$/.test(sender), 'invalid_sender_id')
+  // The clearinghouse submitter ID is needed only once claims are sent electronically.
+  const production = yes(input.production), sender = (optional(input.senderId, 'sender_id', 15) ?? '').toUpperCase()
+  insist(!sender || /^[A-Za-z0-9]+$/.test(sender), 'invalid_sender_id'); insist(sender || !production, 'sender_id_required_for_sending')
+  const missing = production ? await rows(db, "SELECT name FROM bm_payers WHERE receiver_id='' ORDER BY name") : []
+  if (missing.length) throw new DomainError(`Before turning on electronic sending, add the Interchange receiver ID for ${missing.map(p => p.name).join(', ')} in the payer list.`, 409)
   await commit(db, who, [stmt(db, `INSERT INTO bm_insurance_settings(id,billing_npi,tax_id,address,city,state,postal_code,sender_id,contact_name,contact_phone,production) VALUES(1,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET billing_npi=excluded.billing_npi,tax_id=excluded.tax_id,address=excluded.address,city=excluded.city,state=excluded.state,postal_code=excluded.postal_code,sender_id=excluded.sender_id,contact_name=excluded.contact_name,contact_phone=excluded.contact_phone,production=excluded.production,version=bm_insurance_settings.version+1`,
-  npi,tax,text(input.address,'address',100),text(input.city,'city',30),stateCode(input.state),postal(input.postalCode),sender,text(input.contactName,'contact_name',60),phone,yes(input.production)?1:0), audit(db,who,'insurance.settings_saved',null)])
+  npi,tax,text(input.address,'address',100),text(input.city,'city',30),stateCode(input.state),postal(input.postalCode),sender,text(input.contactName,'contact_name',60),phone,production?1:0), audit(db,who,'insurance.settings_saved',null)])
   return { saved: true }
 }
 export async function savePayer(db: D1Database, who: Actor, input: Data) {
@@ -22,8 +26,12 @@ export async function savePayer(db: D1Database, who: Actor, input: Data) {
   const method = input.unitMethod || (medicare ? 'cms' : null)
   insist(method === null || method === 'cms' || method === 'ama', 'invalid_unit_method')
   insist(!medicare || method === 'cms', 'medicare_requires_cms_units')
-  const payerCode = text(input.payerId,'payer_id',50).toUpperCase(), receiver = text(input.receiverId,'receiver_id',15).toUpperCase()
-  insist(/^[A-Za-z0-9]+$/.test(receiver) && /^[A-Za-z0-9]+$/.test(payerCode), 'invalid_payer_identifiers')
+  const payerCode = text(input.payerId,'payer_id',50).toUpperCase(), receiver = (optional(input.receiverId,'receiver_id',15) ?? '').toUpperCase()
+  insist(/^[A-Za-z0-9]+$/.test(payerCode), 'invalid_payer_id'); insist(!receiver || /^[A-Za-z0-9]+$/.test(receiver), 'invalid_receiver_id')
+  const sending = await one(db, 'SELECT production FROM bm_insurance_settings WHERE id=1')
+  insist(receiver || !sending?.production, 'receiver_id_required_for_sending')
+  const same = await one(db, 'SELECT name FROM bm_payers WHERE payer_id=? AND id<>?', payerCode, key)
+  if (same) throw new DomainError(`${same.name} already uses payer ID ${payerCode}. Open ${same.name} in the payer list to change it instead of adding it again.`, 409)
   const fees = input.fees === undefined ? null : input.fees
   insist(fees === null || (Array.isArray(fees) && fees.length <= 200), 'invalid_fee_schedule')
   await commit(db,who,[stmt(db,`INSERT INTO bm_payers(id,name,payer_id,receiver_id,medicare,unit_method,requires_referral) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,payer_id=excluded.payer_id,receiver_id=excluded.receiver_id,medicare=excluded.medicare,unit_method=excluded.unit_method,requires_referral=excluded.requires_referral,version=bm_payers.version+1`,key,text(input.name,'payer_name',100),payerCode,receiver,medicare?1:0,method,yes(input.requiresReferral)?1:0),

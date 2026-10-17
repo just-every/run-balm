@@ -5,9 +5,9 @@ import type { InsuranceEnv } from './types'
 export type InsuranceSubmission = {kind:'270'|'837P';id:string;body:string;sha256:string}
 export type InsuranceSubmissionResult = {status:'submitted';reference:string}|{status:'unavailable';reason:string}
 export interface InsuranceAdapter { submit(input:InsuranceSubmission):Promise<InsuranceSubmissionResult> }
-export const INSURANCE_UNAVAILABLE='Electronic insurance submission is not available yet. Export X12 and import the payer response.'
+export const INSURANCE_UNAVAILABLE='No clearinghouse is connected to this Balm, so Balm does not send claims itself: download each claim file and upload the payer’s answer here.'
 export function adapterStatus(env:InsuranceEnv) {
-  if (managedInstall(env)) return {available:false,reason:'Electronic insurance submission is not available yet on RER Managed hosting. Export X12 and import the payer response.'}
+  if (managedInstall(env)) return {available:false,reason:'RER Managed hosting cannot connect a clearinghouse yet, so Balm does not send claims itself: download each claim file and upload the payer’s answer here.'}
   if (!env.BALM_INSURANCE_ADAPTER_URL || !env.BALM_INSURANCE_ADAPTER_TOKEN) return {available:false,reason:INSURANCE_UNAVAILABLE}
   try { const url=new URL(env.BALM_INSURANCE_ADAPTER_URL); if(url.protocol!=='https:'||url.username||url.password||url.hash) return {available:false,reason:'Configure an HTTPS insurance adapter endpoint and credential.'} } catch { return {available:false,reason:'Configure a valid HTTPS insurance adapter endpoint.'} }
   return {available:true,reason:null}

@@ -18,6 +18,12 @@ Each case shows nine stages, each worked out from the clinic’s own records and
 - **Notes signed**: stalled while an attended visit has no signed note.
 - **Claim sent**, **ERA posted** and **Paid or denied**: claims made from signed visits, remittances posted, denials with their payer codes, and the patient’s balance.
 
+A stage that waits on the clinic says what moves it and links to where: record an eligibility check made by phone or upload the payer’s 271, fix each reason a held claim names, download a claim file for upload, or upload the payer’s 835.
+
+## What moves a case to paid or denied
+
+A claim leaves Balm as an 837P claim file you upload to your clearinghouse or the payer’s portal (or through the clearinghouse connection, when one is set up). The payer answers with an 835, which the clearinghouse or the portal gives you. Upload it at the bottom of **Cases** or on the **Insurance** page: posting it marks each claim paid or denied, records the patient’s share and moves the case to **Paid or denied**. A 277CA only says the claim was received or rejected. Without a clearinghouse, check eligibility by phone or the payer’s website and record it in the patient file; see [Insurance billing](/docs/insurance).
+
 The top line of each case is the first stage that stalled, or else the furthest stage still waiting. A case reads **Reconciled** once every claim is paid and the patient owes nothing.
 
 ## Next steps, approved by a person

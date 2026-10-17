@@ -7,6 +7,20 @@ import { medicareSpending } from './medicare'
 import { applyMedicareServices } from './medicare-claim'
 import type { ClaimSnapshot } from './types'
 
+/** Billed lines by the payer's timed-unit method: AMA per-code midpoint, else the CMS 8-minute rule. */
+export function billedLines(charges:Charge[],unitMethod:string|null) {
+  return unitMethod==='ama'?charges.map(c=>({...cpt(c.code)!,minutes:c.minutes,units:cpt(c.code)!.timed?Math.floor((c.minutes+7)/15):1})):bill(charges).lines
+}
+/** CPT minutes summed across a visit's signed notes. */
+export async function signedCharges(db:D1Database,appointmentId:string) {
+  const signed=await rows(db,`SELECT n.id,n.signed_sha256,n.signed_revision,r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`,appointmentId)
+  const minutes=new Map<string,number>()
+  for(const r of signed) for(const charge of JSON.parse(r.charges??'[]') as Charge[]) {
+    insist(cpt(charge.code)&&Number.isInteger(charge.minutes)&&charge.minutes>=0,'invalid_signed_charge')
+    minutes.set(charge.code,(minutes.get(charge.code)??0)+charge.minutes)
+  }
+  return {signed,charges:[...minutes].map(([code,minutes])=>({code,minutes}))}
+}
 const nameParts=(name:string)=>{const parts=name.trim().split(/\s+/);return {first:parts.slice(0,-1).join(' '),last:parts.at(-1)??''}}
 export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<ClaimSnapshot> {
   const policy=await policyFor(db,who,input.policyId)
@@ -14,16 +28,10 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_clients c ON c.id=a.client_id JOIN bm_settings s ON s.id=1 WHERE a.id=? AND a.client_id=?`,input.appointmentId,policy.client_id)
   insist(visit,'appointment_not_found',404)
   insist(who.role==='owner'||who.staffRole==='reception'||who.staffId===visit.practitioner_id,'appointment_not_found',404)
-  const signed=await rows(db,`SELECT n.id,n.signed_sha256,n.signed_revision,r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`,visit.id)
   // Billing sees only signed charge facts, never body/sections/intake answers.
+  const {signed,charges}=await signedCharges(db,visit.id)
   await commit(db,who,[audit(db,who,'insurance.signed_charges_read',visit.client_id,visit.id)])
-  const minutes=new Map<string,number>()
-  for(const r of signed) for(const charge of JSON.parse(r.charges??'[]') as Charge[]) {
-    insist(cpt(charge.code)&&Number.isInteger(charge.minutes)&&charge.minutes>=0,'invalid_signed_charge')
-    minutes.set(charge.code,(minutes.get(charge.code)??0)+charge.minutes)
-  }
-  const charges=[...minutes].map(([code,minutes])=>({code,minutes}))
-  const billed=policy.unit_method==='ama'?charges.map(c=>({...cpt(c.code)!,minutes:c.minutes,units:cpt(c.code)!.timed?Math.floor((c.minutes+7)/15):1})):bill(charges).lines
+  const billed=billedLines(charges,policy.unit_method)
   const [codes,fees,invoice,settings,enrollment,auths]=await Promise.all([
     rows(db,'SELECT * FROM bm_visit_codes WHERE appointment_id=? ORDER BY kind,position',visit.id),
     rows(db,'SELECT code,cents FROM bm_payer_fees WHERE payer_id=?',policy.payer_id),
@@ -38,12 +46,10 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   insist(group==='ot'||group==='pt_slp','invalid_therapy_group')
   const diag=codes.filter(c=>c.kind==='icd10').map(c=>c.code as string)
   const modifier=group==='ot'?'GO':/speech|SLP/i.test(visit.profession)?'GN':'GP'
-  const amounts=input.lineAmountsCents
-  insist(amounts===undefined||(Array.isArray(amounts)&&amounts.length===billed.filter(l=>l.units>0).length&&amounts.every(n=>Number.isSafeInteger(n)&&n>0&&n<=10_000_000)),'invalid_claim_line_amounts')
-  const lines=billed.filter(l=>l.units>0).map((l,i)=>{
+  const lines=billed.filter(l=>l.units>0).map(l=>{
     const saved=codes.find(c=>c.kind==='cpt'&&c.code===l.code),fee=fees.find(f=>f.code===l.code)
     const mods=new Set<string>(String(saved?.modifiers??'').split(/\s+/).filter(Boolean)); mods.add(modifier)
-    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:amounts?.[i]??(fee?fee.cents*l.units:0),allowedCents:fee?fee.cents*l.units:0,diagnosisPointers:diag.length?[1]:[]}
+    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:fee?fee.cents*l.units:0,allowedCents:fee?fee.cents*l.units:0,diagnosisPointers:diag.length?[1]:[]}
   })
   const total=lines.reduce((sum,l)=>sum+l.amountCents,0)
   const spending=await medicareSpending(db,policy.client_id,year,group,visit.id),config=spending.external,annual=spending.annual

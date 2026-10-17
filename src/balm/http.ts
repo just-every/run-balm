@@ -1,5 +1,7 @@
 import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
 import { bundleFormInput } from './movein/form-input'
+import { ownerProfile, saveOwnerName } from './owner-name'
+import { insuredCharge } from './insurance/invoice-price'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
@@ -46,13 +48,13 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
+  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -93,6 +95,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       const [code, amount] = line.trim().split(/\s+/)
       return { code, cents: parseDollars(amount, 'fee') }
     })
+    if (name === 'insurance.eligibility.record' && typeof input.copay === 'string') input.copayCents = input.copay.trim() ? parseDollars(input.copay, 'copay') : null
     if (name === 'insurance.medicare.save' && input.threshold !== undefined) { input.thresholdCents = parseDollars(input.threshold, 'threshold'); input.externalUsedCents = parseDollars(input.externalUsed || '0', 'outside_expenses') }
     return insuranceCommand(env, who, name, input)
   }
@@ -108,6 +111,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
+  if (name === 'owner.name') return saveOwnerName(request, env, who, input)
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)

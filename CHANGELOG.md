@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Insurance setup from the page alone.** The Insurance page says in plain words what insurance billing needs (billing details, payers with a fee schedule, provider enrollment, and a clearinghouse such as Claim.MD or Availity only for electronic sending), what works today without a clearinghouse and what waits on one, and links the new docs page [Insurance billing](https://run-balm.com/docs/insurance). Every setup field says where its value comes from. The clearinghouse submitter ID and each payer's receiver ID are optional until electronic sending is turned on; until then claim files name the practice by its tax ID and the payer by its payer ID. A missing or malformed value comes back as an error naming the field.
+- **Eligibility by hand.** Staff record a check made by phone or on the payer's website, with who said so and the reference; it counts as the eligibility check for the patient's case.
+- **A held claim always has a way out.** Each reason the claim check holds a claim names what is wrong and links to where it is fixed; **Check the claim again** reads the current fee schedule. Voiding an invoice withdraws its unsent claim instead of failing with "Someone changed this at the same time", and adding a payer whose payer ID is already listed names that payer instead. An insured visit's invoice defaults to the payer's fee schedule, so invoice and claim agree. The owner enters their first and last name in **Clinic → You** (a local install starts as "Owner").
+- **Cases name the next step.** A stage waiting on the clinic links to what moves it: record eligibility, fix a held claim, download a claim file, or upload the payer's 835. Cases explains what moves a case to paid or denied and takes the 835 and 277CA uploads itself. A downloaded claim file is no longer called sent.
+
 ## 0.1.0 (17 Oct 2026)
 
 Balm's first release: practice software for a US outpatient physical, occupational or speech therapy clinic with 1 to 10 practitioners, which you run on your own computer or in your own Cloudflare account. It books, takes intake, keeps signed treatment notes and plans of care, reminds patients, bills them and takes their payments, with every access to a client file audited. It is MIT licensed and charges nothing.

@@ -1,4 +1,4 @@
-import { audit, commit, day, guard, id, insist, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
+import { audit, commit, day, guard, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { policyFor } from './access'
 import { cents, envelope, parseX12, segment, xdate } from './x12'
 import { insuranceAdapter, adapterStatus } from './adapter'
@@ -9,19 +9,20 @@ export async function eligibilityRequest(db: D1Database, policy: Data, date: str
   const config=await one(db,'SELECT i.*,s.clinic_name FROM bm_insurance_settings i JOIN bm_settings s ON s.id=i.id')
   insist(config,'configure_insurance_billing_first',409)
   const key=id(),trace=key.replace(/-/g,'').toUpperCase()
+  const config270={sender:config.sender_id,taxId:config.tax_id,receiver:policy.receiver_id,payerCode:policy.payer_code,production:!!config.production},originator=config.sender_id||'1'+config.tax_id
   const parts=[segment('BHT','0022','13',trace,xdate(now().slice(0,10)),now().slice(11,16).replace(':','')),
     segment('HL',1,'',20,1),segment('NM1','PR',2,policy.payer_name,'','','','','PI',policy.payer_code),
     segment('HL',2,1,21,1),segment('NM1','1P',2,config.clinic_name,'','','','','XX',config.billing_npi),
-    segment('HL',3,2,22,policy.relationship==='18'?0:1),segment('TRN',1,trace,config.sender_id),
+    segment('HL',3,2,22,policy.relationship==='18'?0:1),segment('TRN',1,trace,originator),
     segment('NM1','IL',1,policy.subscriber_last,policy.subscriber_first,'','','','MI',policy.member_id),
     segment('DMG','D8',xdate(policy.subscriber_dob),policy.subscriber_sex)]
   if(policy.relationship!=='18') {
     const client=await one(db,'SELECT first_name,last_name,date_of_birth FROM bm_clients WHERE id=?',policy.client_id)
     insist(client?.date_of_birth,'patient_date_of_birth_required')
-    parts.push(segment('HL',4,3,23,0),segment('TRN',1,trace,config.sender_id),segment('NM1','03',1,client.last_name,client.first_name),segment('DMG','D8',xdate(client.date_of_birth),policy.patient_sex))
+    parts.push(segment('HL',4,3,23,0),segment('TRN',1,trace,originator),segment('NM1','03',1,client.last_name,client.first_name),segment('DMG','D8',xdate(client.date_of_birth),policy.patient_sex))
   }
   parts.push(segment('DTP','291','D8',xdate(date)),segment('EQ','30'))
-  const body=envelope('270','005010X279A1',{sender:config.sender_id,receiver:policy.receiver_id,production:!!config.production},parts)
+  const body=envelope('270','005010X279A1',config270,parts)
   return { id:key, policyId:policy.id, serviceDate:date, trace, body, configVersion:config.version }
 }
 export function eligibilityStatement(db: D1Database, request: Awaited<ReturnType<typeof eligibilityRequest>>) {
@@ -67,4 +68,18 @@ export async function importEligibility(db:D1Database,who:Actor,input:Data) {
   const copay=copays.length===1?copays[0].amountCents:null,deductible=deductibles.length===1?deductibles[0].amountCents:null,at=now()
   await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),stmt(db,'UPDATE bm_eligibility SET response=?,response_sha256=?,benefits=?,status=?,checked_at=?,version=version+1 WHERE id=? AND response IS NULL',parsed.body,hash,JSON.stringify({benefits,errors}),status,at,row.id),guard(db,'changes()=1'),stmt(db,'UPDATE bm_policies SET eligibility_status=?,eligibility_checked_at=?,copay_cents=?,deductible_cents=?,version=version+1 WHERE id=?',status,at,copay,deductible,policy.id),audit(db,who,'insurance.eligibility_imported',policy.client_id,row.id)])
   return {id:row.id,policyId:policy.id,status,benefits,errors,copayCents:copay,deductibleCents:deductible}
+}
+/** A check made by phone or on the payer's website: who said what, kept like a 271
+ * answer. It is the newest word on coverage, so open electronic inquiries are retired. */
+export async function recordEligibility(db:D1Database,who:Actor,input:Data) {
+  const policy=await policyFor(db,who,input.policyId),date=day(input.serviceDate,'service_date'),status=String(input.status??'')
+  insist(status==='active'||status==='inactive','choose_whether_coverage_is_active')
+  const source=text(input.source,'eligibility_source',300),copay=input.copayCents===undefined||input.copayCents===null?null:integer(input.copayCents,'copay_cents',0,1_000_000)
+  const key=id(),at=now(),manual={source,by:who.email,copayCents:copay}
+  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),
+    stmt(db,"UPDATE bm_eligibility SET status='superseded',version=version+1 WHERE policy_id=? AND response IS NULL AND status IN ('prepared','exported')",policy.id),
+    stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,response,benefits,status,created_at,checked_at) VALUES(?,?,?,?,?,?,?,?,?,?)',key,policy.id,date,'MANUAL'+key.replace(/-/g,'').toUpperCase(),'',`Checked by hand: ${source}`,JSON.stringify({benefits:[],errors:[],manual}),status,at,at),
+    stmt(db,'UPDATE bm_policies SET eligibility_status=?,eligibility_checked_at=?,copay_cents=COALESCE(?,copay_cents),version=version+1 WHERE id=?',status,at,copay,policy.id),
+    audit(db,who,'insurance.eligibility_recorded',policy.client_id,key)])
+  return {id:key,policyId:policy.id,status,copayCents:copay}
 }
