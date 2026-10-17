@@ -1,7 +1,7 @@
 /* The run site's tokens, defined once: the homepage, the docs, /run and the 404
    link this file (Base's Run and not-found pages read its --rer-* tokens).
    Balm's look (design desk, 16 Oct 2026): warm ivory paper, deep navy-teal ink,
-   the mark's teal, amber and leaf green as accents, Newsreader headings over
+   teal, amber and leaf green as accents, Newsreader headings over
    Inter body text, white hairline cards with soft shadows. */
 :root {
   --rer-font-body: 'Inter', 'Inter Fallback', Arial, sans-serif;

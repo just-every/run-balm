@@ -46,4 +46,13 @@ export function intakePage(d: any) {
     <section class="panel"><h2>${h(d.form.title)}</h2><form method="post" action=""><input type="hidden" name="formId" value="${h(d.form.id)}">${d.form.questions.map(question).join('')}<button type="submit">Send my intake form</button></form></section>`
 }
 
+export function offerPage(d: any) {
+  const o = d.offer, when = localTime(o.start_at, o.time_zone), what = `${h(o.service)} with ${h(o.practitioner)} on ${h(when)}`
+  if (d.state === 'yours') return `<h1>You're booked, ${h(o.first_name)}</h1><p>${what}. We emailed you the details and your intake link.</p>`
+  if (d.state === 'taken') return `<h1>This time has been taken</h1><p>Sorry, ${h(o.first_name)}: someone else on the waitlist accepted ${what} first. You are still on ${h(o.clinic_name)}'s waitlist, and we will email you when another time opens up.</p>`
+  if (d.state === 'past') return `<h1>This offer has closed</h1><p>${what} is too close to book from the waitlist now. You are still on the waitlist.</p>`
+  return `<h1>A time opened up</h1><p>Hello ${h(o.first_name)}. ${h(o.clinic_name)} has a time for you: <strong>${what}</strong>.</p><p>It was offered to everyone waiting for it, and the first person to accept gets it.</p>
+    <form method="post" action=""><button type="submit">Book this time</button></form>`
+}
+
 export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was canceled. Please contact the clinic.</p>'

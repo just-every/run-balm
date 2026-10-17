@@ -217,6 +217,11 @@ provider request. The default environment is `production`; select another with
 `--environment NAME`. Local validation does not establish provider acceptance,
 hosted health or mail delivery.
 
+A hosted Balm emails sign-in links, intake links and waitlist offers through
+your own mail provider. Give the deploy `MAIL_PROVIDER` (`resend`, `sendgrid` or
+`cloudflare`), `MAIL_API_KEY` and `MAIL_FROM` (a sender address your provider
+has verified) in the environment or the `--env-file`.
+
 `rer describe` reads the current checkout's actual verbs,
 flags, aliases, pins, effects and local state without installing or running
 project commands. New verbs accept `--help`, `--cwd PATH`, `--non-interactive`

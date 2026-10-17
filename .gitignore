@@ -10,3 +10,5 @@ dist/
 *.tsbuildinfo
 
 .rer/local/
+.rer/demo/
+.rer/demo-host/

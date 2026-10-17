@@ -10,7 +10,8 @@
     {
       "title": "Run your clinic",
       "pages": [
-        { "slug": "bookings", "title": "Bookings and the schedule", "file": "bookings.md", "summary": "Online booking at /book, booking from a client file, and marking visits attended, missed or canceled." },
+        { "slug": "bookings", "title": "Bookings and the schedule", "file": "bookings.md", "summary": "The calendar by day or week and by practitioner or room, online booking at /book, moving and canceling visits, and recurring visits." },
+        { "slug": "waitlist", "title": "The waitlist", "file": "waitlist.md", "summary": "Keep clients waiting for a time; a canceled visit is offered to them by email and the first to accept is booked." },
         { "slug": "intake", "title": "Intake forms", "file": "intake.md", "summary": "The private intake link each new booking gets, who reads the answers, and publishing a new version of the form." },
         { "slug": "notes", "title": "Treatment notes", "file": "notes.md", "summary": "Write a note against a visit, amend it with a reason, and know who can read it." },
         { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },

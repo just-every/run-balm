@@ -71,9 +71,9 @@ export async function eraseClient(db: D1Database, who: Actor, input: Data) {
   const client = await clientVisible(db, who, input.id)
   const unused = `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_notes WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoices WHERE client_id=?)
-    AND NOT EXISTS(SELECT 1 FROM bm_import_client_revisions WHERE client_id=?)
+    AND NOT EXISTS(SELECT 1 FROM bm_import_client_revisions WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_waitlist WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM ik_provenance WHERE destination='balm:clients' AND target_id=?)`
-  const args = Array(6).fill(client.id)
+  const args = Array(7).fill(client.id)
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${unused}) THEN 1 ELSE 0 END AS ok`, ...args))?.ok === 1, 'clients_with_health_records_are_retained', 409)
   const portability = await createPortability({ db, policy: archivePolicy })
   const at = Date.now()

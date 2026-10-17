@@ -12,10 +12,11 @@ const sql = (sql: string, ...params: unknown[]): D1Sql => ({ sql, params })
 /** The same identity text clients.ts hashes for the erasure journal. */
 export const identityText = (first: string, last: string, dob: string | null) => `client:${first.trim().toLowerCase()}|${last.trim().toLowerCase()}|${dob ?? ''}`
 
-const dependencies = `(SELECT json_group_array(json_object('table',d.t,'id',d.id)) FROM (
+// D1 caps the terms of one compound SELECT, so the waitlist joins through a nested one.
+const dependencies = `(SELECT json_group_array(json_object('table',d.t,'id',d.id)) FROM (SELECT t,id FROM (
   SELECT 'bm_appointments' AS t,id FROM bm_appointments WHERE client_id=s.id UNION ALL SELECT 'bm_notes',id FROM bm_notes WHERE client_id=s.id
   UNION ALL SELECT 'bm_intake_responses',id FROM bm_intake_responses WHERE client_id=s.id UNION ALL SELECT 'bm_invoices',id FROM bm_invoices WHERE client_id=s.id
-  UNION ALL SELECT 'bm_drafts',id FROM bm_drafts WHERE client_id=s.id ORDER BY 1,2) d)`
+  UNION ALL SELECT 'bm_drafts',id FROM bm_drafts WHERE client_id=s.id) UNION ALL SELECT 'bm_waitlist',id FROM bm_waitlist WHERE client_id=s.id ORDER BY 1,2) d)`
 const select = `SELECT s.*,r.revision AS import_revision,${dependencies} AS dependency_snapshot FROM bm_clients s LEFT JOIN bm_import_client_revisions r ON r.client_id=s.id`
 
 function scope(dest: string, kind: string) {

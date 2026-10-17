@@ -12,6 +12,10 @@ Until these steps are done, the owner's **Schedule** page shows them under **Fin
 
 Add each service a client can book with its **Length (minutes)** and **Price in cents**: `14000` is $140.00. For example an initial evaluation of 60 minutes at `14000` and a follow-up visit of 45 minutes at `9500`. Set a service to **Inactive** to stop offering it.
 
+## Rooms
+
+Rooms are optional. Add each treatment room or gym under **Rooms** on the **Clinic** page. A room holds one visit at a time: Balm refuses a booking, a move or a recurring visit that would put two visits in one room at once. The schedule can then show each room's day or week.
+
 ## Staff
 
 Add each person under **Add a staff member**:

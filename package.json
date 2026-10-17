@@ -27,7 +27,7 @@
     "check": "rer check",
     "deps": "rer install",
     "rer": "rer",
-    "test:balm": "node --test --test-concurrency=1 tests/balm.test.mjs",
+    "test:balm": "node --test --test-concurrency=1 tests/balm.test.mjs tests/demo.test.mjs tests/schedule.test.mjs",
     "test:archive": "node --test --test-concurrency=1 tests/archive.test.mjs",
     "test:site": "node --test tests/site/*.test.mjs"
   },
@@ -42,7 +42,7 @@
     "@cloudflare/vite-plugin": "1.54.5",
     "@cloudflare/workers-types": "5.20260908.1",
     "@playwright/test": "1.63.0",
-    "@runeditrun/rer": "0.2.37",
+    "@runeditrun/rer": "0.2.38",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",

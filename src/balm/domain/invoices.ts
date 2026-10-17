@@ -9,7 +9,8 @@ export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
 export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
-async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
+/** The facts an invoice freezes; approval re-reads them and compares byte for byte. */
+export async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
   const row = await one(db, `SELECT a.id,a.start_at,a.status,a.client_id,c.first_name,c.last_name,c.date_of_birth,p.name AS practitioner,p.profession,p.provider_number,
     s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
@@ -38,7 +39,8 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
   return { id: invoiceId, status: 'draft', snapshot: value }
 }
 
-function artifact(number: number, value: any, approvedAt: string) {
+/** The downloadable bytes an approval fixes. */
+export function artifact(number: number, value: any, approvedAt: string) {
   const line = (label: string, v: unknown) => v ? `<p><strong>${escape(label)}:</strong> ${escape(v)}</p>` : ''
   return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><title>${invoiceNumber(number)}</title>`
     + '<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1d2a26}table{width:100%;border-collapse:collapse;margin:24px 0}td,th{border-bottom:1px solid #ccd;padding:8px;text-align:left}td:last-child,th:last-child{text-align:right}</style></head><body>'
