@@ -23,25 +23,27 @@ import { WEBHOOK_PATH } from './payments/connect'
 import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
+import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
+import { DomainError, human, insist, need } from './domain/model'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
 import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
 import { visitReply, visitReplyView } from './reminders/replies'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
-const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist)?$/
+const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist|\/insurance)?$/
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
+  return { ...file, insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -71,6 +73,27 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name.startsWith('insurance.')) {
+    if (name === 'insurance.batch.prepare' && !Array.isArray(input.claimIds)) input.claimIds = Object.keys(input).filter(k => k.startsWith('claim_') && input[k] === 'on').map(k => k.slice(6))
+    if (name === 'insurance.payer.save' && typeof input.feeSchedule === 'string') input.fees = input.feeSchedule.split(/\r?\n/).filter(line => line.trim()).map(line => {
+      const [code, amount] = line.trim().split(/\s+/)
+      return { code, cents: parseDollars(amount, 'fee') }
+    })
+    if (name === 'insurance.medicare.save' && input.threshold !== undefined) { input.thresholdCents = parseDollars(input.threshold, 'threshold'); input.externalUsedCents = parseDollars(input.externalUsed || '0', 'outside_expenses') }
+    return insuranceCommand(env, who, name, input)
+  }
+  if (['appointment.book', 'series.book'].includes(name)) {
+    need(who, 'owner', 'reception', 'practitioner'); human(who)
+    insist(who.role === 'owner' || who.staffRole === 'reception' || input.practitionerId === who.staffId, 'practitioners_book_their_own_diary', 403)
+    const dates = name === 'series.book'
+      ? (Array.isArray(input.occurrences) ? input.occurrences.filter((o: any) => ![true, 'on', 'yes'].includes(o.skip)).map((o: any) => String(o.date))
+        : Object.keys(input).filter(k => /^date_\d+$/.test(k) && input['skip_' + k.slice(5)] !== 'on').map(k => String(input[k])))
+      : [String(input.date ?? '')]
+    const found = (await Promise.all([...new Set(dates)].map(date => bookingWarnings(env.DB, String(input.clientId), date, String(input.practitionerId ?? ''), undefined, dates)))).flat()
+    const warnings = [...new Map(found.map(w => [w.code + ':' + w.authorizationId + ':' + w.policyId, w])).values()]
+    if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
+      throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
+  }
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
@@ -270,6 +293,11 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P)\/([\w-]+)$/)
+      if (x12) {
+        const download = await insuranceDownload(env, who, x12[1], x12[2])
+        return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
+      }
       const document = await paymentDocument(env.DB, who, path)
       if (document) return document
       const original = path.match(/^\/api\/balm\/imports\/([\w-]+)\/original\.csv$/)
@@ -304,7 +332,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const result = await execute(request, env, who, name, input)
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check'].includes(name)) {
+        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people

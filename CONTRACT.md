@@ -352,16 +352,16 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 2 | intake | `INTAKE-001`, `INTAKE-002` | partial |
 | 3 | notes | `CHART-001`, `BALM-004`, `CHART-002` | partial |
 | 4 | reminders | `REMIND-001`, `COMM-001`, `COMM-002` | done |
-| 5 | bills insurance … through to paid | `INS-005`, `INS-006`, `INS-007`, `INS-012`, `INS-013` | missing |
+| 5 | bills insurance … through to paid | `INS-005`, `INS-006`, `INS-007`, `INS-012`, `INS-013` | partial |
 | 6 | bills … patients through to paid | `BILL-001`, `BALM-003`, `PAY-001`, `PAY-002`, `PAY-004` | partial |
 | 7 | 100% free, open source | `OWN-001` | partial |
 | 8 | Tuesday schedule with visits | `BALM-002`, `SCHED-002` | partial |
 | 9 | "daily note" signed | `BALM-004`, `CHART-002`, `CHART-004` | partial |
 | 10 | Plan of care signed by Dr. Patel | `BALM-004`, `CHART-003` | partial |
-| 11 | Auth: 8 of 12 visits left | `INS-003` | missing |
-| 12 | Claim paid · Aetna · $142.18 | `INS-006`, `INS-007` | missing |
+| 11 | Auth: 8 of 12 visits left | `INS-003` | partial |
+| 12 | Claim paid · Aetna · $142.18 | `INS-006`, `INS-007` | partial |
 | 13 | Reminder sent | `COMM-001`, `COMM-002` | done |
-| 14 | Denied: missing KX modifier · Resubmitted | `INS-008`, `INS-009` | missing |
+| 14 | Denied: missing KX modifier · Resubmitted | `INS-008`, `INS-009` | partial |
 | 15 | Recurring visits | `BALM-002`, `SCHED-003` | partial |
 | 16 | waitlists | `BALM-002`, `SCHED-005` | partial |
 | 17 | online booking keep[s] the calendar full | `SCHED-001`, `SCHED-006` | partial |
@@ -375,11 +375,11 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 25 | The scribe drafts from the visit | `BALM-004`, `CHART-012` | partial |
 | 26 | you review and sign | `BALM-004`, `CHART-004`, `CHART-012` | partial |
 | 27 | Billed CPT units, "8-minute rule · 3 units" | `BALM-004`, `CHART-006` | partial |
-| 28 | Check eligibility | `INS-002` | missing |
-| 29 | track authorizations | `INS-003` | missing |
-| 30 | send claims through Claim.MD or Availity | `INS-006` | missing |
-| 31 | Payments post from the ERA | `INS-007` | missing |
-| 32 | denials arrive with the fix | `INS-008` | missing |
+| 28 | Check eligibility | `INS-002` | partial |
+| 29 | track authorizations | `INS-003` | partial |
+| 30 | send claims through Claim.MD or Availity | `INS-006` | partial |
+| 31 | Payments post from the ERA | `INS-007` | partial |
+| 32 | denials arrive with the fix | `INS-008` | partial |
 | 33 | All 14 notes signed · claims sent | `BALM-004`, `CHART-004`, `INS-006`, `REPORT-004` | partial |
 | 34 | Cards on file | `BALM-003`, `PAY-002` | partial |
 | 35 | text-to-pay links | `BALM-003`, `PAY-003`, `COMM-002` | partial |
@@ -400,7 +400,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 50 | Telehealth: Video visits from the same calendar | `TELE-001` | missing |
 | 51 | Home exercise programs | `PORTAL-002`, `PORTAL-007` | missing |
 | 52 | Secure messaging | `PORTAL-003` | done |
-| 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | missing |
+| 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | partial |
 | 54 | Plan of care signatures | `BALM-004`, `CHART-003` | partial |
 | 55 | Audit log: Every chart view and change, recorded | `AUDIT-001` | done |
 | 56 | Open source practice management for US therapy clinics | `OWN-001`, `US-001` | partial |
@@ -408,13 +408,13 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 
 ## Status
 
-Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding.
+Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below.
 
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 0 | 40 | 54 | 94 |
-| All | 15 | 40 | 54 | 109 |
+| Target and push further | 0 | 49 | 45 | 94 |
+| All | 15 | 49 | 45 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -455,7 +455,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `CHART-004` | Draft, sign, lock and amend | target | partial | `src/balm/domain/signing.ts`; `src/balm/domain/notes.ts`; `migrations/core/0019_balm_charting.sql`; `tests/charting.test.mjs` | Drafts, signing with name, credentials and time, a database lock and signed addenda ship, and unsigned notes are listed on the schedule; no practice deadline or daily close |
 | `CHART-005` | Objective measures and flowsheets | target | missing |  | No structured measures or flowsheets |
 | `CHART-006` | Billing captured from the note | target | partial | `src/balm/charting/cpt.ts`; `src/balm/payments/codes.ts`; `tests/charting.test.mjs` | CPT minutes on the note and CMS 8-minute units on the invoice ship, with the first listed code taking a tie; no AMA/CPT or fixed-threshold methods, clinician tie choice, automatic modifiers, diagnosis pointers or secondary re-unitising |
-| `CHART-007` | Documentation compliance alerts | target | missing |  | No documentation compliance checks |
+| `CHART-007` | Documentation compliance alerts | target | partial | `src/balm/insurance/scrub.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs` | KX holds a claim until clinician medical necessity is recorded; other documentation compliance alerts and plan certification checks remain outstanding |
 | `CHART-008` | Supervision and co-signature | target | missing |  | No supervision or co-signature |
 | `CHART-009` | Attachments and searchable history | target | partial | `src/balm/domain/clients.ts`; `src/balm/domain/notes.ts` | Per-patient note and intake history; no attachments or search |
 | `CHART-010` | Alerts and precautions | target | missing |  | No alerts or precautions |
@@ -475,21 +475,21 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `PAY-001` | Payments recorded once per reference | published | done | `src/balm/domain/invoices.ts`; `tests/balm.test.mjs` |  |
 | `PAY-002` | Cards on file and payments at check-in | target | partial | `src/balm/payments/cards.ts`; `src/balm/payments/charges.ts`; `src/balm/payments/index.ts`; `tests/payments.test.mjs` | A card saved with consent through Stripe and the copay charged at check-in ship; no saving from intake or the portal, Stripe Terminal or approved refunds |
 | `PAY-003` | Payment links and online prepayment | target | partial | `src/balm/payments/links.ts`; `src/balm/sms/index.ts`; `tests/payments.test.mjs` | Expiring pay links by email post to the ledger, with texting behind the SMS adapter; no deposit or prepayment at online booking |
-| `PAY-004` | Statements, receipts, adjustments and refunds | target | partial | `src/balm/payments/ledger.ts`; `src/balm/payments/documents.ts`; `src/balm/domain/invoices.ts`; `tests/payments.test.mjs` | A ledger across visits, statement and receipt PDFs and credit applied to the next invoice ship; no adjustments, write-offs or refunds with a reason and approver, and no periodic statements |
+| `PAY-004` | Statements, receipts, adjustments and refunds | target | partial | `src/balm/payments/ledger.ts`; `src/balm/payments/documents.ts`; `src/balm/domain/invoices.ts`; `tests/payments.test.mjs` | A ledger across visits, statement and receipt PDFs, credit applied to the next invoice and approved 835 contractual adjustments with reason and actor ship; no general manual adjustments, refunds or periodic statements |
 | `PAY-005` | Superbills | target | partial | `src/balm/payments/documents.ts`; `src/balm/payments/codes.ts`; `tests/payments.test.mjs` | A per-visit superbill with tax ID, practitioner NPI, CPT with modifiers and units and ICD-10 ships; no superbill for a period and no practice NPI |
 | `PAY-006` | Payment plans and balance reminders | target | missing |  | No payment plans or balance reminders |
 | `PAY-007` | Good Faith Estimates | target | missing |  | No Good Faith Estimates |
 | `PAY-008` | Packages, memberships, products and gift cards | target | missing |  | No packages, memberships, products or gift cards |
 | `PAY-009` | Statement runs by mail, email and portal | target | missing |  | No statement runs, mailed batches or delivery records |
-| `INS-001` | Payers, plans, fee schedules and providers | target | missing |  | No payers, fee schedules, timed-unit methods, provider enrollment or policies |
-| `INS-002` | Eligibility and benefits checks | target | missing |  | No eligibility checks |
-| `INS-003` | Authorization and visit tracking | target | missing |  | No authorization tracking |
+| `INS-001` | Payers, plans, fee schedules and providers | target | partial | `src/balm/insurance/setup.ts`; `src/balm/insurance/facts.ts`; `tests/insurance.test.mjs` | Payers, policies, provider NPI/taxonomy/enrollment, per-payer CPT fees and CMS/AMA unit methods ship; no dated plan-specific fee schedules, fixed thresholds or provider-license management |
+| `INS-002` | Eligibility and benefits checks | target | partial | `src/balm/insurance/eligibility.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs` | 270 and matching 271 imports with scoped benefits work against synthetic edge fixtures; clearinghouse enrollment, live payer checks and scheduled next-day/monthly batches remain pending |
+| `INS-003` | Authorization and visit tracking | target | partial | `src/balm/insurance/authorization.ts`; `src/balm/insurance/setup.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs` | Visit authorizations, attended use, booked reservations, remaining visits, expiry, low warnings and warn/block at staff booking ship; no CPT scope or unit-based authorizations, configurable low remainder or public returning-patient booking limits |
 | `INS-004` | Prior authorization requests | target | missing |  | No prior authorization requests |
-| `INS-005` | Claim creation and scrubbing | target | missing |  | No claims or scrubber |
-| `INS-006` | Claim submission and acknowledgments | target | missing |  | No clearinghouse connection |
-| `INS-007` | ERA posting | target | missing |  | No ERA import |
-| `INS-008` | Denials and A/R work queue | target | missing |  | No denial or A/R queue |
-| `INS-009` | Medicare therapy rules | target | missing |  | No Medicare rules |
+| `INS-005` | Claim creation and scrubbing | target | partial | `src/balm/insurance/facts.ts`; `src/balm/insurance/scrub.ts`; `src/balm/insurance/professional.ts`; `tests/insurance.test.mjs` | Signed-note CPT minutes/units and visit ICD-10 codes generate scrubbed 837P; named identifier, enrollment, charge, diagnosis and KX errors; no NCCI/MUE tables, billable diagnosis specificity, POC certification or timely-filing rules |
+| `INS-006` | Claim submission and acknowledgments | target | partial | `src/balm/insurance/batches.ts`; `src/balm/insurance/adapter.ts`; `src/balm/insurance/acknowledgments.ts`; `tests/insurance.test.mjs`; `docs/insurance.md` | Fixed 837P export, batch HTTPS adapter and claim-level 277CA import ship; no Claim.MD/Availity account, payer certification, 999, 276/277 polling, CMS-1500 print or secondary claims; Managed provider calls explicitly unavailable |
+| `INS-007` | ERA posting | target | partial | `src/balm/insurance/remittance-parser.ts`; `src/balm/insurance/remittances.ts`; `src/balm/payments/ledger.ts`; `tests/insurance.test.mjs` | Balanced positive 835 payments, CO writeoffs and PR balances post atomically once; CARC/RARC plain words retained; no live ERA, reversals, PLB, suspense/unmatched queue, split adjudications or secondary reconciliation; unsupported imports refuse without posting |
+| `INS-008` | Denials and A/R work queue | target | partial | `src/balm/insurance/claims.ts`; `src/balm/insurance/codes.ts`; `src/balm/ui/insurance.ts`; `tests/insurance.test.mjs` | Denial/rejection queue names reason and next step, corrected attempts preserve history and original payer control, clinician appeal drafts remain private; no A/R aging, filing deadlines or live clearinghouse resubmission |
+| `INS-009` | Medicare therapy rules | target | partial | `src/balm/insurance/facts.ts`; `src/balm/insurance/scrub.ts`; `src/balm/ui/insurance-file.ts`; `tests/insurance.test.mjs`; `docs/insurance.md` | 2026 KX threshold grouped PT+SLP versus OT, external expenses and local allowed estimates, automatic KX with mandatory clinician necessity; recognized beneficiary totals need reconciliation; no targeted-review flag, ABN or CQ/CO automation |
 | `INS-010` | Workers' comp, auto and injury cases | target | missing |  | No workers comp, auto or injury cases |
 | `INS-011` | Institutional claims for rehab agencies | target | missing |  | No institutional claims |
 | `INS-012` | Manual payer payment posting | target | missing |  | No payer payment batches, EOB posting or recoupments |

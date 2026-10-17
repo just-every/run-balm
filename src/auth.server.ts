@@ -17,6 +17,8 @@ export interface Bindings {
  ASSETS?: Fetcher
  RER_DEPLOY_SOURCE?: string
  RER_DEPLOY_FINGERPRINT?: string
+ BALM_INSURANCE_ADAPTER_URL?: string
+ BALM_INSURANCE_ADAPTER_TOKEN?: string
  RER_VERSION?: { id: string }
  IDENTITY_PROVIDER?: string
  AUTH_ORIGIN: string

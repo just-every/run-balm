@@ -53,7 +53,7 @@ async function chargeInvoice(env: SmsEnv, db: D1Database, who: Actor, input: Dat
   const invoice = await one(db, "SELECT * FROM bm_invoices WHERE id=? AND status='approved'", text(input.invoiceId, 'invoice', 100))
   insist(invoice, 'approved_invoice_not_found', 404)
   const open = (await openInvoices(db, invoice.client_id as string)).find(i => i.id === invoice.id)
-  insist(open, 'this_invoice_is_already_paid', 409)
+  insist(open, 'there_is_no_patient_balance_to_charge_check_insurance_status', 409)
   return chargeCardOnFile(env, db, who, { clientId: invoice.client_id as string, amountCents: open.open_cents, kind: 'charge', invoiceId: invoice.id as string, description: `Payment to ${await clinicName(db)}` })
 }
 

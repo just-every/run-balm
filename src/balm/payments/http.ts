@@ -82,7 +82,7 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
       insist(sameOrigin, 'cross_site_request_refused', 403)
       const input = Object.fromEntries(new URLSearchParams(await request.text())), here = linkUrl(env, token)
       if (url.searchParams.get('do') === 'card') return new Response(null, { status: 303, headers: { ...noStore, location: await startCardSetup(env, db, link, here, input) } })
-      const balance = (await ledger(db, link.client_id)).balanceCents, amount = parseDollars(input.amount)
+      const balance = (await ledger(db, link.client_id)).patientBalanceCents, amount = parseDollars(input.amount)
       insist(balance > 0, 'there_is_nothing_to_pay', 409)
       insist(amount >= 50 && amount <= balance, 'pay_between_$0.50_and_your_balance', 400)
       return new Response(null, { status: 303, headers: { ...noStore, location: await startLinkPayment(env, db, link, here, amount) } })

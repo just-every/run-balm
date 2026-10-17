@@ -5,6 +5,8 @@ import { agent, copyScript } from './agent'
 import { clientFilePage, clientList } from './clients'
 import { clinic } from './clinic'
 import { intakeForms } from './intake'
+import { insurancePage } from './insurance'
+import { insuranceBookingNotice } from './insurance-shared'
 import { invoices } from './invoices'
 import { movein } from './import'
 import { patientMessagePage } from './messages'
@@ -32,7 +34,7 @@ async function documentFor(title: string, body: string, status: number, script =
 export async function renderApp(state: any, path: string, notice: Notice = {}, file?: any, status = 200): Promise<Response> {
   const current = path.split('?')[0].replace(/\/$/, '') || '/app'
   const tabs: [string, string][] = [['/app', 'Schedule'], ...(desk(state) || state.actor.staffId ? [['/app/waitlist', 'Waitlist']] as [string, string][] : []), ['/app/clients', 'Clients'],
-    ...(desk(state) ? [['/app/invoices', 'Invoices and reminders']] as [string, string][] : []),
+    ...(desk(state) ? [['/app/invoices', 'Invoices and reminders'], ['/app/insurance', 'Insurance']] as [string, string][] : []),
     ...(owner(state) ? [['/app/clinic', 'Clinic'], ['/app/intake', 'Intake form'], ['/app/import', 'Move in'], ['/app/agent', 'Agent access']] as [string, string][] : [])]
   const section = current.startsWith('/app/clients/') ? '/app/clients' : current
   const allowed = tabs.some(([url]) => url === section)
@@ -42,6 +44,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const content = zoneUnset ? timeZoneStep(state, allowed ? path : '/app') : !allowed ? '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><p><a href="/app">Open the schedule</a></p>'
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
+        : current === '/app/insurance' ? insurancePage(state, notice)
         : current === '/app/invoices' ? invoices(state)
           : current === '/app/clinic' ? clinic(state, notice)
             : current === '/app/intake' ? intakeForms(state, notice)
@@ -50,7 +53,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
                     : current === '/app/waitlist' ? waitlist(state)
                       : schedule(state, notice)
   const clinicName = state.settings?.clinic_name ?? branding.name
-  const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header>${zoneUnset ? '' : `<nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav>`}<div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
+  const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header>${zoneUnset ? '' : `<nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav>`}<div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}${content}</div></main>`
   return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
 }
 

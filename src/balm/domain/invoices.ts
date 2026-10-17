@@ -62,7 +62,7 @@ export function artifact(number: number, value: any, approvedAt: string, zone = 
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`
     + `<tfoot><tr><th colspan="2">Total</th><th>${dollars(value.amountCents)}</th></tr></tfoot></table>`
     + (value.procedures ? `<h2>Procedures billed (CPT)</h2><table><thead><tr><th>Code</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${value.procedures.map((p: any) => `<tr><td>${escape(p.code)}</td><td>${escape(p.description)}</td><td>${p.minutes ?? 'untimed'}</td><td>${p.units}</td></tr>`).join('')}</tbody></table><p>Timed units by the CMS 8-minute rule, from the signed treatment note.</p>` : '')
-    + '<p>Keep this invoice for your records. Insurance claims are made outside Balm.</p></body></html>\n'
+    + '<p>Keep this invoice for your records. Insurance claims and remittances are tracked separately from this invoice.</p></body></html>\n'
 }
 
 export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
@@ -92,7 +92,7 @@ export async function voidInvoice(db: D1Database, who: Actor, input: Data) {
   const invoice = await one(db, 'SELECT * FROM bm_invoices WHERE id=?', text(input.id, 'id', 100))
   insist(invoice && invoice.status !== 'void', 'invoice_not_found', 404)
   await commit(db, who, [
-    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?)', invoice.id),
+    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_insurance_adjustments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_claims WHERE invoice_id=?)', invoice.id, invoice.id, invoice.id),
     stmt(db, "UPDATE bm_invoices SET status='void',void_reason=?,version=version+1 WHERE id=? AND version=?", text(input.reason, 'reason', 300), invoice.id, invoice.version),
     guard(db, "EXISTS(SELECT 1 FROM bm_invoices WHERE id=? AND status='void')", invoice.id),
     audit(db, who, 'invoice.voided', invoice.client_id as string, invoice.id as string),
@@ -108,7 +108,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
   insist(!await one(db, 'SELECT 1 FROM bm_payments WHERE reference=?', reference), 'payment_reference_used', 409)
   await commit(db, who, [
     stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)', paymentId, invoice.id, amount, reference, who.email, now()),
-    guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=?)<=(SELECT amount_cents FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
+    guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_insurance_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
     audit(db, who, 'payment.recorded', invoice.client_id as string, paymentId, `${amount} cents`),
   ])
   return { id: paymentId, invoiceId: invoice.id, amountCents: amount }
@@ -116,7 +116,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
 
 export async function invoicesFor(db: D1Database, clientId?: string) {
   const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,
-    (SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments p WHERE p.invoice_id=i.id) AS paid_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
+    (SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_insurance_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
   const payments = await rows(db, `SELECT * FROM bm_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
   return list.map(i => ({ ...i, snapshot: JSON.parse(i.snapshot as string), payments: payments.filter(p => p.invoice_id === i.id) }) as Data)
 }

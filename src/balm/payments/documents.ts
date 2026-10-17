@@ -12,7 +12,7 @@ const clinicFacts = (c: Data): [string, string][] => [['Clinic', c.clinic_name ?
 
 /** Everything a superbill shows for one approved invoice, and what is still missing. */
 export async function superbillFacts(db: D1Database, invoiceId: string) {
-  const invoice = await one(db, `SELECT i.*,a.practitioner_id,p.npi,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments x WHERE x.invoice_id=i.id) AS paid_cents
+  const invoice = await one(db, `SELECT i.*,a.practitioner_id,p.npi,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments x WHERE x.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_insurance_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents
     FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_staff p ON p.id=a.practitioner_id WHERE i.id=? AND i.status='approved'`, invoiceId)
   insist(invoice, 'invoice_not_found', 404)
   const v = JSON.parse(invoice.snapshot as string), codes = (await visitCodes(db, { appointmentId: invoice.appointment_id as string }))[invoice.appointment_id as string]
@@ -43,7 +43,7 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
     { kind: 'heading', text: 'Procedures (CPT)' },
     { kind: 'table', columns: [{ label: 'CPT', width: 1.2 }, { label: 'Modifiers', width: 1.3 }, { label: 'Description', width: 4 }, { label: 'Diagnosis', width: 1.4 }, { label: 'Units', width: 0.9, right: true }],
       rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', letters.slice(0, f.diagnoses.length).split('').join(', '), String(p.units)]),
-      totals: [['Total charges', dollars(f.invoice.amount_cents as number)], ['Paid', dollars(f.paidCents)], ['Balance', dollars((f.invoice.amount_cents as number) - f.paidCents)]] },
+      totals: [['Total charges', dollars(f.invoice.amount_cents as number)], ['Paid', dollars(f.paidCents)], ['Insurance adjustments', dollars(Number(f.invoice.adjusted_cents))], ['Balance', dollars((f.invoice.amount_cents as number) - f.paidCents - Number(f.invoice.adjusted_cents))]] },
     { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? 'CPT units are those billed from the signed treatment note by the CMS 8-minute rule.' : 'CPT codes and units as recorded for the visit.',
       'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },
   ]
@@ -55,14 +55,14 @@ export async function statementPdf(db: D1Database, clientId: string) {
   insist(client && clinic, 'client_not_found', 404)
   const l = await ledger(db, clientId), zone = clinic.time_zone as string, today = usDate(new Date().toISOString(), zone)
   const blocks: Block[] = [
-    { kind: 'facts', rows: [...clinicFacts(clinic), ['Patient', `${client.first_name} ${client.last_name}`], ['Statement date', today], ['Balance due', dollars(Math.max(l.balanceCents, 0))]] },
+    { kind: 'facts', rows: [...clinicFacts(clinic), ['Patient', `${client.first_name} ${client.last_name}`], ['Statement date', today], ['Balance due', dollars(Math.max(l.patientBalanceCents, 0))]] },
     { kind: 'heading', text: 'Charges and payments' },
-    { kind: 'table', columns: [{ label: 'Date', width: 1.3 }, { label: 'Description', width: 4.4 }, { label: 'Charges', width: 1.2, right: true }, { label: 'Payments', width: 1.2, right: true }, { label: 'Balance', width: 1.2, right: true }],
+    { kind: 'table', columns: [{ label: 'Date', width: 1.3 }, { label: 'Description', width: 4.4 }, { label: 'Charges', width: 1.2, right: true }, { label: 'Paid / adjusted', width: 1.2, right: true }, { label: 'Balance', width: 1.2, right: true }],
       rows: l.lines.map(x => [usDate(x.at, zone), x.description, x.chargeCents ? dollars(x.chargeCents) : '', x.paymentCents ? dollars(x.paymentCents) : '', dollars(x.balanceCents)]),
-      totals: [['Total charges', dollars(l.chargesCents)], ['Total payments', dollars(l.paymentsCents)], [l.balanceCents < 0 ? 'Credit' : 'Balance due', dollars(Math.abs(l.balanceCents))]] },
+      totals: [['Total charges', dollars(l.chargesCents)], ['Total payments', dollars(l.paymentsCents)], ['Insurance adjustments', dollars(l.adjustmentsCents)], ['Pending insurance (not patient due)', dollars(l.insurancePendingCents)], [l.patientBalanceCents < 0 ? 'Credit' : 'Patient balance due', dollars(Math.abs(l.patientBalanceCents))]] },
     { kind: 'notes', lines: [l.lines.length ? 'Pay online from the private link the clinic sent you, or at your next visit.' : 'No charges yet.'] },
   ]
-  return { name: `statement-${today.replace(/[ ,]+/g, '-')}.pdf`, bytes: pdf({ header: clinic.clinic_name as string, title: 'Statement', blocks }), balanceCents: l.balanceCents }
+  return { name: `statement-${today.replace(/[ ,]+/g, '-')}.pdf`, bytes: pdf({ header: clinic.clinic_name as string, title: 'Statement', blocks }), balanceCents: l.patientBalanceCents }
 }
 
 export async function receiptPdf(db: D1Database, paymentId: string) {

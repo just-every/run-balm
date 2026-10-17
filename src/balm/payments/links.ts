@@ -17,7 +17,7 @@ export async function createLink(env: SmsEnv, db: D1Database, who: Actor, input:
   need(who, 'owner', 'reception'); human(who)
   const client = await clientVisible(db, who, input.clientId)
   const purpose = input.purpose === 'card' ? 'card' : 'balance', delivery = ['email', 'text', 'shown'].includes(input.delivery) ? input.delivery : 'email'
-  const balance = (await ledger(db, client.id as string)).balanceCents
+  const balance = (await ledger(db, client.id as string)).patientBalanceCents
   if (purpose === 'balance' && delivery !== 'shown') insist(balance > 0, 'there_is_no_balance_to_pay', 409)
   if (delivery === 'email') insist(client.email, 'the_patient_has_no_email_address', 409)
   const value = token(), linkId = id(), url = linkUrl(env, value)

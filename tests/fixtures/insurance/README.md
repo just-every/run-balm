@@ -1,0 +1,3 @@
+Synthetic X12 edge recordings for a fictional US therapy practice, prepared from the public X12 examples and CMS companion guides. No real patient or payer response is included. The test network adapter returns submitted.json and imports the transaction fixtures through Balm's HTTP doors. Dynamic trace and claim control IDs replace {{TRACE}} and {{CLAIM}}; amounts and benefit fields remain fixed.
+
+271: active individual coverage, $30 copay, 20% coinsurance, 12 annual/8 remaining PT visits. 277CA: claim accepted into adjudication. 835-paid: $95 charge = $60 paid + $20 CO-45 + $15 PR-3. 835-denied: zero payment, CO-197 authorization denial. These cover the supported subset; payer certification still requires a clearinghouse account and companion-guide testing.

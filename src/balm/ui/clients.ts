@@ -1,3 +1,4 @@
+import { payerReference } from '../payments/ledger'
 import { hostDateAt } from '../availability/timezone'
 import { localTime } from '../domain/invoices'
 import { seriesForm, seriesResult } from './series'
@@ -6,6 +7,7 @@ import { notesPanel } from './notes'
 import { planResult, plansPanel } from './plans'
 import { messagePanel } from './messages'
 import { reminderPanel } from './reminders'
+import { insurancePanels } from './insurance-file'
 import { billingPanels } from './payments'
 import { zoneLabel } from './time-zone'
 import { cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
@@ -51,19 +53,20 @@ function intake(s: any, f: any) {
 }
 
 export function invoiceEntry(s: any, i: any, path: string) {
-  const v = i.snapshot, outstanding = i.amount_cents - i.paid_cents
+  const v = i.snapshot, outstanding = i.amount_cents - i.paid_cents - (i.adjusted_cents ?? 0)
   const title = i.number ? `Invoice INV-${String(i.number).padStart(6, '0')}` : 'Prepared invoice'
   let actions = ''
   if (i.status === 'draft' && desk(s)) actions += form('invoice.approve', path, hidden('id', i.id) + '<label class="check"><input type="checkbox" required><span>I reviewed this exact invoice.</span></label>', 'Approve and number invoice')
   if (i.status === 'approved' && desk(s)) {
     actions += `<p><a href="/api/balm/invoices/${h(i.id)}.html">Download invoice</a></p>`
     if (outstanding > 0) actions += `<details><summary>Record a payment received</summary>${form('payment.record', path, hidden('invoiceId', i.id) + field('amount', 'Amount received ($)', dollarsField(outstanding), 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"') + field('reference', 'Payment reference (unique)', '', 'text', 'required maxlength="120"'), 'Record payment')}</details>`
-    if (!i.payments.length && owner(s)) actions += `<details><summary>Void this invoice</summary>${form('invoice.void', path, hidden('id', i.id) + field('reason', 'Reason', '', 'text', 'required maxlength="300"'), 'Void invoice', true)}</details>`
+    if (!i.payments.length && !i.adjusted_cents && owner(s)) actions += `<details><summary>Void this invoice</summary>${form('invoice.void', path, hidden('id', i.id) + field('reason', 'Reason', '', 'text', 'required maxlength="300"'), 'Void invoice', true)}</details>`
   }
   return entry(title, `<p>${status(i.status)} ${i.status === 'approved' ? status(outstanding > 0 ? `${money(outstanding)} outstanding` : 'Paid') : ''}</p><p>${h(v.client.name)} · ${h(v.service.name)} · ${h(v.serviceDate)}<br>${h(v.practitioner.name)}${v.practitioner.providerNumber ? ` (provider ${h(v.practitioner.providerNumber)})` : ''} · <strong>${money(i.amount_cents)}</strong></p>`
     + `<p class="help">Prepared by ${h(i.prepared_by)} (${h(i.prepared_role)}) ${stamp(s, i.prepared_at)}${i.approved_by ? ` · approved by ${h(i.approved_by)} ${stamp(s, i.approved_at)}` : ''}${i.void_reason ? ` · void: ${h(i.void_reason)}` : ''}</p>`
     + (v.procedures ? `<p>CPT ${v.procedures.map((p: any) => `${h(p.code)} × ${h(p.units)}`).join(', ')} <span class="help">(units by the 8-minute rule, from the signed note)</span></p>` : '')
-    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
+    + (i.adjusted_cents ? `<p>Insurance adjustments: ${money(i.adjusted_cents)}</p>` : '')
+    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference.startsWith('era:') ? 'Payer payment · ' + payerReference(p.reference) : p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
 }
 
 /** Audit actions in words; the stored code stays in the archive and the JSON door. */
@@ -87,5 +90,5 @@ export function clientFilePage(s: any, f: any, notice: any) {
   const details = `<p>${c.date_of_birth ? `Born ${h(usDate(c.date_of_birth, zoneOf(s)))}<br>` : ''}${c.email ? `${h(c.email)}<br>` : ''}${c.phone ? `${h(c.phone)}<br>` : ''}Added ${stamp(s, c.created_at)} (${h(c.created_via)})</p>`
     + (desk(s) ? `<details><summary>Edit details</summary>${form('client.save', path, hidden('id', c.id) + hidden('version', c.version) + clientFields(c), 'Save details')}</details>` : '')
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
-  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${billingPanels(s, f, notice)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
+  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${billingPanels(s, f, notice)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
 }

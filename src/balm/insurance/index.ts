@@ -1,0 +1,42 @@
+import { insist, type Actor, type Data } from '../domain/model'
+import { insuranceActor } from './access'
+import { saveAuthorization, saveEnrollment, saveInsuranceSettings, saveMedicare, savePayer, savePolicy } from './setup'
+import { importEligibility, prepareEligibility, submitEligibility } from './eligibility'
+import { correctClaim, documentNecessity, draftAppeal, prepareClaim, scrubStoredClaim } from './claims'
+import { prepareBatch, submitBatch } from './batches'
+import { importAcknowledgment } from './acknowledgments'
+import { importRemittance } from './remittances'
+import type { InsuranceEnv } from './types'
+export { insuranceFile, insuranceState, insuranceDownload } from './views'
+export { bookingWarnings } from './authorization'
+export { insuranceAdapter, adapterStatus, type InsuranceAdapter, type InsuranceSubmission, type InsuranceSubmissionResult } from './adapter'
+export type { InsuranceEnv, ClaimSnapshot, ScrubError } from './types'
+
+/** HTTP and UI share these commands. Every invocation resolves the live human;
+ * clinical assertions remain exclusive to clinicians and the clinic owner. */
+export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:string,input:Data) {
+  insist(input&&typeof input==='object'&&!Array.isArray(input),'invalid_input')
+  const clinical=['insurance.claim.necessity','insurance.denial.appeal'].includes(name)
+  const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
+  switch(name) {
+    case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
+    case 'insurance.payer.save':return savePayer(db,who,input)
+    case 'insurance.enrollment.save':return saveEnrollment(db,who,input)
+    case 'insurance.policy.save':return savePolicy(db,who,input)
+    case 'insurance.authorization.save':return saveAuthorization(db,who,input)
+    case 'insurance.medicare.save':return saveMedicare(db,who,input)
+    case 'insurance.eligibility.prepare':return prepareEligibility(db,who,input)
+    case 'insurance.eligibility.submit':return submitEligibility(env,who,input)
+    case 'insurance.eligibility.import':return importEligibility(db,who,input)
+    case 'insurance.claim.prepare':return prepareClaim(db,who,input)
+    case 'insurance.claim.correct':return correctClaim(db,who,input)
+    case 'insurance.claim.scrub':return scrubStoredClaim(db,who,input)
+    case 'insurance.claim.necessity':return documentNecessity(db,who,input)
+    case 'insurance.batch.prepare':return prepareBatch(db,who,input)
+    case 'insurance.batch.submit':return submitBatch(env,who,input)
+    case 'insurance.acknowledgment.import':return importAcknowledgment(db,who,input)
+    case 'insurance.remittance.import':return importRemittance(db,who,input)
+    case 'insurance.denial.appeal':return draftAppeal(db,who,input)
+  }
+  insist(false,'unknown_insurance_command',404)
+}
