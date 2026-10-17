@@ -18,7 +18,7 @@
         { "slug": "plan-of-care", "title": "Plan of care", "file": "plan-of-care.md", "summary": "Sign a plan of care with goals, frequency and duration, and have the referring physician certify it from an emailed link." },
         { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },
         { "slug": "payments", "title": "Patient payments", "file": "payments.md", "summary": "Connect Stripe, save cards with the patient's consent, charge copays at check-in, send pay links, and give patients statements and superbills." },
-        { "slug": "reminders", "title": "Appointment reminders", "file": "reminders.md", "summary": "Balm writes the exact reminder text for an upcoming visit; a person approves it and sends it their usual way." }
+        { "slug": "reminders", "title": "Appointment reminders", "file": "reminders.md", "summary": "Balm sends reminders on your schedule, patients confirm or request a new time, and private messages stay on their file." }
       ]
     },
     {
