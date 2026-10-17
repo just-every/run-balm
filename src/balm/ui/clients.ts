@@ -37,7 +37,7 @@ function appointments(s: any, f: any, notice: any) {
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
     + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"'), 'Prepare invoice') : '')
     + (a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId) ? `<p><a href="/app?${h(new URLSearchParams({ view: 'day', date: hostDateAt(new Date(a.start_at), s.settings.time_zone), appt: a.id }))}">Move or change in the calendar</a></p>` + cancelForm('appointment.cancel', path, hidden('id', a.id), 'Cancel appointment', 'Cancel visit', clientName(f.client)) : '')
-    + '</div>')).join('')
+    + '</div>', `visit-${a.id}`)).join('')
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
   const book = services(s).length && choices.length ? `<details><summary>Book an appointment</summary>${form('appointment.book', path, hidden('clientId', f.client.id)
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
@@ -67,7 +67,7 @@ export function invoiceEntry(s: any, i: any, path: string) {
     + `<p class="help">Prepared by ${h(i.prepared_by)} (${h(i.prepared_role)}) ${stamp(s, i.prepared_at)}${i.approved_by ? ` · approved by ${h(i.approved_by)} ${stamp(s, i.approved_at)}` : ''}${i.void_reason ? ` · void: ${h(i.void_reason)}` : ''}</p>`
     + (v.procedures ? `<p>CPT ${v.procedures.map((p: any) => `${h(p.code)} × ${h(p.units)}`).join(', ')} <span class="help">(units by the 8-minute rule, from the signed note)</span></p>` : '')
     + (i.adjusted_cents ? `<p>Insurance adjustments: ${money(i.adjusted_cents)}</p>` : '')
-    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference.startsWith('era:') ? 'Payer payment · ' + payerReference(p.reference) : p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions)
+    + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference.startsWith('era:') ? 'Payer payment · ' + payerReference(p.reference) : p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions, `invoice-${i.id}`)
 }
 
 /** Audit actions in words; the stored code stays in the archive and the JSON door. */

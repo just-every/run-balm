@@ -33,6 +33,9 @@ async function scribeState(env: Bindings): Promise<State> {
   return { config: { provider: row.provider as Provider, endpoint: row.endpoint as string, model: row.model as string, key, workspace: row.workspace as string }, checked: row.check_ok === 1 }
 }
 
+/** The install's own model for other wording (the case agent's letters): its settings and whether its test passed, or the one line why not. */
+export const installModel = (env: Bindings) => scribeState(env)
+
 /** Ready means a key is saved and its last test drafted the sample correctly. */
 const UNTESTED_LINE = 'The scribe is set up but its test has not passed yet. The owner can test it in Clinic → Scribe.'
 

@@ -388,8 +388,8 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 38 | Copays collect at check-in | `BALM-003`, `PAY-002`, `SCHED-008` | partial |
 | 39 | Text and email reminders go out on their own | `COMM-001`, `COMM-002` | partial |
 | 40 | Patients confirm or ask for a new time in one reply | `COMM-002` | done |
-| 41 | follows each referral from authorization to paid claim | `AGENT-001` | missing |
-| 42 | spots what stalled, cites the record and lines up the next step / Send to payer | `AGENT-001`, `AGENT-004` | missing |
+| 41 | follows each referral from authorization to paid claim | `AGENT-001` | partial |
+| 42 | spots what stalled, cites the record and lines up the next step / Send to payer | `AGENT-001`, `AGENT-004` | partial |
 | 43 | Import patients … from … Cliniko | `MOVE-001`, `MOVE-005` | partial |
 | 44 | appointments, notes and balances | `MOVE-002`, `MOVE-003`, `MOVE-004`, `MOVE-005` | partial |
 | 45 | from WebPT, SimplePractice, Jane | `MOVE-002`, `MOVE-003`, `MOVE-004` | partial |
@@ -408,13 +408,13 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 
 ## Status
 
-Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete. The intake and portal round (17 October 2026) adds signed treatment acknowledgment PDFs, insurance cards and verification, patient email sessions and practice-made home exercises; INTAKE-004, PORTAL-001 and PORTAL-002 move from missing to partial. The consent-to-chart and exercise-to-portal flows pass public-door tests and local/temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email; separate policy consents, guardian access and the shipped exercise library remain incomplete.
+Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete. The intake and portal round (17 October 2026) adds signed treatment acknowledgment PDFs, insurance cards and verification, patient email sessions and practice-made home exercises; INTAKE-004, PORTAL-001 and PORTAL-002 move from missing to partial. The consent-to-chart and exercise-to-portal flows pass public-door tests and local/temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email; separate policy consents, guardian access and the shipped exercise library remain incomplete. The case-agent round (17 October 2026) adds one case per referral with cited stages and next steps a desk person approves; `AGENT-001` and `AGENT-004` move from missing to partial, proven by `tests/cases.test.mjs` and local and temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email.
 
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 0 | 55 | 39 | 94 |
-| All | 15 | 55 | 39 | 109 |
+| Target and push further | 0 | 57 | 37 | 94 |
+| All | 15 | 57 | 37 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -519,10 +519,10 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `MOBILE-002` | Native clinician and patient apps | target | missing |  | No native apps |
 | `INTEG-001` | API, webhooks, agent keys and FHIR export | target | partial | `src/balm/credentials.ts`; `docs/AGENT-COMMANDS.md`; `tests/balm.test.mjs` | Owner-bound agent keys read names, appointments and invoices and prepare work; no general scoped API, webhooks or FHIR export |
 | `INTEG-002` | Opt-in marketing contact sync | target | missing |  | No marketing contact sync |
-| `AGENT-001` | Referral-to-collection case agent | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
+| `AGENT-001` | Referral-to-collection case agent | push-further | partial | `src/balm/cases/index.ts`; `src/balm/cases/stages.ts`; `src/balm/cases/steps.ts`; `src/balm/cases/actions.ts`; `src/balm/ui/cases.ts`; `tests/cases.test.mjs`; `docs/cases.md` | One case per referral follows intake, eligibility, authorization, visits, signed notes, claims, ERA and patient balance with cited records; eligibility, authorization-request, claim, denial-fix and statement steps run only after a desk person approves, with the approver kept. No fax, consent or plan-of-care certification stages, payer-chase or card-on-file asks, clinician confirmation of clinical assertions, or explicit case closing; claims rely on the 837P export or adapter, with no live clearinghouse |
 | `AGENT-002` | Care continuity agent | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
 | `AGENT-003` | Documentation defensibility check | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
-| `AGENT-004` | Denial resolver | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
+| `AGENT-004` | Denial resolver | push-further | partial | `src/balm/cases/steps.ts`; `src/balm/cases/actions.ts`; `src/balm/insurance/codes.ts`; `docs/cases.md` | Each denial or rejection is explained from its CARC/RARC codes with the claim, ERA line, note and authorization cited; a missing-authorization denial waits for the authorization, and the corrected claim is prepared and batched only after a person approves, with paid status read from the next ERA. No agent-prepared appeal letter with evidence attached, 277CA-only rejection reasoning or live resubmission |
 | `AGENT-005` | Month-end reconciliation | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
 | `AGENT-006` | Outcome follow-through | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |
 | `AGENT-007` | Front-desk inbox agent | push-further | missing |  | No agent behavior yet; only the agent-key prepare-and-approve fence of BALM-001 exists |

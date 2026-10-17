@@ -6,6 +6,7 @@ import { clientFilePage, clientList } from './clients'
 import { clinic } from './clinic'
 import { intakeForms } from './intake'
 import { insurancePage } from './insurance'
+import { casesPage } from './cases'
 import { insuranceBookingNotice } from './insurance-shared'
 import { invoices } from './invoices'
 import { movein } from './import'
@@ -35,7 +36,7 @@ async function documentFor(title: string, body: string, status: number, script =
 export async function renderApp(state: any, path: string, notice: Notice = {}, file?: any, status = 200): Promise<Response> {
   const current = path.split('?')[0].replace(/\/$/, '') || '/app'
   const tabs: [string, string][] = [['/app', 'Schedule'], ...(desk(state) || state.actor.staffId ? [['/app/waitlist', 'Waitlist']] as [string, string][] : []), ['/app/clients', 'Clients'],
-    ...(desk(state) ? [['/app/invoices', 'Invoices and reminders'], ['/app/insurance', 'Insurance']] as [string, string][] : []),
+    ...(desk(state) ? [['/app/invoices', 'Invoices and reminders'], ['/app/insurance', 'Insurance'], ['/app/cases', 'Cases']] as [string, string][] : []),
     ...(owner(state) ? [['/app/clinic', 'Clinic'], ['/app/intake', 'Intake form'], ['/app/import', 'Move in'], ['/app/agent', 'Agent access']] as [string, string][] : [])]
   const section = current.startsWith('/app/clients/') ? '/app/clients' : current
   const allowed = tabs.some(([url]) => url === section)
@@ -46,6 +47,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
         : current === '/app/insurance' ? insurancePage(state, notice)
+        : current === '/app/cases' ? casesPage(state)
         : current === '/app/invoices' ? invoices(state)
           : current === '/app/clinic' ? clinic(state, notice)
             : current === '/app/intake' ? intakeForms(state, notice)

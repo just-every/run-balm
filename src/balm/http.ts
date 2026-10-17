@@ -33,10 +33,11 @@ import { visitReply, visitReplyView } from './reminders/replies'
 import { portalResponse } from './portal/http'
 import { portalCommand, portalExercisesFor } from './portal'
 import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
+import { caseCommand, caseList } from './cases'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
-const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist|\/insurance)?$/
+const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist|\/insurance|\/cases)?$/
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
@@ -57,6 +58,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   // Until the owner chooses the clinic's time zone, every page is the time zone step.
   if (!s.settings.time_zone) return renderApp(s, target, notice, undefined, status)
   if (path === '/app') s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
+  if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
   return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore).catch(error => { if (status === 200) throw error }) : undefined, status)
 }
@@ -79,6 +81,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
+  if (name.startsWith('case.')) return caseCommand(env, who, name, input)
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
   if (name === 'insurance.read') return readInsurance(env, who, input)
   if (name.startsWith('insurance.')) {
@@ -310,6 +313,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       }
       if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
+      if (path === '/api/balm/cases') return json(await caseList(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
       if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined))

@@ -21,7 +21,8 @@ export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2
 export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'))}</span>`
 /** A visit's intake: answered for this visit, already on the client's file from an earlier visit, or still to come. */
 export const intakeChip = (a: any) => status(a.intake_received ? 'Intake received' : a.intake_on_file ? 'Intake on file' : 'Intake not yet received')
-export const entry = (title: string, body: string) => `<article class="entry"><h3>${h(title)}</h3>${body}</article>`
+/** `anchor` gives the record an id the case agent's citations link to. */
+export const entry = (title: string, body: string, anchor = '') => `<article class="entry"${anchor ? ` id="${h(anchor)}"` : ''}><h3>${h(title)}</h3>${body}</article>`
 export const result = (notice: any) => notice.result?.result ?? notice.result
 /** Cents as a person types dollars: 9500 is 95.00. */
 export const dollarsField = (cents: unknown) => cents === null || cents === undefined || cents === '' ? '' : (Number(cents) / 100).toFixed(2)

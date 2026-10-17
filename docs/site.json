@@ -18,6 +18,7 @@
         { "slug": "plan-of-care", "title": "Plan of care", "file": "plan-of-care.md", "summary": "Sign a plan of care with goals, frequency and duration, and have the referring physician certify it from an emailed link." },
         { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },
         { "slug": "payments", "title": "Patient payments", "file": "payments.md", "summary": "Connect Stripe, save cards with the patient's consent, charge copays at check-in, send pay links, and give patients statements and superbills." },
+        { "slug": "cases", "title": "The case agent", "file": "cases.md", "summary": "One case per referral from authorization to paid claim, where each stands, and next steps a person approves before anything is sent." },
         { "slug": "reminders", "title": "Appointment reminders", "file": "reminders.md", "summary": "Balm sends reminders on your schedule, patients confirm or request a new time, and private messages stay on their file." }
       ]
     },
