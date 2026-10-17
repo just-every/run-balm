@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "projectId": "just-every/run-balm",
+  "name": "Balm",
+  "sourceRepository": "https://github.com/just-every/run-balm",
+  "license": "MIT"
+}
