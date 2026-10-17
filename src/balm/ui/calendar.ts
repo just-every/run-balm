@@ -115,7 +115,7 @@ export function calendarGrid(s: any, c: any) {
     }
     if (canBook(column)) for (const [from, to] of openSlots(c, column, live)) {
       const waiting = waitingFor(s, column)
-      html += `<a class="openslot rs${row(from)} re${(to - from) / step} cs${i + 2}" href="${h(calendarLink(c, { new: `${column.date}T${hhmm(from)}`, col: column.subject }))}#book">${icon('open')}<span><strong>Open slot</strong><small>${waiting ? `${waiting} on the waitlist` : `${h(clockLabel(from))} – ${h(clockLabel(to))}`}</small></span></a>`
+      html += `<a class="openslot${to - from <= 30 ? ' compact' : ''} rs${row(from)} re${Math.max(1, Math.round((to - from) / step))} cs${i + 2}" href="${h(calendarLink(c, { new: `${column.date}T${hhmm(from)}`, col: column.subject }))}#book">${icon('open')}<span><strong>Open slot</strong><small>${waiting ? `${waiting} on the waitlist` : `${h(clockLabel(from))} – ${h(clockLabel(to))}`}</small></span></a>`
     }
     for (const a of live.filter((a: any) => inColumn(c, column, a))) {
       const start = Math.max(lo, local(a.start_at, c.zone).minute), spanRows = Math.max(1, Math.min(rowsCount - (row(start) - 2), Math.ceil((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000 / step)))

@@ -52,7 +52,7 @@ function heading(s: any, c: any) {
   const who = c.view === 'week' ? 'Week view' : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
   const title = c.view === 'week' ? 'This week' : c.date === c.today ? 'Today' : longDate(c.date, { weekday: 'long' })
   const parts = [who, `${live.length} ${live.length === 1 ? 'appointment' : 'appointments'}`, ...(open ? [`${open} open ${open === 1 ? 'slot' : 'slots'}`] : [])]
-  return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div>${viewControls(s, c)}</div>`
+  return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div><details class="view-options"><summary>${c.view === 'week' ? 'Week view' : 'Day view'}${icon('chevron')}</summary>${viewControls(s, c)}</details></div>`
 }
 
 function moveFields(s: any, c: any, a: any, prefix = '') {

@@ -12,9 +12,9 @@
   --rer-font-heading: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
   --rer-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --rer-wordmark-weight: 500;
-  --rer-page: #fbfcfa;
+  --rer-page: #fbfdfc;
   --rer-surface: #ffffff;
-  --rer-text: #17323a;
+  --rer-text: #082d37;
   --rer-muted: #56636b;
   --rer-border: #a9b7b1;
   --rer-focus: #1e907e;
@@ -26,40 +26,40 @@
 
   /* Brand palette (the homepage's values). */
   --ink: var(--rer-text);
-  --body: #3f4d55;
-  --soft: #6b767d;
+  --body: #536477;
+  --soft: #64707d;
   --pill: var(--rer-accent);
   --pill-hover: #1f5450;
   --teal: #1e907e;
   --teal-ink: #17675b;
   --sage: #6e9d77;
   --sage-ink: #3d6e48;
-  --sage-tint: #e6f0e4;
-  --sage-wash: #f2f7f1;
+  --sage-tint: #e5f2e9;
+  --sage-wash: #edf6e9;
   --check: #3f8c55;
   --honey: #f8b842;
   --honey-ink: #8f5a12;
   --honey-tint: #fdf1d9;
-  --honey-wash: #fef8ea;
+  --honey-wash: #fff6e2;
   --sky: #7fb4e6;
   --sky-ink: #1f5d96;
-  --sky-tint: #e3eefa;
-  --sky-wash: #f1f6fc;
+  --sky-tint: #d5e9f8;
+  --sky-wash: #e5f3ff;
   --coral: #e0573f;
   --coral-ink: #b2361f;
   --coral-tint: #fde9e4;
-  --coral-wash: #fef4f1;
+  --coral-wash: #ffebe5;
 
   /* Surfaces and lines of the app. */
-  --line: #e3e9e6;
+  --line: #e4ebed;
   --line-strong: #d3ddd8;
   --field: #b9c6c0;
   --row: #f4f7f5;
   --hover: #f1f5f3;
-  --rail: #fdfefd;
+  --rail: #fcfefd;
   --radius-card: 12px;
   --radius-chip: 6px;
-  --shadow-card: 0 1px 2px rgba(23, 50, 58, .04), 0 8px 24px -16px rgba(23, 50, 58, .18);
+  --shadow-card: none;
   --shadow-float: 0 2px 4px rgba(23, 50, 58, .05), 0 18px 40px -18px rgba(23, 50, 58, .26);
 }
 

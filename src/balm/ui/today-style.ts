@@ -2,12 +2,12 @@
 // visit's patient, the coral denied-claim card with its dated trail, and the
 // quiet case agent strip. Every colour is a token from public/rer-theme.css.
 export const todayStyle = `
-.today{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.today{display:grid;grid-template-columns:minmax(0,1fr) 426px;gap:14px;align-items:start}
 .today.single{grid-template-columns:minmax(0,1fr)}
 .today-main{min-width:0}
-.today-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px 20px;margin:0 0 18px}
-.today-head h1{font-size:54px;line-height:1.02;letter-spacing:-.035em;margin:0 0 6px}
-.today-head .sub{margin:0;font-size:15.5px;color:var(--body);font-variant-numeric:tabular-nums}.today-head .sub span{margin:0 4px;color:var(--soft)}
+.today-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px 20px;min-height:96px;padding:8px 8px 0 12px;margin:0 0 14px}
+.today-head h1{font-size:58px;line-height:1.02;letter-spacing:-.035em;margin:0 0 6px}
+.today-head .sub{margin:0;font-size:16px;color:var(--body);font-variant-numeric:tabular-nums}.today-head .sub span{margin:0 4px;color:var(--soft)}
 .cal-help{margin:12px 2px 4px}
 .today-side{position:sticky;top:16px;min-width:0}
 .today-side>#book>.panel{margin:0}
@@ -21,25 +21,25 @@ export const todayStyle = `
 
 /* The patient panel. */
 .patient{padding:18px 18px 16px;background:var(--rer-surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-card)}
-.profile{display:flex;align-items:center;gap:14px;padding:0 4px}
-.avatar.lg{width:64px;height:64px;font-size:20px}
+.profile{display:flex;align-items:center;gap:18px;padding:0 8px}
+.avatar.lg{width:80px;height:80px;font-size:24px}
 .profile>div{min-width:0}
 .profile h2{margin:0;font:500 28px/1.15 var(--rer-font-heading);letter-spacing:-.02em;font-variation-settings:'opsz' 48;overflow-wrap:anywhere}
-.profile p{margin:2px 0 0;font-size:16px;color:var(--body)}
+.profile p{margin:4px 0 0;font-size:18px;color:var(--body)}
 .more{margin-left:auto;align-self:flex-start;display:inline-grid;place-items:center;width:34px;height:34px;flex:none;border:1px solid var(--line);border-radius:50%;color:var(--ink)}.more:hover{background:var(--hover)}.more .icon{width:16px;height:16px}
 .tabs{display:flex;justify-content:space-between;gap:4px;margin:14px 0 0;padding:0 4px;border-bottom:1px solid var(--line)}
 .tabs a,.tabs span{padding:8px 6px 9px;color:var(--body);font-size:13.5px;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
 .tabs a:hover{color:var(--ink)}.tabs [aria-current]{color:var(--ink);font-weight:600;border-bottom-color:var(--pill)}
 .visit-line{padding:12px 4px 0}.visit-line p{margin:0 0 6px;font-size:13.5px;color:var(--body)}.visit-line .chips{margin:0}.visit-line strong{font-variant-numeric:tabular-nums}
 .facts{list-style:none;margin:6px 0 4px;padding:0}
-.fact{display:flex;gap:14px;align-items:flex-start;padding:10px 4px}
+.fact{display:flex;gap:14px;align-items:flex-start;padding:10px 8px}
 .fact strong{display:block;font-size:13.5px;line-height:1.35}.fact p{margin:1px 0 0;font-size:13.5px;line-height:1.45;color:var(--body);font-variant-numeric:tabular-nums}
-.disc{display:inline-grid;place-items:center;flex:none;width:34px;height:34px;border-radius:50%;background:var(--row);color:var(--soft)}.disc .icon{width:18px;height:18px}
+.disc{display:inline-grid;place-items:center;flex:none;width:38px;height:38px;border-radius:50%;background:var(--row);color:var(--soft)}.disc .icon{width:18px;height:18px}
 .disc.sage{background:var(--sage-tint);color:var(--check)}.disc.sky{background:var(--sky-tint);color:var(--sky-ink)}.disc.honey{background:var(--honey-tint);color:var(--honey-ink)}.disc.coral{background:var(--coral-tint);color:var(--coral)}.disc.ink{background:var(--row);color:var(--ink)}
 .primary{display:grid;gap:10px;margin:8px 0 12px}.primary form{display:grid}.primary>form>button,.primary .actions button{width:100%}
 .primary .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .button.start{width:100%;min-height:46px;border-radius:12px;font-size:15px}.button.start .icon{width:18px;height:18px}
-.visit-actions{margin:12px 0 0;padding:10px 4px 0;border-top:1px solid var(--line)}.visit-actions p{margin:8px 0 0}
+.visit-actions{margin:12px 0 0;padding:10px 8px 0;border-top:1px solid var(--line)}.visit-actions p{margin:8px 0 0}
 
 /* The denied claim: coral edge and header, the dated trail, and the fix that waits for a person. */
 .claim-alert{margin:12px 0 4px;border:1px solid color-mix(in srgb,var(--coral) 45%,var(--coral-tint));border-radius:12px;overflow:hidden;background:var(--rer-surface)}
