@@ -116,7 +116,7 @@ export function calendarGrid(s: any, c: any) {
     const label = c.view === 'week'
       ? `<span><a href="${h(calendarLink({ ...c, view: 'day', date: column.date }, { id: '' }))}"><strong>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(column.date + 'T00:00:00Z')))}</strong></a>${column.date === c.today ? `<small>Today · ${count === 1 ? '1 appointment' : `${count} appointments`}</small>` : tally}</span>`
       : `${c.by === 'practitioner' ? avatar(column.label) : ''}<span><strong>${practitionerName(column)}</strong>${tally}</span>`
-    html += `<div class="cal-head rs1 cs${i + 2}${column.date === c.today && c.view === 'week' ? ' today' : ''}">${label}</div>`
+    html += `<div class="cal-head rs1 cs${i + 2}${column.date === c.today && c.view === 'week' ? ' is-today' : ''}">${label}</div>`
   })
   for (let minute = lo; minute < hi; minute += 30) html += `<div class="cal-time rs${row(minute)} re${Math.min(2, (hi - minute) / step)} cs1">${h(clockLabel(minute))}</div>`
   c.columns.forEach((column: any, i: number) => {

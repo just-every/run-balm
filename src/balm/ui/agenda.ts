@@ -31,7 +31,7 @@ export function calendarAgenda(s: any, c: any) {
       const { count, html } = items(s, c, column, live), today = column.date === c.today
       const head = `<a href="${h(calendarLink({ ...c, view: 'day', date: column.date }, { id: '' }))}">${h(dayName(column.date))}</a>${today ? ' <span class="ag-today">Today</span>' : ''}`
       return count || today
-        ? `<section class="ag-day${today ? ' today' : ''}"><h3>${head}<small>${tally(count)}</small></h3>${html}</section>`
+        ? `<section class="ag-day${today ? ' is-today' : ''}"><h3>${head}<small>${tally(count)}</small></h3>${html}</section>`
         : `<p class="ag-empty">${head}<small>No visits</small></p>`
     })
     return `<div class="agenda week">${days.join('')}</div>`
