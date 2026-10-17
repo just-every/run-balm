@@ -13,8 +13,7 @@ test('online booking for a new client delivers the intake link, refuses a taken 
   const booked = await bookOnline(h, service.id, priya.id, open[0])
   assert.equal(booked.status, 303, booked.text)
   assert.match(booked.location, /\/intake\/[\w-]+\?booked=1&mail=sent/)
-  const outbox = (await h.db.prepare('SELECT message FROM rer_mail_development_outbox').all()).results.map(r => JSON.parse(r.message))
-  assert.ok(outbox.some(m => m.to.includes('maya@client.example') && m.text.includes(intakeToken(booked.location))))
+  assert.ok(h.mail.some(m => m.to.includes('maya@client.example') && m.text.includes(intakeToken(booked.location))))
   assert.ok(!(await slots(h, service.id, priya.id)).includes(open[0]))
   const taken = await bookOnline(h, service.id, priya.id, open[0], { email: 'other@client.example', firstName: 'Other' })
   assert.equal(taken.status, 409)
@@ -242,11 +241,12 @@ test('the signed-in screens render each role’s working pages', () => run(async
   const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
   assert.equal(booked.status, 303)
   const client = (await h.state()).clients[0]
-  for (const path of ['/app', '/app/clients', '/app/clients/' + client.id, '/app/invoices', '/app/clinic', '/app/intake', '/app/import', '/app/agent', '/app/mail']) {
+  for (const path of ['/app', '/app/clients', '/app/clients/' + client.id, '/app/invoices', '/app/clinic', '/app/intake', '/app/import', '/app/agent']) {
     const page = await h.send(path, undefined, h.owner)
     assert.equal(page.status, 200, path)
     assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/)
   }
+  assert.equal((await h.send('/app/mail', undefined, h.owner)).status, 404)
   assert.equal((await h.send('/app/clinic', undefined, reception.cookie)).status, 403)
   assert.equal((await h.send('/app/invoices', undefined, priya.cookie)).status, 403)
   const booking = await h.form('/app/action?name=client.save&returnTo=/app/clients', { firstName: 'Form', lastName: 'Client' }, reception.cookie)

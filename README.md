@@ -22,7 +22,7 @@ To start it again later, run `cd run-balm && rer dev`. `rer dev` installs the pi
 
 The public run site is at https://run-balm.com, and its **Run Balm** page is at https://run-balm.com/run. The local copy above serves the same pages.
 
-To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com` in place of the one line, then `cd run-balm && rer dev`. Local development sends no real email: messages wait in **Local mail** inside the app. Stop with `rer dev --stop` or Ctrl-C. If the saved port is taken, choose a free one, for example `rer dev --port 8899`. Never expose the development server to the internet.
+To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com` in place of the one line, then `cd run-balm && rer dev`. Development and demo mail is silently suppressed; no messages are stored or shown. Stop with `rer dev --stop` or Ctrl-C. If the saved port is taken, choose a free one, for example `rer dev --port 8899`. Never expose the development server to the internet.
 
 ## Your first week
 

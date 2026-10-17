@@ -14,9 +14,21 @@ export async function harness(options = {}) {
   if (!bundles.has(entry)) bundles.set(entry, await build({ entryPoints: [entry], bundle: true, write: false, format: 'esm', platform: 'neutral', conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], target: 'es2023' }))
   const bundle = bundles.get(entry)
   const socket = createServer(); await new Promise(r => socket.listen(0, '127.0.0.1', r)); const port = socket.address().port; await new Promise(r => socket.close(r))
-  const dir = options.root ? join(options.root, '.wrangler/state/v3') : await mkdtemp(join(tmpdir(), 'balm-test-')), origin = `${options.https ? 'https' : 'http'}://127.0.0.1:${port}`, setup = randomBytes(32).toString('hex')
-  const auth = { AUTH_LOCAL: 'true', OWNER_EMAIL: 'owner@clinic.example', SESSION_SECRET: randomBytes(32).toString('hex'), SETUP_TOKEN: setup, MAIL_PROVIDER: 'development', MAIL_FROM: 'auth@clinic.example', ...options.auth, AUTH_ORIGIN: origin }
-  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, ...(options.outbound ? { outboundService: options.outbound } : {}) }), resourcePersistencePath: dir })
+  const dir = options.root ? join(options.root, '.wrangler/state/v3') : await mkdtemp(join(tmpdir(), 'balm-test-')), origin = `${options.https === false ? 'http' : 'https'}://127.0.0.1:${port}`, setup = randomBytes(32).toString('hex')
+  const auth = { AUTH_LOCAL: 'false', OWNER_EMAIL: 'owner@clinic.example', SESSION_SECRET: randomBytes(32).toString('hex'), SETUP_TOKEN: setup, MAIL_PROVIDER: 'resend', MAIL_API_KEY: 're_test_only', MAIL_FROM: 'auth@clinic.example', ...options.auth, AUTH_ORIGIN: origin }
+  // Exercise the production mail adapter; only the provider's HTTP edge is fake.
+  // h.mail contains Resend request bodies in send order, in this test's memory only.
+  const mail = []
+  const outbound = async request => {
+    if (request.url === 'https://api.resend.com/emails' && request.method === 'POST') {
+      assert.equal(request.headers.get('authorization'), `Bearer ${auth.MAIL_API_KEY}`)
+      mail.push(await request.json())
+      return Response.json({ id: `mail_test_${mail.length}` })
+    }
+    if (options.outbound) return options.outbound(request)
+    throw new Error(`Unexpected outbound request: ${request.method} ${request.url}`)
+  }
+  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, outboundService: outbound }), resourcePersistencePath: dir })
   try {
     const db = await mf.getD1Database('DB')
     if (!options.root) for (const file of (await readdir('migrations/core')).filter(f => f.endsWith('.sql')).sort()) await db.batch(unstable_splitSqlQuery(await readFile('migrations/core/' + file, 'utf8')).map(sql => db.prepare(sql)))
@@ -36,9 +48,8 @@ export async function harness(options = {}) {
     }
     const state = async (cookie = owner, status = 200) => { const r = await send('/api/balm/state', undefined, cookie); assert.equal(r.status, status, JSON.stringify(r.value)); return r.value }
     const confirmMail = async email => {
-      const rows = (await db.prepare('SELECT message FROM rer_mail_development_outbox ORDER BY sequence DESC').all()).results
-      const message = rows.map(r => JSON.parse(r.message)).find(m => m.to.includes(email))
-      assert.ok(message, 'invitation delivered to the local outbox')
+      const message = mail.findLast(m => m.to.includes(email) && /\/auth\/confirm\?token=/.test(m.text))
+      assert.ok(message, 'sign-in or invitation submitted to the mail provider')
       const token = new URL(message.text.match(/https?:\/\/[^\s]+\/auth\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
       const r = await send('/auth/confirm', { token })
       assert.equal(r.status, 303, JSON.stringify(r.value)); return r.cookie
@@ -59,7 +70,7 @@ export async function harness(options = {}) {
       return { status: response.status, text: await response.text(), location: response.headers.get('location') }
     }
     const signIn = async email => { const response = await send('/auth/magic-link', {email}); assert.equal(response.status,202,response.text); return confirmMail(email) }
-    return { db, mf, origin, owner, auth, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    return { db, mf, origin, owner, auth, mail, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
   } catch (error) { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }); throw error }
 }
 

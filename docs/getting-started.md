@@ -32,7 +32,7 @@ cd run-balm && rer dev
 
 Stop it with `rer dev --stop` or Ctrl-C. If the saved port is taken, pick another with `rer dev --port 8899`. Never expose the development server to the internet.
 
-Balm on your computer sends no real email: invitations and intake links wait under **Local mail** inside the app.
+Development and demo mail is silently suppressed; no messages are stored or shown.
 
 ## Next
 

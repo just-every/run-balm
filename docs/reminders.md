@@ -1,23 +1,13 @@
-Balm writes the exact reminder for an upcoming visit, a person approves it, and you send it your usual way. Balm itself sends nothing.
+# Visit reminders and secure messages
 
-## Prepare the text
+On **Clinic → Automatic visit reminders**, enter up to three lead times in minutes (for example `2880, 1440` for 48 and 24 hours). Balm checks booked visits every minute through Cloudflare Cron and sends email without an approval step. A booking inside a lead time is sent on the next tick. Empty lead times turn reminders off. The existing prepared-and-approved reminder text export remains available separately.
 
-In the client's file, under **Appointments**, select **Prepare reminder text** on an upcoming booked visit. The client needs an email address. An assistant with an agent key can prepare reminders too.
+Use the clinic’s `MAIL_PROVIDER`, `MAIL_API_KEY` and verified `MAIL_FROM` deployment settings. The deployment declaration registers `* * * * *`; a self-hosted Worker deployment must retain that Cron schedule and the exported scheduled handler. Cloudflare may take time to propagate a new schedule. Local development suppresses mail and keeps no messages. The normal pinned `rer dev` owner entry opens local sign-in.
 
-The reminder reads like this:
+The patient follows the private visit link from their reminder and chooses **Confirm my visit** or **Ask for a new time**. The schedule and file show the response. A change request also emails the owner a notice and file link. The booked time stays reserved until the clinic moves or cancels it. Moving or canceling invalidates old reply links and pending deliveries; the scheduler reads the current appointment before sending. Links expire when the visit starts.
 
-```text
-Subject: Reminder: Follow-up visit at Riverside Physical Therapy
+**Reminder deliveries** on the client file records each attempt, channel, due time and outcome. **Sent** means accepted by the provider, not proof of inbox delivery. A definite refusal shows **failed**. A lost response or interrupted send shows **uncertain**; Balm does not automatically resend an ambiguous attempt and risk duplicate patient messages. Check with the patient and provider before sending another notice.
 
-Hello Nora,
+The same Twilio adapter handles reminder texts and text-to-pay. Texts connect once the clinic’s US A2P registration is approved and `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` are configured on its own Worker. The clinic must enable reminder texts and record each patient’s consent on their file. Provider requests are exercised with the recorded Twilio fixture in the integration tests; this does not claim live SMS delivery. Inbound SMS, STOP/HELP and quiet hours are not implemented yet.
 
-This is a reminder of your Follow-up visit appointment with Aisha Grant on Tue, Oct 27, 2026, 9:00 AM CDT at 2140 N Clark St, Chicago, IL 60614.
-
-If you need to change it, please contact Riverside Physical Therapy.
-```
-
-## Approve and send
-
-On **Invoices and reminders**, under **Appointment reminders**, read the text and select **Approve this exact text**. Then **Download approved reminder** and send it from your own email.
-
-If the appointment changes after the text was prepared, approval is refused: prepare it again.
+Use **Secure messages** on a patient file to send a message or issue a private link. Messages stay in Balm; emails carry only a generic notice and link. Only the clinic owner and the patient’s treating practitioners can read the conversation. Patient replies notify the owner. Links expire in seven days; a clinic reply replaces the earlier link, and **Revoke patient access** closes it immediately. Every read, message and link change is audited without clinical text in the audit. Messages are retained health records. Archives retain messages and reminder outcomes but omit active patient-link credentials. Attachments are not available yet.

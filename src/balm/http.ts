@@ -23,24 +23,25 @@ import { WEBHOOK_PATH } from './payments/connect'
 import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
+import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
+import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
+import { visitReply, visitReplyView } from './reminders/replies'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
-const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/mail|\/waitlist)?$/
+const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist)?$/
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  const localMail = env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' && who.role === 'owner'
-  const developmentMail = localMail ? (await env.DB.prepare('SELECT id,created_at AS createdAt,message FROM rer_mail_development_outbox ORDER BY sequence DESC LIMIT 100').all()).results.map((row: any) => ({ id: row.id, createdAt: row.createdAt, ...JSON.parse(row.message) })) : []
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', localMail, developmentMail, scribe: await scribeStatus(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string) {
   const file = await clientFile(env.DB, who, clientId)
-  return { ...file, billing: await clientBilling(env, env.DB, who, file.client.id as string) }
+  return { ...file, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -69,6 +70,8 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
+  if (name.startsWith('message.')) return messageCommand(env, who, name, input)
+  if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
   if (name.startsWith('pay.')) return paymentCommand(env, env.DB, who, name, input)
   if (name.startsWith('import.')) {
     if (who.role !== 'owner') fail('only_the_owner_imports', 403)
@@ -196,6 +199,27 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), error: failure.text }, failure.status)
     }
   }
+  const privatePage = path.match(/^\/(visit|messages)\/([A-Za-z0-9_-]{20,64})$/)
+  if (privatePage) {
+    const [, matchedKind, token] = privatePage
+    const kind = matchedKind as 'visit' | 'messages'
+    try {
+      if (request.method === 'POST') {
+        if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
+        const input = await inputBody(request)
+        if (kind === 'visit') await visitReply(env, token, input)
+        else await patientSend(env, token, input)
+        return redirect(`/${kind}/${token}?saved=1`)
+      }
+      const data = kind === 'visit' ? await visitReplyView(env, token) : await patientMessages(env, token)
+      return renderPublic(kind, { ...data, notice: url.searchParams.has('saved') ? 'Your reply is saved for the clinic.' : '' })
+    } catch (error) {
+      const failure = message(error)
+      if (failure.status === 404) return renderPublic('missing', {}, 404)
+      const data = kind === 'visit' ? await visitReplyView(env, token) : await patientMessages(env, token)
+      return renderPublic(kind, { ...data, error: failure.text }, failure.status)
+    }
+  }
   if (path.startsWith('/pay/')) return paymentsPublicResponse(request, env, path, sameOrigin(request, env))
   const plan = path.match(/^\/plan\/([A-Za-z0-9_-]{40,64})$/)
   if (plan) {
@@ -217,7 +241,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
 
 export async function balmResponse(request: Request, original: Bindings): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname
-  const isPublic = path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/')
+  const isPublic = path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
   if (!isPublic && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
   let who: Actor | undefined
@@ -277,7 +301,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const result = await execute(request, env, who, name, input)
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'plan.send', 'plan.resend', 'scribe.check'].includes(name)) {
+        if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people

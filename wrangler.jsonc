@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "clinic-balm",
+  "triggers": { "crons": ["* * * * *"] },
   "main": "src/server.ts",
   "compatibility_date": "2026-09-08",
   "compatibility_flags": [

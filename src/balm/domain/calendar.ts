@@ -22,7 +22,7 @@ export async function calendarView(db: D1Database, who: Actor, params: Record<st
     ? (weekly ? dates.map(d => ({ key: d, date: d, label: d, subject: weekly.id as string })) : [])
     : (chosen ? [chosen] : subjects).map(s => ({ key: s.id as string, date, label: s.name as string, subject: s.id as string }))
   const from = firstInstantOfHostDate(first, zone)!.toISOString(), to = firstInstantOfHostDate(datePlus(first, days), zone)!.toISOString()
-  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.series_id,a.start_at,a.end_at,a.status,a.booked_via,a.version,a.offer_id,
+  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.series_id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,a.version,a.offer_id,
     c.first_name||' '||c.last_name AS client,p.name AS practitioner,s.name AS service,r.name AS room,(SELECT 1 FROM bm_intake_responses i WHERE i.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     (SELECT CASE WHEN MIN(n.signed_at IS NOT NULL)=1 THEN 'signed' WHEN COUNT(*)>0 THEN 'unsigned' END FROM bm_notes n WHERE n.appointment_id=a.id) AS note_status,
     (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care

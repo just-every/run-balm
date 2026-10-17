@@ -15,6 +15,15 @@
       "clauses": [
         "BALM-001"
       ]
+    },
+    {
+      "id": "patient-communications",
+      "clauses": [
+        "COMM-001",
+        "COMM-002",
+        "COMM-003",
+        "PORTAL-003"
+      ]
     }
   ],
   "nonGoals": [
@@ -44,9 +53,11 @@
       "/book",
       "/health",
       "/intake/*",
-      "/signin"
+      "/signin",
+      "/visit/*",
+      "/messages/*"
     ],
-    "notes": "Native sessions guard /app and every /api/balm handler; /book and /intake links are the only public product pages; unknown paths return real 404s."
+    "notes": "Native sessions guard clinic pages and commands. Patient intake, visit-reply, secure-message, waitlist, physician and pay links authenticate through expiring private tokens."
   },
   "extensionPoints": {
     "contributions": [],

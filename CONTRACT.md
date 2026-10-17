@@ -347,7 +347,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 1 | runs your clinic's schedule | `BALM-002`, `SCHED-001`, `SCHED-002`, `SCHED-004`, `SCHED-010` | partial |
 | 2 | intake | `INTAKE-001`, `INTAKE-002` | partial |
 | 3 | notes | `CHART-001`, `BALM-004`, `CHART-002` | partial |
-| 4 | reminders | `REMIND-001`, `COMM-001`, `COMM-002` | partial |
+| 4 | reminders | `REMIND-001`, `COMM-001`, `COMM-002` | done |
 | 5 | bills insurance … through to paid | `INS-005`, `INS-006`, `INS-007`, `INS-012`, `INS-013` | missing |
 | 6 | bills … patients through to paid | `BILL-001`, `BALM-003`, `PAY-001`, `PAY-002`, `PAY-004` | partial |
 | 7 | 100% free, open source | `OWN-001` | partial |
@@ -356,7 +356,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 10 | Plan of care signed by Dr. Patel | `BALM-004`, `CHART-003` | partial |
 | 11 | Auth: 8 of 12 visits left | `INS-003` | missing |
 | 12 | Claim paid · Aetna · $142.18 | `INS-006`, `INS-007` | missing |
-| 13 | Reminder sent | `COMM-001`, `COMM-002` | partial |
+| 13 | Reminder sent | `COMM-001`, `COMM-002` | done |
 | 14 | Denied: missing KX modifier · Resubmitted | `INS-008`, `INS-009` | missing |
 | 15 | Recurring visits | `BALM-002`, `SCHED-003` | partial |
 | 16 | waitlists | `BALM-002`, `SCHED-005` | partial |
@@ -383,7 +383,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 37 | clear statements | `BALM-003`, `PAY-004`, `PAY-009` | partial |
 | 38 | Copays collect at check-in | `BALM-003`, `PAY-002`, `SCHED-008` | partial |
 | 39 | Text and email reminders go out on their own | `COMM-001`, `COMM-002` | partial |
-| 40 | Patients confirm or ask for a new time in one reply | `COMM-002` | partial |
+| 40 | Patients confirm or ask for a new time in one reply | `COMM-002` | done |
 | 41 | follows each referral from authorization to paid claim | `AGENT-001` | missing |
 | 42 | spots what stalled, cites the record and lines up the next step / Send to payer | `AGENT-001`, `AGENT-004` | missing |
 | 43 | Import patients … from … Cliniko | `MOVE-001`, `MOVE-005` | partial |
@@ -395,7 +395,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 49 | Export everything, any time | `PORT-001` | done |
 | 50 | Telehealth: Video visits from the same calendar | `TELE-001` | missing |
 | 51 | Home exercise programs | `PORTAL-002`, `PORTAL-007` | missing |
-| 52 | Secure messaging | `PORTAL-003` | missing |
+| 52 | Secure messaging | `PORTAL-003` | done |
 | 53 | Therapy cap tracking: KX threshold flagged | `INS-009`, `CHART-007` | missing |
 | 54 | Plan of care signatures | `BALM-004`, `CHART-003` | partial |
 | 55 | Audit log: Every chart view and change, recorded | `AUDIT-001` | done |
@@ -440,7 +440,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `INTAKE-004` | Insurance and identity capture | target | missing |  | No insurance policies, card photos or ID capture |
 | `PORTAL-001` | Patient portal | target | missing |  | No patient portal |
 | `PORTAL-002` | Home exercise programs | target | missing |  | No exercise library or home programs |
-| `PORTAL-003` | Secure messaging | target | missing |  | No patient messaging |
+| `PORTAL-003` | Secure messaging | target | partial | `src/balm/messages/`; `src/balm/ui/messages.ts`; `tests/reminders.test.mjs` | Patient and clinic exchange private messages with expiring, revocable links, clinical role checks and an append-only audit; generic email notices contain no clinical content. The patient page states the emergency advice. No attachments or front-desk routing yet. |
 | `PORTAL-004` | Statements, receipts and superbills in the portal | target | partial | `src/balm/ui/pay.ts`; `src/balm/payments/documents.ts`; `tests/payments.test.mjs` | The patient's private pay link shows the balance and statement, gives statement, receipt and superbill PDFs and takes payment; there is no signed-in portal holding every document |
 | `PORTAL-005` | Accessible, English and Spanish patient pages | target | missing |  | Patient pages are English only and unaudited against WCAG 2.2 AA |
 | `PORTAL-006` | Patient access to their record | target | missing |  | No record request workflow or FHIR export |
@@ -462,9 +462,9 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `REF-002` | Fax in and out | target | missing |  | No fax |
 | `REF-003` | Episodes of care | target | missing |  | No episodes of care |
 | `REMIND-001` | Reminder content a person approves | published | done | `src/balm/domain/reminders.ts`; `src/balm/domain/approvals.ts`; `tests/balm.test.mjs` |  |
-| `COMM-001` | Delivered email confirmations and reminders | target | partial | `src/balm/http.ts`; `src/balm/mail-out.ts`; `src/mail.server.mjs`; `tests/balm.test.mjs` | The booking email with the intake link and waitlist offer and taken emails are sent through the mail provider, with offer deliveries recorded; no scheduled reminders, change notices or delivery state on the file |
-| `COMM-002` | Two-way text messages | target | partial | `src/balm/sms/index.ts`; `src/balm/sms/twilio.ts`; `tests/payments.test.mjs` | A Twilio adapter sends pay links once the clinic's A2P registration and settings exist; no reminder texts, SMS consent, STOP and HELP, quiet hours or reply handling |
-| `COMM-003` | Communication history on the file | target | partial | `src/balm/domain/reminders.ts` | Approved reminder drafts are kept; no sent and received history |
+| `COMM-001` | Delivered email confirmations and reminders | target | partial | `src/balm/reminders/`; `src/balm/mail-out.ts`; `deploy.json`; `tests/reminders.test.mjs` | Booking and intake emails, clinic-set automatic reminders without approval, provider outcomes on the file, and one-reply confirmations/change requests ship. Moves replace the reminder schedule and invalidate old links; cancellations stop reminders. No provider delivery-event reconciliation or immediate moved-visit email yet. |
+| `COMM-002` | Two-way text messages | target | partial | `src/balm/sms/`; `src/balm/reminders/scheduler.ts`; `tests/reminders.test.mjs`; `tests/payments.test.mjs` | Consented reminder texts and text-to-pay share the Twilio adapter and recorded fixtures. Live SMS waits for the clinic’s A2P registration and credentials, stated on the Clinic page. No inbound SMS, STOP/HELP or quiet hours yet; visit replies use the private email link. |
+| `COMM-003` | Communication history on the file | target | partial | `src/balm/reminders/`; `src/balm/messages/`; `src/balm/ui/clients.ts`; `tests/reminders.test.mjs` | Reminder send outcomes, patient confirmations/change requests, secure sent/received messages and their notification states are kept with audited reads and writes. No fax, call log or cross-channel search yet. |
 | `COMM-004` | Follow-ups and recalls | target | missing |  | No follow-up or recall sequences |
 | `TELE-001` | Video visits from the calendar | target | missing |  | No video visits |
 | `BILL-001` | Approved, numbered invoices with fixed bytes | published | done | `src/balm/domain/invoices.ts`; `tests/balm.test.mjs` |  |

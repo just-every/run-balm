@@ -11,6 +11,7 @@ import { authResponse, runtimeBindings, type Bindings } from './auth.server'
 import { identity } from './identity'
 import { balmResponse } from './balm/http'
 import { localLinkResponse } from './balm/local-link'
+import { sendDueReminders } from './balm/reminders/scheduler'
 import { seedDemo } from './demo'
 
 const api = new Hono<{ Bindings: Bindings }>()
@@ -26,6 +27,9 @@ function noTransform(response: Response): Response {
 }
 
 export default withDemo<Bindings, ExportedHandler<Bindings>>({
+  async scheduled(controller, env, execution) {
+    execution.waitUntil(sendDueReminders(runtimeBindings(env), controller.scheduledTime))
+  },
   async fetch(request, env, execution) {
     const asset = await staticAssetResponse(request, env)
     if (asset) return asset

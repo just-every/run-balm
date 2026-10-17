@@ -5,7 +5,6 @@ import { clinic } from './clinic.mjs'
 
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
 const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
-const outbox = async h => (await h.db.prepare('SELECT message FROM rer_mail_development_outbox ORDER BY sequence').all()).results.map(r => JSON.parse(r.message))
 
 test('a recurring series shows its overlapping date before saving, books in one step, and moves or cancels one visit or the rest', () => run(async h => {
   await h.finishSetup()
@@ -67,10 +66,10 @@ test('a canceled visit is offered to the waitlist by email; the first to accept 
   const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId }, h.owner)
   assert.equal(cancelled.status, 303)
   assert.match(cancelled.location, /offered=2$/)
-  assert.ok((await outbox(h)).some(m => m.to.includes('ava@client.example') && m.subject.endsWith('is canceled')), 'the patient is told by email')
-  const offers = (await outbox(h)).filter(m => m.subject.startsWith('A time opened up'))
+  assert.ok(h.mail.some(m => m.to.includes('ava@client.example') && m.subject.endsWith('is canceled')), 'the patient is told by email')
+  const offers = h.mail.filter(m => m.subject.startsWith('A time opened up'))
   assert.deepEqual(offers.map(m => m.to[0]).sort(), ['ben@client.example', 'cara@client.example'], 'only entries whose practitioner fits')
-  const link = email => new URL(offers.find(m => m.to.includes(email)).text.match(/http:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
+  const link = email => new URL(offers.find(m => m.to.includes(email)).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
   const page = await h.send(link('ben@client.example'))
   assert.equal(page.status, 200); assert.match(page.text, /A time opened up/)
   // Both accept at once: exactly one is booked.
@@ -79,7 +78,7 @@ test('a canceled visit is offered to the waitlist by email; the first to accept 
   const winner = answers[0].status === 303 ? 'ben@client.example' : 'cara@client.example', loser = winner.startsWith('ben') ? 'cara@client.example' : 'ben@client.example'
   assert.match(answers.find(a => a.status === 303).location, /^\/intake\/[\w-]+\?booked=1/)
   assert.match(answers.find(a => a.status === 409).text, /This time has been taken/)
-  const mail = await outbox(h)
+  const mail = h.mail
   assert.ok(mail.some(m => m.to.includes(winner) && /accepted a time from the waitlist/.test(m.text)), 'the winner gets a confirmation with the intake link')
   assert.ok(mail.some(m => m.to.includes(loser) && m.subject.includes('has been taken')), 'the other is told it is taken')
   assert.ok(!mail.some(m => m.to.includes('dev@client.example')))

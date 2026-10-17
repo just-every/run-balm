@@ -46,7 +46,7 @@ export async function snapshot(db: D1Database, who: Actor) {
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')
   const rooms = await rows(db, owner ? 'SELECT * FROM bm_rooms ORDER BY name' : 'SELECT id,name FROM bm_rooms WHERE active=1 ORDER BY name')
-  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.series_id,a.start_at,a.end_at,a.status,a.booked_via,c.first_name||' '||c.last_name AS client,
+  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.series_id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,c.first_name||' '||c.last_name AS client,
     p.name AS practitioner,s.name AS service,(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     (SELECT CASE WHEN MIN(n.signed_at IS NOT NULL)=1 THEN 'signed' WHEN COUNT(*)>0 THEN 'unsigned' END FROM bm_notes n WHERE n.appointment_id=a.id) AS note_status,
     (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care

@@ -51,7 +51,7 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   const plan = await h.cmd('plan.send', { clientId: client.id, diagnoses: 'M22.2X1 Patellofemoral disorders, right knee', shortTermGoals: 'Stairs reciprocally in 3 weeks', longTermGoals: 'Return to running 5 km pain-free',
     frequencyPerWeek: 2, durationWeeks: 6, interventions: '97110, 97140, home program', startDate: '2026-10-19', physicianName: 'Dr. Anika Patel', physicianEmail: 'apatel@referrer.example', signature: 'Priya', attest: true }, priya.cookie)
   assert.equal(plan.mail, 'sent')
-  const mail = (await h.db.prepare('SELECT message FROM rer_mail_development_outbox').all()).results.map(r => JSON.parse(r.message)).find(m => m.to.includes('apatel@referrer.example'))
+  const mail = h.mail.find(m => m.to.includes('apatel@referrer.example'))
   assert.ok(mail.text.includes('/plan/' + plan.token)); assert.ok(!mail.text.includes('Noah'))
   const page = await h.send('/plan/' + plan.token)
   assert.equal(page.status, 200); assert.ok(page.text.includes('Return to running 5 km') && page.text.includes('2 times a week for 6 weeks'))

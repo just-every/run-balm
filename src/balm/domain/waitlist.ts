@@ -161,5 +161,5 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
 export async function takenNotices(db: D1Database, offerId: string) {
   return rows(db, `SELECT r.entry_id,c.email,c.first_name,o.start_at,s.name AS service FROM bm_offer_recipients r JOIN bm_offers o ON o.id=r.offer_id
     JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id
-    WHERE r.offer_id=? AND r.outcome IS NULL AND r.taken_notice IS NULL AND c.email IS NOT NULL`, offerId)
+    WHERE r.offer_id=? AND (r.outcome IS NULL OR r.outcome='too_late') AND r.taken_notice IS NULL AND c.email IS NOT NULL`, offerId)
 }
