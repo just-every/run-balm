@@ -5,12 +5,15 @@ import { run } from './harness.mjs'
 import { clinic } from './clinic.mjs'
 
 const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance']
+// The fixtures' booked appointments: two overlapping on the 2nd of the month after next and one on the 1st of the month after that, so they stay upcoming, outside the reminder window and in two months on any date.
+const month = ahead => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + ahead); return d.toISOString().slice(0, 7) }
+const dated = csv => csv.replaceAll('{{MONTH1}}', month(2)).replaceAll('{{MONTH2}}', month(3))
 for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
   test(`${provider}: preview, reconcile, atomic apply, duplicate-free repeat and whole-bundle undo`, () => run(async h => {
     await h.finishSetup()
     const { service, practitioners: [therapist] } = await clinic(h)
     const reception = await h.staff('Rosa', 'reception')
-    const files = await Promise.all(kinds.map(async kind => ({ kind, name: `${kind}.csv`, csv: await readFile(`tests/fixtures/movein/${provider}/${kind}.csv`, 'utf8') })))
+    const files = await Promise.all(kinds.map(async kind => ({ kind, name: `${kind}.csv`, csv: dated(await readFile(`tests/fixtures/movein/${provider}/${kind}.csv`, 'utf8')) })))
     const input = { provider, files, practitionerId: therapist.id, serviceId: service.id, dateFormat: 'MDY' }
     await h.cmd('movein.preview', input, reception.cookie, 403)
     const preview = await h.cmd('movein.preview', input)

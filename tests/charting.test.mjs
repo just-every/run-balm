@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
-import { clinic, pastVisit } from './clinic.mjs'
+import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
 const daily = { subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
 const view = async (h, clientId, cookie) => (await h.send('/api/balm/clients/' + clientId, undefined, cookie)).value
@@ -19,7 +19,8 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   const visit = await pastVisit(h, client.id, priya, service.id, reception.cookie)
   await pastVisit(h, client.id, sam, service.id, reception.cookie, 5)
   await h.cmd('appointment.attend', { id: visit }, priya.cookie)
-  assert.match((await h.send('/app', undefined, priya.cookie)).text, /Notes to sign[\s\S]*No note yet/)
+  const schedule = '/app?date=' + await visitDate(h, visit, reception.cookie)
+  assert.match((await h.send(schedule, undefined, priya.cookie)).text, /Notes to sign[\s\S]*No note yet/)
 
   // The visit's template frames the note; required sections are enforced at signing, not while drafting.
   const note = await h.cmd('note.write', { clientId: client.id, appointmentId: visit, sections: { ...daily, goals: '' } }, priya.cookie)
@@ -42,7 +43,7 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   const own = (await view(h, client.id, priya.cookie)).notes[0]
   assert.equal(own.status, 'signed'); assert.equal(own.signature.revision, 2); assert.equal(own.addenda.length, 1)
   assert.deepEqual(own.revisions[0].sections.map(s => s.label), ['Subjective', 'Objective measures', 'Assessment', 'Goal progress', 'Plan'])
-  assert.match((await h.send('/app', undefined, priya.cookie)).text, /All 1 note signed/)
+  assert.match((await h.send(schedule, undefined, priya.cookie)).text, /All 1 note signed/)
   const desk = await h.state(reception.cookie)
   assert.equal(desk.appointments.find(a => a.id === visit).note_status, 'signed')
   assert.ok(!JSON.stringify(desk).includes('Knee pain'))
@@ -64,7 +65,7 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   assert.deepEqual([certified[0].status, certified[0].certifierName, certified[0].content.certifiedThrough], ['certified', 'Anika Patel', '2026-11-29'])
   const front = (await view(h, client.id, reception.cookie)).plans[0]
   assert.deepEqual([front.status, front.content], ['certified', null])
-  assert.match((await h.send('/app', undefined, reception.cookie)).text, /Plan of care signed by Dr\. Anika Patel/)
+  assert.match((await h.send(schedule, undefined, reception.cookie)).text, /Plan of care signed by Dr\. Anika Patel/)
   const audit = (await view(h, client.id, h.owner)).audit
   for (const action of ['note.signed', 'note.addendum', 'plan.sent', 'plan.opened', 'plan.certified']) assert.ok(audit.some(a => a.action === action), action)
 }))

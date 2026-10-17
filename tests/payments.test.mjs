@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { harness } from './harness.mjs'
-import { clinic, pastVisit } from './clinic.mjs'
+import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 
 const sms = { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', TWILIO_AUTH_TOKEN: 'test-token', TWILIO_FROM: '+15005550006' }
@@ -49,7 +49,8 @@ test('copay at check-in from the day view, then the balance by pay link: paid on
 
     // The front desk checks the patient in and charges the copay in one action from the schedule.
     const visit = await pastVisit(h, client.id, priya, service.id, reception.cookie, 0)
-    const day = await h.send('/app', undefined, reception.cookie)
+    const schedule = '/app?date=' + await visitDate(h, visit, reception.cookie)
+    const day = await h.send(schedule, undefined, reception.cookie)
     assert.match(day.text, /Check in and charge \$30\.00 copay to Visa ending 4242/)
     const checkIn = await h.form('/app/action?name=pay.checkin&returnTo=/app', { appointmentId: visit, charge: 'on' }, reception.cookie)
     assert.equal(checkIn.status, 303, checkIn.text)
@@ -57,7 +58,7 @@ test('copay at check-in from the day view, then the balance by pay link: paid on
     assert.equal(charged.length, 1)
     assert.deepEqual([charged[0].body.amount, charged[0].body.off_session, charged[0].body.confirm, charged[0].body.currency], ['3000', 'true', 'true', 'usd'])
     assert.ok(charged[0].idempotencyKey)
-    const after = await h.send('/app', undefined, reception.cookie)
+    const after = await h.send(schedule, undefined, reception.cookie)
     assert.match(after.text, /Copay \$30\.00 paid/); assert.match(after.text, /Receipt R-000001/)
     assert.equal((await h.form('/app/action?name=pay.checkin&returnTo=/app', { appointmentId: visit, charge: 'on' }, reception.cookie)).status, 409)
     assert.equal(stripe.calls.filter(c => c.path === '/payment_intents').length, 1)
@@ -133,7 +134,7 @@ test('a Stripe webhook replayed, or reported by several events and the return, m
     const s = stripe.complete(sessionOf(checkout.location)), intent = stripe.intents.get(s.payment_intent)
 
     const forged = stripe.event('checkout.session.completed', s)
-    assert.equal((await h.send('/api/balm/stripe/webhook', JSON.parse(forged.body), '', { 'stripe-signature': forged.signature.replace(/v1=./, 'v1=0'), origin: '' })).status, 400)
+    assert.equal((await h.send('/api/balm/stripe/webhook', JSON.parse(forged.body), '', { 'stripe-signature': forged.signature.replace(/v1=(.)/, (_, c) => 'v1=' + (c === '0' ? '1' : '0')), origin: '' })).status, 400)
     const completed = stripe.event('checkout.session.completed', s), succeeded = stripe.event('payment_intent.succeeded', intent)
     const results = await Promise.all([hook(completed), hook(completed), hook(succeeded)])
     assert.deepEqual(results.map(r => r.status), [200, 200, 200])

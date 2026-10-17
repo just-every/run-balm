@@ -2,13 +2,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
-import { clinic, pastVisit } from './clinic.mjs'
+import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
 const fixture = async (name, values = {}) => {
   let body = await readFile(new URL(`./fixtures/insurance/${name}`, import.meta.url), 'utf8')
   for (const [key, value] of Object.entries(values)) body = body.replaceAll(`{{${key}}}`, value)
   return body
 }
+// Coverage runs from last year through next year, so today's visit and tomorrow's booking are covered on any date, New Year's Eve included.
+const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
 const patientFile = async (h, id, cookie = h.owner) => (await h.send('/api/balm/clients/' + id, undefined, cookie)).value
 const setup = async h => {
   await h.finishSetup()
@@ -19,23 +21,23 @@ const setup = async h => {
   const payer = await h.cmd('insurance.payer.save', { name: 'Aetna', payerId: '60054', receiverId: 'AETNA', unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
   await h.cmd('insurance.enrollment.save', { payerId: payer.id, practitionerId: priya.id, taxonomy: '225100000X', active: true })
   const patient = await h.cmd('client.save', { firstName: 'Maya', lastName: 'Lee', dateOfBirth: '1988-04-02' })
-  const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: 'MEMBER123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', startsOn: '2026-01-01', endsOn: '2026-12-31' })
-  const appointmentId = await pastVisit(h, patient.id, priya, service.id)
+  const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: 'MEMBER123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+  const appointmentId = await pastVisit(h, patient.id, priya, service.id), serviceDate = await visitDate(h, appointmentId)
   await h.cmd('appointment.attend', { id: appointmentId })
   const note = await h.cmd('note.write', { clientId: patient.id, appointmentId, body: 'Synthetic therapy visit: progressed knee strength and manual therapy.', charges: [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 15 }] }, priya.cookie)
   await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya Shah', attest: true }, priya.cookie)
   await h.cmd('pay.codes.save', { appointmentId, icd10: 'M25.561' })
   const invoice = await h.cmd('invoice.prepare', { appointmentId })
   await h.cmd('invoice.approve', { id: invoice.id })
-  return { patient, priya, payer, policy, appointmentId, invoice }
+  return { patient, priya, payer, policy, appointmentId, serviceDate, invoice }
 }
 
 test('signed care becomes a scrubbed 837P, a payer acknowledgment and an ERA with the right patient balance exactly once', async () => {
   const submissions = []
   await run(async h => {
     const c = await setup(h)
-    const auth = await h.cmd('insurance.authorization.save', { policyId: c.policy.id, number: 'AUTH12', startsOn: '2026-01-01', endsOn: '2026-12-31', visits: 12 })
-    const inquiry = await h.cmd('insurance.eligibility.prepare', { policyId: c.policy.id, serviceDate: '2026-10-17' })
+    const auth = await h.cmd('insurance.authorization.save', { policyId: c.policy.id, number: 'AUTH12', ...coverage, visits: 12 })
+    const inquiry = await h.cmd('insurance.eligibility.prepare', { policyId: c.policy.id, serviceDate: c.serviceDate })
     const exported = await h.send(`/api/balm/insurance/270/${inquiry.id}`, undefined, h.owner)
     assert.equal(exported.status, 200); assert.match(exported.text, /ST\*270\*/)
     const trace = exported.text.match(/TRN\*1\*([^*~]+)/)[1]
@@ -64,7 +66,7 @@ test('signed care becomes a scrubbed 837P, a payer acknowledgment and an ERA wit
     assert.equal((await patientFile(h, c.patient.id)).billing.ledger.balanceCents, 1500)
     await h.cmd('payment.record', { invoiceId: c.invoice.id, amountCents: 1500, reference: 'PATIENT-PR3' })
     assert.equal((await patientFile(h, c.patient.id)).billing.ledger.balanceCents, 0)
-    await h.cmd('insurance.authorization.save', { id: auth.id, policyId: c.policy.id, number: 'AUTH12', startsOn: '2026-01-01', endsOn: '2026-12-31', visits: 2 })
+    await h.cmd('insurance.authorization.save', { id: auth.id, policyId: c.policy.id, number: 'AUTH12', ...coverage, visits: 2 })
     const date = new Date(Date.now() + 86400000).toISOString().slice(0, 10), booking = { clientId: c.patient.id, practitionerId: c.priya.id, serviceId: (await h.state()).services[0].id, date, time: '12:00' }
     const warning = await h.cmd('appointment.book', booking, h.owner, 409)
     assert.ok(warning.detail.insuranceBooking.warnings.some(w => w.code === 'authorization_low'))
@@ -85,7 +87,7 @@ test('a payer denial lands with its reason and fix, and the clinician can draft 
   await run(async h => {
     const c = await setup(h)
     await h.cmd('insurance.payer.save', { id: c.payer.id, name: 'Medicare', payerId: '60054', receiverId: 'AETNA', medicare: true, unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
-    await h.cmd('insurance.medicare.save', { clientId: c.patient.id, year: 2026, therapyGroup: 'pt_slp', thresholdCents: 248000, externalUsedCents: 247000, source: 'Synthetic beneficiary expense record; CMS 2026 threshold' })
+    await h.cmd('insurance.medicare.save', { clientId: c.patient.id, year: +c.serviceDate.slice(0, 4), therapyGroup: 'pt_slp', thresholdCents: 248000, externalUsedCents: 247000, source: 'Synthetic beneficiary expense record and threshold' })
     const claim = await h.cmd('insurance.claim.prepare', { appointmentId: c.appointmentId, policyId: c.policy.id })
     assert.equal(claim.status, 'draft'); assert.ok(claim.errors.some(e => e.code === 'kx_medical_necessity_required'))
     const documented = await h.cmd('insurance.claim.necessity', { id: claim.id, medicalNecessity: 'Continued skilled therapy is required to safely progress gait and restore knee function.' }, c.priya.cookie)
@@ -104,7 +106,7 @@ test('a payer denial lands with its reason and fix, and the clinician can draft 
     assert.equal(page.status, 200); assert.match(page.text, /197/); assert.match(page.text, /[Aa]uthorization/)
     const appeal = await h.cmd('insurance.denial.appeal', { id: claim.id, reason: 'Authorization is present in the attached payer approval.' })
     assert.match(JSON.stringify(appeal), /Authorization is present/)
-    await h.cmd('insurance.authorization.save', { policyId: c.policy.id, number: 'CORRECTED-AUTH', startsOn: '2026-01-01', endsOn: '2026-12-31', visits: 12 })
+    await h.cmd('insurance.authorization.save', { policyId: c.policy.id, number: 'CORRECTED-AUTH', ...coverage, visits: 12 })
     const corrected = await h.cmd('insurance.claim.correct', { id: claim.id })
     assert.notEqual(corrected.id, claim.id); assert.equal(corrected.status, 'ready')
     const next = await h.cmd('insurance.batch.prepare', { claimIds: [corrected.id] })

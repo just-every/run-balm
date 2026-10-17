@@ -35,3 +35,8 @@ export async function pastVisit(h, clientId, practitioner, serviceId, cookie = h
   const booked = await h.cmd('appointment.book', { clientId, practitionerId: practitioner.id, serviceId, date: local.slice(0, 10), time: local.slice(11, 16) }, cookie)
   return booked.appointmentId
 }
+/** The clinic's date of a visit: a visit from just before midnight is on yesterday's schedule, not today's. */
+export async function visitDate(h, visitId, cookie = h.owner) {
+  const visit = (await h.state(cookie)).appointments.find(a => a.id === visitId)
+  return brisbane(Date.parse(visit.start_at)).slice(0, 10)
+}

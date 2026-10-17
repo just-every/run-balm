@@ -1,3 +1,4 @@
+import { hostDateAt } from '../availability/timezone'
 import { desk, empty, entry, field, form, h, hidden, money, owner, panel, select, stamp, status, textarea, usDate, zoneOf } from './shared'
 import { authorizationForm, policyForm } from './insurance-policy'
 import { insuranceResult, x12Link, x12Upload } from './insurance-shared'
@@ -11,7 +12,7 @@ function benefits(e: any) {
     + (payload?.errors ?? []).map((e: any) => `<li>Payer error ${h(e.reason)} · follow-up ${h(e.followup)}</li>`).join('')
 }
 function coverage(s: any, f: any, path: string) {
-  const i = f.insurance, today = new Date().toISOString().slice(0, 10)
+  const i = f.insurance, today = hostDateAt(new Date(), zoneOf(s))
   const list = i.policies.map((p: any) => {
     const requests = i.eligibility.filter((e: any) => e.policy_id === p.id)
     const elig = requests.map((e: any) => `<details${e.benefits ? ' open' : ''}><summary>Eligibility ${h(e.service_date)} · ${h(e.status)}</summary><p>Prepared ${stamp(s, e.created_at)}${e.checked_at ? ` · checked ${stamp(s, e.checked_at)}` : ''}</p><ul>${benefits(e)}</ul><p><a href="${x12Link('270', e.id)}">Download 270 inquiry</a></p>${desk(s) && !e.benefits ? form('insurance.eligibility.submit', path, hidden('id', e.id), 'Send eligibility inquiry through adapter', true) + x12Upload('insurance.eligibility.import', path, hidden('id', e.id), '271 response for this inquiry', 'Import eligibility response') : ''}</details>`).join('')
