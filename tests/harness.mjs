@@ -63,4 +63,4 @@ export async function harness(options = {}) {
   } catch (error) { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }); throw error }
 }
 
-export async function run(fn) { const h = await harness(); try { await fn(h) } finally { await h.close() } }
+export async function run(fn, options) { const h = await harness(options); try { await fn(h) } finally { await h.close() } }

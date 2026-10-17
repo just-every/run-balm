@@ -1,6 +1,7 @@
 // Mail Balm sends to clients through the clinic's own mail provider: the
-// intake link, waitlist offers, "that time is taken" notices and the
-// confirmation of an accepted offer, and pay links and receipts (payments/notify.ts).
+// intake link, waitlist offers, "that time is taken" notices, the
+// confirmation of an accepted offer, pay links and receipts (payments/notify.ts),
+// and a plan of care's signing link to the referring physician.
 // Text messages wait for an SMS provider.
 import type { Bindings } from '../auth.server'
 import { operatorMail } from '../mail.server.mjs'
@@ -41,4 +42,11 @@ export async function sendTaken(env: Bindings, row: { email: string; first_name:
   const clinic = await clinicRow(env)
   return send(env, row.email, `That time at ${clinic!.clinic_name} has been taken`,
     `Hello ${row.first_name},\n\nThe ${row.service} time on ${localTime(row.start_at, clinic!.time_zone)} has been taken by someone else on the waitlist.\n\nYou are still on the waitlist, and we will email you when another time opens up.\n`)
+}
+
+/** The physician gets only the clinic's name and the private link; the plan itself stays behind the link. */
+export async function sendPlanLink(env: Bindings, to: string, token: string): Promise<Delivery> {
+  const clinic = await clinicRow(env)
+  return send(env, to, `Plan of care to sign from ${clinic!.clinic_name}`,
+    `Hello,\n\n${clinic!.clinic_name} asks you to review and sign a therapy plan of care for a patient you referred.\n\nOpen the plan and sign it here (no account needed):\n${link(env, '/plan/' + token)}\n\nThis link is private to you and expires in 30 days.\n`)
 }

@@ -9,14 +9,14 @@ import { invoices } from './invoices'
 import { movein } from './import'
 import { mail } from './mail'
 import { payPage } from './pay'
-import { bookPage, intakePage, missingPage, offerPage } from './public'
+import { bookPage, intakePage, missingPage, offerPage, planPage } from './public'
 import { dragScript } from './drag'
 import { schedule } from './schedule'
 import { desk, h, owner } from './shared'
 import { style } from './style'
 import { waitlist } from './waitlist'
 
-type Notice = { message?: string; error?: string; result?: any }
+type Notice = { message?: string; error?: string; result?: any; ask?: Record<string, string> }
 
 const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))
 /** `script` is one inline script the page runs, allowed by its hash alone. */
@@ -39,7 +39,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
         : current === '/app/invoices' ? invoices(state)
-          : current === '/app/clinic' ? clinic(state)
+          : current === '/app/clinic' ? clinic(state, notice)
             : current === '/app/intake' ? intakeForms(state)
               : current === '/app/import' ? movein(state, notice)
                 : current === '/app/agent' ? agent(state, notice)
@@ -51,10 +51,10 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, allowed && current === '/app' ? dragScript : '')
 }
 
-export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'missing', data: any, status = 200): Promise<Response> {
-  const clinicName = data.clinic?.clinic_name ?? data.appointment?.clinic_name ?? data.offer?.clinic_name ?? branding.name
-  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : missingPage()
+export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'missing', data: any, status = 200): Promise<Response> {
+  const clinicName = data.clinic?.clinic_name ?? data.appointment?.clinic_name ?? data.offer?.clinic_name ?? data.content?.clinic.name ?? branding.name
+  const content = kind === 'book' ? bookPage(data) : kind === 'intake' ? intakePage(data) : kind === 'offer' ? offerPage(data) : kind === 'pay' ? payPage(data) : kind === 'plan' ? planPage(data) : missingPage()
   const body = `<main id="main" class="public"><header class="app-header"><span>{{brand}}</span><span class="identity">${h(clinicName)}</span></header>${data.error ? `<div class="notice error" role="alert">${h(data.error)}</div>` : ''}${content}</main>`
   // The pay page's forms continue on Stripe's own checkout page.
-  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
+  return documentFor(`${kind === 'book' ? 'Book online' : kind === 'intake' ? 'Intake form' : kind === 'offer' ? 'Waitlist offer' : kind === 'pay' ? 'Your account' : kind === 'plan' ? 'Plan of care' : 'Link not found'} · ${clinicName}`, body, status, '', kind === 'pay' ? ' https://checkout.stripe.com' : '')
 }

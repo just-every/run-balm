@@ -1,6 +1,7 @@
 // The two pages a client sees: online booking and the private intake link.
 import { localTime } from '../domain/invoices'
 import { h, money } from './shared'
+import { frequency, usDate } from './plans'
 
 const option = (value: unknown, label: unknown, current: unknown) => `<option value="${h(value)}" ${value === current ? 'selected' : ''}>${h(label)}</option>`
 
@@ -56,3 +57,18 @@ export function offerPage(d: any) {
 }
 
 export const missingPage = () => '<h1>This link is not available</h1><p>The link may be mistyped, or the appointment was canceled. Please contact the clinic.</p>'
+
+/** The referring physician's page: read the plan of care and sign it, no account needed. */
+export function planPage(d: any) {
+  if (d.status === 'certified') return `<h1>Plan of care signed</h1><p>Thank you, ${h(d.certifierName)}. You signed this plan of care on ${h(usDate(d.certifiedAt))}. The clinic has your certification; you can close this page.</p>`
+  const c = d.content
+  return `<h1>Plan of care to sign</h1><p>${h(c.clinic.name)} asks you, ${h(d.physicianName)}, to review and certify this therapy plan of care.</p>
+    <section class="panel"><h2>${h(c.patient.name)}</h2><p>${c.patient.dateOfBirth ? `Date of birth ${h(usDate(c.patient.dateOfBirth))}<br>` : ''}${h(c.clinic.name)}${c.clinic.address ? ` · ${h(c.clinic.address)}` : ''}</p>
+    <dl class="answers"><dt>Diagnoses</dt><dd>${h(c.diagnoses)}</dd><dt>Short-term goals</dt><dd>${h(c.shortTermGoals)}</dd><dt>Long-term goals</dt><dd>${h(c.longTermGoals)}</dd>
+    <dt>Frequency and duration</dt><dd>${h(frequency(c))}, starting ${h(usDate(c.startDate))}</dd><dt>Certification period</dt><dd>${h(usDate(c.startDate))} to ${h(usDate(c.certifiedThrough))}</dd><dt>Planned interventions</dt><dd>${h(c.interventions)}</dd></dl>
+    <p>Signed by the treating therapist <strong>${h(c.therapist.name)}, ${h(c.therapist.credentials)}</strong>.</p></section>
+    <section class="panel"><h2>Sign</h2><form method="post" action=""><div class="pair"><label>Your full name<input name="name" required maxlength="160" autocomplete="name"></label><label>Credentials<input name="credentials" required maxlength="40" placeholder="MD, DO, NP or PA-C"></label></div>
+    <label>NPI (optional)<input name="npi" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></label>
+    <label class="check"><input type="checkbox" name="attest" value="on" required><span>I certify that these services are needed and are furnished under this plan of care while the patient is under my care.</span></label>
+    <button type="submit">Sign plan of care</button></form><p class="help">Your name, credentials and the time are recorded on the patient's chart. To ask for changes, contact the clinic instead of signing.</p></section>`
+}

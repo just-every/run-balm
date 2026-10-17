@@ -10,7 +10,7 @@ Approval gives the invoice the next number, such as `INV-000014`, and fixes its 
 
 ## Download
 
-**Download invoice** returns the same file every time: the clinic's name, tax ID and address, the client, the practitioner with their profession and provider number, the date of service, the service and the amount. Each download is recorded in the client's access audit.
+**Download invoice** returns the same file every time: the clinic's name, tax ID and address, the client, the practitioner with their profession and provider number, the date of service, the service and the amount. When the visit has a signed treatment note with CPT codes, the invoice also lists each code with its minutes and its units by the 8-minute rule ([Treatment notes](/docs/notes)). Sign the note before you prepare the invoice: only signed notes carry their units. Each download is recorded in the client's access audit.
 
 ## Record a payment
 
