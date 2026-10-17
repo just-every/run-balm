@@ -1,6 +1,6 @@
 ## Export
 
-Stop Balm first, and keep exports private: they contain health records.
+Stop Balm first, and keep exports private: they contain health records. The `exports/` folder and every `.rer` file are git-ignored, so `git add .` never commits a backup; copy them somewhere encrypted that only you can open.
 
 ```sh
 rer dev --stop

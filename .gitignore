@@ -8,6 +8,9 @@ dist/
 .seed/
 .cache/
 *.tsbuildinfo
+# Backups hold health records: never commit them.
+exports/
+*.rer
 
 .rer/local/
 .rer/demo/

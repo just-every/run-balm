@@ -3,7 +3,7 @@ import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
-import { cancelForm, clientName, desk, empty, entry, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
+import { cancelForm, clientName, desk, empty, entry, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
 function setupChecklist(s: any) {
   const steps: [boolean, string][] = [
@@ -77,7 +77,7 @@ function bookPanel(s: any, c: any, notice: any) {
 
 function listPanel(s: any, c: any) {
   const items = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a))).map((a: any) => entry(`${new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at))} · ${a.client}`,
-    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${a.intake_received ? status('Intake received') : status('Intake not yet received')} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
+    `<p>${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}<br>${status(statusLabel[a.status] ?? a.status)} ${intakeChip(a)} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p><p><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a></p>${checkInActions(s, a, calendarLink(c))}`)).join('')
   return panel(c.view === 'week' ? 'This week as a list' : 'This day as a list', notesTally(c.appointments) + (items || empty('No visits.')))
 }
 

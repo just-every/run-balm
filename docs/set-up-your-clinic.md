@@ -11,7 +11,7 @@ Until these steps are done, the owner's **Schedule** page shows them under **Fin
 
 ## Services
 
-Add each service a client can book with its **Length (minutes)** and **Price in cents**: `14000` is $140.00. For example an initial evaluation of 60 minutes at `14000` and a follow-up visit of 45 minutes at `9500`. Set a service to **Inactive** to stop offering it. Choose the template its notes start from under **Notes for this service start from**, for example **PT initial evaluation** for the evaluation and **PT daily note** for the follow-up.
+Add each service a client can book with its **Length (minutes)** and **Price ($)**, for example an initial evaluation of 60 minutes at `140.00` and a follow-up visit of 45 minutes at `95.00`. Every amount you type in Balm is in dollars. Set a service to **Inactive** to stop offering it. Choose the template its notes start from under **Notes for this service start from**, for example **PT initial evaluation** for the evaluation and **PT daily note** for the follow-up.
 
 ## Rooms
 
@@ -24,7 +24,7 @@ Add each person under **Add a staff member**:
 - **Practitioner**: treats clients. Their **Profession** (for example `Physical Therapist`) and **Provider number** (for example their NPI) appear on invoices. Their **Credentials** (for example `PT, DPT`, `OTR/L` or `CCC-SLP`) appear in their signature on notes and plans of care. If you treat clients yourself, add yourself as a practitioner with your own sign-in email.
 - **Reception**: runs the front desk. They see every client file, but never intake answers or treatment notes.
 
-Select **Invite to sign in** next to each person. A deployed Balm emails the invitation, and the person opens it in any browser.
+Select **Invite to sign in** next to each person. A deployed Balm emails the invitation and says so at the top of the page (“Invitation sent to …”); the person opens it in any browser. Select it again to send a new link. Once your clinic links Auth under **Sign-in settings**, invited staff can also sign in with their Auth account: see [People and the access audit](/docs/people-and-audit).
 
 Balm on your computer sends no email, and its links open only in a browser that has opened Balm with rer's link. To work as a staff member there, run `rer dev --as person@example.com` (with their email) in the Balm folder and open the `RER_OPEN` link it prints, in another browser or browser profile. The **Clinic** page says this under each person.
 
@@ -43,10 +43,11 @@ A new practitioner starts with Monday to Friday, 9:00 AM to 5:00 PM ticked, so c
 
 The scribe drafts treatment notes from a practitioner's dictation, using your clinic's own AI model. The **Scribe (AI drafting)** card is at the bottom of the **Clinic** page.
 
-1. Create an API key with your provider. For Anthropic, open [API keys](https://platform.claude.com/settings/keys) and choose **Create key**. Any provider with an OpenAI-compatible Chat Completions endpoint that answers in JSON schema also works.
-2. Choose the **Provider** and paste the **API key**. Leave **Model** and **Endpoint** blank for Anthropic's defaults, or enter your provider's. If Anthropic answers that your key is not scoped to a workspace, also enter the **Anthropic workspace ID**.
-3. Select **Save scribe settings**. The key is stored encrypted and is never shown again; the card shows only its last four characters.
-4. Select **Test the scribe**. It sends one made-up dictation, never a patient's, and shows what came back.
+1. Create an API key. For Anthropic (Claude), open [API keys](https://platform.claude.com/settings/keys), choose **Create key**, pick the workspace the key belongs to, and copy the key (it starts with `sk-ant-`).
+2. Paste the **API key** and select **Save and test**. Balm sends one made-up dictation, never a patient's, and the card shows **Ready** only when the draft comes back right. Otherwise it shows **Not working** and the reason.
+3. If the reason says Anthropic needs a workspace, open [Workspaces](https://platform.claude.com/settings/workspaces), open the workspace, copy its ID (it starts with `wrkspc_` and is the last part of that page's address), paste it into **Anthropic workspace ID**, and select **Save and test** again.
+
+Not using Anthropic? Choose **Other (OpenAI-style)** for OpenAI or any provider that accepts the same requests, open **Model and web address**, and enter the model name and the web address of its chat API that your provider gives you. The key is stored encrypted and is never shown again; the card shows only its last four characters. **Test again** repeats the test at any time.
 
 Practitioners' dictation goes to this provider. Before you enter real patient details, use a provider that has signed a HIPAA business associate agreement with your practice. **Remove the key** turns the scribe off. On RER Managed hosting, the card says the scribe is not available yet.
 

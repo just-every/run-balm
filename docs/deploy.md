@@ -25,6 +25,7 @@ Give `rer deploy` these settings as environment variables from your password man
 | `MAIL_API_KEY` | The SendGrid or Resend API key. |
 | `MAIL_FROM` | The address every Balm email is sent from, for example `frontdesk@example.com`. It must be a SendGrid verified sender, or an address at your Resend-verified domain. It is a setting like the others, not part of any file in the repository. |
 | `OWNER_EMAIL` | Optional. The owner who signs in first; without it, rer uses the owner you set up on your computer. |
+| `SMS_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Optional; leave them out. They turn on texting pay links once your clinic is registered to text patients (US carriers call this A2P 10DLC registration). The dry run lists them as "optional secrets not supplied", which is expected. |
 
 You do not create `SESSION_SECRET` or `SETUP_TOKEN`: rer generates them for a new deployment, keeps them privately in `.rer/deploy/` in your Balm folder (mode 0600), and reuses them each time you deploy again.
 

@@ -108,10 +108,12 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     const status = await h.state()
     assert.equal(status.scribe.ready, true); assert.equal(status.scribe.saved.key_hint, '…4242'); assert.ok(!JSON.stringify(status).includes('sk-ant-test-key-4242'))
 
+    // Saving ran the test on made-up dictation; Ready follows that test.
+    assert.equal(seen.length, 1); assert.ok(!JSON.stringify(seen[0].body).includes('Ava'))
     const drafted = await h.cmd('note.scribe', ask, priya.cookie)
-    assert.equal(seen[0].key, 'sk-ant-test-key-4242')
-    assert.equal(seen[0].body.output_config.format.type, 'json_schema')
-    const sent = JSON.stringify(seen[0].body)
+    assert.equal(seen[1].key, 'sk-ant-test-key-4242')
+    assert.equal(seen[1].body.output_config.format.type, 'json_schema')
+    const sent = JSON.stringify(seen[1].body)
     assert.ok(sent.includes('Ther ex 23 min')); assert.ok(!sent.includes('Ava') && !sent.includes('1992-06-15'))
     const draft = (await view(h, client.id, priya.cookie)).notes.find(n => n.id === drafted.id)
     assert.deepEqual([draft.status, draft.template, draft.revisions[0].draftedBy], ['draft', 'pt.daily', 'scribe'])

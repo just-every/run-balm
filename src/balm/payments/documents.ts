@@ -37,7 +37,7 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
     { kind: 'heading', text: 'Provider' },
     { kind: 'facts', rows: [...clinicFacts(f.v.clinic), ['Rendering provider', [f.v.practitioner.name, f.v.practitioner.profession].filter(Boolean).join(', ')], ['NPI', f.npi]] },
     { kind: 'heading', text: 'Patient' },
-    { kind: 'facts', rows: [['Name', f.v.client.name], ...(f.v.client.dateOfBirth ? [['Date of birth', f.v.client.dateOfBirth] as [string, string]] : [])] },
+    { kind: 'facts', rows: [['Name', f.v.client.name], ...(f.v.client.dateOfBirth ? [['Date of birth', usDate(f.v.client.dateOfBirth, 'UTC')] as [string, string]] : [])] },
     { kind: 'heading', text: 'Diagnoses (ICD-10-CM)' },
     { kind: 'table', columns: [{ label: 'Pointer', width: 1 }, { label: 'Code', width: 2 }], rows: f.diagnoses.map((d, i) => [letters[i], d]) },
     { kind: 'heading', text: 'Procedures (CPT)' },

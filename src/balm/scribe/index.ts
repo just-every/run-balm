@@ -22,7 +22,7 @@ export function managed(env: Bindings) {
   try { return !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(env.RER_MANAGEMENT_ORIGIN).hostname) } catch { return true }
 }
 
-type State = { config: ScribeConfig } | { line: string }
+type State = { config: ScribeConfig; checked: boolean } | { line: string }
 
 async function scribeState(env: Bindings): Promise<State> {
   if (managed(env)) return { line: MANAGED_LINE }
@@ -30,14 +30,18 @@ async function scribeState(env: Bindings): Promise<State> {
   if (!row) return { line: MISSING_LINE }
   const key = await unseal(env.SESSION_SECRET, PURPOSE, row.key_sealed as string)
   if (!key) return { line: 'The saved key cannot be opened on this install. Add a key to use the scribe.' }
-  return { config: { provider: row.provider as Provider, endpoint: row.endpoint as string, model: row.model as string, key, workspace: row.workspace as string } }
+  return { config: { provider: row.provider as Provider, endpoint: row.endpoint as string, model: row.model as string, key, workspace: row.workspace as string }, checked: row.check_ok === 1 }
 }
 
-/** What pages show: ready or the one line why not; the owner also sees the saved settings without the key. */
+/** Ready means a key is saved and its last test drafted the sample correctly. */
+const UNTESTED_LINE = 'The scribe is set up but its test has not passed yet. The owner can test it in Clinic → Scribe.'
+
+/** What pages show: ready or the one line why not; the owner also sees the saved settings and last test without the key. */
 export async function scribeStatus(env: Bindings, who: Actor) {
   const state = await scribeState(env)
-  const saved = who.role === 'owner' ? await one(env.DB, 'SELECT provider,endpoint,model,workspace,key_hint,updated_by,updated_at FROM bm_scribe WHERE id=1') : null
-  return { ready: 'config' in state, line: 'line' in state ? state.line : null, managed: managed(env), saved, defaults: DEFAULTS }
+  const saved = who.role === 'owner' ? await one(env.DB, 'SELECT provider,endpoint,model,workspace,key_hint,updated_by,updated_at,checked_at,check_ok,check_message FROM bm_scribe WHERE id=1') : null
+  const ready = 'config' in state && !!state.checked
+  return { ready, line: 'line' in state ? state.line : ready ? null : UNTESTED_LINE, managed: managed(env), saved, defaults: DEFAULTS }
 }
 
 async function save(env: Bindings, who: Actor, input: Data) {
@@ -58,12 +62,13 @@ async function save(env: Bindings, who: Actor, input: Data) {
   const sealed = entered ? await seal(env.SESSION_SECRET, PURPOSE, entered) : current!.key_sealed
   const hint = entered ? '…' + entered.slice(-4) : current!.key_hint
   await commit(env.DB, who, [
-    env.DB.prepare(`INSERT INTO bm_scribe(id,provider,endpoint,model,workspace,key_sealed,key_hint,updated_by,updated_at) VALUES(1,?,?,?,?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,workspace=excluded.workspace,key_sealed=excluded.key_sealed,key_hint=excluded.key_hint,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
+    env.DB.prepare(`INSERT INTO bm_scribe(id,provider,endpoint,model,workspace,key_sealed,key_hint,updated_by,updated_at,checked_at,check_ok,check_message) VALUES(1,?,?,?,?,?,?,?,?,NULL,0,'')
+      ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,workspace=excluded.workspace,key_sealed=excluded.key_sealed,key_hint=excluded.key_hint,updated_by=excluded.updated_by,updated_at=excluded.updated_at,checked_at=NULL,check_ok=0,check_message=''`)
       .bind(provider, endpoint, model, workspace, sealed, hint, who.email, now()),
     audit(env.DB, who, 'scribe.saved', null, null, `${provider} ${model}${entered ? ', key changed' : ''}`),
   ])
-  return { saved: true }
+  // Saving tests at once, so the owner sees whether the scribe works without another step.
+  return { saved: true, ...await check(env, who) }
 }
 
 async function remove(env: Bindings, who: Actor) {
@@ -79,14 +84,20 @@ async function check(env: Bindings, who: Actor) {
   need(who, 'owner'); human(who)
   const state = await scribeState(env)
   if (!('config' in state)) return { ok: false, message: state.line }
+  let ok = false, message
   try {
     const draft = await draftNote(state.config, template('pt.daily')!, 45, SAMPLE)
     const minutes = Object.fromEntries(draft.charges.map(c => [c.code, c.minutes]))
-    const ok = minutes['97110'] === 23 && minutes['97140'] === 10 && !!draft.sections.subjective
-    return { ok, message: `${ok ? 'It drafted' : 'The model answered, but misread the sample'}: ${draft.charges.map(c => `${c.code} ${c.minutes} min`).join(', ') || 'no codes'}; subjective "${draft.sections.subjective.slice(0, 80)}".` }
+    ok = minutes['97110'] === 23 && minutes['97140'] === 10 && !!draft.sections.subjective
+    message = `${ok ? 'It drafted the sample note' : 'The model answered, but misread the sample note. Try a stronger model'}: ${draft.charges.map(c => `${c.code} ${c.minutes} min`).join(', ') || 'no codes'}; subjective "${draft.sections.subjective.slice(0, 80)}".`
   } catch (e) {
-    return { ok: false, message: e instanceof ScribeError ? e.message : 'The AI model could not be reached.' }
+    message = e instanceof ScribeError ? e.message : 'The AI model could not be reached.'
   }
+  await commit(env.DB, who, [
+    env.DB.prepare('UPDATE bm_scribe SET checked_at=?,check_ok=?,check_message=? WHERE id=1').bind(now(), ok ? 1 : 0, message),
+    audit(env.DB, who, 'scribe.checked', null, null, ok ? 'passed' : 'failed'),
+  ])
+  return { ok, message }
 }
 
 /** Drafts a note from the practitioner's dictation; the draft is unsigned and stays the practitioner's to review. */
@@ -101,6 +112,7 @@ async function draft(env: Bindings, who: Actor, input: Data) {
   const dictation = text(input.dictation, 'dictation', 20_000)
   const state = await scribeState(env)
   insist('config' in state, ('line' in state ? state.line : MISSING_LINE).replace(/\W+/g, '_').replace(/^_|_$/g, '').toLowerCase(), 409)
+  insist(state.checked, 'the_scribe_has_not_passed_its_test', 409)
   const minutes = (await one<{ m: number }>(env.DB, 'SELECT s.duration_minutes AS m FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id WHERE a.id=?', appointment.id))!.m
   let result
   try { result = await draftNote(state.config, t, minutes, dictation) }

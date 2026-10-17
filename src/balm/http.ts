@@ -5,22 +5,24 @@ import { approvals, command, preparations, snapshot, type Actor } from './domain
 import { bookOnline, openSlots } from './domain/booking'
 import { calendarView } from './domain/calendar'
 import { clientFile } from './domain/clients'
-import { intakeView, submitIntake } from './domain/intake'
+import { intakeAsk, intakeView, submitIntake } from './domain/intake'
 import { invoiceDownload } from './domain/invoices'
 import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices } from './domain/waitlist'
 import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
-import { sendCanceled, sendIntake, sendOffer, sendPlanLink, sendTaken } from './mail-out'
+import { sendBooked, sendCanceled, sendIntake, sendOffer, sendPlanLink, sendTaken } from './mail-out'
 import { scribeCommand, scribeStatus } from './scribe'
-import { importCommand, importOriginal } from './movein'
+import { importCommand, importOriginal, undoCounts } from './movein'
 import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
 import { plain } from './refusals'
 import { hostDateAt } from './availability/timezone'
 import { agentKeys, credentialCommand, fail, principal } from './credentials'
 import { clientBilling, paymentCommand, paymentsState } from './payments'
+import { parseDollars } from './payments/ledger'
 import { WEBHOOK_PATH } from './payments/connect'
 import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
+import { agentOpenApi } from './agent-openapi'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
@@ -28,10 +30,11 @@ const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
-  const importJobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
+  const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
+  const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
   const localMail = env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' && who.role === 'owner'
   const developmentMail = localMail ? (await env.DB.prepare('SELECT id,created_at AS createdAt,message FROM rer_mail_development_outbox ORDER BY sequence DESC LIMIT 100').all()).results.map((row: any) => ({ id: row.id, createdAt: row.createdAt, ...JSON.parse(row.message) })) : []
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', localMail, developmentMail, scribe: await scribeStatus(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', localMail, developmentMail, scribe: await scribeStatus(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -77,7 +80,14 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     return { ...plan, mail: await sendPlanLink(env, plan.physicianEmail, plan.token) }
   }
   const result: any = await command(env.DB, who, name, input)
-  if (name === 'appointment.book' || name === 'series.book') result.mail = await sendIntake(env, String(input.clientId), result.token, result.startAt)
+  if (name === 'appointment.book' || name === 'series.book') {
+    // A past visit emails nothing; a client with intake on file, or an open link already, is not asked again.
+    const booked = name === 'series.book' ? result.appointmentIds : [result.appointmentId], clientId = String(input.clientId)
+    result.intake = await intakeAsk(env.DB, clientId, result.startAt, booked)
+    result.mail = result.intake === 'ask' ? await sendIntake(env, clientId, result.token, result.startAt)
+      : result.intake === 'past' ? 'not_sent' : await sendBooked(env, clientId, result.startAt, booked.length)
+    if (result.intake !== 'ask') delete result.token
+  }
   if (name === 'appointment.cancel' || name === 'series.cancel_rest') {
     const canceled: string[] = name === 'appointment.cancel' ? [result.id] : result.cancelled
     result.mail = await sendCanceled(env, canceled)
@@ -216,12 +226,14 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (url.origin !== env.AUTH_ORIGIN || (request.headers.has('host') && request.headers.get('host') !== url.host)) fail('wrong_application_origin', 403)
     if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Method not allowed' }, 405)
     if (isPublic) return await publicResponse(request, env, path)
+    // The agent door's schema, for assistants that import one; it holds no clinic data.
+    if (path === '/api/balm/agent/openapi.json' && request.method === 'GET') return json(agentOpenApi(env.AUTH_ORIGIN))
     // Stripe signs its webhook; it carries no session.
     if (path === WEBHOOK_PATH) return await paymentsPublicResponse(request, env, path, false) ?? json({ error: 'Not found' }, 404)
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
-      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : {})
+      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
@@ -249,6 +261,10 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })
         }
         for (const key of ['amountCents', 'durationMinutes', 'priceCents', 'version', 'revision', 'noteId']) if (input[key] === '') delete input[key]
+        // People type money in dollars on every page; commands keep integer cents.
+        if (typeof input.price === 'string') input.priceCents = parseDollars(input.price, 'price')
+        if (typeof input.amount === 'string' && input.amount.trim()) input.amountCents = parseDollars(input.amount)
+        delete input.price; delete input.amount
         if (name === 'hours.save' && input.hoursForm === 'on') input.hours = hoursFromForm(input)
         if (name === 'intake.prepare' && 'questionCount' in input) {
           // Builder edits (move, remove, add) only redraw the form; preparing saves the draft.
@@ -262,6 +278,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
         if (!['import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'plan.send', 'plan.resend', 'scribe.check'].includes(name)) {
+          // An invitation says who it went to, and how, once the page reloads.
+          if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people
           return redirect(offered && back.startsWith('/app?') ? `${back}&offered=${offered}` : offered && back === '/app' ? `/app?offered=${offered}` : back)
         }
