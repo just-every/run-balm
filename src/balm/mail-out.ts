@@ -32,6 +32,14 @@ export async function sendIntake(env: Bindings, clientId: string, token: string,
     `Hello ${row.first_name},\n\n${opening} for ${localTime(startAt, row.time_zone)}.\n\nPlease complete your intake form before your visit:\n${link(env, '/intake/' + token)}\n\nThis link is private to you.\n`)
 }
 
+/** A booking for a client whose intake is already on file or already asked for: the time only. */
+export async function sendBooked(env: Bindings, clientId: string, startAt: string, visits = 1): Promise<Delivery> {
+  const row = await env.DB.prepare('SELECT c.email,c.first_name,s.clinic_name,s.time_zone FROM bm_clients c, bm_settings s WHERE c.id=?').bind(clientId).first<any>()
+  if (!row) return 'no_email'
+  return send(env, row.email, `Your appointment at ${row.clinic_name}`,
+    `Hello ${row.first_name},\n\n${visits === 1 ? 'Your appointment is booked' : `Your ${visits} appointments are booked. The first is`} for ${localTime(startAt, row.time_zone)}.\n\nNo new intake form is needed.\n`)
+}
+
 export async function sendOffer(env: Bindings, offer: OfferMail): Promise<Delivery> {
   const clinic = await clinicRow(env)
   return send(env, offer.email, `A time opened up at ${clinic!.clinic_name}`,

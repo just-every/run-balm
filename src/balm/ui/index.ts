@@ -1,7 +1,7 @@
 import { fontHead } from '../../base/font-head'
 import { themeFrame } from '../../base/theme-frame'
 import branding from '../../branding.json'
-import { agent } from './agent'
+import { agent, copyScript } from './agent'
 import { clientFilePage, clientList } from './clients'
 import { clinic } from './clinic'
 import { intakeForms } from './intake'
@@ -17,7 +17,7 @@ import { style } from './style'
 import { waitlist } from './waitlist'
 import { browserZoneScript } from './time-zone'
 
-type Notice = { message?: string; error?: string; result?: any; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
+type Notice = { message?: string; error?: string; result?: any; invited?: string | null; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
 
 const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))
 /** `script` is one inline script the page runs, allowed by its hash alone. */
@@ -49,7 +49,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
                       : schedule(state, notice)
   const clinicName = state.settings?.clinic_name ?? branding.name
   const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header><nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav><div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
-  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, !allowed ? '' : current === '/app' ? dragScript : current === '/app/clinic' ? browserZoneScript : '')
+  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, !allowed ? '' : current === '/app' ? dragScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
 }
 
 export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'missing' | 'local-link', data: any, status = 200): Promise<Response> {

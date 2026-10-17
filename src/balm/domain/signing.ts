@@ -28,6 +28,12 @@ function signer(staff: Data, input: Data) {
 export async function signNote(db: D1Database, who: Actor, input: Data) {
   const { note, staff } = await authored(db, who, input.id)
   insist(!note.signed_at, 'note_already_signed', 409)
+  // A note records care given: it is signed once its visit has started, and never for a canceled visit.
+  const visit = note.appointment_id ? await one(db, 'SELECT start_at,status FROM bm_appointments WHERE id=?', note.appointment_id) : null
+  if (visit) {
+    insist(visit.status !== 'cancelled', 'the_visit_was_canceled_so_this_note_cannot_be_signed', 409)
+    insist(Date.parse(visit.start_at as string) <= Date.now(), 'sign_the_note_once_the_visit_has_started', 409)
+  }
   const latest = (await one(db, 'SELECT * FROM bm_note_revisions WHERE note_id=? ORDER BY number DESC LIMIT 1', note.id))!
   insist(input.revision !== undefined && Number(input.revision) === latest.number, 'note_changed_reload', 409)
   const t = template(note.template), sections = latest.sections ? JSON.parse(latest.sections as string) : null
@@ -39,6 +45,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
   const digest = await sha256(JSON.stringify({ note: note.id, revision: latest.number, template: note.template, body: latest.body, sections, charges: latest.charges, signer: by, signedAt }))
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)', note.id, latest.number),
+    ...(visit ? [guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status!='cancelled')", note.appointment_id)] : []),
     stmt(db, 'UPDATE bm_notes SET signed_at=?,signed_revision=?,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=? AND signed_at IS NULL', signedAt, latest.number, by.name, by.credentials, digest, note.id),
     guard(db, 'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at=?)', note.id, signedAt),
     audit(db, who, 'note.signed', note.client_id as string, note.id as string, `revision ${latest.number}`),

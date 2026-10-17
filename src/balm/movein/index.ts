@@ -75,6 +75,13 @@ export async function importCommand(db: D1Database, actor: ImportActor, name: st
   }
 }
 
+/** How an undone import ended: patients removed, and patients kept because they were booked, edited or given notes since. */
+export async function undoCounts(db: D1Database, actor: ImportActor, jobId: string) {
+  const report = await readD1ImportUndoReport(jobId, d1RequestContext(importContext(db, actor)), { limit: 1000 })
+  const removed = report.dispositions.filter(d => d.disposition === 'reversed').length
+  return { removed, kept: report.dispositions.length - removed }
+}
+
 /** The exact file an import read, as the owner uploaded it. */
 export async function importOriginal(db: D1Database, actor: ImportActor, jobId: string) {
   const [file] = await readD1ImportOriginals(jobId, d1RequestContext(importContext(db, actor))).catch(error => {

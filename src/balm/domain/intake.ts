@@ -18,6 +18,14 @@ export function questions(value: unknown): Question[] {
     return { id: key, label: text(q.label, 'question_label', 300), type: q.type, required: q.required === true }
   })
 }
+/** Whether a staff booking asks for intake: only for a visit still ahead, and only once a client has neither answered nor holds an open link. */
+export async function intakeAsk(db: D1Database, clientId: string, startAt: string, booked: string[]): Promise<'ask' | 'past' | 'on_file' | 'link_open'> {
+  if (Date.parse(startAt) <= Date.now()) return 'past'
+  if (await one(db, 'SELECT 1 FROM bm_intake_responses WHERE client_id=?', clientId)) return 'on_file'
+  const open = await one(db, `SELECT 1 FROM bm_appointments a WHERE a.client_id=? AND a.status='booked' AND a.start_at>? AND a.intake_token_hash IS NOT NULL
+    AND a.id NOT IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id)`, clientId, now(), JSON.stringify(booked))
+  return open ? 'link_open' : 'ask'
+}
 export async function currentForm(db: D1Database) {
   const form = (await one(db, 'SELECT * FROM bm_intake_forms ORDER BY number DESC LIMIT 1'))!
   return { ...form, questions: JSON.parse(form.questions as string) as Question[] } as Data & { questions: Question[] }

@@ -9,6 +9,8 @@ import { audit, commit, guard, human, id, insist, integer, need, now, one, rows,
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 export const dollars = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`
 export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
+/** A YYYY-MM-DD date of birth as Apr 12, 1988. */
+const usBirthDate = (date: unknown) => /^\d{4}-\d\d-\d\d$/.test(String(date ?? '')) ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(date + 'T00:00:00Z')) : date
 export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
 /** The facts an invoice freezes; approval re-reads them and compares byte for byte. */
@@ -54,7 +56,7 @@ export function artifact(number: number, value: any, approvedAt: string, zone = 
     + '<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1d2a26}table{width:100%;border-collapse:collapse;margin:24px 0}td,th{border-bottom:1px solid #ccd;padding:8px;text-align:left}td:last-child,th:last-child{text-align:right}</style></head><body>'
     + `<h1>Invoice ${invoiceNumber(number)}</h1><p>Issued ${escape(new Intl.DateTimeFormat('en-US', { timeZone: zone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(approvedAt)))}</p>`
     + `<h2>${escape(value.clinic.name)}</h2>${line('Tax ID', value.clinic.abn)}${line('Address', value.clinic.address)}`
-    + `<h2>Client</h2>${line('Name', value.client.name)}${line('Date of birth', value.client.dateOfBirth)}`
+    + `<h2>Client</h2>${line('Name', value.client.name)}${line('Date of birth', usBirthDate(value.client.dateOfBirth))}`
     + `<h2>Provider</h2>${line('Practitioner', value.practitioner.name)}${line('Profession', value.practitioner.profession)}${line('Provider number', value.practitioner.providerNumber)}`
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`

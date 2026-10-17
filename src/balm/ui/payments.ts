@@ -1,9 +1,8 @@
 // Patient payments in the staff pages: Stripe and NPIs in Clinic, check-in with
 // the copay on the day view, and a client file's ledger, card, links and codes.
 import { cptText } from '../payments/codes'
-import { desk, empty, entry, field, form, h, hidden, money, panel, result, stamp, status, when } from './shared'
+import { desk, dollarsField, empty, entry, field, form, h, hidden, money, panel, result, stamp, status, usDate, when, zoneOf } from './shared'
 
-const dollarsField = (cents: unknown) => cents === null || cents === undefined ? '' : (Number(cents) / 100).toFixed(2)
 const card = (c: any) => `${String(c.brand ?? 'card').replace(/^./, (x: string) => x.toUpperCase())} ending ${h(c.last4)}`
 const receipt = (n: unknown) => 'R-' + String(n).padStart(6, '0')
 
@@ -57,7 +56,7 @@ function codesPanel(s: any, f: any, path: string) {
   const visits = f.appointments.filter((a: any) => a.status !== 'cancelled' && (desk(s) || a.practitioner_id === s.actor.staffId)).slice(0, 12)
   const list = visits.map((a: any) => {
     const c = codes[a.id] ?? { cpt: [], icd10: [] }
-    return entry(`${a.service} · ${a.start_at.slice(0, 10)}`, `<p>${when(s, a.start_at)} with ${h(a.practitioner)}<br>CPT: ${c.cpt.length ? h(cptText(c.cpt)) : '—'}<br>ICD-10: ${c.icd10.length ? h(c.icd10.join(', ')) : '—'}</p>`
+    return entry(`${a.service} · ${usDate(a.start_at, zoneOf(s))}`, `<p>${when(s, a.start_at)} with ${h(a.practitioner)}<br>CPT: ${c.cpt.length ? h(cptText(c.cpt)) : '—'}<br>ICD-10: ${c.icd10.length ? h(c.icd10.join(', ')) : '—'}</p>`
       + `<details><summary>${c.cpt.length || c.icd10.length ? 'Change codes' : 'Add codes'}</summary>${form('pay.codes.save', path, hidden('appointmentId', a.id)
         + field('cpt', 'CPT codes with units and modifiers', cptText(c.cpt), 'text', 'placeholder="97110 GP x2, 97140 GP x1" maxlength="400"')
         + field('icd10', 'ICD-10 diagnoses, primary first', c.icd10.join(', '), 'text', 'placeholder="M25.561, M54.50" maxlength="300"')

@@ -7,7 +7,7 @@ const deliveries: Record<string, string> = { sent: 'Emailed', no_email: 'No emai
 /** Practitioner (or anyone), service, dates and a note; the client is chosen by the caller. */
 export function waitlistForm(s: any, back: string, client: string) {
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
-  return form('waitlist.add', back, client + select('practitionerId', 'Practitioner', [...(desk(s) ? [['', 'Any practitioner']] : []), ...choices.map(p => [p.id, p.name])] as [unknown, unknown][], desk(s) ? '' : s.actor.staffId)
+  return form('waitlist.add', back, client + select('practitionerId', 'Practitioner', [...(desk(s) ? [['', 'Any practitioner']] : []), ...choices.map(p => [p.id, p.name])] as [unknown, unknown][], desk(s) ? '' : s.actor.staffId, desk(s) ? '' : 'required')
     + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
     + `<div class="pair">${field('earliestDate', 'From', '', 'date')}${field('latestDate', 'Until', '', 'date', 'required')}</div>`
     + field('note', 'Note for staff (optional)', '', 'text', 'maxlength="300" placeholder="Prefers mornings"'), 'Add to waitlist')

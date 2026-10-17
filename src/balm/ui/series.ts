@@ -1,6 +1,6 @@
 // Recurring visits: the pattern form, the per-date review a person sees before
 // anything is saved, and the result once the series is booked.
-import { field, form, h, hidden, practitioners, result, rows, select, services } from './shared'
+import { field, form, h, hidden, intakeLine, practitioners, result, rows, select, services } from './shared'
 import { plain } from '../refusals'
 
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -37,8 +37,8 @@ export function seriesForm(s: any, back: string, d: Defaults) {
 export function seriesResult(s: any, notice: any, back: string) {
   const r = result(notice)
   if (r?.seriesId && r.booked) {
-    const mail = r.mail === 'sent' ? 'The intake link for the first visit was emailed to the client.' : 'Give the client their intake link for the first visit:'
-    return `<div class="notice" role="status"><strong>Series booked: ${r.booked} visits.</strong>${r.skipped.length ? ` Skipped by you: ${h(r.skipped.map(dateLabel).join(', '))}.` : ''} ${h(mail)} <a href="/intake/${h(r.token)}">/intake/${h(r.token)}</a></div>`
+    const line = intakeLine(r, ' for the first visit')
+    return `<div class="notice" role="status"><strong>Series booked: ${r.booked} visits.</strong>${r.skipped.length ? ` Skipped by you: ${h(r.skipped.map(dateLabel).join(', '))}.` : ''} ${h(line.text)}${line.link}</div>`
   }
   if (!r?.preview) return ''
   const zone = r.timeZone, free = r.occurrences.filter((o: any) => !o.problem).length

@@ -16,6 +16,15 @@ export const DEFAULTS: Record<Provider, { endpoint: string; model: string }> = {
 
 export class ScribeError extends Error {}
 
+export const WORKSPACE_LINE = 'Anthropic needs to know which workspace this key belongs to. Enter the workspace ID below (Clinic → Scribe, step 2), or create the key inside a workspace instead.'
+/** A provider's message in full sentences: never cut mid-word. */
+const whole = (text: string) => {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (clean.length <= 400) return /[.!?]$/.test(clean) ? clean : clean + '.'
+  const cut = clean.slice(0, 400), stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '))
+  return stop > 80 ? cut.slice(0, stop + 1) : cut.slice(0, cut.lastIndexOf(' ')) + '…'
+}
+
 const INSTRUCTIONS = `You draft one outpatient therapy note for a licensed US physical, occupational or speech-language therapist, who reviews, edits and signs it.
 Use only what the therapist's dictation states about this visit.
 - Never invent measurements, scores, pain ratings, diagnoses, goals, minutes or codes. When the dictation says nothing for a section, leave that section an empty string.
@@ -68,8 +77,9 @@ export async function draftNote(c: ScribeConfig, t: Template, visitMinutes: numb
   } finally { clearTimeout(timer) }
   const body: any = await response.json().catch(() => null)
   if (!response.ok) {
-    const said = String(body?.error?.message ?? body?.message ?? '').slice(0, 200)
-    throw new ScribeError(response.status === 401 || response.status === 403 ? `The AI provider refused the key (${response.status}). Check the key in Clinic → Scribe.` : `The AI provider answered ${response.status}${said ? `: ${said}` : ''}.`)
+    const said = String(body?.error?.message ?? body?.message ?? '')
+    if (c.provider === 'anthropic' && /scoped to a workspace|workspace/i.test(said)) throw new ScribeError(WORKSPACE_LINE)
+    throw new ScribeError(response.status === 401 || response.status === 403 ? `The AI provider refused the key (${response.status}). Check the key in Clinic → Scribe.` : `The AI provider answered ${response.status}${said ? `: ${whole(said)}` : '.'}`)
   }
   const answer = r.answer(body)
   if (!answer || typeof answer !== 'object') throw new ScribeError('The AI model gave no draft.')

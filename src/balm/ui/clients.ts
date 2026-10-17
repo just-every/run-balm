@@ -5,29 +5,31 @@ import { waitlistForm } from './waitlist'
 import { notesPanel } from './notes'
 import { planResult, plansPanel } from './plans'
 import { billingPanels } from './payments'
-import { cancelForm, clientName, desk, empty, entry, field, form, h, hidden, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
+import { cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
   + `<div class="pair">${field('dateOfBirth', 'Date of birth', c?.date_of_birth ?? '', 'date')}${field('phone', 'Mobile', c?.phone ?? '', 'text', 'maxlength="40"')}</div>${field('email', 'Email', c?.email ?? '', 'email', 'maxlength="254"')}`
 
 export function clientList(s: any) {
-  const list = rows(s, 'clients').map(c => `<li><a href="/app/clients/${h(c.id)}">${h(clientName(c))}</a>${c.date_of_birth ? ` <span class="help">born ${h(c.date_of_birth)}</span>` : ''} ${c.created_via === 'import' ? status('Imported') : ''}</li>`).join('')
+  const list = rows(s, 'clients').map(c => `<li><a href="/app/clients/${h(c.id)}">${h(clientName(c))}</a>${c.date_of_birth ? ` <span class="help">born ${h(usDate(c.date_of_birth, zoneOf(s)))}</span>` : ''} ${c.created_via === 'import' ? status('Imported') : ''}</li>`).join('')
   const intro = desk(s) ? 'Every client of the clinic. Opening a file is recorded in its access audit.' : 'Clients you have appointments with. Opening a file is recorded in its access audit.'
   return `<h1>Clients</h1><p>${intro}</p><div class="grid">${panel('Client files', list ? `<ul class="plain">${list}</ul>` : empty(desk(s) ? 'No clients yet. They appear when someone books online, when you add one, or after a move-in.' : 'No clients yet. Clients appear here once they are booked with you.'))}${desk(s) ? panel('Add a client', form('client.save', '/app/clients', clientFields(), 'Add client')) : ''}</div>`
 }
 
 export function bookingResult(notice: any) {
   const r = result(notice)
-  if (!r?.token || r.seriesId || !r.appointmentId) return ''
-  const mail = r.mail === 'sent' ? 'The intake link was emailed to the client.' : r.mail === 'no_email' ? 'The client has no email address: give them this link yourself.' : 'Mail is not configured: give the client this link yourself.'
-  return `<div class="notice" role="status"><strong>Appointment booked.</strong> ${h(mail)} Private intake link (shown once): <a href="/intake/${h(r.token)}">/intake/${h(r.token)}</a></div>`
+  if (!r?.appointmentId || r.seriesId || !r.intake) return ''
+  const line = intakeLine(r)
+  return `<div class="notice" role="status"><strong>Appointment booked.</strong> ${h(line.text)}${line.link}</div>`
 }
+
+const priceOf = (s: any, a: any) => { const x = rows(s, 'services').find(x => x.id === a.service_id); return x ? money(x.price_cents) : '' }
 
 function appointments(s: any, f: any, notice: any) {
   const path = `/app/clients/${f.client.id}`, invoiced = new Set((f.invoices ?? []).filter((i: any) => i.status !== 'void').map((i: any) => i.appointment_id))
-  const list = f.appointments.map((a: any) => entry(`${a.service} with ${a.practitioner}`, `<p>${when(s, a.start_at)}<br>${status(a.status)} ${a.intake_received ? status('Intake received') : status('No intake yet')}</p><div class="actions">`
+  const list = f.appointments.map((a: any) => entry(`${a.service} with ${a.practitioner}`, `<p>${when(s, a.start_at)}<br>${status(a.status)} ${intakeChip(a)}</p><div class="actions">`
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
-    + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amountCents', 'Amount in cents (blank for the service price)', '', 'number', 'min="0" step="1"'), 'Prepare invoice') : '')
+    + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"'), 'Prepare invoice') : '')
     + (a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId) ? `<p><a href="/app?${h(new URLSearchParams({ view: 'day', date: hostDateAt(new Date(a.start_at), s.settings.time_zone), appt: a.id }))}">Move or change in the calendar</a></p>` + cancelForm('appointment.cancel', path, hidden('id', a.id), 'Cancel appointment', 'Cancel visit', clientName(f.client)) : '')
     + '</div>')).join('')
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
@@ -52,7 +54,7 @@ export function invoiceEntry(s: any, i: any, path: string) {
   if (i.status === 'draft' && desk(s)) actions += form('invoice.approve', path, hidden('id', i.id) + '<label class="check"><input type="checkbox" required><span>I reviewed this exact invoice.</span></label>', 'Approve and number invoice')
   if (i.status === 'approved' && desk(s)) {
     actions += `<p><a href="/api/balm/invoices/${h(i.id)}.html">Download invoice</a></p>`
-    if (outstanding > 0) actions += `<details><summary>Record a payment received</summary>${form('payment.record', path, hidden('invoiceId', i.id) + field('amountCents', 'Amount received in cents', outstanding, 'number', 'required min="1" step="1"') + field('reference', 'Payment reference (unique)', '', 'text', 'required maxlength="120"'), 'Record payment')}</details>`
+    if (outstanding > 0) actions += `<details><summary>Record a payment received</summary>${form('payment.record', path, hidden('invoiceId', i.id) + field('amount', 'Amount received ($)', dollarsField(outstanding), 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"') + field('reference', 'Payment reference (unique)', '', 'text', 'required maxlength="120"'), 'Record payment')}</details>`
     if (!i.payments.length && owner(s)) actions += `<details><summary>Void this invoice</summary>${form('invoice.void', path, hidden('id', i.id) + field('reason', 'Reason', '', 'text', 'required maxlength="300"'), 'Void invoice', true)}</details>`
   }
   return entry(title, `<p>${status(i.status)} ${i.status === 'approved' ? status(outstanding > 0 ? `${money(outstanding)} outstanding` : 'Paid') : ''}</p><p>${h(v.client.name)} · ${h(v.service.name)} · ${h(v.serviceDate)}<br>${h(v.practitioner.name)}${v.practitioner.providerNumber ? ` (provider ${h(v.practitioner.providerNumber)})` : ''} · <strong>${money(i.amount_cents)}</strong></p>`

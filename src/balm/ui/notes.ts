@@ -2,7 +2,7 @@
 // the scribe, edit the draft, review and sign, then add signed addenda.
 import { codes } from '../charting/cpt'
 import { disciplines, template, templates } from '../charting/templates'
-import { clinician, empty, entry, field, form, h, hidden, panel, stamp, status, textarea, when } from './shared'
+import { clinician, empty, entry, field, form, h, hidden, panel, stamp, status, textarea, usDate, when, zoneOf } from './shared'
 
 const CHARGE_ROWS = 6
 const templateChoices = (current: string) => `<option value="">Free-text note</option>${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${templates.filter(t => t.discipline === d).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
@@ -43,7 +43,10 @@ function noteEntry(s: any, f: any, n: any) {
   if (n.mine && n.status !== 'signed') {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
     actions += `<details><summary>Edit draft</summary>${form('note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
-    actions += `<details><summary>Review and sign</summary>${form('note.sign', path, hidden('id', n.id) + hidden('revision', latest.number)
+    const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
+    if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
+    else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
+    else actions += `<details><summary>Review and sign</summary>${form('note.sign', path, hidden('id', n.id) + hidden('revision', latest.number)
       + `<p>You are signing revision ${latest.number} exactly as shown above. Once signed the note is locked; later changes are addenda.</p>`
       + `<div class="pair">${field('signature', 'Type your full name to sign', '', 'text', `required maxlength="160" autocomplete="name" placeholder="${h(me(s).name ?? '')}"`)}${field('credentials', 'Credentials', me(s).credentials ?? '', 'text', 'required maxlength="60" placeholder="PT, DPT"')}</div>`
       + '<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed this note and attest that it is accurate and complete.</span></label>', 'Sign note')}</details>`
@@ -59,9 +62,13 @@ function compose(s: any, f: any, ask: any) {
   const path = `/app/clients/${f.client.id}`, mine = f.appointments.filter((a: any) => a.practitioner_id === s.actor.staffId && a.status !== 'cancelled')
   if (!clinician(s) || !mine.length) return ''
   const visit = mine.find((a: any) => a.id === ask?.compose)
+  // Today's or the latest visit that has started comes first, then the next one booked.
+  const started = mine.filter((a: any) => Date.parse(a.start_at) <= Date.now()), upcoming = mine.filter((a: any) => Date.parse(a.start_at) > Date.now())
+  const suggested = visit ?? started[0] ?? upcoming[upcoming.length - 1]
+  const visitDate = (a: any) => usDate(a.start_at, zoneOf(s))
   const chosen = visit ? (ask.template ?? visit.note_template ?? '') : ''
   const t = template(chosen)
-  const start = `<form method="get" action="${h(path)}"><label>Visit<select name="compose" required>${mine.map((a: any) => `<option value="${h(a.id)}"${a.id === visit?.id ? ' selected' : ''}>${h(a.service)} · ${h(a.start_at.slice(0, 10))} · ${h(a.status)}</option>`).join('')}</select></label>`
+  const start = `<form method="get" action="${h(path)}"><label>Visit<select name="compose" required>${mine.map((a: any) => `<option value="${h(a.id)}"${a.id === suggested?.id ? ' selected' : ''}>${h(a.service)} · ${h(visitDate(a))} · ${h(a.status)}</option>`).join('')}</select></label>`
     + `${visit ? templateSelect('template', 'Template', chosen) : '<p class="help">The note starts from the template set on the visit’s service; you can choose another next.</p>'}<button type="submit" class="secondary">${visit ? 'Use this template' : 'Start a note'}</button></form>`
   if (!visit) return `<details><summary>Write a note</summary>${start}</details>`
   const scribe = !t ? '' : s.scribe?.ready
@@ -69,7 +76,7 @@ function compose(s: any, f: any, ask: any) {
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
   const body = t ? sectionFields(t, { goals: carriedGoals(f) }) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
   const write = form('note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([]), 'Save draft')
-  return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visit.start_at.slice(0, 10))}</summary>${start}${scribe}${write}</details>`
+  return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 
 export function notesPanel(s: any, f: any, ask: any) {

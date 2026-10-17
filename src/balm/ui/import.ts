@@ -8,11 +8,13 @@ const states: Record<string, string> = {
   queued: 'Waiting to start', applying: 'Importing', completed: 'Imported', failed: 'Stopped before finishing',
   undoing: 'Undoing', undone: 'Undone', rolling_back: 'Rolling back', rolled_back: 'Rolled back',
 }
-const reasons: Record<string, string> = { edited: 'Kept: edited in Balm since the import', dependency: 'Kept: has bookings, notes or invoices in Balm' }
+const reasons: Record<string, string> = { edited: 'Kept: booked, edited or given notes in Balm since the import', dependency: 'Kept: has bookings, notes or invoices in Balm' }
 const conflictText: Record<string, string> = { existing_client_requires_review: 'Already in Balm (same Cliniko ID or same name, birth date and email)', erased_identity: 'Erased from Balm before: cannot be imported again' }
 const formatLabel = (value: string) => dateFormats.find(([f]) => f === value)?.[1] ?? value
 const table = (head: string[], body: string[][]) => `<div class="table"><table><thead><tr>${head.map(x => `<th>${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
-const progress = (j: any) => `${states[j.state] ?? h(j.state)}: ${h(j.checkpoint)} of ${h(j.total)} patients`
+const plural = (n: number) => `${n} patient${n === 1 ? '' : 's'}`
+const progress = (j: any) => j.undo ? `Undone: ${h(j.undo.removed)} of ${h(plural(Number(j.total)))} removed, ${h(j.undo.kept)} kept because they were booked, edited or given notes in Balm since`
+  : `${states[j.state] ?? h(j.state)}: ${h(j.checkpoint)} of ${h(plural(Number(j.total)))}`
 
 function preview(s: any, notice: any) {
   const data = result(notice)
@@ -38,7 +40,8 @@ function journal(s: any, notice: any) {
   const data = result(notice)
   if (!data?.job) return ''
   const j = data.job, names = new Map(rows(s, 'clients').map((c: any) => [c.id, clientName(c)]))
-  const summary = `<p><strong>${progress(j)}</strong>${j.error ? `<br>Stopped because: ${h(j.error)}` : ''}</p>`
+  const done = data.undo?.dispositions?.length ? data.undo.dispositions.filter((d: any) => d.disposition === 'reversed').length : null
+  const summary = `<p><strong>${progress(done === null ? j : { ...j, undo: { removed: done, kept: data.undo.dispositions.length - done } })}</strong>${j.error ? `<br>Stopped because: ${h(j.error)}` : ''}</p>`
   if (!data.undo) return panel('Import result', summary + '<p>Open the import’s journal below for its original file and any undo.</p>', 'full')
   const original = (data.originals ?? []).map((o: any) => o.available ? `<p>Original file (${Number(o.size).toLocaleString('en-US')} bytes), exactly as uploaded: <a href="/api/balm/imports/${h(j.id)}/original.csv">Download the original file</a></p>` : '<p>The original file is no longer kept.</p>').join('')
   const who = (d: any) => names.get(d.targetId) ?? (d.redacted ? 'Erased patient' : `Cliniko ID ${String(d.targetId).replace(/^cliniko-/, '')}`)

@@ -98,6 +98,9 @@ test('invoices: prepared from an attended visit, approved by a person, numbered 
   await h.cmd('invoice.prepare', { appointmentId: visit }, reception.cookie, 409)
   await h.cmd('appointment.attend', { id: visit }, priya.cookie)
   const key = await h.cmd('agent.create', { label: 'Billing assistant' }), agent = { authorization: 'Bearer ' + key.token }
+  // An assistant imports the agent door's schema without a key, then calls with one.
+  const schema = (await h.send('/api/balm/agent/openapi.json')).value
+  assert.equal(schema.servers[0].url, h.origin); assert.deepEqual(Object.keys(schema.paths), ['/api/balm/agent/context', '/api/balm/agent/command'])
   const prepared = await h.send('/api/balm/agent/command', { name: 'invoice.prepare', input: { appointmentId: visit } }, '', agent)
   assert.equal(prepared.status, 200, prepared.text)
   const invoiceId = prepared.value.result.id
