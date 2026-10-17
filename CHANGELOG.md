@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Saving a card and paying online work on a new Stripe account**: a Stripe account opened now starts on Stripe's newest API version, which refused Balm's Checkout with "The `payment_method_types` parameter is no longer supported", so patients could neither save a card on file nor pay a balance from their link. Balm now names the Stripe API version it is tested against (`2026-09-30.endive`) on every Stripe call and on the webhook it creates, and asks Checkout for card with `allowed_payment_method_types`. Copays charged to the card on file at check-in are unchanged.
 - **Back up a hosted clinic**: `rer run backup:hosted -- --environment NAME` saves the hosted clinic's whole database as one SQL file in `exports/`, readable only by you, and `rer run restore:hosted -- --input FILE` restores it into a fresh copy of Balm before setup (a copy that already holds data is refused). The deploy page's take-down steps and Back up and restore name these commands; `rer export` saves only the clinic on your computer and refuses a hosted address.
 - **Automatic reminders**: each lead time sends one reminder, never two at once. A visit booked after one or more lead times have passed gets a single reminder at the next minute, and later lead times still send on schedule. The Clinic page says so.
 - **Reminders say one thing**: Clinic's automatic visit reminders are the ones Balm emails; **Invoices and reminders → Prepared reminders** is text you approve, download and send yourself, and each page says how it differs from the other.

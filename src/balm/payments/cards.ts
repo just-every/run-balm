@@ -29,7 +29,7 @@ export async function startCardSetup(env: Bindings, db: D1Database, link: Data, 
   const clinic = (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string, consent = consentText(clinic)
   const customer = await customerFor(db, key, settings.account_id as string, link.client_id)
   const session = await stripeCall(key, 'POST', '/checkout/sessions', {
-    mode: 'setup', customer, payment_method_types: ['card'], currency: 'usd',
+    mode: 'setup', customer, allowed_payment_method_types: ['card'], currency: 'usd',
     success_url: `${linkUrl}?setup={CHECKOUT_SESSION_ID}`, cancel_url: linkUrl,
     metadata: { balm_client: link.client_id, balm_link: link.id }, setup_intent_data: { description: `Card on file at ${clinic}`, metadata: { balm_client: link.client_id } },
     custom_text: { submit: { message: consent.slice(0, 1200) } },

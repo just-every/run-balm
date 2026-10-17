@@ -57,7 +57,7 @@ export async function startLinkPayment(env: Bindings, db: D1Database, link: Data
   const { key } = await stripeReady(env, db)
   const clinic = (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string, paymentId = id()
   const session = await stripeCall(key, 'POST', '/checkout/sessions', {
-    mode: 'payment', payment_method_types: ['card'], client_reference_id: paymentId,
+    mode: 'payment', allowed_payment_method_types: ['card'], client_reference_id: paymentId,
     line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: amountCents, product_data: { name: `Payment to ${clinic}` } } }],
     metadata: { balm_payment: paymentId, balm_client: link.client_id }, payment_intent_data: { description: `Payment to ${clinic}`, metadata: { balm_payment: paymentId, balm_client: link.client_id, balm_kind: 'link' } },
     success_url: `${linkUrl}?paid={CHECKOUT_SESSION_ID}`, cancel_url: linkUrl,

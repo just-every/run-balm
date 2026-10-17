@@ -3,7 +3,7 @@
 // install creates the webhook that tells Balm about payments and saved cards.
 import { runtimeBindings, type Bindings } from '../../auth.server'
 import { audit, commit, human, insist, need, now, one, text, type Actor, type Data } from '../domain/model'
-import { managedInstall, MANAGED_LINE, seal, stripeCall, unseal } from './stripe-api'
+import { managedInstall, MANAGED_LINE, seal, STRIPE_VERSION, stripeCall, unseal } from './stripe-api'
 
 export const WEBHOOK_PATH = '/api/balm/stripe/webhook'
 const EVENTS = ['checkout.session.completed', 'checkout.session.expired', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed',
@@ -37,7 +37,7 @@ export async function connectStripe(env: Bindings, db: D1Database, who: Actor, i
   // A reconnect often replaces a revoked key, so the old webhook may no longer be reachable to remove.
   if (existing?.webhook_id) await stripeCall(await unseal(env, existing.key_sealed as string), 'DELETE', `/webhook_endpoints/${existing.webhook_id}`).catch(() => null)
   // Stripe calls back only to a public https address; a computer-local install reads outcomes when the patient returns.
-  const hook = origin.startsWith('https://') ? await stripeCall(key, 'POST', '/webhook_endpoints', { url: origin + WEBHOOK_PATH, description: 'Balm patient payments', enabled_events: EVENTS }) : null
+  const hook = origin.startsWith('https://') ? await stripeCall(key, 'POST', '/webhook_endpoints', { url: origin + WEBHOOK_PATH, description: 'Balm patient payments', api_version: STRIPE_VERSION, enabled_events: EVENTS }) : null
   const name = account.settings?.dashboard?.display_name || account.business_profile?.name || account.email || account.id
   await commit(db, who, [
     db.prepare(`INSERT INTO bm_stripe(id,key_sealed,key_hint,livemode,account_id,account_name,country,webhook_id,webhook_secret_sealed,connected_by,connected_at) VALUES(1,?,?,?,?,?,?,?,?,?,?)

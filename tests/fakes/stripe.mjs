@@ -24,6 +24,9 @@ export function fakeProviders() {
     }
     if (url.hostname !== 'api.stripe.com') return new Response('unexpected host ' + url.hostname, { status: 599 })
     const path = url.pathname.replace(/^\/v1/, '')
+    // Balm names its API version; on the current version Checkout no longer takes payment_method_types.
+    if (!request.headers.get('stripe-version')) return json({ error: { message: 'fake: every Balm call names a Stripe-Version' } }, 400)
+    if (Object.keys(body).some(k => k.startsWith('payment_method_types'))) return json({ error: { message: 'The `payment_method_types` parameter is no longer supported when creating a Checkout Session.' } }, 400)
     calls.push({ method: request.method, path, body, idempotencyKey: request.headers.get('idempotency-key') })
     if (path === '/account') return json({ id: 'acct_test_clinic', country: 'US', default_currency: 'usd', settings: { dashboard: { display_name: 'Riverside Physio (test)' } } })
     if (path === '/customers') return json({ id: next('cus') })
