@@ -12,7 +12,8 @@ export interface Actor {
 export type Data = Record<string, any>
 
 export class DomainError extends Error {
-  constructor(public code: string, public status = 400) { super(code); this.name = 'DomainError' }
+  /** `detail` travels with a refusal the caller must act on, such as a series' conflicting dates. */
+  constructor(public code: string, public status = 400, public detail?: unknown) { super(code); this.name = 'DomainError' }
 }
 export function insist(condition: unknown, code: string, status = 400): asserts condition {
   if (!condition) throw new DomainError(code, status)

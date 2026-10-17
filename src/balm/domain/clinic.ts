@@ -106,3 +106,16 @@ export async function eraseStaff(db: D1Database, who: Actor, input: Data) {
   ])
   return { id: staff.id, erased: true }
 }
+
+/** Treatment rooms; a room holds one visit at a time. */
+export async function saveRoom(db: D1Database, who: Actor, input: Data) {
+  need(who, 'owner'); human(who)
+  const roomId = input.id ? text(input.id, 'id', 100) : id()
+  if (input.id) insist(await one(db, 'SELECT 1 FROM bm_rooms WHERE id=?', roomId), 'room_not_found', 404)
+  await commit(db, who, [
+    stmt(db, `INSERT INTO bm_rooms(id,name,active) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active,version=bm_rooms.version+1`,
+      roomId, text(input.name, 'name', 80), input.active === false || input.active === 'false' ? 0 : 1),
+    audit(db, who, 'room.saved', null, roomId),
+  ])
+  return { id: roomId }
+}
