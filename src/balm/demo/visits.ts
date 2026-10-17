@@ -68,9 +68,10 @@ export function plan(now: number): Visit[] {
     if (v.start < now - HOUR) v.status = !first && v.seq % 17 === 5 ? 'no_show' : !first && v.seq % 13 === 7 ? 'cancelled' : 'attended'
     else if (v.start > now + HOUR && !first && v.seq % 11 === 3) v.status = 'cancelled'
     v.changedAt = v.status === 'cancelled' ? Math.max(v.createdAt + HOUR, Math.min(v.start - 20 * HOUR, now - 30 * MIN)) : v.status === 'booked' ? v.createdAt : v.end + 5 * MIN
-    // First visits arrive with their intake; a third of upcoming ones are still waiting for it.
-    if (first && v.status !== 'cancelled' && (v.start < now || v.seq % 3 !== 0))
-      v.intakeAt = Math.max(v.createdAt + 10 * MIN, Math.min(v.createdAt + (3 + v.seq % 20) * HOUR, v.start - HOUR, now - 10 * MIN))
+    // Every booking sends its own intake link, so a working clinic's diary shows nearly all of them received: visits that happened,
+    // returning clients' upcoming ones, and canceled or missed ones, which were filled in before the change. New clients booked more than three days ahead have not yet.
+    if (first && v.status === 'booked' && v.start > now + 3 * DAY) continue
+    v.intakeAt = Math.max(v.createdAt + 10 * MIN, Math.min(v.createdAt + (3 + v.seq % 20) * HOUR, v.start - HOUR, now - 10 * MIN, v.status === 'cancelled' ? v.changedAt - 5 * MIN : Infinity))
   }
   return visits
 }

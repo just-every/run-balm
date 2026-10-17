@@ -37,3 +37,13 @@ export function noteBody(v: Visit) {
 /** A few notes carry a correction, kept as a second revision. */
 export const amendment = (v: Visit) => v.number === 1 && v.seq % 4 === 1
   ? { body: noteBody(v).replace('Plan:', 'Plan: confirmed with the client by phone the next day.'), reason: 'Added the follow-up phone call' } : null
+
+const updates = [
+  'A bit better since the last visit, still sore after activity.', 'Much improved this week.', 'About the same as last visit.',
+  'Flared up after a long day on my feet.', 'Moving more freely and sleeping better.', 'Doing my home exercises most days.',
+]
+/** What the client typed into the intake link: the first visit tells the story, later ones confirm it and say how things are. */
+export const intakeAnswers = (v: Visit) => {
+  const c = v.client
+  return { reason: v.number === 1 ? c.reason : `${c.reason}. Since last visit: ${updates[(v.number + v.seq) % updates.length]}`, history: c.history, conditions: c.conditions, medications: c.medications, emergency: c.emergency, consent: true }
+}

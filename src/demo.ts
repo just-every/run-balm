@@ -13,7 +13,7 @@ import { currentForm, questions } from './balm/domain/intake'
 import { sha256 } from './balm/domain/model'
 import { hostDateAt } from './balm/availability/timezone'
 import { facts, reminderPayload, reminderText } from './balm/domain/reminders'
-import { amendment, noteBody } from './balm/demo/notes'
+import { amendment, intakeAnswers, noteBody } from './balm/demo/notes'
 import { clients, clinic, former, movedIn, practitioners, reception, rooms, series, services, zone } from './balm/demo/people'
 import { DAY, HOUR, MIN, plan, seriesStart, type Visit } from './balm/demo/visits'
 
@@ -31,7 +31,7 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
   const log = (at: number, who: { email: string; role: string }, action: string, clientId: string | null, subjectId: string, detail = '') =>
     q(`INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) SELECT ?,?,?,?,?,?,?
       WHERE NOT EXISTS(SELECT 1 FROM bm_audit WHERE action=? AND subject_id=? AND at=?)`, iso(at), who.email, who.role, action, clientId, subjectId, detail, action, subjectId, iso(at))
-  const visits = plan(now)
+  const visits = plan(now), form = await currentForm(db)
   const firstSeen = new Map<string, Visit>()
   for (const v of visits) if (!firstSeen.has(v.client.id)) firstSeen.set(v.client.id, v)
 
@@ -72,13 +72,16 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
     ]
     if (v.status !== 'booked') rows.push(log(v.changedAt, v.status === 'cancelled' ? desk : actorOf(v.practitioner.id), 'appointment.' + v.status, c.id, v.id))
     if (v.intakeAt) {
-      const answers = { reason: c.reason, history: c.history, conditions: c.conditions, medications: c.medications, emergency: c.emergency, consent: true }
-      rows.push(q("INSERT INTO bm_intake_responses(id,appointment_id,client_id,form_id,answers,submitted_at) VALUES(?,?,?,'intake-v1',?,?) ON CONFLICT DO NOTHING", 'demo-intake-' + v.id, v.id, c.id, JSON.stringify(answers), iso(v.intakeAt)),
-        log(v.intakeAt, { email: 'intake link holder', role: 'client' }, 'intake.submitted', c.id, 'demo-intake-' + v.id, 'form v1'))
+      // Answers are kept exactly as the form's own questions define them, as submitIntake stores them.
+      const given: Record<string, string | boolean> = intakeAnswers(v), answers: Record<string, string | boolean> = {}
+      for (const question of form.questions) if (given[question.id] !== undefined) answers[question.id] = given[question.id]
+      rows.push(q('INSERT INTO bm_intake_responses(id,appointment_id,client_id,form_id,answers,submitted_at) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING', 'demo-intake-' + v.id, v.id, c.id, form.id, JSON.stringify(answers), iso(v.intakeAt)),
+        log(v.intakeAt, { email: 'intake link holder', role: 'client' }, 'intake.submitted', c.id, 'demo-intake-' + v.id, `form v${form.number}`))
     }
     if (v.status === 'attended') {
       const noteId = 'demo-note-' + v.id, written = Math.min(v.end + 10 * MIN, now - 5 * MIN), author = actorOf(v.practitioner.id), fix = amendment(v)
-      if (v.intakeAt) rows.push(log(v.start - 10 * MIN, author, 'file.viewed', c.id, c.id, 'intake 1; notes 0'), log(v.start - 10 * MIN + 1000, author, 'intake.read', c.id, 'demo-intake-' + v.id))
+      const before = visits.filter(o => o.client.id === c.id && o.start < v.start), seen = before.filter(o => o.intakeAt).length + 1, earlier = before.filter(o => o.status === 'attended').length
+      if (v.intakeAt) rows.push(log(v.start - 10 * MIN, author, 'file.viewed', c.id, c.id, `intake ${seen}; ${earlier ? `notes ${earlier}` : 'no notes'}`), log(v.start - 10 * MIN + 1000, author, 'intake.read', c.id, 'demo-intake-' + v.id))
       rows.push(q('INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING', noteId, c.id, v.id, v.practitioner.id, iso(written)),
         q("INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at) VALUES(?,1,?,'',?) ON CONFLICT DO NOTHING", noteId, noteBody(v), iso(written)),
         log(written, author, 'note.written', c.id, noteId))
@@ -159,7 +162,6 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
       'demo-approval-' + id, 'reminder', id, by.email, by.role, ownerEmail, iso(at + HOUR), await sha256(reminderText(payload))), log(at + HOUR, maya, 'reminder.approved', v.client.id, id))
   }
   // The assistant's suggested intake form update, waiting for the owner to publish it.
-  const form = await currentForm(db)
   const proposal = { title: form.title, questions: questions([...form.questions.slice(0, -1),
     { id: 'pain_today', label: 'On a scale of 0 to 10, how much pain do you have today?', type: 'short', required: false },
     { id: 'goals', label: 'What would you most like to get back to doing?', type: 'long', required: false }, form.questions[form.questions.length - 1]]) }
