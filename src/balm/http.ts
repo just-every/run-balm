@@ -32,7 +32,7 @@ import { reminderSettings, reminderCommand, reminderHistory } from './reminders/
 import { visitReply, visitReplyView } from './reminders/replies'
 import { portalResponse } from './portal/http'
 import { portalCommand, portalExercisesFor } from './portal'
-import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
+import { consentDocument, insuranceAiStatus, insurancePhoto, identityPhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
 import { consentView, requestConsents, signRenewals } from './intake/renewals'
 import { caseCommand, caseList } from './cases'
 
@@ -304,7 +304,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
 export async function balmResponse(request: Request, original: Bindings): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname
   const isPortal = path === '/portal' || path.startsWith('/portal/')
-  const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance)\/([\w-]+)(\.pdf|\/(front|back))$/)
+  const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance|identity)\/([\w-]+)(\.pdf|\/(front|back)|\/photo)$/)
   const isPublic = isPortal || path === '/book' || path.startsWith('/consent/') || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
   if (!isPublic && !intakeDocumentPath && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
@@ -324,8 +324,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'GET') {
       if (intakeDocumentPath) {
         const [, kind, id, suffix, side] = intakeDocumentPath
-        if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side)) fail('not_found', 404)
-        const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
+        if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side) || (kind === 'identity' && suffix !== '/photo')) fail('not_found', 404)
+        const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : kind === 'identity' ? await identityPhoto(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
         return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
       }
       if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})

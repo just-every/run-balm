@@ -4,8 +4,8 @@ import { cents, envelope, parseX12, segment, xdate } from './x12'
 import { insuranceAdapter, adapterStatus } from './adapter'
 import type { InsuranceEnv } from './types'
 
-export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
-  const policy=await policyFor(db,who,input.policyId),date=day(input.serviceDate,'service_date')
+/** Builds real 270 bytes; callers supply authority and commit the returned request atomically. */
+export async function eligibilityRequest(db: D1Database, policy: Data, date: string) {
   const config=await one(db,'SELECT i.*,s.clinic_name FROM bm_insurance_settings i JOIN bm_settings s ON s.id=i.id')
   insist(config,'configure_insurance_billing_first',409)
   const key=id(),trace=key.replace(/-/g,'').toUpperCase()
@@ -22,8 +22,16 @@ export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
   }
   parts.push(segment('DTP','291','D8',xdate(date)),segment('EQ','30'))
   const body=envelope('270','005010X279A1',{sender:config.sender_id,receiver:policy.receiver_id,production:!!config.production},parts)
-  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,created_at) VALUES(?,?,?,?,?,?)',key,policy.id,date,trace,body,now()),audit(db,who,'insurance.eligibility_prepared',policy.client_id,key)])
-  return {id:key,policyId:policy.id,status:'prepared'}
+  return { id:key, policyId:policy.id, serviceDate:date, trace, body, configVersion:config.version }
+}
+export function eligibilityStatement(db: D1Database, request: Awaited<ReturnType<typeof eligibilityRequest>>) {
+  return stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,created_at) VALUES(?,?,?,?,?,?)',request.id,request.policyId,request.serviceDate,request.trace,request.body,now())
+}
+export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
+  const policy=await policyFor(db,who,input.policyId), date=day(input.serviceDate,'service_date')
+  const request=await eligibilityRequest(db,policy,date)
+  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),eligibilityStatement(db,request),audit(db,who,'insurance.eligibility_prepared',policy.client_id,request.id)])
+  return {id:request.id,policyId:policy.id,status:'prepared'}
 }
 export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
   const db=env.DB,row=await one(db,'SELECT * FROM bm_eligibility WHERE id=?',text(input.id,'eligibility',100))
@@ -39,6 +47,7 @@ export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
 }
 export async function importEligibility(db:D1Database,who:Actor,input:Data) {
   const row=await one(db,'SELECT * FROM bm_eligibility WHERE id=?',text(input.id,'eligibility',100));insist(row,'eligibility_not_found',404)
+  insist(row.status!=='superseded','eligibility_request_superseded',409)
   const policy=await policyFor(db,who,row.policy_id),parsed=parseX12(input.x12,'271'),hash=await sha256(parsed.body)
   if(row.response_sha256===hash)return {id:row.id,status:row.status,duplicate:true}
   insist(!row.response,'eligibility_response_already_imported',409)

@@ -3,6 +3,7 @@
 // just-every/run-pencil @ 5469766). A token is a one-use bearer link.
 import { approvalStatements } from './approvals'
 import { intakeRecordStatements, type IntakeMetadata } from '../intake/records'
+import { intakePayers } from '../intake/coverage'
 import { pendingPolicies } from '../intake/policies'
 import { audit, commit, guard, human, id, insist, need, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -45,7 +46,7 @@ async function byToken(db: D1Database, token: unknown) {
 export async function intakeView(db: D1Database, token: unknown) {
   const appointment = await byToken(db, token)
   const submitted = await one(db, 'SELECT submitted_at FROM bm_intake_responses WHERE appointment_id=?', appointment.id)
-  return { appointment, submittedAt: submitted?.submitted_at ?? null, form: submitted ? null : await currentForm(db), policies: await pendingPolicies(db, appointment.client_id) }
+  return { appointment, submittedAt: submitted?.submitted_at ?? null, form: submitted ? null : await currentForm(db), policies: await pendingPolicies(db, appointment.client_id), insurance: await intakePayers(db) }
 }
 
 export async function submitIntake(db: D1Database, token: unknown, input: Data, metadata: IntakeMetadata = {}) {

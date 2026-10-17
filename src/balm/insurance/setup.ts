@@ -2,9 +2,8 @@ import { audit, commit, day, guard, id, insist, integer, now, one, optional, row
 import { validNpi } from '../payments/codes'
 import { insuranceClient, policyFor, yes } from './access'
 
-const stateCode = (v: unknown) => { const s = text(v, 'state', 2).toUpperCase(); insist(/^[A-Z]{2}$/.test(s), 'invalid_state'); return s }
-const postal = (v: unknown) => { const s = text(v, 'postal_code', 10).replace(/-/g, ''); insist(/^\d{5}(\d{4})?$/.test(s), 'invalid_postal_code'); return s }
-const sex = (v: unknown) => { insist(['M','F','U'].includes(String(v)), 'invalid_sex'); return String(v) }
+import { policyRecord, policyStatement, postal, stateCode } from './policy'
+
 export async function saveInsuranceSettings(db: D1Database, who: Actor, input: Data) {
   insist(who.role === 'owner', 'only_the_owner_can_change_insurance_settings', 403)
   const npi = text(input.billingNpi, 'billing_npi', 10), tax = text(input.taxId, 'tax_id', 12).replace(/-/g, '')
@@ -42,17 +41,10 @@ export async function savePolicy(db: D1Database, who: Actor, input: Data) {
   const client = await insuranceClient(db,who,input.clientId), key = input.id ? text(input.id,'policy',100) : id()
   const previous = input.id ? await policyFor(db,who,key) : null
   insist(!previous || previous.client_id === client.id,'policy_patient_cannot_change')
-  const relation = String(input.relationship ?? '18'); insist(['18','01','19'].includes(relation),'invalid_relationship')
-  const start = day(input.startsOn,'starts_on'), end = input.endsOn ? day(input.endsOn,'ends_on') : null
-  insist(!end || end >= start,'policy_end_precedes_start')
-  const self = relation === '18'
-  const first = self ? client.first_name : text(input.subscriberFirst,'subscriber_first',35), last = self ? client.last_name : text(input.subscriberLast,'subscriber_last',60)
-  const dob = day(self ? client.date_of_birth : input.subscriberDob,'subscriber_dob'), patientSex = sex(input.patientSex)
+  const policy = policyRecord(client, input, key)
   await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',client.id),
     ...(previous ? [guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',key,previous.version)] : []),
-    stmt(db,`INSERT INTO bm_policies(id,client_id,payer_id,member_id,group_number,plan_name,relationship,subscriber_first,subscriber_last,subscriber_dob,subscriber_sex,patient_sex,address,city,state,postal_code,starts_on,ends_on,priority) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET payer_id=excluded.payer_id,member_id=excluded.member_id,group_number=excluded.group_number,plan_name=excluded.plan_name,relationship=excluded.relationship,subscriber_first=excluded.subscriber_first,subscriber_last=excluded.subscriber_last,subscriber_dob=excluded.subscriber_dob,subscriber_sex=excluded.subscriber_sex,patient_sex=excluded.patient_sex,address=excluded.address,city=excluded.city,state=excluded.state,postal_code=excluded.postal_code,starts_on=excluded.starts_on,ends_on=excluded.ends_on,priority=excluded.priority,eligibility_status='unknown',eligibility_checked_at=NULL,copay_cents=NULL,deductible_cents=NULL,version=bm_policies.version+1`,
-    key,client.id,text(input.payerId,'payer',100),text(input.memberId,'member_id',80).toUpperCase(),optional(input.groupNumber,'group_number',50)??'',optional(input.planName,'plan_name',100)??'',relation,first,last,dob,self?patientSex:sex(input.subscriberSex),patientSex,text(input.address,'address',100),text(input.city,'city',30),stateCode(input.state),postal(input.postalCode),start,end,integer(input.priority??1,'priority',1,3)),audit(db,who,'insurance.policy_saved',client.id,key)])
+    policyStatement(db,policy),audit(db,who,'insurance.policy_saved',client.id,key)])
   return { id:key,clientId:client.id }
 }
 export async function saveAuthorization(db: D1Database, who: Actor, input: Data) {

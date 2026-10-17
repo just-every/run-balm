@@ -39,3 +39,9 @@ Reference: [CMS therapy services](https://www.cms.gov/medicare/coding-billing/th
 Balm sends one authenticated HTTPS POST containing the transaction kind, stable batch/request ID, X12 body and SHA-256 digest. The practice-operated adapter submits that exact body to its enrolled clearinghouse. It must deduplicate by the stable ID and return its durable submission reference. Do not acknowledge before the clearinghouse accepts transport. A lost response is an uncertain submission: reconcile with the clearinghouse before any retry. Credentials and transaction payloads must never appear in access logs.
 
 Recorded synthetic X12 fixtures live only in the test suite. The application has no fixture mode and fabricates no payer responses.
+
+## Insurance collected during intake
+
+Configure practice billing and submitter details and the payers on the Insurance page before asking patients for insurance. The intake link then offers primary and secondary coverage, subscriber identity and relationship, card front/back photos and photo ID (a parent’s or guardian’s ID for a child). Each image accepts JPEG, PNG or WebP up to 1.9 MB. Required claim fields and both card sides are checked before the intake is saved.
+
+Submitting creates the native policies and a prepared X12 270 request for each policy in the same transaction as the intake. The patient file shows the requests for export or submission through the configured adapter; preparing a request does not confirm coverage. Staff verify card details on the file. A correction also updates the native policy, leaves the original images fixed, and replaces an outstanding inquiry so its old response cannot overwrite corrected coverage. Photo-ID and card downloads require patient-file access and are audited.

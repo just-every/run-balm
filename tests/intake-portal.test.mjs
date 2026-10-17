@@ -50,7 +50,7 @@ test('a parent signs each clinic policy, then re-signs only the changed version 
   assert.equal((await h.send('/app/intake/consents/'+after.consents[0].id+'.pdf',undefined,desk.cookie)).status,403)
 }))
 
-test('a parent signs a fixed intake PDF, uploads a card, and staff review AI suggestions without changing the original', () => {
+test('intake captures two policies and photo ID, creates eligibility requests, and staff verify AI suggestions against the originals', () => {
   const requests = []
   const outbound = async request => {
     assert.equal(request.url, 'https://api.anthropic.com/v1/messages')
@@ -64,21 +64,29 @@ test('a parent signs a fixed intake PDF, uploads a card, and staff review AI sug
     await h.finishSetup()
     const { service, practitioners: [priya, other] } = await clinic(h, ['Priya', 'Sam'])
     const desk = await h.staff('Rosa', 'reception')
+    await h.cmd('insurance.settings.save', {billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
+    const primary = await h.cmd('insurance.payer.save',{name:'Example Health',payerId:'PRIMARY',receiverId:'PRIMARY'})
+    const secondary = await h.cmd('insurance.payer.save',{name:'Example Secondary',payerId:'SECONDARY',receiverId:'SECONDARY'})
+
     const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0], { dateOfBirth: '2016-04-02' })
     const token = booked.location.match(/\/intake\/([\w-]+)/)[1]
     const page = await h.send('/intake/' + token)
     assert.match(page.text, /intake-signature/)
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII=', 'base64')
+    const photos=Object.fromEntries(['insuranceFront','insuranceBack','secondaryFront','secondaryBack','identityPhoto'].map(k=>[k,'data:image/png;base64,'+png.toString('base64')]))
     const fields = { formId: 'intake-v1', q_reason: 'Private pediatric concern', q_emergency: 'Alex Lee 555-0100', q_consent: 'yes',
       consentVersion: page.text.match(/name="consentVersion" value="([^"]+)"/)[1], consentAccepted: 'on', signerName: 'Alex Lee', signerRelationship: 'parent',
       signature: JSON.stringify([[[0.1,0.4],[0.2,0.2],[0.3,0.7],[0.5,0.4],[0.8,0.5]]]),
-      insurancePayer: 'Patient entered payer', insuranceMemberId: 'MEM-10O', insuranceGroup: 'GRP-9', insuranceSubscriber: 'Alex Lee', insuranceRelationship: 'child' }
+      insurancePayerId: primary.id, insuranceMemberId: 'MEM-10O', insuranceGroup: 'GRP-9', insuranceSubscriberFirst:'Alex',insuranceSubscriberLast:'Lee',insuranceSubscriberDob:'1985-01-12',insuranceSubscriberSex:'F',insuranceRelationship:'child',insuranceStartsOn:'2026-01-01',
+      secondaryPayerId:secondary.id,secondaryMemberId:'SECOND-10',secondarySubscriberFirst:'Sam',secondarySubscriberLast:'Lee',secondarySubscriberDob:'1982-05-13',secondarySubscriberSex:'M',secondaryRelationship:'child',secondaryStartsOn:'2026-01-01',
+      insurancePatientSex:'F',insuranceAddress:'200 Oak St',insuranceCity:'Austin',insuranceState:'TX',insurancePostalCode:'78701',...photos }
     assert.equal((await h.form('/intake/' + token, { ...fields, signature: '' })).status, 400)
-    assert.equal((await h.form('/intake/' + token, { ...fields, insuranceSubscriber: '' })).status, 400)
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII=', 'base64')
+    assert.equal((await h.form('/intake/' + token, { ...fields, insuranceSubscriberFirst: '' })).status, 400)
     const upload = new FormData()
     for (const [key, value] of Object.entries(fields)) upload.set(key, value)
     upload.set('insuranceFront', new Blob([png], { type: 'image/png' }), 'front.png')
     upload.set('insuranceBack', new Blob([png], { type: 'image/png' }), 'back.png')
+    for(const name of ['secondaryFront','secondaryBack','identityPhoto'])upload.set(name,new Blob([png],{type:'image/png'}),name+'.png')
     const request = new Request(h.origin + '/intake/' + token, { method: 'POST', headers: { origin: h.origin, 'cf-connecting-ip': '192.0.2.10' }, body: upload })
     const sent = await h.mf.dispatchFetch(request.url, { method: 'POST', headers: request.headers, body: new Uint8Array(await request.arrayBuffer()), redirect: 'manual' })
     assert.equal(sent.status, 303, await sent.text())
@@ -88,7 +96,16 @@ test('a parent signs a fixed intake PDF, uploads a card, and staff review AI sug
     const file = async cookie => h.send('/api/balm/clients/' + client.id, undefined, cookie)
     const documents = (await file(priya.cookie)).value.intakeDocuments
     assert.equal(documents.consents[0].signer_relationship, 'parent')
-    const consentId = documents.consents[0].id, card = documents.insurance[0]
+    const consentId = documents.consents[0].id, card = documents.insurance.find(i=>i.priority===1)
+    assert.equal(documents.insurance.length,2); assert.equal(documents.identities.length,1)
+    const native=(await file(h.owner)).value.insurance
+    assert.equal(native.policies.length,2); assert.equal(native.eligibility.length,2)
+    assert.ok(native.policies.every(p=>p.eligibility_status==='unknown'))
+    for(const request of native.eligibility){assert.equal(request.status,'prepared');const edi=await h.send('/api/balm/insurance/270/'+request.id,undefined,desk.cookie);assert.equal(edi.status,200);assert.match(edi.text,/ST\*270\*/)}
+    const identityPath='/app/intake/identity/'+documents.identities[0].id+'/photo'
+    assert.equal((await h.send(identityPath,undefined,other.cookie)).status,404)
+    const identity=await h.mf.dispatchFetch(h.origin+identityPath,{headers:{cookie:desk.cookie}})
+    assert.equal(identity.status,200);assert.deepEqual(Buffer.from(await identity.arrayBuffer()),png)
     const path = '/app/intake/consents/' + consentId + '.pdf'
     const pdf = await h.send(path, undefined, priya.cookie)
     assert.equal(pdf.status, 200); assert.equal(pdf.headers.get('content-type'), 'application/pdf')
@@ -104,15 +121,19 @@ test('a parent signs a fixed intake PDF, uploads a card, and staff review AI sug
     await h.cmd('scribe.save', { provider: 'anthropic', key: 'test-model-key' })
     const read = await h.cmd('insurance.read', { id: card.id }, desk.cookie)
     assert.equal(read.draft.memberId, 'MEM-100')
-    const suggested = (await file(desk.cookie)).value.intakeDocuments.insurance[0]
+    const suggested = (await file(desk.cookie)).value.intakeDocuments.insurance.find(i=>i.priority===1)
     assert.equal(suggested.member_id, 'MEM-10O'); assert.equal(suggested.verified_at, null)
     assert.equal(requests[1].messages[0].content.filter(c => c.type === 'image').length, 2)
-    await h.cmd('insurance.verify', { id: card.id, version: suggested.version, payer: read.draft.payer, memberId: read.draft.memberId, group: read.draft.group, subscriber: read.draft.subscriber, relationship: 'child', confirm: 'on' }, desk.cookie)
+    await h.cmd('insurance.verify', { id: card.id, version: suggested.version, payerId: primary.id, payer: read.draft.payer, subscriberFirst:'Alex',subscriberLast:'Lee',memberId: read.draft.memberId, group: read.draft.group, subscriber: read.draft.subscriber, relationship: 'child', confirm: 'on' }, desk.cookie)
     const final = (await file(h.owner)).value
-    assert.equal(final.intakeDocuments.insurance[0].member_id, 'MEM-100')
-    assert.ok(final.intakeDocuments.insurance[0].verified_at)
+    assert.equal(final.intakeDocuments.insurance.find(i=>i.priority===1).member_id, 'MEM-100')
+    assert.ok(final.intakeDocuments.insurance.find(i=>i.priority===1).verified_at)
     const second = await h.send(path, undefined, h.owner)
     assert.equal(second.text, pdf.text)
+    assert.equal(final.insurance.policies.find(p=>p.id===card.policy_id).member_id,'MEM-100')
+    assert.equal(final.insurance.eligibility.filter(e=>e.status==='superseded').length,1)
+    assert.equal(final.insurance.eligibility.filter(e=>e.status==='prepared').length,1)
+    assert.equal(final.insurance.eligibility.filter(e=>e.status==='exported').length,1)
     assert.ok(final.audit.some(a => a.action === 'consent.downloaded'))
     assert.ok(!JSON.stringify(final.audit).includes('Private pediatric concern'))
   }, { outbound })
