@@ -6,7 +6,7 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 const placement = range(1, 97).map(n => `.rs${n}{grid-row-start:${n}}`).join('')
   + range(1, 96).map(n => `.re${n}{grid-row-end:span ${n}}`).join('')
   + range(1, 41).map(n => `.cs${n}{grid-column-start:${n}}`).join('')
-  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:88px repeat(${n},minmax(${n > 1 ? 172 : 220}px,1fr))}`).join('')
+  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:${n > 3 ? 64 : 88}px repeat(${n},minmax(${n > 1 ? 172 : 220}px,1fr))}`).join('')
   + '@media(max-width:600px){' + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:56px repeat(${n},minmax(${n > 1 ? 236 : 200}px,1fr))}`).join('') + '}'
 
 export const calendarStyle = placement + `
@@ -43,6 +43,7 @@ export const calendarStyle = placement + `
 .appt .tag.coral{background:var(--coral-tint);color:var(--coral-ink)}.appt .tag.sage{background:var(--sage-tint);color:var(--sage-ink)}.appt .tag.honey{background:var(--honey-tint);color:var(--honey-ink)}
 .appt .tag.k3{display:none}
 @container (max-width:185px){.appt .go{display:none}}
+@container (max-width:215px){.appt .mark{display:none}.appt.size2 .appt-time{display:none}}
 .appt.size1{padding:2px 8px;align-items:center}.appt.size1 .appt-copy{flex-direction:row;gap:6px;align-items:baseline}.appt.size1 .appt-tags,.appt.size1 .mark{display:none}
 .appt.size2{padding:1px 8px}.appt.size2 strong{line-height:16px}.appt.size2 .appt-tags{height:14px}.appt.size2 .tag{line-height:14px;font-size:11px}.appt.size2 .appt-copy{display:grid;grid-template-columns:minmax(0,auto) 1fr;grid-template-areas:'name time' 'tags tags';column-gap:6px;align-items:baseline}.appt.size2 strong{grid-area:name}.appt.size2 .appt-time{grid-area:time}.appt.size2 .appt-tags{grid-area:tags;margin:1px 0 0}.appt.size2 .mark{display:none}
 .appt.tone-sage{--card:var(--sage-wash);--edge:var(--sage-tint);--glyph:var(--check);--chip:var(--sage-tint)}

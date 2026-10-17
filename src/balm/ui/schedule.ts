@@ -50,7 +50,7 @@ function heading(s: any, c: any) {
   const live = c.appointments.filter((a: any) => a.status !== 'cancelled' && c.columns.some((column: any) => inColumn(c, column, a)))
   const open = canBook(s) && c.view === 'day' ? c.columns.reduce((n: number, column: any) => n + openSlots(c, column, live).length, 0) : 0
   const who = c.view === 'week' ? 'Week view' : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
-  const title = c.view === 'week' ? 'This week' : c.date === c.today ? 'Today' : longDate(c.date, { weekday: 'long' })
+  const title = c.view === 'week' ? (c.dates.includes(c.today) ? 'This week' : `Week of ${longDate(c.dates[0], { month: 'short', day: 'numeric' })}`) : c.date === c.today ? 'Today' : longDate(c.date, { weekday: 'long' })
   const parts = [who, `${live.length} ${live.length === 1 ? 'appointment' : 'appointments'}`, ...(open ? [`${open} open ${open === 1 ? 'slot' : 'slots'}`] : [])]
   return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div><details class="view-options"><summary>${c.view === 'week' ? 'Week view' : 'Day view'}${icon('chevron')}</summary>${viewControls(s, c)}</details></div>`
 }
@@ -100,9 +100,9 @@ function bookPanel(s: any, c: any, notice: any) {
   const back = calendarLink(c), clientSelect = clients.length ? select('clientId', 'Client', clients.map(x => [x.id, clientName(x)])) : ''
   const one = clients.length ? form('appointment.book', back, clientSelect + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), practitioner)
     + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`])) + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : '')
-    + `<div class="pair">${field('date', 'Date', date ?? c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div><p class="help">Any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>`, 'Book visit') : empty('Add a client first on the Clients page.')
+    + `<div class="pair">${field('date', 'Date', date || c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div><p class="help">Any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>`, 'Book visit') : empty('Add a client first on the Clients page.')
   return `<div id="book">` + panel(c.newSlot ? `Book ${clockLabel(+time.slice(0, 2) * 60 + +time.slice(3))}, ${longDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Book a visit',
-    `${bookingResult(s, notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date ?? c.date, time })}</details>` : ''}`) + '</div>'
+    `${bookingResult(s, notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date || c.date, time })}</details>` : ''}`) + '</div>'
 }
 
 /** Every visit of the day or week, every status, with check-in: the grid's accessible twin, folded under it. One Stripe line covers every check-in. */
