@@ -42,8 +42,8 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
         if (!sender || !env.MAIL_FROM) outcome = 'Mail provider is not configured'
         else if (visit.email) {
           const result: any = await sender.send({ deliveryId: claim.id, from: env.MAIL_FROM, to: [visit.email], subject: `Appointment reminder from ${visit.clinic_name}`, text, html: `<p>${text.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!)).replace(/\n/g, '<br>')}</p>`, headers: { 'Auto-Submitted': 'auto-generated' } })
-          state = ['accepted','development'].includes(result?.status) ? 'sent' : 'failed'
-          outcome = state === 'sent' ? 'Accepted by mail provider' : 'Mail provider did not accept delivery'
+          state = ['accepted','development'].includes(result?.status) ? 'sent' : result?.status === 'uncertain' ? 'uncertain' : 'failed'
+          outcome = state === 'sent' ? 'Accepted by mail provider' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
           receipt = result?.providerMessageId ?? null
         }
       } else {
