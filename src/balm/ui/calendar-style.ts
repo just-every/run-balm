@@ -40,13 +40,18 @@ export const calendarStyle = placement + `
 .appt-time{font-size:11.5px;line-height:14px;color:var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}.appt-time .t-from{font-weight:500;color:var(--ink)}
 .appt strong{font-size:13.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appt-tags{display:flex;flex-wrap:wrap;gap:4px 5px;height:16px;margin-top:1px;min-width:0;overflow:hidden}
-.appt .tag{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;background:var(--chip);color:var(--body);font-size:11px;line-height:16px;padding:0 5px;border-radius:5px}
+/* A chip that does not fit its card's one chip row wraps out of sight whole, never cut: the zero-width lead item lets even
+   the first chip wrap to the hidden second line. */
+.appt-tags::before{content:'';flex:none;width:0;height:100%;margin-right:-5px}
+.appt .tag{display:inline-block;flex:none;max-width:none;white-space:nowrap;background:var(--chip);color:var(--body);font-size:11px;line-height:16px;padding:0 5px;border-radius:5px}
 .appt .tag.coral{background:var(--coral-tint);color:var(--coral-ink)}.appt .tag.sage{background:var(--sage-tint);color:var(--sage-ink)}.appt .tag.honey{background:var(--honey-tint);color:var(--honey-ink)}
 .appt .tag.k3{display:none}
 @container (max-width:185px){.appt .go{display:none}}
 @container (max-width:215px){.appt .mark{display:none}.appt.size1 .t-to,.appt.size2 .t-to{display:none}}
 .appt.size1{padding:2px 8px;align-items:center}.appt.size1 .appt-copy{flex-direction:row;gap:6px;align-items:baseline}.appt.size1 .appt-tags,.appt.size1 .mark{display:none}
 .appt.size2{padding:1px 8px}.appt.size2 strong{line-height:16px}.appt.size2 .appt-tags{height:14px}.appt.size2 .tag{line-height:14px;font-size:11px}.appt.size2 .appt-copy{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'time name' 'tags tags';column-gap:6px;align-items:baseline}.appt.size2 strong{grid-area:name}.appt.size2 .appt-time{grid-area:time}.appt.size2 .appt-tags{grid-area:tags;margin:1px 0 0}.appt.size2 .mark{display:none}
+/* A narrow half-hour card keeps its start time and the whole name: time and the first chip on one line, the name under them. */
+@container (max-width:215px){.appt.size2 .appt-copy{grid-template-areas:'time tags' 'name name'}.appt.size2 .appt-tags{margin:0;align-self:center}}
 .appt.tone-sage{--card:var(--sage-wash);--edge:var(--sage-tint);--glyph:var(--check);--chip:var(--sage-tint)}
 .appt.tone-honey{--card:var(--rer-surface);--edge:var(--line-strong);--glyph:var(--honey-ink);--chip:var(--row);border-left-color:var(--honey)}
 .appt.tone-coral{--card:var(--coral-wash);--edge:var(--coral-tint);--glyph:var(--coral);--chip:var(--coral-tint)}
@@ -75,7 +80,7 @@ ${range(0, 39).map(i => `.agenda:has(#ag-${i}:checked) .ag-${i}{display:block}`)
 .ag-empty{display:flex;justify-content:space-between;gap:10px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--rer-surface);font-size:14px}.ag-empty a{color:var(--ink);text-decoration:none;font-weight:500}.ag-empty small{font-size:12.5px;color:var(--soft)}
 .ag-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.ag-none{margin:0;color:var(--soft);font-size:13.5px}
 .appt.ag{margin:0;padding:8px 10px}.appt.ag .appt-time{font-size:12.5px;line-height:16px}.appt.ag strong{font-size:14.5px;line-height:20px;white-space:normal}
-.appt.ag .appt-tags{height:auto;flex-wrap:wrap;margin-top:4px}.appt.ag .tag.k3{display:inline-block}.appt.ag .mark{display:block}
+.appt.ag .appt-tags{height:auto;flex-wrap:wrap;margin-top:4px}.appt.ag .tag{max-width:100%;white-space:normal}.appt.ag .tag.k3{display:inline-block}.appt.ag .mark{display:block}
 .agenda .openslot{margin:0;padding:8px 10px}.agenda .openslot small{white-space:normal}
 }
 .weekdays{display:flex;flex-wrap:wrap;gap:4px 14px;border:0;padding:0;margin:0}.weekdays legend{font-weight:500;margin-bottom:6px;padding:0}.weekdays .check{gap:6px}
