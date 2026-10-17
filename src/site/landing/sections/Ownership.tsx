@@ -1,7 +1,12 @@
 import { links } from '../../shell/links'
 import { Icon } from '../parts'
 
-/** Balm on your own computer: the five commands in a terminal, with a resistance band resting on its corner. */
+const REPO = 'just-every/run-balm'
+const COMMAND = `npx -y @runeditrun/rer dev ${REPO}`
+/** Lines rer prints on a first start (rer 0.2.38: Restart, two of its progress lines, then the ready line). */
+const OUTPUT = ['Restart: cd run-balm && rer dev', 'rer dev: installing dependencies', 'RER_READY http://127.0.0.1:8787']
+
+/** Balm on your own computer: the one command that clones, sets up and starts it, in a terminal, with a resistance band resting on its corner. */
 export function Ownership() {
   return <section className="ownership" aria-labelledby="ownership-title">
     <div className="feature-copy">
@@ -15,9 +20,9 @@ export function Ownership() {
       </ul>
     </div>
     <div className="terminal-wrap">
-      <div className="terminal" role="img" aria-label="Terminal: git clone https://github.com/just-every/run-balm.git balm, cd balm, rer install, rer setup, rer dev">
+      <div className="terminal" role="img" aria-label={`Terminal: ${COMMAND}. It prints: ${OUTPUT.join(', ')}`}>
         <p className="terminal-dots" aria-hidden="true"><span /><span /><span /></p>
-        <pre aria-hidden="true"><code>{['git clone https://github.com/just-every/run-balm.git balm', 'cd balm', 'rer install', 'rer setup', 'rer dev'].map(line => <span key={line}><b>$</b> {line}{'\n'}</span>)}</code></pre>
+        <pre aria-hidden="true"><code><span><b>$</b> npx -y @runeditrun/rer dev <span style={{ whiteSpace: 'nowrap' }}>{REPO}</span>{'\n'}</span>{OUTPUT.map(line => <span key={line}>{line}{'\n'}</span>)}</code></pre>
       </div>
       <svg className="band" viewBox="0 0 305 345" aria-hidden="true">
         <defs><linearGradient id="band-face" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7fae80" /><stop offset=".55" stopColor="#5f9566" /><stop offset="1" stopColor="#3f744b" /></linearGradient></defs>
