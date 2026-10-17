@@ -22,7 +22,7 @@ export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2
 /** What a chip's words mean, for its tint: closed (grey), refused (coral), needs a look (honey), done (sage), else booked or informational (sky). */
 const tone = (text: string) => /^(canceled|void|inactive|revoked|expired|removed|closed|no show|did not attend|taken)/i.test(text) ? 'closed'
   : /(failed|declined|refused)/i.test(text) ? 'refused'
-    : /(not signed|no note|not yet|no intake|outstanding|^draft|waiting|sent to|no key|not available|pending)/i.test(text) ? 'todo'
+    : /(not signed|no note|not yet|no intake|outstanding|^draft|waiting|sent to|no key|not available|pending|^\d+ of \d+ notes)/i.test(text) ? 'todo'
       : /(^attended|signed|^paid|paid$|^approved|^active|^done|received|^ready|succeeded|checked in|^booked from|accepted)/i.test(text) ? 'done' : 'info'
 export const status = (value: unknown) => { const text = String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled').replace(/^./, c => c.toUpperCase()); return `<span class="status ${tone(text)}">${h(text)}</span>` }
 /** A person as initials in a tinted circle; the tint follows the name, so a person keeps theirs on every page. */

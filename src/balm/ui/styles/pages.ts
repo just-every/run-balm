@@ -2,13 +2,13 @@
 // the panels under it; the client file's two columns; the clinic's service and
 // staff rows; the client list; and the public pages' single column.
 export const pagesStyle = `
-.rer-themed .page-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,800px);gap:20px 40px;align-items:start;margin:0 0 20px}
+.rer-themed .page-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,880px);gap:20px 40px;align-items:start;margin:0 0 20px}
 .rer-themed .page-head>div>p{font-size:16px;margin:6px 0 0}
 .rer-themed .page-head .panel{margin:0;padding:16px 20px 14px}
 .rer-themed .notes-due>h2{margin-bottom:4px}
 .rer-themed .notes-due .help{margin:0 0 6px}
 .rer-themed .due{list-style:none;margin:0;padding:0}
-.rer-themed .due li{display:grid;grid-template-columns:28px minmax(0,.75fr) minmax(0,1.25fr) max-content auto;gap:4px 14px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px;color:var(--body)}.rer-themed .due li>span:nth-of-type(3){white-space:nowrap}
+.rer-themed .due li{display:grid;grid-template-columns:28px max-content minmax(0,1fr) max-content auto;gap:4px 14px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px;color:var(--body)}.rer-themed .due li>span:nth-of-type(3){white-space:nowrap}
 .rer-themed .due li:first-child{border-top:0}
 .rer-themed .due .avatar{width:28px;height:28px;font-size:10.5px}
 .rer-themed .due a{color:var(--ink);font-weight:500;text-decoration:none}.rer-themed .due a:hover{text-decoration:underline}
