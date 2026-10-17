@@ -3,7 +3,7 @@ import { localTime } from '../domain/invoices'
 import { h, money, usDate } from './shared'
 import { frequency } from './plans'
 import { zoneLabel } from './time-zone'
-import { intakePatientEnhancement } from './intake-patient'
+import { intakePatientEnhancement, patientSignature } from './intake-patient'
 
 const option = (value: unknown, label: unknown, current: unknown) => `<option value="${h(value)}" ${value === current ? 'selected' : ''}>${h(label)}</option>`
 
@@ -90,4 +90,9 @@ export function planPage(d: any) {
     <label>NPI (optional)<input name="npi" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></label>
     <label class="check"><input type="checkbox" name="attest" value="on" required><span>I certify that these services are needed and are furnished under this plan of care while the patient is under my care.</span></label>
     <button type="submit">Sign plan of care</button></form><p class="help">Your name, credentials and the time are recorded on the patient's chart. To ask for changes, contact the clinic instead of signing.</p></section>`
+}
+
+export function consentPage(d: any) {
+  return `<h1>${d.policies.length ? 'Documents to review' : 'Your documents are up to date'}</h1><p>Hello ${h(d.appointment.first_name)}. ${h(d.appointment.clinic_name)} ${d.policies.length ? 'asks you to review only the new or updated documents below.' : 'has your decisions. Thank you.'}</p>`
+    + (d.policies.length ? `<section class="panel"><form method="post">${patientSignature(d.policies)}<button type="submit">Sign accepted documents</button></form></section>` : '')
 }

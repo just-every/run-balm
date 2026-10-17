@@ -33,6 +33,7 @@ import { visitReply, visitReplyView } from './reminders/replies'
 import { portalResponse } from './portal/http'
 import { portalCommand, portalExercisesFor } from './portal'
 import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
+import { consentView, requestConsents, signRenewals } from './intake/renewals'
 import { caseCommand, caseList } from './cases'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
@@ -119,6 +120,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     const plan = await (name === 'plan.send' ? sendPlan : resendPlan)(env.DB, who, input)
     return { ...plan, mail: await sendPlanLink(env, plan.physicianEmail, plan.token) }
   }
+  if (name === 'consent.request') return requestConsents(env, who, input)
   const result: any = await command(env.DB, who, name, input)
   if (name === 'appointment.book' || name === 'series.book') {
     // A past visit emails nothing; a client with intake on file, or an open link already, is not asked again.
@@ -229,6 +231,21 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       return failure.status === 404 ? renderPublic('missing', {}, 404) : renderPublic('missing', { error: failure.text }, failure.status)
     }
   }
+  const consent = path.match(/^\/consent\/([A-Za-z0-9_-]{32,64})$/)
+  if (consent) {
+    try {
+      if (request.method === 'POST') {
+        if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
+        await signRenewals(env.DB, consent[1], await parseIntakeInput(request), request.headers.get('CF-Connecting-IP') ?? '')
+        return redirect(path)
+      }
+      return renderPublic('consent', await consentView(env.DB, consent[1]))
+    } catch (error) {
+      const failure = message(error)
+      if (failure.status === 404) return renderPublic('missing', {}, 404)
+      return renderPublic('consent', { ...await consentView(env.DB, consent[1]), error: failure.text }, failure.status)
+    }
+  }
   const intake = path.match(/^\/intake\/([A-Za-z0-9_-]{20,64})$/)
   if (intake) {
     try {
@@ -288,7 +305,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
   const url = new URL(request.url), path = url.pathname
   const isPortal = path === '/portal' || path.startsWith('/portal/')
   const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance)\/([\w-]+)(\.pdf|\/(front|back))$/)
-  const isPublic = isPortal || path === '/book' || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
+  const isPublic = isPortal || path === '/book' || path.startsWith('/consent/') || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
   if (!isPublic && !intakeDocumentPath && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
   let who: Actor | undefined
@@ -366,9 +383,10 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           const preview = await bundleCommand(env.DB, who, 'movein.preview', input)
           return await page(env, who, back, { error: failure.text, result: { ...preview, reviewInput: input } }, failure.status)
         }
+        if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
+        if (!['movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people

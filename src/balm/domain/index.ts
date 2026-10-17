@@ -2,6 +2,7 @@ import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
 import { eraseStaff, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
 import { eraseClient, listClients, saveClient } from './clients'
 import { prepareForm, publishForm } from './intake'
+import { currentPolicies, publishPolicy } from '../intake/policies'
 import { approveInvoice, invoicesFor, prepareInvoice, recordPayment, voidInvoice } from './invoices'
 import { audit, commit, DomainError, insist, one, practitionerId, rows, type Actor, type Data } from './model'
 import { amendNote, writeNote } from './notes'
@@ -27,7 +28,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
   'note.write': writeNote, 'note.amend': amendNote, 'note.sign': signNote, 'note.addendum': addAddendum,
   'invoice.prepare': prepareInvoice, 'invoice.approve': approveInvoice, 'invoice.void': voidInvoice, 'payment.record': recordPayment,
   'reminder.prepare': prepareReminder, 'reminder.approve': approveReminder,
-  'intake.prepare': prepareForm, 'intake.publish': publishForm,
+  'intake.prepare': prepareForm, 'intake.publish': publishForm, 'consent.publish': publishPolicy,
 }
 
 export async function command(db: D1Database, who: Actor, name: string, input: Data) {
@@ -63,5 +64,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, approvals: approvalRows, waitlist }
+  return { actor: who, settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

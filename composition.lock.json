@@ -393,7 +393,7 @@
       "source": "editions/balm/.gitignore"
     },
     "ACCEPTANCE.md": {
-      "sha256": "3bc373df1bad4b9a8504993a2c4cd675b0a102dd365db16c1f5ee698b971121e",
+      "sha256": "6add8341a31d6a4d07e913a687d8f064e7bc0af5566596a1e12fd37287301bb9",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -407,7 +407,7 @@
       "source": "editions/balm/AGENTS.md"
     },
     "CONTRACT.md": {
-      "sha256": "9e91218af05ec9d170b13be2d6091386caf2451797f008bfe0eea4c47f0c8d11",
+      "sha256": "e3920581c71b5e543a68ca1e6ba343b520dbe90e411416bba798d22ddf1f90a8",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -638,7 +638,7 @@
       "source": "editions/balm/scripts/installer/ui/seed.mjs"
     },
     "seed.json": {
-      "sha256": "94dcb2407090e894af9130ad2fd2620a58b89e20d1ec714791c8697c749f332f",
+      "sha256": "7cafd1c2ed875df92f39c6bf24b71c1cd233a06e54a61c4fc182082d76978aba",
       "mode": 420,
       "component": "balm",
       "repository": "family",

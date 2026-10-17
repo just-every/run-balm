@@ -1,7 +1,5 @@
 import { insist, text, type Data } from '../domain/model'
 
-export const CONSENT_VERSION = 'treatment-records-2026-10-17-v1'
-export const CONSENT_TEXT = 'I consent to the clinic providing the therapy services discussed with me. I acknowledge that the clinic keeps my intake answers and treatment records to provide my care. I have had the opportunity to ask questions. I intend my signature below to sign this acknowledgment.'
 export type Signature = { kind: 'drawn'; strokes: number[][][] } | { kind: 'typed'; name: string }
 export type Photo = { bytes: Uint8Array<ArrayBuffer>; mime: string }
 export const PHOTO_LIMIT = 2 * 1024 * 1024
