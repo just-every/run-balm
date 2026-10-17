@@ -34,6 +34,7 @@ import { portalResponse } from './portal/http'
 import { portalCommand, portalExercisesFor } from './portal'
 import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
 import { caseCommand, caseList } from './cases'
+import { visitSummary } from './visit-summary'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
@@ -57,7 +58,10 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   const [path, query = ''] = target.split('?'), s: any = await state(env, who)
   // Until the owner chooses the clinic's time zone, every page is the time zone step.
   if (!s.settings.time_zone) return renderApp(s, target, notice, undefined, status)
-  if (path === '/app') s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
+  if (path === '/app') {
+    s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
+    if (s.calendar.selected) s.calendar.summary = await visitSummary(env, who, s.calendar.selected.client_id)
+  }
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
   return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore).catch(error => { if (status === 200) throw error }) : undefined, status)

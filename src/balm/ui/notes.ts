@@ -80,7 +80,7 @@ function compose(s: any, f: any, ask: any) {
 }
 
 export function notesPanel(s: any, f: any, ask: any) {
-  if (f.notes === null) return panel('Treatment notes', '<p>Treatment notes are readable only by the practitioner who wrote them and the clinic owner.</p>')
+  if (f.notes === null) return panel('Treatment notes', '<p>Treatment notes are readable only by the practitioner who wrote them and the clinic owner.</p>', '', 'notes')
   const list = f.notes.map((n: any) => noteEntry(s, f, n)).join('')
-  return panel('Treatment notes', (list || empty('No notes you can read yet.')) + compose(s, f, ask), 'full')
+  return panel('Treatment notes', (list || empty('No notes you can read yet.')) + compose(s, f, ask), 'full', 'notes')
 }

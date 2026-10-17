@@ -15,10 +15,23 @@ export const form = (command: string, path: string, body: string, button: string
 /** A cancel button that first asks: the person checks to confirm, and is told who gets emailed. */
 export const cancelForm = (command: string, path: string, fields: string, summary: string, button: string, client: string, count = 1) => `<details class="confirm"><summary>${h(summary)}</summary>${form(command, path, fields
   + `<label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel ${count === 1 ? 'this visit' : `these ${count} visits`}. Balm emails ${h(client)} that ${count === 1 ? 'it is' : 'they are'} canceled, if their file has an email address.</span></label>`, button, true)}</details>`
-export const panel = (title: string, body: string, extra = '') => `<section class="panel${extra ? ' ' + extra : ''}"><h2>${h(title)}</h2>${body}</section>`
+/** `id` anchors the card, for links such as the day view's patient tabs and the case agent's citations. */
+export const panel = (title: string, body: string, extra = '', id = '') => `<section class="panel${extra ? ' ' + extra : ''}"${id ? ` id="${h(id)}"` : ''}><h2>${h(title)}</h2>${body}</section>`
 export const empty = (message: string) => `<p class="empty">${h(message)}</p>`
 export const exact = (value: unknown) => `<pre>${h(JSON.stringify(value, null, 2))}</pre>`
-export const status = (value: unknown) => `<span class="status">${h(String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'))}</span>`
+/** A status chip's colour from its words: sage when done, honey when waiting on someone, sky when booked, coral only for a denial or rejection. */
+export function tone(text: string) {
+  const t = text.toLowerCase()
+  if (/\b(denied|rejected|partial|kx required)\b/.test(t)) return 'coral'
+  if (/^(paid|approved|attended|active|signed|done|accepted|reconciled|connected|live mode)\b|signed|intake received|intake on file|copay .* paid|checked in|booked from an offer/.test(t) && !/not (yet )?(signed|received)/.test(t)) return 'sage'
+  if (/^booked\b|booked online|from the waitlist|series/.test(t)) return 'sky'
+  if (/draft|outstanding|not (yet )?(signed|received)|no note yet|waiting|pending|prepared|sending|ready|sent to|expired|inactive|test mode|stalled|due|did not attend/.test(t)) return 'honey'
+  return ''
+}
+export const status = (value: unknown) => {
+  const text = String(value ?? '').replace(/_/g, ' ').replace(/^cancelled$/, 'canceled'), t = tone(text)
+  return `<span class="status${t ? ' ' + t : ''}">${h(text)}</span>`
+}
 /** A visit's intake: answered for this visit, already on the client's file from an earlier visit, or still to come. */
 export const intakeChip = (a: any) => status(a.intake_received ? 'Intake received' : a.intake_on_file ? 'Intake on file' : 'Intake not yet received')
 /** `anchor` gives the record an id the case agent's citations link to. */

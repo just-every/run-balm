@@ -33,6 +33,16 @@ export async function caseList(env: Bindings, who: Actor) {
   return { cases: cases.sort((a, b) => rank(a) - rank(b)), wording: await wordingStatus(env), choices }
 }
 
+/** The patient's latest case, for the day view's case agent strip; the read is in the patient's access audit. */
+export async function caseForClient(env: Bindings, who: Actor, clientId: string) {
+  deskOnly(who)
+  const referral = await one(env.DB, 'SELECT r.* FROM bm_referrals r JOIN bm_clients c ON c.id=r.client_id WHERE r.client_id=? AND c.erased_at IS NULL ORDER BY r.received_on DESC,r.created_at DESC LIMIT 1', clientId)
+  if (!referral) return null
+  const { facts, ...c } = await view(env, referral)
+  await commit(env.DB, who, [audit(env.DB, who, 'case.read', clientId)])
+  return c
+}
+
 async function saveReferral(db: D1Database, who: Actor, input: Data) {
   const client = await clientVisible(db, who, input.clientId), policyId = optional(input.policyId, 'policy', 100)
   if (policyId) insist(await one(db, 'SELECT 1 FROM bm_policies WHERE id=? AND client_id=?', policyId, client.id), 'choose_one_of_the_patient’s_policies')

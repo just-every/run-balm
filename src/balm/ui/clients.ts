@@ -11,15 +11,16 @@ import { reminderPanel } from './reminders'
 import { insurancePanels } from './insurance-file'
 import { billingPanels } from './payments'
 import { zoneLabel } from './time-zone'
+import { avatar } from './shell'
 import { cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
   + `<div class="pair">${field('dateOfBirth', 'Date of birth', c?.date_of_birth ?? '', 'date')}${field('phone', 'Mobile', c?.phone ?? '', 'text', 'maxlength="40"')}</div>${field('email', 'Email', c?.email ?? '', 'email', 'maxlength="254"')}`
 
 export function clientList(s: any) {
-  const list = rows(s, 'clients').map(c => `<li><a href="/app/clients/${h(c.id)}">${h(clientName(c))}</a>${c.date_of_birth ? ` <span class="help">born ${h(usDate(c.date_of_birth, zoneOf(s)))}</span>` : ''} ${c.created_via === 'import' ? status('Imported') : ''}</li>`).join('')
+  const list = rows(s, 'clients').map(c => `<li>${avatar(clientName(c))}<a href="/app/clients/${h(c.id)}">${h(clientName(c))}</a>${c.date_of_birth ? ` <span class="help">born ${h(usDate(c.date_of_birth, zoneOf(s)))}</span>` : ''} ${c.created_via === 'import' ? status('Imported') : ''}</li>`).join('')
   const intro = desk(s) ? 'Every client of the clinic. Opening a file is recorded in its access audit.' : 'Clients you have appointments with. Opening a file is recorded in its access audit.'
-  return `<h1>Clients</h1><p>${intro}</p><div class="grid">${panel('Client files', list ? `<ul class="plain">${list}</ul>` : empty(desk(s) ? 'No clients yet. They appear when someone books online, when you add one, or after a move-in.' : 'No clients yet. Clients appear here once they are booked with you.'))}${desk(s) ? panel('Add a client', form('client.save', '/app/clients', clientFields(), 'Add client')) : ''}</div>`
+  return `<h1>Clients</h1><p>${intro}</p><div class="grid">${panel('Client files', list ? `<ul class="plain client-list">${list}</ul>` : empty(desk(s) ? 'No clients yet. They appear when someone books online, when you add one, or after a move-in.' : 'No clients yet. Clients appear here once they are booked with you.'))}${desk(s) ? panel('Add a client', form('client.save', '/app/clients', clientFields(), 'Add client')) : ''}</div>`
 }
 
 export function bookingResult(s: any, notice: any) {
@@ -91,7 +92,9 @@ export function clientFilePage(s: any, f: any, notice: any) {
   const details = `<p>${c.date_of_birth ? `Born ${h(usDate(c.date_of_birth, zoneOf(s)))}<br>` : ''}${c.email ? `${h(c.email)}<br>` : ''}${c.phone ? `${h(c.phone)}<br>` : ''}Added ${stamp(s, c.created_at)} (${h(c.created_via)})</p>`
     + (desk(s) ? `<details><summary>Edit details</summary>${form('client.save', path, hidden('id', c.id) + hidden('version', c.version) + clientFields(c), 'Save details')}</details>` : '')
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
-  return `<p><a href="/app/clients">All clients</a></p><h1>${h(c.first_name)} ${h(c.last_name)}</h1>${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
+  const age = c.date_of_birth ? Math.floor((Date.now() - Date.parse(c.date_of_birth + 'T12:00:00Z')) / (365.2425 * 86400_000)) : null
+  const payer = f.insurance?.policies?.[0]?.payer_name ?? (f.insurance ? 'Self-pay' : '')
+  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${auditPanel(s, f)}</div>`
 }
 import { portalChartPanel } from './portal-chart'
 import { intakeChartPanel } from './intake-chart'

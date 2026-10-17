@@ -63,7 +63,7 @@ function codesPanel(s: any, f: any, path: string) {
         + field('icd10', 'ICD-10 diagnoses, primary first', c.icd10.join(', '), 'text', 'placeholder="M25.561, M54.50" maxlength="300"')
         + '<p class="help">These print on the visit’s superbill. CPT units billed from a signed note take their place.</p>', 'Save codes')}</details>`)
   }).join('')
-  return panel('Visit codes', list || empty('No visits yet.'))
+  return panel('Visit codes', list || empty('No visits yet.'), '', desk(s) ? '' : 'billing')
 }
 
 export function billingPanels(s: any, f: any, notice: any) {
@@ -86,7 +86,7 @@ export function billingPanels(s: any, f: any, notice: any) {
   const links = b.links.length ? `<details><summary>Patient links (${b.links.length})</summary><ul class="plain">${b.links.map((x: any) => `<li>${h(x.purpose === 'card' ? 'Card form' : 'Statement and pay')} · ${h(x.delivery === 'shown' ? 'opened at the desk' : `${x.delivery}: ${x.delivery_result}`)} · ${stamp(s, x.created_at)}${x.opened_at ? ` · opened ${stamp(s, x.opened_at)}` : ''}</li>`).join('')}</ul></details>` : ''
   const superbills = b.superbills.length ? `<ul class="plain">${b.superbills.map((x: any) => `<li>INV-${String(x.number).padStart(6, '0')} · ${h(x.serviceDate)}<br>${x.missing.length ? `<span class="help">Needs ${h(x.missing.join(', '))}.</span>` : `<a href="/api/balm/superbills/${h(x.invoiceId)}.pdf">Superbill (PDF)</a>`}</li>`).join('')}</ul>` : empty('Superbills appear once a visit’s invoice is approved.')
   const copay = form('pay.copay.save', path, hidden('clientId', f.client.id) + field('copay', 'Copay per visit ($)', dollarsField(b.copayCents), 'text', 'inputmode="decimal" maxlength="10" placeholder="30.00"'), 'Save copay', true)
-  return `${linkResult(s, notice)}` + panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full')
+  return `${linkResult(s, notice)}` + panel('Billing and payments', `${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>One per visit, with CPT and ICD-10 codes, the practitioner’s NPI and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
     + codesPanel(s, f, path)

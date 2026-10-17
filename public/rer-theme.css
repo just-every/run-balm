@@ -1,34 +1,80 @@
-/* This edition's declared theme. The installer, sign-in, confirmation, /setup
-   read these --rer-* tokens; the app serves this file and its fonts.
-   Buttons keep the colour chosen at setup (src/branding.json primaryColor)
-   because no --rer-accent is declared here; declare --rer-accent and
-   --rer-accent-text together to fix them instead. The wordmark and headings use
-   Newsreader, the run site's heading face; the app's own design round follows. */
-@font-face {
-  font-family: Outfit;
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url('/fonts/outfit/outfit-latin-wght-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: Newsreader;
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('/fonts/newsreader/newsreader-latin-standard-normal.woff2') format('woff2');
-}
+/* Balm's app tokens, defined once: the app's own pages, the installer, sign-in,
+   confirmation and /setup read them, and every app style refers to them by name.
+   The look is the owner-picked app screen (design desk, 17 Oct 2026): an airy
+   off-white page, white hairline cards, deep navy-green ink and buttons, sage for
+   done, amber for waiting, sky for booked, coral only for an exception, Newsreader
+   for titles and Inter for the rest. The brand colours are the homepage's
+   (public/site/theme.css); the page is the pick's cooler off-white, not the
+   homepage's ivory. */
+@import url('/fonts/fonts.css');
 :root {
-  --rer-font-body: Outfit, Arial, sans-serif;
-  --rer-font-heading: Newsreader, Georgia, serif;
+  --rer-font-body: 'Inter', 'Inter Fallback', Arial, sans-serif;
+  --rer-font-heading: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
+  --rer-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --rer-wordmark-weight: 500;
-  --rer-page: #f4f6f5;
+  --rer-page: #fbfcfa;
   --rer-surface: #ffffff;
-  --rer-text: #1b2724;
-  --rer-muted: #4a5a55;
-  --rer-border: #6b7c76;
-  --rer-focus: #1b2724;
-  --rer-link: #1f5f52;
+  --rer-text: #17323a;
+  --rer-muted: #56636b;
+  --rer-border: #a9b7b1;
+  --rer-focus: #1e907e;
+  --rer-link: #17675b;
+  --rer-accent: #16403d;
+  --rer-accent-text: #ffffff;
   --rer-radius: 12px;
   --rer-logo: url('/brand/mark.svg');
+
+  /* Brand palette (the homepage's values). */
+  --ink: var(--rer-text);
+  --body: #3f4d55;
+  --soft: #6b767d;
+  --pill: var(--rer-accent);
+  --pill-hover: #1f5450;
+  --teal: #1e907e;
+  --teal-ink: #17675b;
+  --sage: #6e9d77;
+  --sage-ink: #3d6e48;
+  --sage-tint: #e6f0e4;
+  --sage-wash: #f2f7f1;
+  --check: #3f8c55;
+  --honey: #f8b842;
+  --honey-ink: #8f5a12;
+  --honey-tint: #fdf1d9;
+  --honey-wash: #fef8ea;
+  --sky: #7fb4e6;
+  --sky-ink: #1f5d96;
+  --sky-tint: #e3eefa;
+  --sky-wash: #f1f6fc;
+  --coral: #e0573f;
+  --coral-ink: #b2361f;
+  --coral-tint: #fde9e4;
+  --coral-wash: #fef4f1;
+
+  /* Surfaces and lines of the app. */
+  --line: #e3e9e6;
+  --line-strong: #d3ddd8;
+  --field: #b9c6c0;
+  --row: #f4f7f5;
+  --hover: #f1f5f3;
+  --rail: #fdfefd;
+  --radius-card: 12px;
+  --radius-chip: 6px;
+  --shadow-card: 0 1px 2px rgba(23, 50, 58, .04), 0 8px 24px -16px rgba(23, 50, 58, .18);
+  --shadow-float: 0 2px 4px rgba(23, 50, 58, .05), 0 18px 40px -18px rgba(23, 50, 58, .26);
 }
+
+/* Base's sign-in, confirmation and /setup pages in the same look: the pick's
+   off-white with its faint sage and sky washes, a white hairline card, the serif
+   title and thin quiet fields with a clear teal focus ring. */
+html.rer-themed { background: radial-gradient(50% 40% at 100% 0%, var(--sky-wash), transparent 70%), radial-gradient(45% 40% at 0% 100%, var(--sage-wash), transparent 70%), var(--rer-page); }
+html.rer-themed body { background: transparent; color: var(--rer-text); font-family: var(--rer-font-body); -webkit-font-smoothing: antialiased; }
+html.rer-themed body main { border: 1px solid var(--line); box-shadow: var(--shadow-card); }
+html.rer-themed body h1 { font-family: var(--rer-font-heading); font-weight: 500; letter-spacing: -.02em; font-variation-settings: 'opsz' 48; }
+html.rer-themed body .brand, html.rer-themed body .rer-brand { font-size: 24px; font-weight: 500; letter-spacing: -.02em; gap: 8px; }
+html.rer-themed body .brand::before, html.rer-themed body .rer-brand::before { width: 28px; height: 28px; }
+html.rer-themed body input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { border: 1px solid var(--field); border-radius: 8px; background: var(--rer-surface); min-height: 44px; transition: border-color .15s, box-shadow .15s; }
+html.rer-themed body input:not([type=checkbox]):not([type=radio]):not([type=hidden]):focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 22%, transparent); }
+html.rer-themed body button, html.rer-themed body .action { border-radius: 10px; font-weight: 600; }
+html.rer-themed body button:hover { background: var(--pill-hover); }
+html.rer-themed body button.secondary { background: var(--rer-surface); color: var(--rer-text); border: 1px solid var(--line-strong); }
+html.rer-themed body dt { color: var(--soft); }

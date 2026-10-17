@@ -23,7 +23,7 @@ export function intakePatientEnhancement(_data?: unknown) {
     <p id="intake-signature-error" role="alert"></p></fieldset>`
 }
 
-export const intakePatientStyle = `.rer-themed .public form>fieldset{min-width:0;display:grid;gap:12px;padding:16px;border:1px solid var(--rer-border);border-radius:8px}.rer-themed .public fieldset p{margin:0}.intake-signature{display:block;width:100%;max-width:600px;height:200px;border:1px solid currentColor;border-radius:8px;touch-action:none;background:white}`
+export const intakePatientStyle = `.public form>fieldset{display:grid;gap:12px;padding:16px}.public fieldset p{margin:0}.intake-signature{display:block;width:100%;max-width:600px;height:200px;border:1px solid var(--field);border-radius:10px;touch-action:none;background:var(--rer-surface)}`
 
 export const intakeSignatureScript = `(()=>{
       const canvas=document.getElementById('intake-signature');if(!canvas)return;

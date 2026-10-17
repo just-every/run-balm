@@ -37,7 +37,7 @@ export function messagePanel(state: any, file: any, notice?: any) {
     + '<p class="help">The message stays on this private page. Only a generic notice and the private link go by email. Sending replaces the patient’s earlier message link; the conversation is retained.</p>', 'Send secure message')
   const link = `<details><summary>${live ? 'Replace the private message link' : 'Give the patient a private message link'}</summary>${form('message.link', path, fields + delivery()
     + '<p class="help">The link opens this patient’s conversation and expires after 7 days. Every earlier message link stops working.</p>', 'Create a new private link', true)}</details>`
-  return panel('Secure messages', messageResult(state, notice) + emergencyNotice + conversation + compose + access + link, 'full')
+  return panel('Secure messages', messageResult(state, notice) + emergencyNotice + conversation + compose + access + link, 'full', 'messages')
 }
 
 export type PatientMessageData = {
