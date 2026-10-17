@@ -49,9 +49,9 @@
   .feature-reminders { --cl: 808; --ct: 108; --cw: 640; --al: 137; --at: 55; --aw: 506; }
   .feature-case-agent { --cl: 113; --ct: 98; --cw: 580; --al: 806; --at: 71; --aw: 624; }
   .feature-moving-in { --cl: 823; --ct: 106; --cw: 578; --al: 112; --at: 58; --aw: 631; }
-  .spread::before { content: ''; position: absolute; z-index: -1; left: 0; right: 0; height: 100%; pointer-events: none; }
+  /* The glow runs to the window's edges even where the spread stops at 1536 (the body clips sideways overflow). */
+  .spread::before { content: ''; position: absolute; z-index: -1; left: calc(50% - 50vw); right: calc(50% - 50vw); height: 100%; pointer-events: none; }
   .spread { position: relative; isolation: isolate; }
-  .spread-7 { overflow-x: clip; }
   .spread-7::before, .spread-8::before { background: radial-gradient(40% 30% at 100% 0%, rgba(248, 184, 66, .10), transparent 70%); }
 
   /* ---------- Interlude (page-04) ---------- */
