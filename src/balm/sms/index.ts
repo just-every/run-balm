@@ -12,7 +12,7 @@ export interface SmsSender { send(message: SmsMessage): Promise<{ id: string; st
 /** Why texts cannot be sent from this install, or null when they can. */
 export function smsBlock(env: SmsEnv) {
   if (managedInstall(env)) return 'Texts are not available yet on RER Managed hosting: it cannot reach a text provider until RER adds a provider relay.'
-  if (env.SMS_PROVIDER !== 'twilio' || !env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM) return 'Texting pay links starts once US carriers approve your clinic to text patients (a one-time business registration, called A2P 10DLC, made through a text provider such as Twilio) and that provider is added to Balm’s settings. Send pay links by email for now.'
+  if (env.SMS_PROVIDER !== 'twilio' || !env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM) return 'Text reminders and pay links connect once US carriers approve your clinic to text patients (a one-time business registration, called A2P 10DLC, made through a text provider such as Twilio) and that provider is added to Balm’s settings. Send them by email for now.'
   return null
 }
 
