@@ -8,7 +8,7 @@
   .hero-art { order: 4; display: block; margin-top: -20px; }
   .hero-art img { display: block; width: 100%; height: auto; -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 90%, transparent); mask-image: linear-gradient(transparent, #000 22%, #000 90%, transparent); }
   .hero-copy { padding: 44px var(--gutter) 0; }
-  .hero h1 { font: 500 clamp(42px, 10.5vw, 64px)/1.02 var(--font-head); letter-spacing: -.03em; color: #13303a; text-wrap: balance; }
+  .hero h1 { font: 500 clamp(42px, 10.5vw, 64px)/1.02 var(--font-head); letter-spacing: -.03em; word-spacing: .05em; color: #13303a; text-wrap: balance; }
   .hero-sub { margin-top: 18px; max-width: 34em; font-size: 18px; line-height: 1.5; color: #3c4a52; }
   .hero-alt { margin-top: 18px; font-size: 15.5px; line-height: 1.5; color: #56636b; }
   .hero-alt strong { font-weight: 600; color: #24343c; }
@@ -75,7 +75,7 @@
   .closing { margin-top: 72px; }
   .closing-canvas { display: flex; flex-direction: column; }
   .closing-copy { padding: 0 var(--gutter); text-align: center; display: flex; flex-direction: column; align-items: center; }
-  .closing h2 { font: 500 clamp(36px, 8.8vw, 56px)/1.05 var(--font-head); letter-spacing: -.03em; color: #13303a; text-wrap: balance; }
+  .closing h2 { font: 500 clamp(36px, 8.8vw, 56px)/1.05 var(--font-head); letter-spacing: -.03em; word-spacing: .05em; color: #13303a; text-wrap: balance; }
   .closing-sub { margin-top: 14px; font-size: 17px; color: #34444c; }
   .closing .site-actions { margin-top: 24px; justify-content: center; }
   .closing-small { margin-top: 16px; font-size: 14px; color: #4d5a61; }
