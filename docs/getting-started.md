@@ -4,14 +4,13 @@ Balm runs on your own computer: your clinic's records stay in a database in your
 
 ## Start Balm
 
-Install Git, then run two lines in a terminal. The first installs the `rer` launcher; the second gets Balm and starts it:
+Install Git, then run one line in a terminal to install the `rer` launcher, get Balm and start it:
 
 ```sh
-curl -fsSL https://runeditrun.com/install.sh | sh
-rer dev just-every/run-balm
+npx -y @runeditrun/rer dev just-every/run-balm
 ```
 
-The first line installs `rer` for you alone, with its own Node if you have none. It changes no shell settings: if it prints an `export PATH=…` line, run that line before the second. Already have Node 22 or later? `npx -y @runeditrun/rer dev just-every/run-balm` does both lines in one.
+No Node? `curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm` does the same and brings its own Node; it changes no shell settings, so if it prints an `export PATH=…` line, run that line to use `rer` again later. To set Balm up without starting it, use `setup` in place of `dev`.
 
 The first start can take several minutes while `rer dev` installs everything and prepares the local database. If it is interrupted, run it again.
 
@@ -23,7 +22,7 @@ When Balm is ready, the terminal prints:
 - `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
 - `RER_SITE http://127.0.0.1:<port>`: this website, served locally.
 
-To use your own email as the owner, run `rer install`, then `rer setup --owner-email you@example.com`, then `rer dev`.
+To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com` in place of the one line, then `cd run-balm && rer dev`.
 
 ## Start and stop it later
 

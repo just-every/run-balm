@@ -1,3 +1,7 @@
+import { template } from '../charting/templates'
+import { templateSelect } from './notes'
+import { scribeCard } from './scribe'
+import { clinicPayments } from './payments'
 import { empty, entry, field, form, h, hidden, money, panel, rows, select, status, textarea } from './shared'
 
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -5,6 +9,7 @@ const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${S
 const staffFields = (p?: any) => field('name', 'Full name', p?.name, 'text', 'required maxlength="160"') + field('email', 'Email', p?.email, 'email', 'required')
   + select('role', 'Role', [['practitioner', 'Practitioner'], ['reception', 'Reception']], p?.role ?? 'practitioner')
   + `<div class="pair">${field('profession', 'Profession (for invoices)', p?.profession ?? '', 'text', 'maxlength="80" placeholder="Physical Therapist"')}${field('providerNumber', 'Provider number (for invoices)', p?.provider_number ?? '', 'text', 'maxlength="40"')}</div>`
+  + field('credentials', 'Credentials (for signatures)', p?.credentials ?? '', 'text', 'maxlength="60" placeholder="PT, DPT · OTR/L · CCC-SLP"')
   + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], p ? String(!!p.active) : 'true')
 
 function hoursFor(s: any, p: any) {
@@ -14,21 +19,22 @@ function hoursFor(s: any, p: any) {
   return summary + `<details><summary>Set weekly hours</summary>${form('hours.save', '/app/clinic', hidden('practitionerId', p.id) + textarea('hours', 'Weekly hours (JSON)', mine.length ? json : '[{"weekday":1,"start":"09:00","end":"17:00"},{"weekday":3,"start":"09:00","end":"17:00"}]', 'required spellcheck="false"') + '<p class="help">One entry per block: weekday 0 is Sunday, 1 is Monday … 6 is Saturday; start and end are 24-hour clinic times.</p>', 'Save hours')}</details>`
 }
 
-export function clinic(s: any) {
+export function clinic(s: any, notice: any = {}) {
   const st = s.settings
   const settings = panel('Clinic details', form('settings.save', '/app/clinic', field('clinicName', 'Clinic name', st.clinic_name, 'text', 'required maxlength="120"') + field('timeZone', 'Time zone (IANA name)', st.time_zone, 'text', 'required maxlength="64"') + '<p class="help">For example America/New_York, America/Chicago, America/Denver, America/Los_Angeles. It cannot change after the first booking.</p>' + `<div class="pair">${field('abn', 'Tax ID (shown on invoices)', st.abn, 'text', 'maxlength="20"')}${select('bookingOpen', 'Online booking', [['true', 'Open'], ['false', 'Closed']], String(!!st.booking_open))}</div>` + field('address', 'Address (shown on invoices and reminders)', st.address, 'text', 'maxlength="300"'), 'Save clinic details'))
-  const serviceList = rows(s, 'services').map(x => entry(x.name, `<p>${x.duration_minutes} min · ${money(x.price_cents)} ${x.active ? '' : status('Inactive')}</p><details><summary>Edit service</summary>${form('service.save', '/app/clinic', hidden('id', x.id) + serviceFields(x), 'Save service')}</details>`)).join('')
-  const staff = rows(s, 'staff').map(p => entry(p.name, `<p>${status(p.active ? 'Active' : 'Inactive')} ${status(p.role)}<br>${h(p.email)}${p.profession ? `<br>${h(p.profession)}` : ''}${p.provider_number ? ` · provider ${h(p.provider_number)}` : ''}</p>${p.role === 'practitioner' ? hoursFor(s, p) : ''}`
+  const serviceList = rows(s, 'services').map(x => entry(x.name, `<p>${x.duration_minutes} min · ${money(x.price_cents)} ${x.active ? '' : status('Inactive')}<br><span class="help">Notes start from: ${h(template(x.note_template)?.title ?? 'free text')}</span></p><details><summary>Edit service</summary>${form('service.save', '/app/clinic', hidden('id', x.id) + serviceFields(x), 'Save service')}</details>`)).join('')
+  const staff = rows(s, 'staff').map(p => entry(p.name, `<p>${status(p.active ? 'Active' : 'Inactive')} ${status(p.role)}<br>${h(p.email)}${p.profession ? `<br>${h(p.profession)}` : ''}${p.provider_number ? ` · provider ${h(p.provider_number)}` : ''}${p.credentials ? ` · signs as ${h(p.credentials)}` : ''}</p>${p.role === 'practitioner' ? hoursFor(s, p) : ''}`
     + `<details><summary>Edit staff member</summary>${form('staff.save', '/app/clinic', hidden('id', p.id) + hidden('version', p.version) + staffFields(p), 'Save staff member')}</details>`
     + (p.active && p.email.toLowerCase() !== s.actor.email.toLowerCase() ? form('staff.invite', '/app/clinic', hidden('id', p.id), 'Invite to sign in', true) : '')
     + `<details><summary>Erase staff member</summary><p>Only staff never invited and never used in clinic work can be erased. Deactivate anyone else to remove their access at once.</p>${form('staff.erase', '/app/clinic', hidden('id', p.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases their personal details.</span></label>', 'Erase staff member', true)}</details>`)).join('')
   const roomList = rows(s, 'rooms').map(r => entry(r.name, `<p>${r.active ? '' : status('Inactive')}</p><details><summary>Edit room</summary>${form('room.save', '/app/clinic', hidden('id', r.id) + roomFields(r), 'Save room')}</details>`)).join('')
   const rooms = panel('Rooms', '<p class="help">Optional. A room holds one visit at a time, and the schedule can show each room’s day.</p>' + (roomList || empty('No rooms yet.')) + `<details><summary>Add a room</summary>${form('room.save', '/app/clinic', roomFields(), 'Add room')}</details>`)
-  return `<h1>Clinic</h1><p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${settings}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}</div>`
+  return `<h1>Clinic</h1><p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${settings}${clinicPayments(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
 }
 
 function serviceFields(x?: any) {
   return field('name', 'Service name', x?.name, 'text', 'required maxlength="120" placeholder="Initial evaluation"') + `<div class="pair">${field('durationMinutes', 'Length (minutes)', x?.duration_minutes ?? 60, 'number', 'required min="5" max="480" step="5"')}${field('priceCents', 'Price in cents', x?.price_cents ?? '', 'number', 'required min="0" step="1"')}</div>` + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], x ? String(!!x.active) : 'true')
+    + templateSelect('noteTemplate', 'Notes for this service start from', x?.note_template ?? '')
 }
 
 const roomFields = (r?: any) => field('name', 'Room name', r?.name, 'text', 'required maxlength="80" placeholder="Treatment room 1"') + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], r ? String(!!r.active) : 'true')

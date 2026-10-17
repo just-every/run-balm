@@ -1,6 +1,8 @@
 # Run it locally
 
-Install the `rer` command once using the [RER installer](https://runeditrun.com).
+Start it with one line, `npx -y @runeditrun/rer dev just-every/run-balm`
+(without Node: `curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm`);
+to only set it up, run `npx -y @runeditrun/rer setup just-every/run-balm`.
 After the script or `npx` install, activate it in the current shell with
 `export PATH="$HOME/.local/bin:$PATH"`. First-party commands fetch and verify
 the exact pnpm version declared in `package.json` when it is missing, using
@@ -217,10 +219,14 @@ provider request. The default environment is `production`; select another with
 `--environment NAME`. Local validation does not establish provider acceptance,
 hosted health or mail delivery.
 
-A hosted Balm emails sign-in links, intake links and waitlist offers through
+A hosted Balm emails sign-in links, intake links, waitlist offers, pay links and receipts through
 your own mail provider. Give the deploy `MAIL_PROVIDER` (`resend`, `sendgrid` or
 `cloudflare`), `MAIL_API_KEY` and `MAIL_FROM` (a sender address your provider
-has verified) in the environment or the `--env-file`.
+has verified) in the environment or the `--env-file`. Texting pay links is
+optional: once your US A2P 10DLC registration is approved, add `SMS_PROVIDER=twilio`,
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (the registered
+number or a Messaging Service SID). Stripe needs no deploy input: the owner
+connects the clinic's own key in Clinic → Online payments.
 
 `rer describe` reads the current checkout's actual verbs,
 flags, aliases, pins, effects and local state without installing or running

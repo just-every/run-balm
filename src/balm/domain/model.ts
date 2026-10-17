@@ -78,6 +78,7 @@ export async function commit(db: D1Database, who: Actor | null, statements: D1Pr
   try {
     await db.batch([...(who ? [authority(db, who)] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
   } catch (error) {
+    if (/note_locked|plan_locked/.test(String(error))) throw new DomainError('signed_records_cannot_change', 409)
     if (/bm_assert|CHECK constraint|UNIQUE constraint|ik_d1_assertions/.test(String(error))) throw new DomainError('changed_refresh_and_retry', 409)
     throw error
   }

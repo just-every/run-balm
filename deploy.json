@@ -38,6 +38,26 @@
     {
       "binding": "MAIL_FROM",
       "environment": "MAIL_FROM"
+    },
+    {
+      "binding": "SMS_PROVIDER",
+      "environment": "SMS_PROVIDER",
+      "optional": true
+    },
+    {
+      "binding": "TWILIO_ACCOUNT_SID",
+      "environment": "TWILIO_ACCOUNT_SID",
+      "optional": true
+    },
+    {
+      "binding": "TWILIO_AUTH_TOKEN",
+      "environment": "TWILIO_AUTH_TOKEN",
+      "optional": true
+    },
+    {
+      "binding": "TWILIO_FROM",
+      "environment": "TWILIO_FROM",
+      "optional": true
     }
   ]
 }

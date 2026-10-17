@@ -2,6 +2,7 @@
 import { createPortability } from '@runeditrun/rer/modules/portability'
 // @ts-ignore The CLI and Worker share this JavaScript archive policy.
 import archivePolicy from '../archive-policy.mjs'
+import { template } from '../charting/templates'
 import { audit, commit, email, guard, human, id, insist, integer, need, one, optional, sha256, stmt, text, type Actor, type Data } from './model'
 
 export function validTimeZone(value: unknown) {
@@ -38,10 +39,11 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_erasure_journal WHERE identity_hash=?)', identity),
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=?)', previous.id, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
-    stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,active,version) VALUES(?,?,?,?,?,?,?,1)
+    stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials,active,version) VALUES(?,?,?,?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,email=excluded.email,role=excluded.role,profession=excluded.profession,
-      provider_number=excluded.provider_number,active=excluded.active,version=bm_staff.version+1`,
-    staffId, text(input.name, 'name', 160), address, role, optional(input.profession, 'profession', 80) ?? '', optional(input.providerNumber, 'provider_number', 40) ?? '', active),
+      provider_number=excluded.provider_number,credentials=excluded.credentials,active=excluded.active,version=bm_staff.version+1`,
+    staffId, text(input.name, 'name', 160), address, role, optional(input.profession, 'profession', 80) ?? '', optional(input.providerNumber, 'provider_number', 40) ?? '',
+    input.credentials === undefined ? previous?.credentials ?? '' : optional(input.credentials, 'credentials', 60) ?? '', active),
     audit(db, who, previous ? 'staff.updated' : 'staff.added', null, staffId),
   ])
   return { id: staffId, name: input.name, email: address, role, active: !!active }
@@ -50,11 +52,15 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
 export async function saveService(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const serviceId = input.id ? text(input.id, 'id', 100) : id()
-  if (input.id) insist(await one(db, 'SELECT 1 FROM bm_services WHERE id=?', serviceId), 'service_not_found', 404)
+  const previous = input.id ? await one(db, 'SELECT note_template FROM bm_services WHERE id=?', serviceId) : null
+  if (input.id) insist(previous, 'service_not_found', 404)
+  // The note template a visit of this service starts from (for example pt.evaluation).
+  const noteTemplate = input.noteTemplate === undefined ? previous?.note_template ?? '' : String(input.noteTemplate)
+  insist(!noteTemplate || template(noteTemplate), 'unknown_template')
   await commit(db, who, [
-    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active) VALUES(?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_minutes=excluded.duration_minutes,price_cents=excluded.price_cents,active=excluded.active,version=bm_services.version+1`,
-    serviceId, text(input.name, 'name', 120), integer(input.durationMinutes, 'duration_minutes', 5, 480), integer(input.priceCents, 'price_cents', 0, 10_000_000), input.active === false || input.active === 'false' ? 0 : 1),
+    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_minutes=excluded.duration_minutes,price_cents=excluded.price_cents,active=excluded.active,note_template=excluded.note_template,version=bm_services.version+1`,
+    serviceId, text(input.name, 'name', 120), integer(input.durationMinutes, 'duration_minutes', 5, 480), integer(input.priceCents, 'price_cents', 0, 10_000_000), input.active === false || input.active === 'false' ? 0 : 1, noteTemplate),
     audit(db, who, 'service.saved', null, serviceId),
   ])
   return { id: serviceId }
@@ -101,7 +107,7 @@ export async function eraseStaff(db: D1Database, who: Actor, input: Data) {
     guard(db, unused, ...args),
     ...await portability.redactionStatements(), ...await portability.invalidateTransfersStatements(),
     stmt(db, 'INSERT INTO bm_erasure_journal(identity_hash,kind,erased_at) VALUES(?,?,?)', await sha256('staff:' + String(staff.email).toLowerCase()), 'staff', Date.now()),
-    stmt(db, "UPDATE bm_staff SET name='Erased staff member',email=?,profession='',provider_number='',active=0,version=version+1,erased_at=? WHERE id=?", `erased-${staff.id}@invalid.local`, Date.now(), staff.id),
+    stmt(db, "UPDATE bm_staff SET name='Erased staff member',email=?,profession='',provider_number='',credentials='',active=0,version=version+1,erased_at=? WHERE id=?", `erased-${staff.id}@invalid.local`, Date.now(), staff.id),
     audit(db, who, 'staff.erased', null, staff.id as string),
   ])
   return { id: staff.id, erased: true }

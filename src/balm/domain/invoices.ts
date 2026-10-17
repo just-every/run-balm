@@ -1,11 +1,13 @@
 // Reviewed billing adapted from Satchel (src/satchel/billing.ts, just-every/run-satchel
 // @ 2d460e4): a preparation freezes a snapshot, a person approves that exact
 // snapshot, and approval fixes the number and the downloadable bytes forever.
+import { creditStatements } from '../payments/ledger'
+import { bill } from '../charting/cpt'
 import { approvalStatements } from './approvals'
 import { audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
-export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
+export const dollars = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`
 export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
@@ -15,12 +17,18 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
     s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
+  // Billed CPT units come only from the visit's signed notes, by the 8-minute rule.
+  const signed = await rows(db, 'SELECT r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.signed_at', appointmentId)
+  const minutes = new Map<string, number>()
+  for (const c of signed.flatMap(n => JSON.parse(n.charges as string ?? '[]'))) minutes.set(c.code, (minutes.get(c.code) ?? 0) + c.minutes)
+  const procedures = bill([...minutes].map(([code, m]) => ({ code, minutes: m }))).lines.map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units }))
   return { row, value: {
     clinic: { name: row.clinic_name, abn: row.abn, address: row.address },
     client: { name: `${row.first_name} ${row.last_name}`, dateOfBirth: row.date_of_birth },
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
     appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'USD',
+    ...(procedures.length ? { procedures } : {}),
   } }
 }
 
@@ -51,7 +59,8 @@ export function artifact(number: number, value: any, approvedAt: string) {
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`
     + `<tfoot><tr><th colspan="2">Total</th><th>${dollars(value.amountCents)}</th></tr></tfoot></table>`
-    + '<p>Payment and any insurance claim are made outside Balm. Keep this invoice for your records.</p></body></html>\n'
+    + (value.procedures ? `<h2>Procedures billed (CPT)</h2><table><thead><tr><th>Code</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${value.procedures.map((p: any) => `<tr><td>${escape(p.code)}</td><td>${escape(p.description)}</td><td>${p.minutes ?? 'untimed'}</td><td>${p.units}</td></tr>`).join('')}</tbody></table><p>Timed units by the CMS 8-minute rule, from the signed treatment note.</p>` : '')
+    + '<p>Keep this invoice for your records. Insurance claims are made outside Balm.</p></body></html>\n'
 }
 
 export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
@@ -69,6 +78,8 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
       number, bytes, await sha256(bytes), who.email, approvedAt, invoice.id, invoice.version),
     guard(db, "EXISTS(SELECT 1 FROM bm_invoices WHERE id=? AND status='approved' AND number=?)", invoice.id, number),
     ...await approvalStatements(db, who, 'invoice', invoice, invoice.snapshot as string),
+    // A copay taken at check-in, or credit paid ahead, is matched to the invoice now.
+    ...await creditStatements(db, invoice),
     audit(db, who, 'invoice.approved', invoice.client_id as string, invoice.id as string, invoiceNumber(number)),
   ])
   return { id: invoice.id, number: invoiceNumber(number), status: 'approved' }

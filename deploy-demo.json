@@ -2,5 +2,8 @@
   "version": 1,
   "domain": "run-balm.com",
   "name": "Balm",
-  "ownerEmail": "maya.ellison@cedargrove.example"
+  "ownerEmail": "maya.ellison@cedargrove.example",
+  "settings": {
+    "MAIL_FROM": "hello@cedargrove.example"
+  }
 }

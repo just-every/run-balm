@@ -7,6 +7,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { intakeFor } from './intake'
 import { notesFor } from './notes'
+import { plansFor } from './plans'
 import { invoicesFor } from './invoices'
 import { audit, commit, day, email, guard, human, id, insist, integer, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -49,31 +50,34 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
 export async function clientFile(db: D1Database, who: Actor, key: unknown) {
   const client = await clientVisible(db, who, key)
   const own = practitionerId(who), all = who.role === 'owner' || who.staffRole === 'reception'
-  const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,
+  const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,s.note_template,
     (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id WHERE a.client_id=? ORDER BY a.start_at DESC`, client.id)
   const visibleAppointments = appointments.filter(a => all || a.practitioner_id === own)
   const intake = (await intakeFor(db, who, client.id as string))?.filter(r => who.role === 'owner' || visibleAppointments.some(a => a.id === r.appointmentId)) ?? null
   const notes = await notesFor(db, who, client.id as string)
+  const plans = await plansFor(db, who, client.id as string)
   const invoices = all ? await invoicesFor(db, client.id as string) : null
   const auditRows = who.role === 'owner' ? await rows(db, 'SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=? ORDER BY sequence DESC LIMIT 500', client.id) : null
   await commit(db, who, [
     audit(db, who, 'file.viewed', client.id as string, client.id as string, [intake ? `intake ${intake.length}` : 'no clinical intake', notes ? `notes ${notes.length}` : 'no notes', auditRows ? 'audit' : ''].filter(Boolean).join('; ')),
     ...(intake ?? []).map(r => audit(db, who, 'intake.read', client.id as string, r.id as string)),
     ...(notes ?? []).map(n => audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)),
+    ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
-  return { client, appointments: visibleAppointments, intake, notes, invoices, audit: auditRows }
+  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows }
 }
 
-/** Only a client with no appointments, notes, intake, invoices or import history can be erased. */
+/** Only a client with no appointments, notes, intake, invoices, card payments, card on file or import history can be erased. */
 export async function eraseClient(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const client = await clientVisible(db, who, input.id)
-  const unused = `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_notes WHERE client_id=?)
+  const unused = `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_notes WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_plans_of_care WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoices WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_import_client_revisions WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_waitlist WHERE client_id=?)
-    AND NOT EXISTS(SELECT 1 FROM ik_provenance WHERE destination='balm:clients' AND target_id=?)`
-  const args = Array(7).fill(client.id)
+    AND NOT EXISTS(SELECT 1 FROM ik_provenance WHERE destination='balm:clients' AND target_id=?)
+    AND NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_cards WHERE client_id=? AND removed_at IS NULL)`
+  const args = Array(10).fill(client.id)
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${unused}) THEN 1 ELSE 0 END AS ok`, ...args))?.ok === 1, 'clients_with_health_records_are_retained', 409)
   const portability = await createPortability({ db, policy: archivePolicy })
   const at = Date.now()

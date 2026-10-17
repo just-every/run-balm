@@ -3,7 +3,7 @@
     {
       "title": "Start here",
       "pages": [
-        { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in two lines and sign in as the owner." },
+        { "slug": "getting-started", "title": "Getting started", "file": "getting-started.md", "summary": "Start Balm on your own computer in one line and sign in as the owner." },
         { "slug": "set-up-your-clinic", "title": "Set up your clinic", "file": "set-up-your-clinic.md", "summary": "Your clinic details, services, practitioners and reception, weekly hours and sign-in invitations." }
       ]
     },
@@ -13,8 +13,10 @@
         { "slug": "bookings", "title": "Bookings and the schedule", "file": "bookings.md", "summary": "The calendar by day or week and by practitioner or room, online booking at /book, moving and canceling visits, and recurring visits." },
         { "slug": "waitlist", "title": "The waitlist", "file": "waitlist.md", "summary": "Keep clients waiting for a time; a canceled visit is offered to them by email and the first to accept is booked." },
         { "slug": "intake", "title": "Intake forms", "file": "intake.md", "summary": "The private intake link each new booking gets, who reads the answers, and publishing a new version of the form." },
-        { "slug": "notes", "title": "Treatment notes", "file": "notes.md", "summary": "Write a note against a visit, amend it with a reason, and know who can read it." },
+        { "slug": "notes", "title": "Treatment notes", "file": "notes.md", "summary": "PT, OT and speech templates, CPT units by the 8-minute rule, drafting with the scribe, signing, addenda and unsigned notes on the schedule." },
+        { "slug": "plan-of-care", "title": "Plan of care", "file": "plan-of-care.md", "summary": "Sign a plan of care with goals, frequency and duration, and have the referring physician certify it from an emailed link." },
         { "slug": "invoices", "title": "Invoices and payments", "file": "invoices.md", "summary": "Prepare an invoice from an attended visit, approve and number it, download it and record payments you receive." },
+        { "slug": "payments", "title": "Patient payments", "file": "payments.md", "summary": "Connect Stripe, save cards with the patient's consent, charge copays at check-in, send pay links, and give patients statements and superbills." },
         { "slug": "reminders", "title": "Appointment reminders", "file": "reminders.md", "summary": "Balm writes the exact reminder text for an upcoming visit; a person approves it and sends it their usual way." }
       ]
     },

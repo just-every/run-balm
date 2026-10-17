@@ -1,0 +1,60 @@
+// Review and sign: the author signs the exact revision they reviewed with their
+// typed name and credentials; the signature records the time and the SHA-256 of
+// what was signed, and the database refuses any later change to a signed note
+// (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
+import { template } from '../charting/templates'
+import { audit, commit, guard, human, id, insist, now, one, practitionerId, sha256, stmt, text, type Actor, type Data } from './model'
+
+const same = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
+
+async function authored(db: D1Database, who: Actor, noteId: unknown) {
+  human(who)
+  const note = await one(db, 'SELECT * FROM bm_notes WHERE id=?', text(noteId, 'id', 100))
+  insist(note && note.author_id === practitionerId(who), 'note_not_found', 404)
+  const staff = (await one(db, 'SELECT name,credentials FROM bm_staff WHERE id=?', note.author_id))!
+  return { note, staff }
+}
+
+/** The signer's typed name must be their own; credentials (PT, DPT · OTR/L · CCC-SLP) are required. */
+function signer(staff: Data, input: Data) {
+  insist(input.attest === true || input.attest === 'on', 'confirm_you_reviewed_this_note')
+  const typed = text(input.signature, 'signature', 160)
+  insist(same(typed, staff.name), 'type_your_full_name_as_it_appears_on_your_staff_record')
+  const credentials = String(input.credentials ?? staff.credentials ?? '').trim()
+  insist(credentials, 'enter_your_credentials_to_sign')
+  return { name: staff.name as string, credentials: text(credentials, 'credentials', 60) }
+}
+
+export async function signNote(db: D1Database, who: Actor, input: Data) {
+  const { note, staff } = await authored(db, who, input.id)
+  insist(!note.signed_at, 'note_already_signed', 409)
+  const latest = (await one(db, 'SELECT * FROM bm_note_revisions WHERE note_id=? ORDER BY number DESC LIMIT 1', note.id))!
+  insist(input.revision !== undefined && Number(input.revision) === latest.number, 'note_changed_reload', 409)
+  const t = template(note.template), sections = latest.sections ? JSON.parse(latest.sections as string) : null
+  if (t) {
+    const blank = t.sections.find(s => s.required && !sections.find((x: Data) => x.id === s.id)?.text)
+    insist(!blank, `complete_${blank?.id}_before_signing`)
+  } else insist(String(latest.body).trim(), 'note_is_empty')
+  const by = signer(staff, input), signedAt = now()
+  const digest = await sha256(JSON.stringify({ note: note.id, revision: latest.number, template: note.template, body: latest.body, sections, charges: latest.charges, signer: by, signedAt }))
+  await commit(db, who, [
+    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)', note.id, latest.number),
+    stmt(db, 'UPDATE bm_notes SET signed_at=?,signed_revision=?,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=? AND signed_at IS NULL', signedAt, latest.number, by.name, by.credentials, digest, note.id),
+    guard(db, 'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at=?)', note.id, signedAt),
+    audit(db, who, 'note.signed', note.client_id as string, note.id as string, `revision ${latest.number}`),
+  ])
+  return { id: note.id, status: 'signed', signedAt, revision: latest.number, signer: by, sha256: digest }
+}
+
+export async function addAddendum(db: D1Database, who: Actor, input: Data) {
+  const { note, staff } = await authored(db, who, input.id)
+  insist(note.signed_at, 'sign_the_note_first_or_edit_the_draft', 409)
+  const body = text(input.body, 'addendum', 8000), writtenAt = now(), addendumId = id()
+  const by = { name: staff.name as string, credentials: (note.signer_credentials as string) || (staff.credentials as string) }
+  await commit(db, who, [
+    stmt(db, 'INSERT INTO bm_note_addenda(id,note_id,author_id,body,written_at,signer_name,signer_credentials,sha256) VALUES(?,?,?,?,?,?,?,?)', addendumId, note.id, note.author_id, body, writtenAt, by.name, by.credentials,
+      await sha256(JSON.stringify({ note: note.id, body, signer: by, writtenAt }))),
+    audit(db, who, 'note.addendum', note.client_id as string, note.id as string),
+  ])
+  return { id: addendumId, noteId: note.id, writtenAt }
+}

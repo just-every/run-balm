@@ -1,6 +1,7 @@
 // Demo data for `rer demo` and the hosted demo (modules/demo runs it once, after
 // the owner exists): Cedar Grove Physical Therapy, a lived-in clinic with four
-// practitioners, a fortnight of bookings in every state, completed intake forms,
+// practitioners and their rooms, a fortnight of bookings in every state, a
+// recurring series, a waitlist, completed intake forms,
 // private treatment notes, approved and paid invoices, drafts waiting for a
 // person, and the access audit those leave. Rows are shaped by Balm's own domain
 // code (invoice snapshots and artifacts, reminder facts, intake form validation,
@@ -10,10 +11,11 @@ import type { Bindings } from './auth.server'
 import { artifact, invoiceNumber, snapshot } from './balm/domain/invoices'
 import { currentForm, questions } from './balm/domain/intake'
 import { sha256 } from './balm/domain/model'
+import { hostDateAt } from './balm/availability/timezone'
 import { facts, reminderPayload, reminderText } from './balm/domain/reminders'
 import { amendment, noteBody } from './balm/demo/notes'
-import { clients, clinic, former, movedIn, practitioners, reception, services, zone } from './balm/demo/people'
-import { DAY, HOUR, MIN, plan, type Visit } from './balm/demo/visits'
+import { clients, clinic, former, movedIn, practitioners, reception, rooms, series, services, zone } from './balm/demo/people'
+import { DAY, HOUR, MIN, plan, seriesStart, type Visit } from './balm/demo/visits'
 
 const iso = (at: number) => new Date(at).toISOString()
 
@@ -40,6 +42,7 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
     ...practitioners.map(p => q("INSERT INTO bm_staff(id,name,email,role,profession,provider_number) VALUES(?,?,?,'practitioner',?,?) ON CONFLICT DO NOTHING", p.id, p.name, p.email ?? ownerEmail.toLowerCase(), p.profession, p.providerNumber)),
     q("INSERT INTO bm_staff(id,name,email,role) VALUES(?,?,?,'reception') ON CONFLICT DO NOTHING", reception.id, reception.name, reception.email),
     q("INSERT INTO bm_staff(id,name,email,role,profession,provider_number,active) VALUES(?,?,?,'practitioner',?,?,0) ON CONFLICT DO NOTHING", former.id, former.name, former.email, former.profession, former.providerNumber),
+    ...rooms.map(r => q('INSERT INTO bm_rooms(id,name) VALUES(?,?) ON CONFLICT DO NOTHING', r.id, r.name)),
     ...services.map(s => q('INSERT INTO bm_services(id,name,duration_minutes,price_cents,active) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING', s.id, s.name, s.minutes, s.cents, s.active === false ? 0 : 1)),
     ...practitioners.flatMap(p => p.hours.map(([weekday, start, end]) => q('INSERT INTO bm_hours(practitioner_id,weekday,start_minute,end_minute) VALUES(?,?,?,?) ON CONFLICT DO NOTHING', p.id, weekday, start, end))),
     q('INSERT INTO bm_agent_keys(id,owner_id,owner_version,label,token_hash,created_at,expires_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING',
@@ -55,13 +58,17 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
   clientRows.push(
     q("INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'import') ON CONFLICT DO NOTHING", movedIn.id, movedIn.first, movedIn.last, movedIn.dob, movedIn.email, movedIn.phone, iso(now - 20 * DAY)),
     log(now - 20 * DAY, maya, 'client.created', movedIn.id, movedIn.id, 'Cliniko move-in'))
+  const seriesVisit = visits.find(v => v.seriesId)!
+  clientRows.push(q('INSERT INTO bm_series(id,client_id,practitioner_id,service_id,room_id,pattern,skipped,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING',
+    series.id, series.client, series.practitioner, series.service, practitioners.find(p => p.id === series.practitioner)!.room,
+    JSON.stringify({ firstDate: seriesStart(now), weekdays: series.weekdays, weeks: series.weeks, time: `${String(series.minute / 60).padStart(2, '0')}:00` }), '[]', iso(seriesVisit.createdAt), reception.email))
   const visitRows = await Promise.all(visits.map(async v => {
     const c = v.client, booker = v.via === 'online' ? { email: c.email, role: 'online booking' } : v.seq % 4 === 0 ? maya : desk
     const rows = [
-      q(`INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,version)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`, v.id, c.id, v.practitioner.id, v.service.id, iso(v.start), iso(v.end), v.status, v.via,
-      await sha256('demo-intake:' + v.id), iso(v.createdAt), booker.email, v.status === 'booked' ? 1 : 2),
-      log(v.createdAt, booker, 'appointment.booked', c.id, v.id, `${v.via} ${iso(v.start)}`),
+      q(`INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,version,room_id,series_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`, v.id, c.id, v.practitioner.id, v.service.id, iso(v.start), iso(v.end), v.status, v.via,
+      await sha256('demo-intake:' + v.id), iso(v.createdAt), v.seriesId ? reception.email : booker.email, v.status === 'booked' ? 1 : 2, v.practitioner.room, v.seriesId ?? null),
+      log(v.createdAt, v.seriesId ? desk : booker, 'appointment.booked', c.id, v.id, `${v.via}${v.seriesId ? ' series' : ''} ${iso(v.start)}`),
     ]
     if (v.status !== 'booked') rows.push(log(v.changedAt, v.status === 'cancelled' ? desk : actorOf(v.practitioner.id), 'appointment.' + v.status, c.id, v.id))
     if (v.intakeAt) {
@@ -80,7 +87,22 @@ export async function seedDemo(env: Bindings, { ownerEmail, now: seededAt }: { o
     }
     return rows
   }))
-  await db.batch([...clinicRows, ...clientRows, ...visitRows.flat()])
+  // The waitlist: people hoping for an earlier time. Canceling a matching visit offers it to them.
+  const day = (offset: number) => hostDateAt(new Date(now + offset * DAY), zone), kwame = visits.find(v => v.client.id === 'demo-client-kwame' && v.status === 'booked')
+  const waiting = [
+    { id: 'demo-wait-lucas', client: movedIn.id, practitioner: null, service: 'demo-svc-initial', from: 0, to: 14, note: 'Prefers early mornings', status: 'waiting', at: -2 },
+    { id: 'demo-wait-sophie', client: 'demo-client-sophie', practitioner: 'demo-staff-lena', service: 'demo-svc-massage', from: 0, to: 7, note: 'Happy to come in at short notice', status: 'waiting', at: -3 },
+    { id: 'demo-wait-peter', client: 'demo-client-peter', practitioner: 'demo-staff-marcus', service: 'demo-svc-hand', from: 0, to: 10, note: 'Wants an extra session before going back to work', status: 'waiting', at: -1 },
+    { id: 'demo-wait-ava', client: 'demo-client-ava', practitioner: 'demo-staff-maya', service: 'demo-svc-followup', from: 0, to: 6, note: 'Any weekday after 3 PM', status: 'waiting', at: -1 },
+    { id: 'demo-wait-theo', client: 'demo-client-theo', practitioner: 'demo-staff-maya', service: 'demo-svc-followup', from: -5, to: 2, note: '', status: 'removed', at: -6 },
+    ...(kwame ? [{ id: 'demo-wait-kwame', client: kwame.client.id, practitioner: kwame.practitioner.id, service: kwame.service.id, from: -4, to: 5, note: 'Booked when a time opened up', status: 'booked', at: -5, appointment: kwame.id }] : []),
+  ]
+  const waitRows = waiting.flatMap(w => [
+    q("INSERT INTO bm_waitlist(id,client_id,practitioner_id,service_id,earliest_date,latest_date,note,status,appointment_id,created_at,created_by,version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+      w.id, w.client, w.practitioner, w.service, day(w.from), day(w.to), w.note, w.status, w.appointment ?? null, iso(now + w.at * DAY), reception.email, w.status === 'waiting' ? 1 : 2),
+    log(now + w.at * DAY, desk, 'waitlist.added', w.client, w.id),
+  ])
+  await db.batch([...clinicRows, ...clientRows, ...visitRows.flat(), ...waitRows])
 
   // Billing reads the stored visits back through the invoice snapshot, as approval does.
   const attended = visits.filter(v => v.status === 'attended')
