@@ -1,6 +1,6 @@
 # Source adaptation
 
-Balm starts from Base's committed foundation at `ada9f574d8a7247edc3a1180b593ad182b1fbb37`, generated as family `clinic`, edition `balm`, then converted to package mode on `@runeditrun/rer@0.2.22`. Base runtime, native authentication, theme, portability and import-kit keep their attribution in their source. MIT licence retained. No sibling repository was edited.
+Balm starts from Base's committed foundation at `ada9f574d8a7247edc3a1180b593ad182b1fbb37`, generated as family `clinic`, edition `balm`, then converted to package mode on `@runeditrun/rer@0.2.22`. Base runtime, native authentication, theme, portability and import-kit keep their attribution in their source. MIT license retained. No sibling repository was edited.
 
 | Balm part | Adapted from |
 | --- | --- |

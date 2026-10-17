@@ -35,7 +35,7 @@ export function checkInActions(s: any, a: any, back: string) {
     const paid = c?.status === 'succeeded' ? `${status(`Copay ${money(c.amount)} paid`)} <a href="/api/balm/receipts/${h(c.id)}.pdf">Receipt ${h(receipt(c.receipt))}</a>` : ''
     const failed = c && ['failed', 'requires_action'].includes(c.status) ? `<p class="help">Copay not charged: ${h(c.failure ?? 'the card was declined')}</p>` : ''
     const retry = chargeable && (!c || ['failed', 'requires_action'].includes(c.status)) ? form('pay.copay.charge', back, hidden('appointmentId', a.id), `Charge ${copayLabel}`, true) : ''
-    return `<p>${status(`Checked in ${new Intl.DateTimeFormat('en-US', { timeZone: s.settings.time_zone, hour: 'numeric', minute: '2-digit' }).format(new Date(v.checkedInAt))}`)} ${paid}</p>${failed}${retry}`
+    return `<p>${status(`Checked in ${new Intl.DateTimeFormat('en-US', { timeZone: s.settings.time_zone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(v.checkedInAt))}`)} ${paid}</p>${failed}${retry}`
   }
   if (!(desk(s) || a.practitioner_id === s.actor.staffId)) return ''
   const why = !desk(s) ? '' : block ? block : !(v.copayCents > 0) ? 'No copay is set for this patient (set it in their file).' : !v.card ? 'No card on file: collect the copay at the desk, or send the patient a card link from their file.' : ''

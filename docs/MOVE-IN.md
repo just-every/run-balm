@@ -32,12 +32,12 @@ To read the same file with another format, open **Change the date format** in th
 
 1. Open **Move in** (owner only), choose the file under **Cliniko patient export**, and select **Preview patients**. Nothing is imported yet.
 2. Check the table: each patient's name, date of birth, email, mobile and Cliniko ID. A patient already in Balm (same Cliniko ID, or the same name, date of birth and email) or erased from Balm before is marked; remove those rows from the file and preview it again.
-3. Tick **I checked these patients** and select **Import**. If the file or your clinic changed since the preview, Balm asks you to preview again.
+3. Select **I checked these patients** and select **Import**. If the file or your clinic changed since the preview, Balm asks you to preview again.
 4. Under **Imports**, each import shows its progress, for example "Imported: 120 of 120 patients". **View journal** offers **Download the original file**, exactly as you uploaded it. Each imported patient's access audit records the import.
 
 ## Undo
 
-**Undo this import** (confirm with the tick box) removes the imported patients who are unchanged and unused. Anyone booked, edited, or given an intake, a note, an invoice or a draft in Balm since is kept. The journal then lists each patient and what happened to them.
+**Undo this import** (confirm with the checkbox) removes the imported patients who are unchanged and unused. Anyone booked, edited, or given an intake, a note, an invoice or a draft in Balm since is kept. The journal then lists each patient and what happened to them.
 
 ## Try it
 

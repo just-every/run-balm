@@ -9,10 +9,11 @@ import { pageResponse } from '../modules/operator-auth/page.mjs'
 
 type Link = { issuer: string; linked: boolean } | null
 type Pending = { issuer: string; expiresAt: number } | null
-type View = { idpSignIn: boolean; link: Link; pending: Pending; origin: string; local: boolean; notice: string; issuer: string }
+type View = { idpSignIn: boolean; link: Link; pending: Pending; origin: string; local: boolean; notice: string; issuer: string; timeZone: string }
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
-const clock = (ms: number) => new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(ms))
+// The clinic's own time zone, as every other page shows times; UTC, named as such, before the owner chooses one.
+const clock = (ms: number, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone || 'UTC', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(ms))
 
 const notices: Record<string, [string, boolean]> = {
   saved: ['Saved. Invited people can now sign in through Auth as well as by email link.', false],
@@ -36,7 +37,7 @@ function steps(v: View) {
     + `<li><strong>Connect from here.</strong> Enter Auth’s address and select <strong>Connect to Auth</strong>. If Balm asks, select <strong>Email me a confirmation link</strong>, open that email in this browser, and select Connect to Auth again.<form action="/auth/settings/identity" method="post"><input type="hidden" name="setting" value="link"><label for="issuer">Auth’s address</label><input id="issuer" name="issuer" type="url" required placeholder="https://auth.yourclinic.com" value="${escape(v.issuer || v.pending?.issuer || '')}"><button>Connect to Auth</button></form>`
     + `<form action="/auth/settings/identity" method="post"><input type="hidden" name="setting" value="confirm"><button class="secondary">Email me a confirmation link</button></form></li>`
     + `<li><strong>Approve in Auth within ten minutes.</strong> Sign in to Auth as an administrator, open <strong>Apps</strong>, enter Balm’s address under <strong>Add an app</strong>:<br><code>${escape(v.origin)}</code><br>then select <strong>Check app</strong> and <strong>Approve app</strong>.</li>`
-    + '<li><strong>Come back and refresh this page.</strong> It shows “Linked to Auth”. Then tick <strong>Allow provider sign-in</strong> and save.</li></ol>'
+    + '<li><strong>Come back and refresh this page.</strong> It shows “Linked to Auth”. Then check <strong>Allow provider sign-in</strong> and save.</li></ol>'
 }
 
 export async function identitySettingsView(v: View, branding: unknown) {
@@ -47,11 +48,14 @@ export async function identitySettingsView(v: View, branding: unknown) {
     ? `<p><strong>Linked to Auth at ${escape(v.link!.issuer)}.</strong> Provider sign-in is <strong>${v.idpSignIn ? 'on' : 'off'}</strong>.</p>`
       + `<form action="/auth/settings/identity" method="post"><input type="hidden" name="setting" value="identity"><label class="check"><input type="checkbox" name="idpSignIn" value="true"${v.idpSignIn ? ' checked' : ''}>Allow provider sign-in: invited staff may sign in through Auth. Email links remain available to everyone, and to you as the owner.</label><button>Save settings</button></form>`
     : v.pending && v.pending.expiresAt > Date.now()
-      ? `<p><strong>Waiting for Auth to approve the link</strong> to ${escape(v.pending.issuer)} until ${escape(clock(v.pending.expiresAt))}. Approve it in Auth (step 3), then refresh this page.</p>`
+      ? `<p><strong>Waiting for Auth to approve the link</strong> to ${escape(v.pending.issuer)} until ${escape(clock(v.pending.expiresAt, v.timeZone))}. Approve it in Auth (step 3), then refresh this page.</p>`
       : `<p><strong>No identity provider is linked.</strong> Everyone signs in with email links. Provider sign-in can be turned on once Auth is linked.</p>`
   const content = note + state + what + (linked ? '<details><summary>How linking works</summary>' + steps(v) + '</details>' : steps(v)) + '<p class="secondary-link"><a href="/app">Back to app</a></p>'
   return pageResponse({ branding, title: 'Sign-in settings', heading: 'Sign-in settings', content, referrer: 'strict-origin' })
 }
+
+/** The clinic's time zone, for the times this page shows. */
+export const clinicZone = async (db: D1Database) => (await db.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{ time_zone: string }>())?.time_zone ?? ''
 
 /** The link and pending approval as the dependencies module stores them. */
 export async function linkState(db: D1Database): Promise<{ link: Link; pending: Pending }> {

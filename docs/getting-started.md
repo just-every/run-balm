@@ -19,7 +19,7 @@ The first start can take several minutes while `rer dev` installs everything and
 When Balm is ready, the terminal prints:
 
 - `RER_READY http://127.0.0.1:<port>`: your Balm's address.
-- `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
+- `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, check the confirmation and select **Finish setup**. Balm then asks for your clinic's time zone, filled in from your browser (US zones first); check it and select **Save and open the schedule**. Treat the link like a password.
 - `RER_SITE http://127.0.0.1:<port>`: this website, served locally.
 
 To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every/run-balm --owner-email you@example.com` in place of the one line, then `cd run-balm && rer dev`.

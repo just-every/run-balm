@@ -47,7 +47,11 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
 }
 
 /** The whole file this actor may read. Reading it records every access. */
-export async function clientFile(db: D1Database, who: Actor, key: unknown) {
+/** Rows on one page of a file's access audit, newest first. */
+export const AUDIT_PAGE_SIZE = 50
+
+/** A client's file; `auditBefore` (an audit sequence) opens an older page of its access audit. */
+export async function clientFile(db: D1Database, who: Actor, key: unknown, auditBefore?: unknown) {
   const client = await clientVisible(db, who, key)
   const own = practitionerId(who), all = who.role === 'owner' || who.staffRole === 'reception'
   const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,s.note_template,
@@ -58,14 +62,16 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown) {
   const notes = await notesFor(db, who, client.id as string)
   const plans = await plansFor(db, who, client.id as string)
   const invoices = all ? await invoicesFor(db, client.id as string) : null
-  const auditRows = who.role === 'owner' ? await rows(db, 'SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=? ORDER BY sequence DESC LIMIT 500', client.id) : null
+  const before = /^[1-9]\d{0,15}$/.test(String(auditBefore ?? '')) ? Number(auditBefore) : null
+  const auditRows = who.role === 'owner' ? await rows(db, `SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=?${before ? ' AND sequence<?' : ''} ORDER BY sequence DESC LIMIT ?`, client.id, ...(before ? [before] : []), AUDIT_PAGE_SIZE + 1) : null
+  const auditPage = auditRows ? { before, older: auditRows.length > AUDIT_PAGE_SIZE ? auditRows[AUDIT_PAGE_SIZE - 1].sequence : null, total: Number((await one(db, 'SELECT COUNT(*) AS n FROM bm_audit WHERE client_id=?', client.id))!.n), size: AUDIT_PAGE_SIZE } : null
   await commit(db, who, [
     audit(db, who, 'file.viewed', client.id as string, client.id as string, [intake ? `intake ${intake.length}` : 'no clinical intake', notes ? `notes ${notes.length}` : 'no notes', auditRows ? 'audit' : ''].filter(Boolean).join('; ')),
     ...(intake ?? []).map(r => audit(db, who, 'intake.read', client.id as string, r.id as string)),
     ...(notes ?? []).map(n => audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)),
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
-  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows }
+  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage }
 }
 
 /** Only a client with no appointments, notes, intake, invoices, card payments, card on file or import history can be erased. */

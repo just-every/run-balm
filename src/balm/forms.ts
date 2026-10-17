@@ -10,14 +10,14 @@ const minute = (value: unknown) => {
   return match ? Number(match[1]) * 60 + Number(match[2]) : null
 }
 
-/** Each ticked day's start and end, split by its breaks, as `{weekday, start, end}` windows. */
+/** Each checked day's start and end, split by its breaks, as `{weekday, start, end}` windows. */
 export function hoursFromForm(input: Data) {
   const windows: { weekday: number; start: string; end: string }[] = []
   const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
   for (let weekday = 0; weekday < 7; weekday++) {
     if (input[`d${weekday}_open`] !== 'on') continue
     const name = days[weekday], start = minute(input[`d${weekday}_start`]), end = minute(input[`d${weekday}_end`])
-    if (start === null || end === null) refuse(`${name}: enter a start and an end time, or untick ${name}.`)
+    if (start === null || end === null) refuse(`${name}: enter a start and an end time, or uncheck ${name}.`)
     if (start! >= end!) refuse(`${name}: the end time must be after the start time.`)
     const breaks: [number, number][] = []
     for (let i = 0; i < 10; i++) {
@@ -41,7 +41,7 @@ export function hoursFromForm(input: Data) {
 }
 
 export type BuilderRow = { id: string; label: string; type: string; required: boolean }
-export const questionTypes: [string, string][] = [['short', 'Short answer'], ['long', 'Long answer'], ['yes', 'Tick box (yes or no)'], ['date', 'Date']]
+export const questionTypes: [string, string][] = [['short', 'Short answer'], ['long', 'Long answer'], ['yes', 'Checkbox (yes or no)'], ['date', 'Date']]
 
 /** The builder's rows as posted, in order; a row keeps its question id once it has one. */
 export function builderRows(input: Data): BuilderRow[] {

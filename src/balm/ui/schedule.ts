@@ -3,11 +3,12 @@ import { bookingResult } from './clients'
 import { checkInActions } from './payments'
 import { problemText, seriesForm, seriesResult } from './series'
 import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
+import { zoneLabel } from './time-zone'
 import { cancelForm, clientName, desk, empty, entry, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status, when } from './shared'
 
 function setupChecklist(s: any) {
   const steps: [boolean, string][] = [
-    [s.settings.clinic_name !== 'My clinic', 'Name your clinic and confirm its time zone in <a href="/app/clinic">Clinic</a>.'],
+    [s.settings.clinic_name !== 'My clinic', 'Name your clinic in <a href="/app/clinic">Clinic</a>.'],
     [services(s).length > 0, 'Add at least one service with its length and price in <a href="/app/clinic">Clinic</a>.'],
     [practitioners(s).length > 0, 'Add a practitioner (yourself too, if you treat clients) in <a href="/app/clinic">Clinic</a>.'],
     [rows(s, 'hours').length > 0, 'Set each practitioner’s weekly hours in <a href="/app/clinic">Clinic</a>.'],
@@ -28,7 +29,7 @@ function toolbar(s: any, c: any) {
   return `<div class="cal-bar"><h2 class="cal-title">${h(title)}</h2><div class="cal-nav"><a class="seg" href="${h(calendarLink({ ...c, date: c.previous }))}" aria-label="Previous ${c.view}">‹ Previous</a>${tab('Today', { date: c.today }, false)}<a class="seg" href="${h(calendarLink({ ...c, date: c.next }))}" aria-label="Next ${c.view}">Next ›</a></div>`
     + `<div class="cal-nav">${tab('Day', { view: 'day' }, c.view === 'day')}${tab('Week', { view: 'week' }, c.view === 'week')}</div>`
     + (desk(s) && rows(s, 'rooms').length ? `<div class="cal-nav">${tab('Practitioners', { by: 'practitioner', subject: null }, c.by === 'practitioner')}${tab('Rooms', { by: 'room', subject: null }, c.by === 'room')}</div>` : '')
-    + `${filter}</div><p class="help">Times are in ${h(c.zone)}. ${desk(s) || s.actor.staffId ? 'Select a visit to change it, drag it to a new time, or select an empty time to book.' : ''} Shaded times are outside the practitioner’s hours.</p>`
+    + `${filter}</div><p class="help">Times are in ${h(zoneLabel(c.zone))}. ${desk(s) || s.actor.staffId ? 'Select a visit to change it, drag it to a new time, or select an empty time to book.' : ''} Shaded times are outside the practitioner’s hours.</p>`
 }
 
 function moveFields(s: any, c: any, a: any, prefix = '') {

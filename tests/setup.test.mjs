@@ -10,9 +10,17 @@ const localClock = t => new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour:
 const unescape = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
 const hiddenValue = (html, name) => unescape(html.match(new RegExp(`name="${name}" value="([^"]*)"`))[1])
 
-test('weekly hours set with the form decide the times /book offers, breaks and days off included', () => run(async h => {
+test('a new clinic chooses its own time zone first; weekly hours set with the form decide the times /book offers, breaks and days off included', () => run(async h => {
   await h.finishSetup()
-  await h.cmd('settings.save', { clinicName: 'Lakeside Therapy', timeZone: zone })
+  // No zone is assumed: the owner's first page asks for it (US zones first), and booking waits for it.
+  const first = await h.send('/app/clinic', undefined, h.owner)
+  assert.match(first.text, /<h1>Your clinic’s time zone<\/h1>/); assert.doesNotMatch(first.text, /Australia\/Brisbane" selected|Times are in/)
+  assert.match(first.text, /<option value="">Choose your clinic’s time zone<\/option><optgroup label="United States"><option value="America\/New_York">/)
+  assert.match((await h.send('/book')).text, /Online booking is not open yet/)
+  assert.equal((await h.cmd('appointment.book', { clientId: 'none', practitionerId: 'none', serviceId: 'none', date: '2030-01-07', time: '09:00' }, h.owner, 409)).code, 'clinic_time_zone_not_set')
+  const chosen = await h.form('/app/action?name=settings.save&returnTo=%2Fapp', { clinicName: 'Lakeside Therapy', timeZone: zone, abn: '', address: '', bookingOpen: 'true' }, h.owner)
+  assert.equal(chosen.status, 303); assert.equal(chosen.location, '/app')
+  assert.match((await h.send('/app', undefined, h.owner)).text, /Times are in Central time \(America\/Chicago\)\./)
   const service = await h.cmd('service.save', { name: 'Evaluation', durationMinutes: 45, priceCents: 15000 })
   const sarah = await h.staff('Sarah', 'practitioner', { profession: 'Physical Therapist' })
   const hours = { practitionerId: sarah.id, hoursForm: 'on', d1_open: 'on', d1_start: '09:00', d1_end: '17:00', d1_break0_start: '12:00', d1_break0_end: '13:00', d3_open: 'on', d3_start: '08:00', d3_end: '12:00' }
@@ -41,6 +49,7 @@ test('weekly hours set with the form decide the times /book offers, breaks and d
 
 test('a Cliniko patient export is uploaded as a file, read with US dates, flagged where ambiguous, and imported from a readable preview', () => run(async h => {
   await h.finishSetup()
+  await h.cmd('settings.save', { clinicName: 'Lakeside Therapy', timeZone: zone })
   const upload = async (name, text, dateFormat) => {
     // The multipart body a browser sends for the page's file field.
     const boundary = 'balm-test-boundary', part = (field, value, file) => `--${boundary}\r\nContent-Disposition: form-data; name="${field}"${file ? `; filename="${file}"\r\nContent-Type: text/csv` : ''}\r\n\r\n${value}\r\n`

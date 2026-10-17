@@ -3,7 +3,7 @@
 | Role | Sees and does |
 | --- | --- |
 | Owner | Everything: clinic settings, staff, every client file with intake answers and notes, invoices, the access audit, move-in and agent keys. |
-| Practitioner | Only clients booked with them: their files, intake answers and their own notes. They book their own diary and mark their own visits. |
+| Practitioner | Only clients booked with them: their files, intake answers and their own notes. They book their own calendar and mark their own visits. |
 | Reception | Every client file, bookings, invoices, payments and reminders, never intake answers or treatment notes. |
 | Agent key | Prepares invoices, reminder text and intake versions for a person to approve. Never reads notes or intake answers. **Agent access** shows how to connect ChatGPT or an assistant on your computer step by step. |
 
@@ -15,7 +15,7 @@ Linking needs a deployed Balm and a deployed Auth, both at `https://` addresses:
 
 1. In Balm, open **Sign-in settings** (top right, owner only), enter Auth's address and select **Connect to Auth**. If Balm asks, select **Email me a confirmation link** and open that email in the same browser, then select **Connect to Auth** again.
 2. Within ten minutes, sign in to Auth as an administrator, open **Apps**, enter Balm's address under **Add an app**, then select **Check app** and **Approve app**.
-3. Refresh **Sign-in settings** in Balm. It shows "Linked to Auth". Tick **Allow provider sign-in** and select **Save settings**; the page confirms it.
+3. Refresh **Sign-in settings** in Balm. It shows "Linked to Auth". Check **Allow provider sign-in** and select **Save settings**; the page confirms it.
 
 Each staff member still needs a Balm invitation, and an Auth account with the same email address. Email links keep working for everyone.
 
@@ -29,4 +29,4 @@ Health records are kept. The owner can erase a client only when the file has no 
 
 ## The access audit
 
-At the foot of every client file, the owner sees who opened the file, read the intake answers or notes, changed something, downloaded an invoice or reminder, or read the client's name through an agent key, and when. Your own view of the page is recorded too. Nobody, the owner included, can change or delete an audit row, and rows carry no client details.
+At the foot of every client file, the owner sees who opened the file, read the intake answers or notes, changed something, downloaded an invoice or reminder, or read the client's name through an agent key, and when. Your own view of the page is recorded too. Nobody, the owner included, can change or delete an audit row, and rows carry no client details. The newest 50 entries come first, with the total count; **Older entries** pages back 50 at a time and **Newest entries** returns to the top. Times are in the clinic's time zone, labeled with it.

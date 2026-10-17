@@ -6,7 +6,7 @@ import { fontDocumentResponse } from './base/font-response'
 import { createOperatorAuth, createAuthHandler, createSignInHandler, type AuthConfig } from './modules/operator-auth/index.mjs'
 import { operatorMail } from './mail.server.mjs'
 import branding from './branding.json'
-import { identitySettingsView, linkState } from './balm/identity-settings'
+import { clinicZone, identitySettingsView, linkState } from './balm/identity-settings'
 
 // The edition's declared theme (public/rer-theme.css), as Base frames link it.
 const theme = { href: '/rer-theme.css', productName: branding.name, accentColor: branding.primaryColor }
@@ -60,7 +60,7 @@ async function identitySettingsResponse(request: Request, env: Bindings): Promis
   if (!/text\/html/.test(request.headers.get('accept') ?? '')) return null
   let value: { idpSignIn: boolean }
   try { value = await auth.identitySettings(request) } catch { return null } // Base answers signed-out and non-owner visitors.
-  return identitySettingsView({ ...value, ...await linkState(env.DB), origin: env.AUTH_ORIGIN, local: env.AUTH_LOCAL === 'true', notice: url.searchParams.get('notice') ?? '', issuer: url.searchParams.get('issuer') ?? '' }, auth.presentation)
+  return identitySettingsView({ ...value, ...await linkState(env.DB), origin: env.AUTH_ORIGIN, local: env.AUTH_LOCAL === 'true', notice: url.searchParams.get('notice') ?? '', issuer: url.searchParams.get('issuer') ?? '', timeZone: await clinicZone(env.DB) }, auth.presentation)
  }
  if (request.method !== 'POST' || !form) return null
  const input = new URLSearchParams(await request.clone().text())

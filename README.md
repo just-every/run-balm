@@ -17,7 +17,7 @@ No Node? `curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every
 To start it again later, run `cd run-balm && rer dev`. `rer dev` installs the pinned dependencies and Node 22.20.0, prepares the local D1 database and a local owner, and starts the app. The first launch can take several minutes; if it is interrupted, run `rer dev` again. When it is ready it prints:
 
 - `RER_READY http://127.0.0.1:<port>`: the app's address (the port is the first free one from 8787, and is kept for this checkout).
-- `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, tick the confirmation and select **Finish setup**. Treat the link like a password.
+- `RER_OPEN …`: a private link that opens Balm signed in as the owner. Open it on this computer, check the confirmation and select **Finish setup**. Balm then asks for your clinic's time zone, filled in from your browser (US zones first); check it and select **Save and open the schedule**. Treat the link like a password.
 - `RER_SITE http://127.0.0.1:<port>`: Balm's run site, served locally. Its **Run Balm** page is at `http://127.0.0.1:<port>/run`, using the `RER_SITE` port rer printed.
 
 The public run site is at https://run-balm.com, and its **Run Balm** page is at https://run-balm.com/run. The local copy above serves the same pages.
@@ -26,7 +26,7 @@ To use your own email as the owner, run `npx -y @runeditrun/rer setup just-every
 
 ## Your first week
 
-1. **Clinic**: enter your clinic's name, time zone (Balm fills in your browser's time zone; choose another from the list if needed), tax ID and address. Add a service with its length and price in dollars (for example `95.00`). Add each practitioner with their profession and provider number, which appear on invoices, and any reception staff. If you treat clients yourself, add yourself as a practitioner using your own sign-in email. Under each practitioner, **Set weekly hours**: tick the days they work, and enter a start time, an end time and any break for each.
+1. **Clinic**: enter your clinic's name, time zone (chosen at setup; change it here if needed), tax ID and address. Add a service with its length and price in dollars (for example `95.00`). Add each practitioner with their profession and provider number, which appear on invoices, and any reception staff. If you treat clients yourself, add yourself as a practitioner using your own sign-in email. Under each practitioner, **Set weekly hours**: check the days they work, and enter a start time, an end time and any break for each.
 2. **Invite staff**: select **Invite to sign in** next to each person. A deployed Balm emails the invitation, and it opens in any browser. On your computer, work as a staff member by running `rer dev --as person@example.com` (with their email) in the Balm folder and opening the `RER_OPEN` link it prints, in another browser or profile.
 3. **Online booking**: share `/book` on your app's address (`http://127.0.0.1:<port>/book` locally). A new client picks a service, a practitioner and an open time (at least two hours ahead, up to 60 days), enters their details and agrees to the clinic keeping their records. They land on their private intake link, which is also emailed to them. A slot someone else just took is refused.
 4. **Intake**: the client completes the form once. Their answers appear in the client file for their practitioner and the owner. Reception sees only that the form was received. Edit the questions under **Intake form**: you prepare a new version, then publish it.

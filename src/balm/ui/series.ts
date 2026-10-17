@@ -1,12 +1,13 @@
 // Recurring visits: the pattern form, the per-date review a person sees before
 // anything is saved, and the result once the series is booked.
+import { zoneLabel } from './time-zone'
 import { field, form, h, hidden, intakeLine, practitioners, result, rows, select, services } from './shared'
 import { plain } from '../refusals'
 
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const action = (name: string, back: string) => `/app/action?name=${encodeURIComponent(name)}&amp;returnTo=${encodeURIComponent(back)}`
 const dateLabel = (date: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(date + 'T00:00:00Z'))
-const clockIn = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
+const clockIn = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 
 /** Why a date cannot be booked, in plain words. */
 export function problemText(o: any, zone: string) {
@@ -50,7 +51,7 @@ export function seriesResult(s: any, notice: any, back: string) {
     + `<td><label class="check"><input type="checkbox" name="skip_${i}" value="on"${o.skip ? ' checked' : ''}><span>Skip</span></label></td></tr>`).join('')
   const verdict = r.conflicts ? `<strong>${r.conflicts} of ${r.occurrences.length} dates can’t be booked as they are.</strong> Change the time of each, or skip it, then check again.`
     : `<strong>All ${r.occurrences.length - r.occurrences.filter((o: any) => o.skip).length} dates are free.</strong>${r.occurrences.some((o: any) => o.skip) ? ' Skipped dates are recorded with the series.' : ''}`
-  return `<section class="notice series-review" aria-labelledby="series-review"><h3 id="series-review">Recurring visits for ${h(r.client)}: ${h(r.service)} with ${h(r.practitioner)}</h3><p>${verdict} <span class="help">${free} free · times in ${h(zone)}</span></p>`
+  return `<section class="notice series-review" aria-labelledby="series-review"><h3 id="series-review">Recurring visits for ${h(r.client)}: ${h(r.service)} with ${h(r.practitioner)}</h3><p>${verdict} <span class="help">${free} free · times in ${h(zoneLabel(zone))}</span></p>`
     + `<form method="post" action="${action('series.preview', back)}">${base}<div class="table"><table><thead><tr><th>Date</th><th>Time</th><th>Check</th><th>Skip</th></tr></thead><tbody>${table}</tbody></table></div>`
     + `<div class="actions"><button type="submit" class="secondary">Check again</button><button type="submit" formaction="${action('series.book', back)}"${r.conflicts ? ' disabled' : ''}>Book ${r.occurrences.length - r.occurrences.filter((o: any) => o.skip).length} visits</button></div></form></section>`
 }

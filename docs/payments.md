@@ -20,7 +20,7 @@ In the patient's file, under **Card on file and copay**:
 - **Email a card form** sends the patient a private link, or
 - **Open the card form here** opens it on the front desk's screen for the patient to fill in.
 
-The patient reads the clinic's authorization, which lets the clinic charge copays at check-in and balances on visits they attended, ticks it, and enters their card on Stripe's page. Balm keeps the card's brand, last four digits and expiry, plus the exact authorization and the time the patient accepted it. A patient has one card on file, and a new card replaces the old one. **Remove card** takes it off Balm and out of your Stripe account.
+The patient reads the clinic's authorization, which lets the clinic charge copays at check-in and balances on visits they attended, checks it, and enters their card on Stripe's page. Balm keeps the card's brand, last four digits and expiry, plus the exact authorization and the time the patient accepted it. A patient has one card on file, and a new card replaces the old one. **Remove card** takes it off Balm and out of your Stripe account.
 
 Set the patient's **Copay per visit** in the same panel.
 

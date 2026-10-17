@@ -6,7 +6,12 @@ import { audit, commit, day, email, guard, human, id, insist, integer, need, now
 export const onlineRules: AvailabilityConstraints = { durationMinutes: 0, slotIncrementMinutes: 15, minimumNoticeMinutes: 120, bookingHorizonDays: 60, beforeBufferMinutes: 0, afterBufferMinutes: 0, hostDayBookingLimit: null }
 export const live = "status IN ('booked','attended')"
 
-export async function settings(db: D1Database) { return (await one(db, 'SELECT * FROM bm_settings WHERE id=1'))! }
+/** The clinic's settings; every booking path needs the time zone the owner chose first. */
+export async function settings(db: D1Database) {
+  const row = (await one(db, 'SELECT * FROM bm_settings WHERE id=1'))!
+  insist(row.time_zone, 'clinic_time_zone_not_set', 409)
+  return row
+}
 export async function bookable(db: D1Database, practitionerKey: unknown, serviceKey: unknown) {
   const practitioner = await one(db, "SELECT id,name,profession,version FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL", text(practitionerKey, 'practitioner', 100))
   insist(practitioner, 'practitioner_not_found', 404)

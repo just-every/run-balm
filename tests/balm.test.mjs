@@ -152,7 +152,7 @@ test('roles, sessions and agent keys: every server door checks the live actor', 
   assert.equal((await h.send('/app/import', undefined, reception.cookie)).status, 403)
   assert.equal((await h.cmd('import.preview', { csv: 'x' }, reception.cookie, 403)).error !== undefined, true)
   const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng' }, reception.cookie)
-  // A practitioner books only their own diary and sees only their own clients.
+  // A practitioner books only their own calendar and sees only their own clients.
   await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-01-05', time: '10:00' }, priya.cookie)
   await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-01-05', time: '10:30' }, reception.cookie, 409)
   assert.deepEqual((await h.state(priya.cookie)).clients.map(c => c.id), [client.id])

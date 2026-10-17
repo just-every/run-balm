@@ -22,7 +22,7 @@ export async function customerFor(db: D1Database, key: string, accountId: string
   return (await one(db, 'SELECT customer_id FROM bm_stripe_customers WHERE client_id=? AND account_id=?', clientId, accountId))!.customer_id as string
 }
 
-/** From the patient's link, after they ticked the consent: the Stripe Checkout address to save a card. */
+/** From the patient's link, after they checked the consent: the Stripe Checkout address to save a card. */
 export async function startCardSetup(env: Bindings, db: D1Database, link: Data, linkUrl: string, input: Data) {
   insist(input.consent === 'on' || input.consent === true, 'tick_the_authorization_to_save_a_card')
   const { settings, key } = await stripeReady(env, db)

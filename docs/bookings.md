@@ -31,7 +31,7 @@ A move is checked exactly like a booking: it must sit inside the practitioner's 
 
 ## Book from the schedule or a client file
 
-Select an empty time in the calendar, or use **Book a visit** under it, or open **Clients**, then the file, then **Book an appointment**. Choose the client, the practitioner, the service, a room if you use them, the date and the start time in the clinic's time zone. Reception and the owner book for anyone; a practitioner books their own diary. The time must sit inside the practitioner's hours and must not overlap another booking of that practitioner or that room.
+Select an empty time in the calendar, or use **Book a visit** under it, or open **Clients**, then the file, then **Book an appointment**. Choose the client, the practitioner, the service, a room if you use them, the date and the start time in the clinic's time zone. Reception and the owner book for anyone; a practitioner books their own calendar. The time must sit inside the practitioner's hours and must not overlap another booking of that practitioner or that room.
 
 After booking, Balm shows the client's private intake link once, and emails it when the client has an email address and mail is set up.
 
@@ -42,9 +42,9 @@ To add someone first, use **Add a client** on the **Clients** page.
 For a plan of care such as twice a week for six weeks, open **Book recurring visits** (in a client's file, or under the calendar):
 
 1. Choose the practitioner, the service and, if you like, a room.
-2. Tick each weekday under **Every**, set the **Start time**, **For how many weeks** and the **Starting** date, and select **Check the dates**.
+2. Check each weekday under **Every**, set the **Start time**, **For how many weeks** and the **Starting** date, and select **Check the dates**.
 3. Balm lists every date with **Free** or the reason it can't be booked: it overlaps another visit (shown with that visit's time), the room is booked, or it is outside the practitioner's hours. Nothing is saved yet.
-4. For each date that can't be booked, change its time or tick **Skip**, then select **Check again**. **Book** stays unavailable until every date is free or skipped; Balm never drops a date on its own.
+4. For each date that can't be booked, change its time or check **Skip**, then select **Check again**. **Book** stays unavailable until every date is free or skipped; Balm never drops a date on its own.
 5. Select **Book N visits**. All of them are booked at once, or none if someone took one of the times a moment earlier. The intake link goes with the first visit, and skipped dates are recorded with the series.
 
 Select a visit of a series to change one visit or the rest:

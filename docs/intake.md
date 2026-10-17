@@ -20,7 +20,7 @@ The first version, **New client intake**, asks:
 On **Intake form** (owner only), the **Prepare a new version** panel starts from the current questions:
 
 1. Edit the **Form title** if you like.
-2. For each question, change its wording under **Question**, pick its **Answer type** (**Short answer**, **Long answer**, **Tick box (yes or no)** or **Date**) and tick **Patients must answer** for a required question.
+2. For each question, change its wording under **Question**, pick its **Answer type** (**Short answer**, **Long answer**, **Checkbox (yes or no)** or **Date**) and check **Patients must answer** for a required question.
 3. Use **Move up** and **Move down** to reorder questions, **Remove** to drop one, and **Add a question** for a new empty one at the end.
 4. Select **Prepare draft**. Your edits are kept on the page until you do; nothing changes for clients yet.
 5. Under **Prepared versions**, check the draft and select **Publish as the new version**.

@@ -7,6 +7,7 @@ import { planResult, plansPanel } from './plans'
 import { messagePanel } from './messages'
 import { reminderPanel } from './reminders'
 import { billingPanels } from './payments'
+import { zoneLabel } from './time-zone'
 import { cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
@@ -67,7 +68,10 @@ export function invoiceEntry(s: any, i: any, path: string) {
 
 function auditPanel(s: any, f: any) {
   if (!f.audit) return ''
-  return panel('Access audit', `<p>Every opening of this file, every read of intake answers and notes, every change and every download, newest first. Your own view of this page is recorded too.</p><div class="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.audit.map((a: any) => `<tr><td>${stamp(s, a.at)}</td><td>${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td>${h(a.action)}</td><td>${h(String(a.detail ?? '').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))}</td></tr>`).join('')}</tbody></table></div>`, 'full')
+  const pg = f.auditPage, path = `/app/clients/${f.client.id}`, shown = f.audit.length
+  const range = pg.before ? `Older entries, ${shown} shown` : `The ${shown === pg.total ? '' : `newest ${shown} of `}${pg.total} ${pg.total === 1 ? 'entry' : 'entries'}`
+  const pager = `<nav class="pager" aria-label="Access audit pages"><span class="help">${range}. Times are in ${h(zoneLabel(zoneOf(s)))}.</span>${pg.before ? `<a href="${h(path)}#audit">Newest entries</a>` : ''}${pg.older ? `<a href="${h(path)}?auditBefore=${h(pg.older)}#audit">Older entries</a>` : ''}</nav>`
+  return panel('Access audit', `<p id="audit">Every opening of this file, every read of intake answers and notes, every change and every download, newest first, ${pg.size} to a page. Your own view of this page is recorded too.</p>${pager}<div class="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.audit.map((a: any) => `<tr><td>${stamp(s, a.at)}</td><td>${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td>${h(a.action)}</td><td>${h(String(a.detail ?? '').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))}</td></tr>`).join('')}</tbody></table></div>${pg.older || pg.before ? pager : ''}`, 'full')
 }
 
 export function clientFilePage(s: any, f: any, notice: any) {

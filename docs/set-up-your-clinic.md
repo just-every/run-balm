@@ -1,10 +1,14 @@
 Until these steps are done, the owner's **Schedule** page shows them under **Finish setting up**. Everything here is on the **Clinic** page, which only the owner sees.
 
+## Your clinic's time zone
+
+Balm assumes no time zone. Right after **Finish setup**, its first page asks for your clinic's: it fills in your browser's zone, names it (for example "This browser is set to Central (Chicago)"), and lists US zones first. Check it, enter the clinic name, and select **Save and open the schedule**. Until it is saved, the schedule stays closed and `/book` tells patients online booking is not open yet. Every time Balm shows afterwards (the schedule, booking, reminders, the access audit, approval deadlines) is in this zone and labeled with it.
+
 ## Clinic details
 
 1. Enter the **Clinic name**.
-2. Check the **Time zone**. Until you save it, Balm fills in your browser's time zone; US zones are listed first by name (Eastern, Central, Mountain, Arizona, Pacific, Alaska, Hawaii), then every other zone. Every date and time Balm shows, on pages, emails, invoices and plans of care, is in this zone.
-   You can change it later. Booked visits keep their exact moment and show at the matching clock time in the new zone, so the page asks you to tick a box confirming that when visits are booked. Weekly hours stay the same clock times.
+2. Check the **Time zone** you chose at setup. US zones are listed first by name (Eastern, Central, Mountain, Arizona, Pacific, Alaska, Hawaii), then every other zone. Every date and time Balm shows, on pages, emails, invoices and plans of care, is in this zone.
+   You can change it later. Booked visits keep their exact moment and show at the matching clock time in the new zone, so the page asks you to check a box confirming that when visits are booked. Weekly hours stay the same clock times.
 3. Add a **Tax ID** and the **Address**: both appear on invoices, and the address on reminders.
 4. Leave **Online booking** on **Open** to take bookings at `/book`, or set it to **Closed**.
 5. Select **Save clinic details**.
@@ -32,12 +36,12 @@ Balm on your computer sends no email, and its links open only in a browser that 
 
 Under each practitioner, open **Set weekly hours**. For each day of the week:
 
-1. Tick **Works on Monday** (and so on) for the days they work, and untick the others.
+1. Check **Works on Monday** (and so on) for the days they work, and uncheck the others.
 2. Enter **Starts** and **Ends**, for example 8:00 AM and 4:00 PM.
 3. For a lunch or other break, enter **Break from** and **Break until**. Nobody can book inside a break. After you save, another empty break row appears for a second break.
 4. Select **Save hours**.
 
-A new practitioner starts with Monday to Friday, 9:00 AM to 5:00 PM ticked, so check it before saving. The saved hours are listed under their name, for example "Monday 9:00 AM–12:00 PM, 1:00 PM–5:00 PM". Times are clock times in the clinic's time zone. A practitioner with no hours cannot be booked.
+A new practitioner starts with Monday to Friday, 9:00 AM to 5:00 PM selected, so review it before saving. The saved hours are listed under their name, for example "Monday 9:00 AM–12:00 PM, 1:00 PM–5:00 PM". Times are clock times in the clinic's time zone. A practitioner with no hours cannot be booked.
 
 ## Scribe
 

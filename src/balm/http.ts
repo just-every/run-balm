@@ -39,17 +39,19 @@ async function state(env: Bindings, who: Actor) {
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
-async function fileFor(env: Bindings, who: Actor, clientId: string) {
-  const file = await clientFile(env.DB, who, clientId)
+async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
+  const file = await clientFile(env.DB, who, clientId, auditBefore)
   return { ...file, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
 async function page(env: Bindings, who: Actor, target: string, notice: Parameters<typeof renderApp>[2] = {}, status = 200) {
   const [path, query = ''] = target.split('?'), s: any = await state(env, who)
+  // Until the owner chooses the clinic's time zone, every page is the time zone step.
+  if (!s.settings.time_zone) return renderApp(s, target, notice, undefined, status)
   if (path === '/app') s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
-  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1]).catch(error => { if (status === 200) throw error }) : undefined, status)
+  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore).catch(error => { if (status === 200) throw error }) : undefined, status)
 }
 /** A same-app page to return to, keeping only a plain calendar query. */
 function returnTarget(requested: string) {
@@ -150,7 +152,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
         const chosen = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
         const retime = code === 'slot_unavailable' || code === 'invalid_start' || !chosen.start
-        const from = Number.isNaN(Date.parse(chosen.start)) ? undefined : hostDateAt(new Date(chosen.start), clinic!.time_zone)
+        const from = !clinic?.time_zone || Number.isNaN(Date.parse(chosen.start)) ? undefined : hostDateAt(new Date(chosen.start), clinic!.time_zone)
         const slots = chosen.serviceId && chosen.practitionerId ? await openSlots(env.DB, { ...chosen, from }).catch(() => null) : null
         return renderPublic('book', { ...options, params: chosen, slots, typed, retime, error: failure.text }, failure.status)
       }
@@ -261,7 +263,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
-      if (file) return json(await fileFor(env, who, file[1]))
+      if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined))
       const invoice = path.match(/^\/api\/balm\/invoices\/([\w-]+)\.html$/)
       if (invoice) {
         const download = await invoiceDownload(env.DB, who, invoice[1])

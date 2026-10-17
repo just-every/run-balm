@@ -2,10 +2,12 @@
 import { localTime } from '../domain/invoices'
 import { h, money, usDate } from './shared'
 import { frequency } from './plans'
+import { zoneLabel } from './time-zone'
 
 const option = (value: unknown, label: unknown, current: unknown) => `<option value="${h(value)}" ${value === current ? 'selected' : ''}>${h(label)}</option>`
 
 export function bookPage(d: any) {
+  if (!d.clinic?.time_zone) return '<h1>Online booking is not open yet</h1><p>The clinic is still setting up online booking. Please contact the clinic to make an appointment.</p>'
   if (!d.clinic?.booking_open) return '<h1>Online booking is closed</h1><p>Please contact the clinic to make an appointment.</p>'
   if (!d.services.length || !d.practitioners.length) return '<h1>Online booking is not set up yet</h1><p>The clinic has not published services and practitioners for online booking. Please contact the clinic.</p>'
   const p = d.params ?? {}, zone = d.clinic.time_zone
@@ -18,7 +20,7 @@ export function bookPage(d: any) {
     const byDay = new Map<string, any[]>()
     for (const slot of d.slots.slots) byDay.set(slot.hostDate, [...(byDay.get(slot.hostDate) ?? []), slot])
     const link = (start: string) => `/book?${new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.from, start })}`
-    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic's time zone (${h(zone)}).</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
+    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic’s time zone: ${h(zoneLabel(zone))}.</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
       <p><a href="/book?${h(new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.next }))}">Show the next week</a></p></section>`
   }
   // After a refusal the patient's typed details come back filled in; a taken time is swapped for a list of open times.

@@ -2,6 +2,7 @@
 // end time, and any breaks. src/balm/forms.ts turns the posted fields into the
 // `hours` windows `hours.save` stores; agents can still send those windows directly.
 import { form, h, hidden, rows } from './shared'
+import { zoneLabel } from './time-zone'
 
 export const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** Monday first, the way a clinic's week reads. */
@@ -29,6 +30,6 @@ export function hoursFor(s: any, p: any) {
   const summary = mine.length ? `<ul class="plain">${order.filter(d => byDay(d).length).map(d => `<li>${days[d]} ${byDay(d).map(w => `${clockText(w.start_minute)}–${clockText(w.end_minute)}`).join(', ')}</li>`).join('')}</ul>`
     : '<p class="empty">No hours yet: nobody can book this practitioner.</p>'
   const fields = hidden('practitionerId', p.id) + hidden('hoursForm', 'on') + order.map(d => day(d, byDay(d), !mine.length)).join('')
-    + `<p class="help">Times are clock times in the clinic’s time zone (${h(s.settings.time_zone)}). Untick a day the practitioner does not work. A break splits the day: nobody can book inside it.</p>`
+    + `<p class="help">Times are clock times in the clinic’s time zone, ${h(zoneLabel(s.settings.time_zone))}. Uncheck a day the practitioner does not work. A break splits the day: nobody can book inside it.</p>`
   return summary + `<details${mine.length ? '' : ' open'}><summary>Set weekly hours</summary>${form('hours.save', '/app/clinic', fields, 'Save hours')}</details>`
 }

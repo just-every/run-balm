@@ -13,10 +13,10 @@ import { payPage } from './pay'
 import { bookPage, intakePage, localLinkPage, missingPage, offerPage, planPage } from './public'
 import { dragScript } from './drag'
 import { schedule } from './schedule'
-import { desk, h, owner } from './shared'
+import { desk, h, owner, zoneOf } from './shared'
 import { style } from './style'
 import { waitlist } from './waitlist'
-import { browserZoneScript } from './time-zone'
+import { browserZoneScript, timeZoneStep } from './time-zone'
 
 type Notice = { message?: string; error?: string; result?: any; invited?: string | null; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
 
@@ -36,8 +36,10 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
     ...(owner(state) ? [['/app/clinic', 'Clinic'], ['/app/intake', 'Intake form'], ['/app/import', 'Move in'], ['/app/agent', 'Agent access']] as [string, string][] : [])]
   const section = current.startsWith('/app/clients/') ? '/app/clients' : current
   const allowed = tabs.some(([url]) => url === section)
-  const title = current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tabs.find(([url]) => url === current)?.[1] ?? 'Page unavailable'
-  const content = !allowed ? '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><p><a href="/app">Open the schedule</a></p>'
+  // A new install opens on the time zone step until the owner saves one.
+  const zoneUnset = !zoneOf(state)
+  const title = zoneUnset ? 'Clinic time zone' : current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tabs.find(([url]) => url === current)?.[1] ?? 'Page unavailable'
+  const content = zoneUnset ? timeZoneStep(state, allowed ? path : '/app') : !allowed ? '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><p><a href="/app">Open the schedule</a></p>'
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
         : current === '/app/invoices' ? invoices(state)
@@ -48,8 +50,8 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
                     : current === '/app/waitlist' ? waitlist(state)
                       : schedule(state, notice)
   const clinicName = state.settings?.clinic_name ?? branding.name
-  const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header><nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav><div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
-  return documentFor(`${title} · ${branding.name}`, body, allowed ? status : 403, !allowed ? '' : current === '/app' ? dragScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
+  const body = `<main id="main"><a class="skip" href="#content">Skip to content</a><header class="app-header"><a href="/app" aria-label="${h(branding.name)} home">{{brand}}</a><div class="identity"><span>${h(clinicName)} · ${h(state.actor.email)} · ${h(state.actor.role)}</span>${owner(state) ? '<a href="/auth/settings/identity">Sign-in settings</a>' : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="secondary">Sign out</button></form></div></header>${zoneUnset ? '' : `<nav aria-label="Clinic">${tabs.map(([url, text]) => `<a href="${h(url)}" ${section === url ? 'aria-current="page"' : ''}>${h(text)}</a>`).join('')}</nav>`}<div id="content">${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${content}</div></main>`
+  return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
 }
 
 export async function renderPublic(kind: 'book' | 'intake' | 'offer' | 'pay' | 'plan' | 'visit' | 'messages' | 'missing' | 'local-link', data: any, status = 200): Promise<Response> {

@@ -1,5 +1,5 @@
 // The schedule as a calendar: a day or a week, by practitioner or by room, in
-// the clinic's time zone. A practitioner sees only their own diary.
+// the clinic's time zone. A practitioner sees only their own calendar.
 import { datePlus, firstInstantOfHostDate, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { visibleAppointment } from './booking'
 import { one, practitionerId, rows, type Actor } from './model'
