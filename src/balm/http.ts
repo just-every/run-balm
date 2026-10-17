@@ -19,7 +19,7 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 
 async function state(env: Bindings, who: Actor) {
   const importJobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
-  const localMail = env.AUTH_LOCAL === 'true' && who.role === 'owner'
+  const localMail = env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' && who.role === 'owner'
   const developmentMail = localMail ? (await env.DB.prepare('SELECT id,created_at AS createdAt,message FROM rer_mail_development_outbox ORDER BY sequence DESC LIMIT 100').all()).results.map((row: any) => ({ id: row.id, createdAt: row.createdAt, ...JSON.parse(row.message) })) : []
   return { ...await snapshot(env.DB, who), agentKeys: await agentKeys(env, who), importJobs, localMail, developmentMail }
 }

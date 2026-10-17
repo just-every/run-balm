@@ -6,7 +6,8 @@ import { approvalStatements } from './approvals'
 import { localTime } from './invoices'
 import { audit, commit, human, id, insist, need, now, one, stmt, text, type Actor, type Data } from './model'
 
-async function facts(db: D1Database, appointmentId: string) {
+/** The booking facts a reminder's text is built from; approval checks they still hold. */
+export async function facts(db: D1Database, appointmentId: string) {
   const row = await one(db, `SELECT a.id,a.version,a.status,a.start_at,a.client_id,c.first_name,c.email,p.name AS practitioner,s.name AS service,st.clinic_name,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
@@ -19,15 +20,20 @@ export async function prepareReminder(db: D1Database, who: Actor, input: Data) {
   const { row, basis } = await facts(db, appointment.id as string)
   insist(row.status === 'booked' && Date.parse(row.start_at as string) > Date.now(), 'reminder_needs_an_upcoming_booking', 409)
   insist(row.email, 'client_has_no_email', 409)
-  const when = localTime(row.start_at as string, row.time_zone as string)
-  const payload = { to: row.email, subject: `Reminder: ${row.service} at ${row.clinic_name}`,
-    body: `Hello ${row.first_name},\n\nThis is a reminder of your ${row.service} appointment with ${row.practitioner} on ${when}${row.address ? ` at ${row.address}` : ''}.\n\nIf you need to change it, please contact ${row.clinic_name}.\n` }
+  const payload = reminderPayload(row)
   const draftId = id()
   await commit(db, who, [
     stmt(db, "INSERT INTO bm_drafts(id,type,status,payload,basis,client_id,prepared_by,prepared_role,prepared_at) VALUES(?,'reminder','draft',?,?,?,?,?,?)", draftId, JSON.stringify(payload), basis, row.client_id, who.email, who.role, now()),
     audit(db, who, 'reminder.prepared', row.client_id as string, draftId),
   ])
   return { id: draftId, status: 'draft', ...payload }
+}
+
+/** The exact reminder a person approves, from facts(). */
+export function reminderPayload(row: Data) {
+  const when = localTime(row.start_at as string, row.time_zone as string)
+  return { to: row.email, subject: `Reminder: ${row.service} at ${row.clinic_name}`,
+    body: `Hello ${row.first_name},\n\nThis is a reminder of your ${row.service} appointment with ${row.practitioner} on ${when}${row.address ? ` at ${row.address}` : ''}.\n\nIf you need to change it, please contact ${row.clinic_name}.\n` }
 }
 
 export const reminderText = (payload: Data) => `To: ${payload.to}\nSubject: ${payload.subject}\n\n${payload.body}`
