@@ -1,3 +1,4 @@
+import { alertsForClients } from './alerts'
 import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
 import { eraseStaff, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
@@ -55,6 +56,8 @@ export async function snapshot(db: D1Database, who: Actor) {
     (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id
     WHERE a.end_at>? AND (? OR a.practitioner_id=?) ORDER BY a.start_at LIMIT 300`, new Date(Date.now() - 14 * 86400_000).toISOString(), desk ? 1 : 0, own ?? '')
+  const patientAlerts = await alertsForClients(db, who, appointments.map(a => String(a.client_id)))
+  for (const appointment of appointments) appointment.alerts = patientAlerts[appointment.client_id] ?? []
   const invoices = desk ? (await invoicesFor(db)).slice(0, 200) : []
   const drafts = desk ? (await rows(db, `SELECT * FROM bm_drafts WHERE ${owner || who.role === 'agent' ? '1' : "type='reminder'"} ORDER BY prepared_at DESC LIMIT 200`)).map(d => ({ ...d, payload: JSON.parse(d.payload as string) })) : []
   const forms = owner || who.role === 'agent' ? (await rows(db, 'SELECT * FROM bm_intake_forms ORDER BY number DESC')).map(f => ({ ...f, questions: JSON.parse(f.questions as string) })) : []

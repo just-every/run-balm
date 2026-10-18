@@ -408,13 +408,15 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 
 ## Status
 
+The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHART-010` with clause-named public-door tests, archive round trips and product use at 1440 and 390 pixels.
+
 Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026); the `SETUP-001`, `US-001`, `SCHED-004`, `INTAKE-002`, `MOVE-001` and `MOVE-005` rows were updated by the setup-pages round (17 October 2026). The communications round (17 October 2026) adds automatic email reminders, visit replies and secure messages; `PORTAL-003` moves from missing to partial, with attachments still outstanding. The insurance round adds a synthetic-edge X12 workflow, authorization counts, remittance balance posting and KX documentation; its nine affected target clauses are partial pending the remaining scope named below. The move-in round (17 October 2026) adds reviewed CSV bundles and reconciled atomic cutover; MOVE-002 through MOVE-006 remain partial because native full-export formats and carried claims/authorizations are incomplete. The intake and portal round (17 October 2026) adds signed treatment acknowledgment PDFs, insurance cards and verification, patient email sessions and practice-made home exercises; INTAKE-004, PORTAL-001 and PORTAL-002 move from missing to partial. The consent-to-chart and exercise-to-portal flows pass public-door tests and local/temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email; separate policy consents, guardian access and the shipped exercise library were incomplete at that point. The case-agent round (17 October 2026) adds one case per referral with cited stages and next steps a desk person approves; `AGENT-001` and `AGENT-004` move from missing to partial, proven by `tests/cases.test.mjs` and local and temporary self-hosted browser journeys at 1440 and 390 with real QA-inbox email. The consent completion round (18 October 2026) completes `INTAKE-003`: separate clinic-published documents, immutable parent/guardian signatures and re-signing only changed versions, exercised by `tests/intake-portal.test.mjs` and a temporary hosted product journey with real mail. The insurance-intake completion round (18 October 2026) completes `INTAKE-004`: two native policies, original card and ID photos, required claim fields and prepared eligibility requests, with a hosted patient journey and archive coverage.
 
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 14 | 1 | 0 | 15 |
-| Target and push further | 7 | 51 | 36 | 94 |
-| All | 21 | 52 | 36 | 109 |
+| Target and push further | 8 | 51 | 35 | 94 |
+| All | 22 | 52 | 35 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -458,7 +460,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `CHART-007` | Documentation compliance alerts | target | done | `src/balm/charting/compliance.ts`; `src/balm/domain/signing.ts`; `src/balm/ui/documentation.ts`; `tests/charting.test.mjs`; `docs/documentation.md` |  |
 | `CHART-008` | Supervision and co-signature | target | missing |  | No supervision or co-signature |
 | `CHART-009` | Attachments and searchable history | target | partial | `src/balm/domain/clients.ts`; `src/balm/domain/notes.ts` | Per-patient note and intake history; no attachments or search |
-| `CHART-010` | Alerts and precautions | target | missing |  | No alerts or precautions |
+| `CHART-010` | Alerts and precautions | target | done | `src/balm/domain/alerts.ts`; `src/balm/ui/alerts.ts`; `tests/alerts.test.mjs` (CHART-010); `tests/archive.test.mjs` | Medical alerts, precautions and important notes appear on the chart header, calendar visit and check-in, and while composing the next note. Owner/treating-practitioner changes are version-fenced; reception reads for check-in, agents receive no alert text, and inactive alerts stay in the chart and archive. |
 | `CHART-011` | Clinical letters and exports | target | missing |  | No clinical letters or sends |
 | `CHART-012` | Ambient scribe | target | partial | `src/balm/scribe/index.ts`; `src/balm/scribe/model.ts`; `tests/charting.test.mjs` | The scribe drafts an unsigned note in the visit's template from dictation or bullet points with the install's own key; no visit recording, recorded consent, audio deletion, BAA gating or import from a connected scribe |
 | `CHART-013` | Care team access with audited emergency access | target | partial | `src/balm/domain/notes.ts` | Author-and-owner restriction ships; no care-team grants or break-glass access |

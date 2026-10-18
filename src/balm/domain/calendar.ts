@@ -1,8 +1,9 @@
+import { alertsForClients } from './alerts'
 // The schedule as a calendar: a day or a week, by practitioner or by room, in
 // the clinic's time zone. A practitioner sees only their own calendar.
 import { datePlus, firstInstantOfHostDate, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { visibleAppointment } from './booking'
-import { one, practitionerId, rows, type Actor } from './model'
+import { one, practitionerId, rows, type Actor, type Data } from './model'
 
 /** Each visit's coverage as the day view's chips show it: the primary payer (none is self-pay), whether Medicare's KX threshold
  * applies to the patient's latest claim, and how many of this visit's own claims a payer denied or rejected. No clinical text. */
@@ -35,7 +36,7 @@ export async function calendarView(db: D1Database, who: Actor, params: Record<st
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id LEFT JOIN bm_rooms r ON r.id=a.room_id
     WHERE a.start_at<? AND a.end_at>? AND (? OR a.practitioner_id=?) ORDER BY a.start_at`, to, from, desk ? 1 : 0, own ?? '')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours')
-  let selected = null
+  let selected: Data | null = null
   if (params.appt) {
     const row = await visibleAppointment(db, who, params.appt).catch(() => null)
     if (row) {
@@ -46,6 +47,9 @@ export async function calendarView(db: D1Database, who: Actor, params: Record<st
       selected = { ...detail, series: series ? { ...series, skipped: JSON.parse(series.skipped as string) } : null }
     }
   }
+  const patientAlerts = await alertsForClients(db, who, [...appointments.map(a => String(a.client_id)), ...(selected ? [String(selected.client_id)] : [])])
+  for (const appointment of appointments) appointment.alerts = patientAlerts[appointment.client_id] ?? []
+  if (selected) selected.alerts = patientAlerts[selected.client_id] ?? []
   return { zone, today, date, view, by, subject: (view === 'week' ? weekly?.id : chosen?.id) ?? null, dates, columns, appointments, hours, practitioners, rooms, subjects, selected,
     previous: datePlus(date, -days), next: datePlus(date, days),
     newSlot: /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(params.new ?? '') ? params.new : null, col: subjects.some(x => x.id === params.col) ? params.col : null,

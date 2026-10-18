@@ -1,3 +1,4 @@
+import { saveClientAlert, alertsFor } from './domain/alerts'
 import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
 import { calendarFeed, feedCommand, feedState } from './domain/calendar-feed'
 import { uploadText } from './movein/upload'
@@ -58,7 +59,7 @@ async function state(env: Bindings, who: Actor) {
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  return { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -92,6 +93,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)

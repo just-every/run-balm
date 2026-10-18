@@ -53,6 +53,7 @@ export const toneIcon: Record<string, string> = { coral: 'warning', sage: 'check
 export function visitChips(s: any, a: any) {
   const pay = s.payments?.visits?.[a.id]
   const chips: [string, string, string?][] = []
+  if (a.alerts?.length) chips.push([`${a.alerts.length} patient ${a.alerts.length === 1 ? 'alert' : 'alerts'}`, 'coral', 'Alert'])
   if (Number(a.claims_to_fix) > 0) chips.push(['Claim denied', 'coral', 'Denied'])
   else if (Number(a.kx_required) === 1) chips.push(['KX threshold', 'coral', 'KX'])
   if (a.note_status === 'signed') chips.push(['Signed', 'sage'])

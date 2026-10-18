@@ -1,3 +1,4 @@
+import { alertBadges } from './alerts'
 // The day view's patient panel for the selected visit, as the owner-picked screen
 // lays it out: who and how they pay, then authorization, eligibility, copay and
 // plan of care, the visit's next action, a denied claim as a coral card with its
@@ -78,5 +79,5 @@ export function patientPanel(s: any, c: any, a: any, body: { visit: string; prim
   const tabs = [['Overview', ''], ['Notes', '#notes'], ['Billing', '#billing'], ['Messages', '#messages']]
   return `<section class="patient" id="visit" aria-label="Selected visit"><header class="profile">${avatar(a.client, 'lg')}<div><h2>${h(a.client)}</h2><p>${[age !== null ? String(age) : '', payer ?? ''].filter(Boolean).map(h).join(' · ')}</p></div><a class="more" href="${h(file)}" aria-label="Open client file" title="Open client file">${icon('chevron')}</a></header>`
     + `<nav class="tabs" aria-label="Patient file">${tabs.map(([label, anchor]) => anchor ? `<a href="${h(file + anchor)}">${label}</a>` : `<span aria-current="true">${label}</span>`).join('')}</nav>`
-    + body.visit + facts(s, a, sum, c.today) + body.primary + denial(s, sum, a) + body.actions + agentStrip(s, sum) + '</section>'
+    + alertBadges(a.alerts) + body.visit + facts(s, a, sum, c.today) + body.primary + denial(s, sum, a) + body.actions + agentStrip(s, sum) + '</section>'
 }

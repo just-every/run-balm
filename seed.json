@@ -50,6 +50,12 @@
       "clauses": [
         "HIPAA-003"
       ]
+    },
+    {
+      "id": "patient-alerts",
+      "clauses": [
+        "CHART-010"
+      ]
     }
   ],
   "nonGoals": [

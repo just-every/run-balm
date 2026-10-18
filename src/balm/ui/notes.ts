@@ -1,3 +1,4 @@
+import { alertBadges } from './alerts'
 // Treatment notes on a client file: start from the visit's template, draft with
 // the scribe, edit the draft, review and sign, then add signed addenda.
 import { documentationFields, documentationSummary, documentationWarnings } from './documentation'
@@ -83,5 +84,5 @@ function compose(s: any, f: any, ask: any) {
 export function notesPanel(s: any, f: any, ask: any) {
   if (f.notes === null) return panel('Treatment notes', '<p>Treatment notes are readable only by the practitioner who wrote them and the clinic owner.</p>', '', 'notes')
   const list = f.notes.map((n: any) => noteEntry(s, f, n)).join('')
-  return panel('Treatment notes', (list || empty('No notes you can read yet.')) + compose(s, f, ask), 'full', 'notes')
+  return panel('Treatment notes', alertBadges(f.alerts) + (list || empty('No notes you can read yet.')) + compose(s, f, ask), 'full', 'notes')
 }
