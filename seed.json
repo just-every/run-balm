@@ -44,6 +44,12 @@
       "clauses": [
         "SCHED-009"
       ]
+    },
+    {
+      "id": "disclosure-accounting",
+      "clauses": [
+        "HIPAA-003"
+      ]
     }
   ],
   "nonGoals": [

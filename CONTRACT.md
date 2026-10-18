@@ -413,8 +413,8 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 14 | 1 | 0 | 15 |
-| Target and push further | 6 | 52 | 36 | 94 |
-| All | 20 | 53 | 36 | 109 |
+| Target and push further | 7 | 51 | 36 | 94 |
+| All | 21 | 52 | 36 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -505,7 +505,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `PORT-001` | Whole-clinic export and restore | published | done | `src/balm/archive-policy.mjs`; `tests/archive.test.mjs` |  |
 | `HIPAA-001` | HIPAA deployment readiness | target | missing |  | No readiness check or BAA register; real patient data waits for a privacy review |
 | `HIPAA-002` | Retention and destruction | target | partial | `src/balm/domain/clients.ts`; `tests/balm.test.mjs` | Erasure is refused for patients with health records; no state retention table, retention period, minors rule or approved destruction |
-| `HIPAA-003` | Disclosure accounting and access reports | target | partial | `src/balm/domain/clients.ts`; `migrations/core/0015_balm.sql` | A per-patient access audit exists; no disclosure log or date-range reports |
+| `HIPAA-003` | Disclosure accounting and access reports | target | done | `src/balm/domain/disclosures.ts`; `src/balm/ui/disclosures.ts`; `migrations/core/0040_balm_disclosures.sql`; `tests/disclosures.test.mjs` (HIPAA-003); `tests/archive.test.mjs` | The owner records completed external releases with recipient, records, purpose, basis and actual release time. Immutable accounting and individual access reports cover any inclusive clinic-local date range, download as CSV, and travel in whole-clinic archives. The entry form explicitly records an already completed release; it sends nothing. |
 | `HIPAA-004` | Backups and recovery | target | partial | `src/balm/archive-policy.mjs`; `tests/archive.test.mjs` | Manual export and restore only; no automatic encrypted backups or restore drill |
 | `HIPAA-005` | BAA-covered hosting and real-patient mode | target | missing |  | Demo mode exists for synthetic data, but no hosting BAA record, AWS deployment or real-patient gate |
 | `MOVE-001` | Reviewed patient import with undo | published | done | `src/balm/movein/index.ts`; `src/balm/movein/csv.ts`; `src/balm/ui/import.ts`; `tests/balm.test.mjs`; `tests/setup.test.mjs` |  |

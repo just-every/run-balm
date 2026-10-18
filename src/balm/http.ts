@@ -1,3 +1,4 @@
+import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
 import { calendarFeed, feedCommand, feedState } from './domain/calendar-feed'
 import { uploadText } from './movein/upload'
 import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
@@ -57,7 +58,7 @@ async function state(env: Bindings, who: Actor) {
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  return { ...file, disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -91,6 +92,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
@@ -366,6 +368,16 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/cases') return json(await caseList(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
+      const reportPath = path.match(/^\/api\/balm\/clients\/([\w-]+)\/(disclosures|access-report)$/)
+      if (reportPath) {
+        const input = Object.fromEntries(url.searchParams), kind = reportPath[2] === 'disclosures' ? 'disclosures' : 'access'
+        const report = await (kind === 'disclosures' ? disclosureReport : accessReport)(env.DB, who, reportPath[1], input)
+        if (url.searchParams.get('format') === 'csv') return new Response(reportCsv(report, kind), { headers: { ...headers,
+          'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="balm-${kind}-${report.from}-${report.to}.csv"`,
+          'content-security-policy': "default-src 'none'",
+        } })
+        return json(report)
+      }
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
       if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined))
       const invoice = path.match(/^\/api\/balm\/invoices\/([\w-]+)\.html$/)
