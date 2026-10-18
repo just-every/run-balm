@@ -6,7 +6,8 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 const placement = range(1, 97).map(n => `.rs${n}{grid-row-start:${n}}`).join('')
   + range(1, 96).map(n => `.re${n}{grid-row-end:span ${n}}`).join('')
   + range(1, 41).map(n => `.cs${n}{grid-column-start:${n}}`).join('')
-  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:${n > 3 ? 64 : 88}px repeat(${n},minmax(${n > 1 ? 172 : 220}px,1fr))}`).join('')
+  // Five columns (five practitioners, or four rooms and No room) still fit the card beside the panel at 1440; six or more scroll.
+  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:${n > 3 ? 64 : 88}px repeat(${n},minmax(${n > 4 ? 136 : n > 1 ? 172 : 220}px,1fr))}`).join('')
   // The week fits its card: seven day columns share the width, and the booking panel moves under the grid.
   + '.cal.wk.n7{grid-template-columns:64px repeat(7,minmax(0,1fr))}'
 
