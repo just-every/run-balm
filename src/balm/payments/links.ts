@@ -22,11 +22,11 @@ export async function createLink(env: SmsEnv, db: D1Database, who: Actor, input:
   if (delivery === 'email') insist(client.email, 'the_patient_has_no_email_address', 409)
   const value = token(), linkId = id(), url = linkUrl(env, value)
   const result = delivery === 'shown' ? 'shown' : await deliverLink(env, db, client.id as string, url, purpose, delivery, balance)
-  insist(delivery === 'shown' || result === 'sent', result === 'texts_unavailable' ? 'texts_are_not_available_on_this_install' : result === 'no_mobile_number' ? 'the_patient_has_no_us_mobile_number' : 'the_link_could_not_be_sent_check_the_mail_settings', 409)
+  insist(delivery === 'shown' || result === 'sent' || result === 'suppressed', result === 'texts_unavailable' ? 'texts_are_not_available_on_this_install' : result === 'no_mobile_number' ? 'the_patient_has_no_us_mobile_number' : 'the_link_could_not_be_sent_check_the_mail_settings', 409)
   await commit(db, who, [
     stmt(db, 'INSERT INTO bm_pay_links(id,token_hash,client_id,purpose,created_by,created_at,expires_at,delivery,delivery_result) VALUES(?,?,?,?,?,?,?,?,?)',
       linkId, await sha256(value), client.id, purpose, who.email, now(), new Date(Date.now() + DAYS * 86400_000).toISOString(), delivery, result),
-    audit(db, who, `paylink.${delivery === 'shown' ? 'opened_at_desk' : 'sent'}`, client.id as string, linkId, `${purpose}; ${delivery}`),
+    audit(db, who, `paylink.${delivery === 'shown' ? 'opened_at_desk' : result === 'sent' ? 'sent' : 'not_sent'}`, client.id as string, linkId, `${purpose}; ${delivery}; ${result}`),
   ])
   return { id: linkId, purpose, delivery, delivered: result, ...(delivery === 'shown' ? { url } : {}) }
 }

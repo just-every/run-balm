@@ -8,7 +8,7 @@ const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
 
 test('a recurring series shows its overlapping date before saving, books in one step, and moves or cancels one visit or the rest', () => run(async h => {
   await h.finishSetup()
-  const { service, practitioners: [priya] } = await clinic(h)
+  const { service, practitioners: [priya, sam, jordan] } = await clinic(h, ['Priya', 'Sam', 'Jordan'])
   const room = await h.cmd('room.save', { name: 'Gym' })
   const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', dateOfBirth: '1992-06-15', email: 'ava@client.example' })
   const other = await h.cmd('client.save', { firstName: 'Noah', lastName: 'Kim', dateOfBirth: '1979-11-30' })
@@ -37,7 +37,16 @@ test('a recurring series shows its overlapping date before saving, books in one 
   assert.equal((week.text.match(/class="appt st-booked tone-\w+ size/g) ?? []).length, 3, 'the week grid shows both series visits and Noah’s')
   assert.equal((week.text.match(/class="appt st-booked tone-\w+ ag/g) ?? []).length, 3, 'the phone agenda shows the same three')
   // The room holds one visit at a time, even for another practitioner's booking.
-  await h.cmd('appointment.book', { clientId: other.id, practitionerId: (await h.staff('Sam')).id, serviceId: service.id, roomId: room.id, date: first, time: '09:15' }, h.owner, 409)
+  await h.cmd('appointment.book', { clientId: other.id, practitionerId: sam.id, serviceId: service.id, roomId: room.id, date: first, time: '09:15' }, h.owner, 409)
+  // Without assigned rooms, simultaneous visits from different practitioners
+  // share the No room column. Each keeps its own lane and visit link.
+  const noRoom = await h.cmd('appointment.book', { clientId: other.id, practitionerId: sam.id, serviceId: service.id, date: first, time: '09:00' })
+  const alsoNoRoom = await h.cmd('appointment.book', { clientId: client.id, practitionerId: jordan.id, serviceId: service.id, date: first, time: '09:00' })
+  const rooms = await h.send(`/app?view=day&by=room&date=${first}&id=none`, undefined, h.owner)
+  assert.equal(rooms.status, 200)
+  assert.equal((rooms.text.match(/class="overlap-lane"/g) ?? []).length, 2)
+  for (const visit of [noRoom, alsoNoRoom]) assert.match(rooms.text, new RegExp(`appt=${visit.appointmentId}[^\"]*#visit`))
+  assert.equal((rooms.text.match(/class="appt st-booked tone-\w+ ag/g) ?? []).length, 2, 'both remain accessible in the phone agenda')
   // One visit moves, to any 5-minute start inside hours; a move onto another visit is refused as at booking.
   await h.cmd('appointment.move', { id: series[0].id, date: second, time: '09:30' }, h.owner, 409)
   await h.cmd('appointment.move', { id: series[0].id, date: first, time: '14:10' })
@@ -93,4 +102,28 @@ test('a canceled visit is offered to the waitlist by email; the first to accept 
   assert.match((await h.send(link(loser))).text, /has been taken/)
   const listing = await h.send('/app/waitlist', undefined, h.owner)
   assert.equal(listing.status, 200); assert.match(listing.text, /Accepted/); assert.match(listing.text, /told it was taken/)
+  // An existing open intake link is reused, then a completed intake stays on
+  // file for later waitlist visits. Neither acceptance creates another form.
+  const winnerId = rebooked[0].client_id
+  const acceptAgain = async time => {
+    const source = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, date, time })
+    await h.cmd('waitlist.add', { clientId: winnerId, practitionerId: priya.id, serviceId: service.id, latestDate: until })
+    await h.cmd('appointment.cancel', { id: source.appointmentId })
+    const email = h.mail.findLast(m => m.to.includes(winner) && m.subject.startsWith('A time opened up'))
+    const offered = new URL(email.text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
+    const before = h.mail.length, accepted = await h.form(offered, {})
+    assert.equal(accepted.status, 303, accepted.text)
+    assert.equal(accepted.location, offered, 'returning clients land on their booked confirmation')
+    assert.ok(!h.mail.slice(before).some(m => m.to.includes(winner) && /\/intake\//.test(m.text)), 'no second intake link is emailed')
+    return h.send(offered)
+  }
+  assert.match((await acceptAgain('11:00')).text, /already have an open intake link/)
+  const intakePath = answers.find(a => a.status === 303).location.split('?')[0]
+  const intakePage = await h.send(intakePath)
+  const name = winner.startsWith('ben') ? 'Ben Example' : 'Cara Example'
+  const submitted = await h.form(intakePath, { formId: 'intake-v1', q_reason: 'Follow-up', q_emergency: 'Alex Example +1 202 555 0110', q_consent: 'yes', consentVersion: intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1], consentAccepted: 'on', signerName: name, signerRelationship: 'patient', signatureTyped: name })
+  assert.equal(submitted.status, 303, submitted.text)
+  assert.match((await acceptAgain('12:00')).text, /intake form is already on file/)
+  const file = await h.send('/api/balm/clients/' + winnerId, undefined, h.owner)
+  assert.equal(file.value.intake.length, 1, 'all three waitlist visits continue the same intake record')
 }))

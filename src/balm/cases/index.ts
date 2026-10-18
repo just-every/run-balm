@@ -93,7 +93,7 @@ async function approve(env: Bindings, who: Actor, input: Data) {
   try { outcome = await perform(env, who, c.facts, step, wording) }
   catch (error) { await finish('failed', { error: String((error as Error).message) }); throw error }
   await finish(outcome.ok ? 'done' : 'failed', outcome.result)
-  insist(outcome.ok, outcome.result.delivery === 'mail_unavailable' ? 'Nothing was sent: mail is not set up on this install. The step stays proposed.' : 'Nothing was sent. The step stays proposed.', 409)
+  insist(outcome.ok, outcome.result.delivery === 'suppressed' ? 'Nothing was sent: email is suppressed on this install. The step stays proposed.' : outcome.result.delivery === 'mail_unavailable' ? 'Nothing was sent: mail is not set up on this install. The step stays proposed.' : 'Nothing was sent. The step stays proposed.', 409)
   return { id: key, kind: step.kind, approvedBy: who.email, result: outcome.result }
 }
 

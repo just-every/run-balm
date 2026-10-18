@@ -15,8 +15,9 @@ import { cancelForm, clientName, desk, empty, intakeChip, field, form, h, hidden
 import { fullName } from '../domain/model'
 
 function setupChecklist(s: any) {
+  const staff = rows(s, 'staff').find(p => p.email?.toLowerCase() === s.actor.email.toLowerCase())
   const steps: [boolean, string][] = [
-    [!s.me || fullName(s.me.name), 'Enter your first and last name in <a href="/app/clinic#you">Clinic</a>: it goes on your signed notes and insurance claims.'],
+    [!staff || fullName(staff.name), 'Enter your first and last name in <a href="/app/clinic#you">Clinic</a>: it goes on your signed notes and insurance claims.'],
     [s.settings.clinic_name !== 'My clinic', 'Name your clinic in <a href="/app/clinic">Clinic</a>.'],
     [services(s).length > 0, 'Add at least one service with its length and price in <a href="/app/clinic">Clinic</a>.'],
     [practitioners(s).length > 0, 'Add a practitioner (yourself too, if you treat clients) in <a href="/app/clinic">Clinic</a>.'],

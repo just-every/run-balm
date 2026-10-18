@@ -31,9 +31,11 @@ export async function notifyPatient(env: Bindings, to: string | null, link: NewL
   const delivery: Delivery | 'shown' = link.delivery === 'shown' ? 'shown' : await send(env, to, 'You have a secure message',
     `Your clinic has made a secure message page available. Open your private page:\n${messageUrl(env, link.token)}\n\nThis private link expires in ${MESSAGE_LINK_DAYS} days. Keep it private and use the newest link from the clinic. Please do not reply to this email.`)
   const at = now()
+  // These tables predate explicit suppression; keep their existing non-delivery state.
+  const notificationState = delivery === 'suppressed' ? 'mail_unavailable' : delivery
   await commit(env.DB, null, [
-    stmt(env.DB, 'UPDATE bm_message_links SET delivery_state=? WHERE id=?', delivery, link.id),
-    ...(messageId ? [stmt(env.DB, 'UPDATE bm_messages SET notification_state=?,notified_at=? WHERE id=?', delivery, at, messageId)] : []),
+    stmt(env.DB, 'UPDATE bm_message_links SET delivery_state=? WHERE id=?', notificationState, link.id),
+    ...(messageId ? [stmt(env.DB, 'UPDATE bm_messages SET notification_state=?,notified_at=? WHERE id=?', notificationState, notificationState === 'sent' ? at : null, messageId)] : []),
     audit(env.DB, { email: 'clinic-mail', role: 'system' }, 'message.notification', link.clientId, messageId ?? link.id, delivery),
   ])
   return { linkId: link.id, expiresAt: link.expiresAt, delivery: link.delivery, mail: delivery,

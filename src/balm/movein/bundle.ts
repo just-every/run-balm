@@ -9,20 +9,22 @@ async function owner(db: D1Database, who: Actor) {
   if (!live) throw new ImportError('owner_required', 403)
 }
 
-function jobValue(job: Record<string, any>): Record<string, any> {
+async function jobValue(db: D1Database, job: Record<string, any>): Promise<Record<string, any>> {
   const { report_json, source_json: _source, ...value } = job
-  return { ...value, report: JSON.parse(report_json) }
+  const saved = JSON.parse(report_json)
+  const report = saved.chunked ? JSON.parse((await rows(db, "SELECT data FROM bm_movein_payloads WHERE job_id=? AND kind='report' ORDER BY part", job.id)).map(p => p.data).join('')) : saved
+  return { ...value, report }
 }
 
 /** Metadata only: caller must enforce the owner page/API boundary. */
 export async function bundleJobs(db: D1Database) {
-  return (await rows(db, 'SELECT id,provider,fingerprint,state,created_at,created_by,undone_at,acceptance_reason,report_json FROM bm_movein_jobs ORDER BY created_at DESC')).map(jobValue)
+  return Promise.all((await rows(db, 'SELECT id,provider,fingerprint,state,created_at,created_by,undone_at,acceptance_reason,report_json FROM bm_movein_jobs ORDER BY created_at DESC')).map(job => jobValue(db, job)))
 }
 
 async function journal(db: D1Database, jobId: string) {
   const job = await one(db, 'SELECT * FROM bm_movein_jobs WHERE id=?', jobId)
   if (!job) throw new ImportError('movein_job_not_found', 404)
-  return { job: jobValue(job), records: await rows(db, 'SELECT kind,source_id,target_table,target_id FROM bm_movein_records WHERE job_id=? ORDER BY kind,source_id', jobId) }
+  return { job: await jobValue(db, job), records: await rows(db, 'SELECT kind,source_id,target_table,target_id FROM bm_movein_records WHERE job_id=? ORDER BY kind,source_id', jobId) }
 }
 
 /** All writes use one guarded D1 batch; no partial apply/resume state exists. */
@@ -42,7 +44,7 @@ export async function bundleCommand(db: D1Database, who: Actor, name: string, in
   const plan = await planBundle(db, input)
   if (name === 'movein.preview') {
     await commit(db, who, [audit(db, who, 'movein.previewed', null, null, plan.provider)])
-    const { bundle: _bundle, sourceJson: _sourceJson, practitionerVersion: _practitioner, serviceVersion: _service, ...value } = plan
+    const { bundle: _bundle, sourceJson: _sourceJson, sourcePayload: _sourcePayload, practitionerVersion: _practitioner, serviceVersion: _service, ...value } = plan
     return value
   }
   if (requiredText(input.fingerprint, 'fingerprint') !== plan.fingerprint) throw new ImportError('review_fingerprint_mismatch', 409, 'Preview the exact source files and mapping before applying.')

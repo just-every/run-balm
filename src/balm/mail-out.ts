@@ -8,17 +8,18 @@ import { operatorMail } from '../mail.server.mjs'
 import { localTime } from './domain/invoices'
 import type { OfferMail } from './domain/waitlist'
 
-export type Delivery = 'sent' | 'no_email' | 'mail_unavailable'
+export type Delivery = 'sent' | 'suppressed' | 'no_email' | 'mail_unavailable'
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 
 export async function send(env: Bindings, to: string | null | undefined, subject: string, text: string, attachments?: { filename: string; contentType: string; content: Uint8Array }[]): Promise<Delivery> {
   if (!to) return 'no_email'
+  if (env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1') return 'suppressed'
   const sender = operatorMail(env)
   if (!sender || !env.MAIL_FROM) return 'mail_unavailable'
   const html = text.split('\n\n').map(part => `<p>${escape(part).replace(/\n/g, '<br>')}</p>`).join('')
   try {
     const result: any = await sender.send({ deliveryId: crypto.randomUUID(), from: env.MAIL_FROM, to: [to], subject, text, html, headers: { 'Auto-Submitted': 'auto-generated' }, ...(attachments ? { attachments } : {}) })
-    return ['accepted', 'development'].includes(result?.status) ? 'sent' : 'mail_unavailable'
+    return result?.status === 'accepted' ? 'sent' : result?.status === 'development' ? 'suppressed' : 'mail_unavailable'
   } catch { return 'mail_unavailable' }
 }
 const clinicRow = (env: Bindings) => env.DB.prepare('SELECT clinic_name,time_zone FROM bm_settings WHERE id=1').first<{ clinic_name: string; time_zone: string }>()

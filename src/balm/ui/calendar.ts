@@ -100,6 +100,31 @@ export function visitCard(s: any, c: any, a: any, classes: string, extra = '') {
 /** A practitioner's name with the credential kept whole on one line ("CCC-SLP" never breaks). */
 export const practitionerName = (column: any) => `${h(column.label)}${column.credentials ? `, <span class="cred">${h(column.credentials)}</span>` : ''}`
 
+/** Partition the visible row intervals into connected groups and reusable lanes.
+ * Row intervals matter here: two five-minute visits can share a painted quarter
+ * hour even when their exact times do not overlap. Neither may cover the other. */
+function visitGroups(visits: any[], zone: string, lo: number, hi: number) {
+  const sorted = visits.map(a => {
+    const minute = local(a.start_at, zone).minute
+    const start = Math.floor((Math.max(lo, minute) - lo) / step)
+    const end = Math.min((hi - lo) / step, Math.max(start + 1, Math.ceil((minute + (Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000 - lo) / step)))
+    return { a, start, end }
+  }).sort((a, b) => a.start - b.start || b.end - a.end || String(a.a.id).localeCompare(String(b.a.id)))
+  const groups: { start: number; end: number; lanes: typeof sorted[] }[] = []
+  for (const visit of sorted) {
+    let group = groups[groups.length - 1]
+    if (!group || visit.start >= group.end) {
+      group = { start: visit.start, end: visit.end, lanes: [] }
+      groups.push(group)
+    }
+    const lane = group.lanes.find(lane => lane[lane.length - 1].end <= visit.start)
+    if (lane) lane.push(visit)
+    else group.lanes.push([visit])
+    group.end = Math.max(group.end, visit.end)
+  }
+  return groups
+}
+
 export function calendarGrid(s: any, c: any) {
   if (!c.columns.length) return `<div class="empty-state">${icon('people')}<h2>${c.by === 'room' ? 'No rooms yet' : 'No practitioners yet'}</h2><p>${c.by === 'room' ? 'No rooms yet. The owner adds rooms on the Clinic page.' : 'No practitioners yet. The owner adds them on the Clinic page.'}</p>${s.actor.role === 'owner' ? '<a class="button secondary" href="/app/clinic">Open Clinic</a>' : ''}</div>`
   const live = c.appointments.filter((a: any) => a.status !== 'cancelled')
@@ -124,20 +149,26 @@ export function calendarGrid(s: any, c: any) {
   for (let minute = lo; minute < hi; minute += 30) html += `<div class="cal-time rs${row(minute)} re${Math.min(2, (hi - minute) / step)} cs1">${h(clockLabel(minute))}</div>`
   c.columns.forEach((column: any, i: number) => {
     const windows = openWindows(c, column)
+    html += `<div class="cal-track rs2 re${rowsCount} cs${i + 2}">`
     for (let minute = lo; minute < hi; minute += step) {
       const open = !windows || windows.some((w: any) => minute >= w.start_minute && minute < w.end_minute)
       const book = canBook(column) ? ` data-book="${h(calendarLink(c, { new: `${column.date}T${hhmm(minute)}`, col: column.subject }))}#book"` : ''
-      html += `<div class="cell rs${row(minute)} cs${i + 2}${open ? '' : ' off'}${minute % 60 === 0 ? ' hour' : minute % 30 === 0 ? ' half' : ''}" data-date="${column.date}" data-time="${hhmm(minute)}" data-col="${h(column.subject)}"${book}></div>`
+      html += `<div class="cell rs${row(minute) - 1} cs1${open ? '' : ' off'}${minute % 60 === 0 ? ' hour' : minute % 30 === 0 ? ' half' : ''}" data-date="${column.date}" data-time="${hhmm(minute)}" data-col="${h(column.subject)}"${book}></div>`
     }
     if (canBook(column)) for (const [from, to] of openSlots(c, column, live)) {
       const waiting = waitingFor(s, column)
-      html += `<a class="openslot${to - from <= 30 ? ' compact' : ''} rs${row(from)} re${Math.max(1, Math.round((to - from) / step))} cs${i + 2}" href="${h(calendarLink(c, { new: `${column.date}T${hhmm(from)}`, col: column.subject }))}#book">${icon('open')}<span><strong>Open slot</strong><small>${waiting ? `${waiting} on the waitlist` : `${h(clockLabel(from))} – ${h(clockLabel(to))}`}</small></span></a>`
+      html += `<a class="openslot${to - from <= 30 ? ' compact' : ''} rs${row(from) - 1} re${Math.max(1, Math.round((to - from) / step))} cs1" href="${h(calendarLink(c, { new: `${column.date}T${hhmm(from)}`, col: column.subject }))}#book">${icon('open')}<span><strong>Open slot</strong><small>${waiting ? `${waiting} on the waitlist` : `${h(clockLabel(from))} – ${h(clockLabel(to))}`}</small></span></a>`
     }
-    for (const a of live.filter((a: any) => inColumn(c, column, a))) {
-      const start = Math.max(lo, local(a.start_at, c.zone).minute), spanRows = Math.max(1, Math.min(rowsCount - (row(start) - 2), Math.ceil((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000 / step)))
+    const card = ({ a, start, end }: { a: any; start: number; end: number }, offset: number) => {
+      const spanRows = end - start
       const movable = a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId)
-      html += visitCard(s, c, a, `size${Math.min(3, spanRows)} rs${row(start)} re${spanRows} cs${i + 2}`, movable ? ` draggable="true" data-id="${h(a.id)}" data-version="${h(a.version)}"` : ' draggable="false"')
+      return visitCard(s, c, a, `size${Math.min(3, spanRows)} rs${start - offset + 1} re${spanRows} cs1`, movable ? ` draggable="true" data-id="${h(a.id)}" data-version="${h(a.version)}"` : ' draggable="false"')
     }
+    for (const group of visitGroups(live.filter((a: any) => inColumn(c, column, a)), c.zone, lo, hi)) {
+      html += group.lanes.length === 1 ? group.lanes[0].map(visit => card(visit, 0)).join('')
+        : `<div class="overlap rs${group.start + 1} re${group.end - group.start} cs1">${group.lanes.map(lane => `<div class="overlap-lane">${lane.map(visit => card(visit, group.start)).join('')}</div>`).join('')}</div>`
+    }
+    html += '</div>'
   })
   return `<div class="cal-wrap"><div class="cal n${n}${c.view === 'week' ? ' wk' : ''}" data-calendar data-by="${h(c.by)}">${html}</div></div>`
 }

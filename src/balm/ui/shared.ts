@@ -70,7 +70,7 @@ export const copyBox = (id: string, label: string, value: string, lines = 1) => 
 
 export function intakeLine(r: any, first = '', local = false, origin = '') {
   // Balm on this computer sends no email, so it never says it emailed anyone; it shows the link instead.
-  const mail = local && r.mail === 'sent' ? 'local' : r.mail
+  const mail = r.mail === 'suppressed' ? 'local' : r.mail
   const timeMail = mail === 'sent' ? ' The booking time was emailed to them.' : ''
   if (r.intake === 'past') return { text: 'This visit is in the past, so no email was sent and no intake form was asked for.', link: '' }
   if (r.intake === 'on_file') return { text: 'Their intake form is already on file, so none was asked for.' + timeMail, link: '' }

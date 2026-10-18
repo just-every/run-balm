@@ -31,6 +31,7 @@ export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
   if(s.lines.some(l=>!l.units||l.units>99||l.modifiers.length>4||l.modifiers.some(m=>!/^[A-Z0-9]{2}$/.test(m))))add('claim_line_invalid','lines','Check units and up to four two-character modifiers.')
   if((s as any).policyCovers===false)add('policy_outside_coverage','policy','The policy does not cover the service date.')
   if((s as any).authorizationExhausted)add('authorization_exhausted','authorization','The attended visit exceeds the authorized visits.')
+  if(s.basis?.authorizationCorrection&&!s.authorization)add('new_authorization_required','authorization','Record a new payer authorization after the denial, with a different number covering this visit and its treating practitioner, before resubmitting.')
   if(s.payer.medicare&&s.kx.thresholdCents===null)add('medicare_threshold_missing','medicare.year','Configure this service year’s published Medicare KX threshold.')
   if(s.payer.medicare&&s.lines.some(l=>(s.medicareServices?.[l.code]?.coverage??'covered')==='covered'&&!l.allowedCents))add('medicare_allowed_fee_missing','payer.fees','Configure the Medicare allowed fee schedule to track incurred expenses.')
   if(s.kx.required&&s.lines.some(l=>(s.medicareServices?.[l.code]?.coverage??'covered')==='covered')&&!s.medicalNecessity.trim())add('kx_medical_necessity_required','medicalNecessity','The treating clinician must document medical necessity before using KX.')

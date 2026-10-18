@@ -5,6 +5,7 @@
 import { hostDateAt, zonedParts } from '../availability/timezone'
 import { appointmentStatements, intakeToken, placeVisit, settings } from './booking'
 import { clientVisible } from './clients'
+import { intakeAsk } from './intake'
 import { audit, commit, day, DomainError, guard, human, id, insist, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 /** Offers go out only for times at least this far ahead, and close this long before the visit. */
@@ -104,7 +105,9 @@ export async function recordDelivery(db: D1Database, offerId: string, entryId: s
 
 async function offerByToken(db: D1Database, token: string) {
   const row = await one(db, `SELECT r.offer_id,r.entry_id,r.outcome,o.status,o.start_at,o.practitioner_id,o.room_id,o.appointment_id,w.client_id,w.service_id,w.status AS entry_status,
-    c.first_name,c.email,s.name AS service,s.duration_minutes,p.name AS practitioner,st.clinic_name,st.time_zone
+    c.first_name,c.email,s.name AS service,s.duration_minutes,p.name AS practitioner,st.clinic_name,st.time_zone,
+    (SELECT 1 FROM bm_intake_responses i WHERE i.client_id=w.client_id LIMIT 1) AS intake_on_file,
+    (SELECT a.intake_token_hash IS NOT NULL FROM bm_appointments a WHERE a.id=o.appointment_id) AS intake_requested
     FROM bm_offer_recipients r JOIN bm_offers o ON o.id=r.offer_id JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id
     JOIN bm_services s ON s.id=w.service_id JOIN bm_staff p ON p.id=o.practitioner_id, bm_settings st WHERE r.offer_token_hash=?`, await sha256(token))
   insist(row, 'offer_not_found', 404)
@@ -119,7 +122,7 @@ export async function offerView(db: D1Database, token: string) {
   return { offer, state }
 }
 
-export type Accepted = { appointmentId: string; intakeToken: string; offerId: string; clientId: string; startAt: string }
+export type Accepted = { appointmentId: string; intakeToken: string | null; intake: Awaited<ReturnType<typeof intakeAsk>>; offerId: string; clientId: string; startAt: string }
 /** The first acceptance books the visit and closes the offer in one batch; every later one is refused. */
 export async function acceptOffer(db: D1Database, token: string): Promise<Accepted> {
   const { offer, state } = await offerView(db, token)
@@ -136,12 +139,14 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
     await commit(db, null, [stmt(db, "UPDATE bm_offers SET status='closed',closed_at=? WHERE id=? AND status='open'", now(), offer.offer_id)])
     throw new DomainError('time_taken', 409)
   }
-  const appointmentId = id(), intake = intakeToken(), startAt = place.start!.toISOString()
+  const appointmentId = id(), startAt = place.start!.toISOString()
+  const intake = await intakeAsk(db, offer.client_id, startAt, [])
+  const tokenForIntake = intake === 'ask' ? intakeToken() : null
   try {
     await commit(db, null, [
       guard(db, "EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open')", offer.offer_id),
       guard(db, "EXISTS(SELECT 1 FROM bm_waitlist WHERE id=? AND status='waiting')", offer.entry_id),
-      ...appointmentStatements(db, visitor, { id: appointmentId, clientId: offer.client_id, practitionerId: offer.practitioner_id, serviceId: offer.service_id, startAt, endAt: place.end!.toISOString(), bookedVia: 'online', tokenHash: await sha256(intake), roomId: offer.room_id, offerId: offer.offer_id }),
+      ...appointmentStatements(db, visitor, { id: appointmentId, clientId: offer.client_id, practitionerId: offer.practitioner_id, serviceId: offer.service_id, startAt, endAt: place.end!.toISOString(), bookedVia: 'online', tokenHash: tokenForIntake ? await sha256(tokenForIntake) : null, roomId: offer.room_id, offerId: offer.offer_id }),
       stmt(db, "UPDATE bm_offers SET status='taken',appointment_id=?,closed_at=? WHERE id=?", appointmentId, now(), offer.offer_id),
       stmt(db, "UPDATE bm_offer_recipients SET outcome='accepted',responded_at=? WHERE offer_id=? AND entry_id=?", now(), offer.offer_id, offer.entry_id),
       stmt(db, "UPDATE bm_waitlist SET status='booked',appointment_id=?,version=version+1 WHERE id=?", appointmentId, offer.entry_id),
@@ -154,7 +159,7 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
     }
     throw error
   }
-  return { appointmentId, intakeToken: intake, offerId: offer.offer_id, clientId: offer.client_id, startAt }
+  return { appointmentId, intakeToken: tokenForIntake, intake, offerId: offer.offer_id, clientId: offer.client_id, startAt }
 }
 
 /** Everyone else offered that time, still waiting and not yet told. */

@@ -2,7 +2,7 @@ export type CsvRow = { cells: string[]; row: number }
 
 /** Comma-delimited UTF-8 text; preserves the physical start line of multiline records. */
 export function readCsv(source: string): CsvRow[] {
-  if (typeof source !== 'string' || new TextEncoder().encode(source).length > 1_000_000) throw new Error('CSV must be text of at most 1,000,000 bytes.')
+  if (typeof source !== 'string' || new TextEncoder().encode(source).length > 20_000_000) throw new Error('CSV must be text of at most 20,000,000 bytes.')
   if (source.includes('\0')) throw new Error('Binary files are unsupported; supply UTF-8 CSV text.')
   const text = source.replace(/^\uFEFF/, ''), rows: CsvRow[] = []
   let cells: string[] = [], cell = '', state: 'plain' | 'quoted' | 'closed' = 'plain', line = 1, start = 1
@@ -22,6 +22,6 @@ export function readCsv(source: string): CsvRow[] {
   }
   if (state === 'quoted') throw new Error(`Unclosed CSV quote beginning at line ${start}.`)
   if (cell || cells.length || state === 'closed') push()
-  if (rows.length > 10_001) throw new Error('A file may contain at most 10,000 data rows.')
+  if (rows.length > 50_001) throw new Error('A file may contain at most 50,000 data rows.')
   return rows
 }

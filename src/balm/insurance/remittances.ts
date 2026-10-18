@@ -6,10 +6,10 @@ import type { ClaimSnapshot } from './types'
 
 export async function importRemittance(db:D1Database,who:Actor,input:Data) {
   const payerId=text(input.payerId,'payer',100),parsed=parseRemittance(input.x12),hash=await sha256(parsed.body)
-  const duplicate=await one(db,'SELECT id FROM bm_insurance_imports WHERE sha256=?',hash)
-  if(duplicate)return {id:duplicate.id,duplicate:true}
   const payer=await one(db,'SELECT payer_id FROM bm_payers WHERE id=?',payerId)
-  insist(payer?.payer_id===parsed.payerCode,'remittance_payer_does_not_match')
+  insist(payer&&parsed.payerCodes.every(code=>code===payer.payer_id),'remittance_payer_does_not_match')
+  const duplicate=await one(db,'SELECT id,payer_id FROM bm_insurance_imports WHERE sha256=?',hash)
+  if(duplicate){insist(duplicate.payer_id===payerId,'remittance_payer_does_not_match');return {id:duplicate.id,duplicate:true}}
   insist(!await one(db,"SELECT id FROM bm_insurance_imports WHERE kind='835' AND payer_id=? AND trace=?",payerId,parsed.trace),'remittance_trace_already_imported_with_different_content',409)
   const key=id(),at=now(),statements:D1PreparedStatement[]=[stmt(db,"INSERT INTO bm_insurance_imports(id,kind,sha256,trace,payer_id,amount_cents,imported_by,imported_at) VALUES(?,'835',?,?,?,?,?,?)",key,hash,parsed.trace,payerId,parsed.amountCents,who.email,at)]
   const outcomes=[]

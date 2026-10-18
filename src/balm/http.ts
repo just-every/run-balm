@@ -1,3 +1,4 @@
+import { uploadText } from './movein/upload'
 import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
 import { bundleFormInput } from './movein/form-input'
 import { ownerProfile, saveOwnerName } from './owner-name'
@@ -149,13 +150,15 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
 }
 
 async function inputBody(request: Request): Promise<Record<string, unknown>> {
+  const moving = new URL(request.url).searchParams.get('name')?.startsWith('movein.')
+  const limit = moving ? 40_000_000 : 7_100_000
   // An uploaded file (Move in) arrives as its text, with its name beside it.
   if (request.headers.get('content-type')?.includes('multipart/form-data')) {
-    if (Number(request.headers.get('content-length') ?? 0) > 7_100_000) fail('request_too_large', 413)
+    if (Number(request.headers.get('content-length') ?? 0) > limit) fail('request_too_large', 413)
     const input: Record<string, unknown> = {}
     for (const [key, value] of await request.formData()) {
       if (typeof value === 'string') { input[key] = value; continue }
-      if (value.size > 1_000_000) fail('The file is larger than 1,000,000 bytes. Export a smaller date range from Cliniko and import each file in turn.', 413)
+      if (value.size > (moving ? 20_000_000 : 1_000_000)) fail(moving ? 'This file is larger than 20 MB. Download patient lists in smaller date ranges.' : 'The file is larger than 1 MB.', 413)
       if (value.size) {
         if (key === 'abnDocument') {
           if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
@@ -167,13 +170,13 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
           const bytes = new Uint8Array(await value.arrayBuffer())
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
           input.image = `data:${value.type};base64,${btoa(binary)}`
-        } else { input[key] = await value.text(); input[key + 'Name'] = value.name }
+        } else { input[key] = moving ? await uploadText(value) : await value.text(); input[key + 'Name'] = value.name }
       }
     }
     return input
   }
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).length > 7_100_000) fail('request_too_large', 413)
+  if (new TextEncoder().encode(raw).length > limit) fail('request_too_large', 413)
   if (request.headers.get('content-type')?.includes('application/json')) {
     let input; try { input = JSON.parse(raw) } catch { fail('invalid_json') }
     if (!input || Array.isArray(input) || typeof input !== 'object') fail('expected_an_object')
@@ -230,9 +233,11 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
         try {
           const accepted = await acceptOffer(env.DB, offer[1])
-          await sendIntake(env, accepted.clientId, accepted.intakeToken, accepted.startAt, 'You accepted a time from the waitlist, and your appointment is booked')
+          const mail = accepted.intakeToken
+            ? await sendIntake(env, accepted.clientId, accepted.intakeToken, accepted.startAt, 'You accepted a time from the waitlist, and your appointment is booked')
+            : await sendBooked(env, accepted.clientId, accepted.startAt)
           await noticeOthers(env, accepted.offerId)
-          return redirect(`/intake/${accepted.intakeToken}?booked=1&mail=sent`)
+          return redirect(accepted.intakeToken ? `/intake/${accepted.intakeToken}?booked=1&mail=${mail}` : `/offer/${offer[1]}`)
         } catch (error) {
           const view = await offerView(env.DB, offer[1])
           if (view.offer.status !== 'open') await noticeOthers(env, view.offer.offer_id as string)

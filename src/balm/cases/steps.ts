@@ -5,6 +5,7 @@
 import { dollars, invoiceNumber } from '../domain/invoices'
 import { sha256 } from '../domain/model'
 import { template } from '../charting/templates'
+import { authorizationCorrection, claimAuthorization } from '../insurance/claim-authorization'
 import { attended, cite, currentAuthorization, EXPIRY_DAYS, FIX, LOW_VISITS, signedNote, STALE_DAYS, unclaimed, usDay } from './stages'
 import type { CaseFacts, Step } from './types'
 
@@ -24,7 +25,7 @@ export function letterHead(f: CaseFacts, a: any) {
   return [`To: ${p.payer_name}, utilization management`, 'Re: Request for continued authorization of outpatient therapy visits', '',
     `Patient: ${f.client.first_name} ${f.client.last_name}${f.client.date_of_birth ? `, born ${usDay(f.client.date_of_birth, f.zone)}` : ''}`,
     `Member ID: ${p.member_id}${p.group_number ? ` · Group ${p.group_number}` : ''}`,
-    a ? `Current authorization: ${a.number}, ${a.visits} visits from ${usDay(a.starts_on, f.zone)} to ${usDay(a.ends_on, f.zone)}; ${a.used_visits} used, ${a.reserved_visits} booked, ${a.left} left` : 'Current authorization: none on file for the denied visit',
+    a ? `Current authorization: ${a.number}, ${a.visits} visits from ${usDay(a.starts_on, f.zone)} to ${usDay(a.ends_on, f.zone)}; ${a.used_visits} used, ${a.reserved_visits} booked, ${a.left} left` : 'New authorization for the denied visit: not yet recorded',
     `Referring provider: ${r.referring_first} ${r.referring_last}${r.referring_npi ? `, NPI ${r.referring_npi}` : ''}`,
     ...(r.diagnosis ? [`Diagnosis: ${r.diagnosis}`] : []),
     `Treating clinic: ${f.clinic.clinic_name}${f.clinic.billing_npi ? `, billing NPI ${f.clinic.billing_npi}` : ''}`].join('\n')
@@ -46,8 +47,8 @@ async function digestOf(step: Omit<Step, 'digest'>) {
 export async function steps(f: CaseFacts): Promise<Step[]> {
   const taken = new Set(f.done.filter(d => d.status !== 'failed').map(d => d.step_key)), out: Omit<Step, 'digest'>[] = []
   const p = f.policy, a = currentAuthorization(f), next = f.visits.find(v => v.status === 'booked' && Date.parse(v.start_at) >= Date.now())
-  const covered = (date: string, except: string | null) => f.authorizations.some(x => x.starts_on <= date && x.ends_on >= date && x.number !== except)
-  const missingAuthorization = f.claims.filter(c => FIX.includes(c.status) && c.errors.some((e: any) => e.code === 'carc_197') && !covered(c.service_date, c.snapshot.authorization))
+  const authorization = (c: any) => claimAuthorization(f.authorizations, c.policy_id, c.service_date, f.visits.find(v => v.id === c.appointment_id)?.practitioner_id, authorizationCorrection(c))
+  const missingAuthorization = f.claims.filter(c => FIX.includes(c.status) && authorizationCorrection(c) && !authorization(c))
 
   if (p) {
     const checked = p.eligibility_checked_at as string | null, pending = f.eligibility && !f.eligibility.checked_at
@@ -65,7 +66,7 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
     const note = supportingNote(f), base = low ? a : null, denial = missingAuthorization[0]
     const key = low ? `authorization.request:${a.id}:${a.visits}:${a.ends_on}` : `authorization.request:claim:${denial.id}`
     const why = low ? `Only ${plural(a.left, 'authorized visit')} of ${a.visits} ${a.left === 1 ? 'is' : 'are'} left (${a.used_visits} used, ${a.reserved_visits} booked), and the authorization ${a.ends_on < f.today ? 'ended' : 'ends'} ${usDay(a.ends_on, f.zone)}.`
-      : `The payer denied the claim for ${usDay(denial.service_date, f.zone)} for a missing authorization (CARC 197), and no authorization on file covers that date.`
+      : `The payer denied the claim for ${usDay(denial.service_date, f.zone)} for a missing authorization (CARC 197). Record a new payer authorization after the denial, with a different number covering that visit and its treating practitioner.`
     const draft = f.drafts.find(d => d.step_key === key)
     out.push({
       key, kind: 'authorization.request', button: 'Send to payer', draftable: true,
@@ -88,13 +89,13 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
   }
 
   for (const c of f.claims.filter(c => FIX.includes(c.status))) {
-    const v = f.visits.find(x => x.id === c.appointment_id), note = v && signedNote(f, v.id), auth = f.authorizations.find(x => x.starts_on <= c.service_date && x.ends_on >= c.service_date)
+    const v = f.visits.find(x => x.id === c.appointment_id), note = v && signedNote(f, v.id), auth = authorization(c)
     const needsAuth = missingAuthorization.includes(c)
     out.push({
       key: `denial.fix:${c.id}`, kind: 'denial.fix', button: 'Correct and resubmit', draftable: false,
       title: `Fix and resubmit the ${c.status === 'rejected' ? 'rejected' : 'denied'} claim for ${usDay(c.service_date, f.zone)}`,
       why: c.errors.map((e: any) => e.message.trim()).join(' ') || 'The payer did not pay this claim. Review the remittance before resubmitting.',
-      blocked: needsAuth ? `Record the payer’s authorization covering ${usDay(c.service_date, f.zone)} on the policy first; resubmitting without it would be denied again.` : undefined,
+      blocked: needsAuth ? `Record a new payer authorization after this denial on the policy, with a different number covering ${usDay(c.service_date, f.zone)} and its treating practitioner. The authorization on the denied claim was ${c.snapshot.authorization ?? 'not recorded'}; resubmitting it would be denied again.` : undefined,
       citations: [cite.claim(f, c), ...(c.era_trace ? [cite.era(f, c)] : []), ...(v ? [cite.visit(f, v)] : []), ...(note ? [cite.note(f, note)] : []), ...(auth ? [cite.authorization(f, { ...auth })] : [])],
     })
   }

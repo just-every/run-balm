@@ -1,91 +1,69 @@
-Checked against public provider documentation on 17 October 2026. This adapter is a reviewed CSV normalization step, not a complete migration from any of these systems. It accepts a subset of Cliniko patient exports, supported patient report fields, and explicitly converted Balm CSVs. Provider selection records provenance; it does not establish that every uploaded file is a native provider export.
+Open **Move in** in the app. Download the report named below, upload the file unchanged, choose **Preview move-in**, and check the names and totals. Nothing is added until you approve the preview.
 
-## What the providers actually export
+Balm accepts CSV and Excel patient lists, up to 20 MB per file and 50,000 records per upload. It processes large imports in smaller groups automatically. An import is saved together; a failed import adds nothing. Repeating unchanged files adds no duplicates. **Undo this move-in** removes that import together, unless someone has edited or used its records since.
 
-| Provider | Documented export | Current adapter boundary |
-| --- | --- | --- |
-| Cliniko | Patient CSV with patient IDs; current calendar events and attendees are separate exports. Calendar events have no patient information. Attachments export as patient-organized ZIP archives. | Reads patient ID, first/last name, birth date, email and phone by header. Use the **Data file** option to preserve raw IDs. Related data needs conversion; the adapter does not join calendar events to attendees or unpack attachments. |
-| WebPT | WebPT publicly documents practice data export to CSV. | No public, authoritative column dictionary for the Data Export package, scheduler or A/R report was located during this work. Only the explicit Balm conversion layout below is implemented. Fixtures do not establish native WebPT compatibility. |
-| SimplePractice | The ordinary complete data export is a ZIP with client folders and clinical/billing documents; contacts can be vCard. Appointments require a separate report. Client details and demographics reports can be CSV/Excel. A separate transfer workflow also provides a client-list CSV. | Supports the documented Client, Email, Phone number, Primary insurance and Insurance ID fields of the Client details report. Birth date is accepted if included from another reviewed source. Other report fields remain unmapped. No ZIP, vCard, clinical document extraction, or automatic appointment report conversion. |
-| Jane | Patient and appointment reports can be exported. Batch charts are PDFs with a mapping spreadsheet; intake can be exported per patient. Profile notes and insurance policies have their own reports. | Accepts the named patient demographic subset when headers match. Jane's public guides do not establish an exhaustive export header contract. Related data uses the explicit conversion CSV below. Chart PDFs, mapping spreadsheets and intake PDFs are not imported by this adapter. |
+## WebPT
 
-Primary sources: Cliniko [patient export](https://help.cliniko.com/en/articles/1780957-exporting-patients), [patient ID column](https://help.cliniko.com/en/articles/12057800-archive-your-patients-in-bulk), [calendar events and attendees](https://help.cliniko.com/en/articles/5167881-export-appointment-calendar-and-attendees-data), [data versus spreadsheet formats and attachments](https://help.cliniko.com/en/articles/1023831-export-your-data); WebPT [practice management export FAQ](https://www.webpt.com/practice-management); SimplePractice [data exports](https://support.simplepractice.com/hc/en-us/articles/207625506-Exporting-client-information-through-data-exports), [report fields](https://support.simplepractice.com/hc/en-us/articles/13218379819661-Understanding-your-clients-and-appointments-reports), [transfer client-list CSV](https://support.simplepractice.com/hc/en-us/articles/40942106623373-Viewing-and-sharing-exported-data-for-transfer); Jane [export workflow](https://jane.app/guide/importing-from-jane), [patient reports](https://jane.app/guide/patients-reports), [chart and intake exports](https://jane.app/guide/exporting-chart-notes-print-or-pdf).
+For a patient list:
 
-Jane's [insurance policies report](https://jane.app/guide/insurance-policy-report) distinguishes patient, insurer, claim and policy information. A claim number or policy number must not silently become a US member ID. Its [A/R report](https://jane.app/guide/accounts-receivable-report) includes patients and insurers and excludes account credit from the outstanding invoice total. Review patient/insurer responsibility and credit separately before preparing a net patient opening balance. This adapter does not reconstruct invoices, claims, authorizations, remaining visits, payer receivables or an A/R run-out ledger.
+1. Open **Analytics → Management → Patient Lists**.
+2. Set **View Data by** to **All**, and include the clinics and patient statuses you need.
+3. Select the **Download** icon under the filters, then **CSV**.
+4. Upload the downloaded file as the patient list in Balm.
 
-SimplePractice's separated-data option matters: when excluded, restricted clients retain contact information while their other records are omitted. This adapter always raises `separated_data_unverified`; CSV content cannot prove the export setting or identify every affected client. Review the original settings and record the affected clients separately. These CSVs alone cannot prove MOVE-004 completeness. See [SimplePractice's restricted-client export guidance](https://support.simplepractice.com/hc/en-us/articles/207625506-Exporting-client-information-through-data-exports).
+Balm reads **Patient Name, Date of Birth, Phone and Email**. Names written as “Last, First” are split for your review. The other columns are listed as left out. WebPT’s **Patient Identification** describes the kind of identification and is not used as a permanent patient number. Without a patient number, Balm uses the name and email or birth date to recognize the same uploaded patient; a row without either is refused.
 
-## Explicit Balm conversion templates
+Without Analytics, open **Patient Manager → Display Patients → All Company Patients**. Set both patient and case status to **All**, select **Search → Export to Excel**, and upload that spreadsheet. Balm reads **Name (First), Name (Last), Patient ID, Date of Birth, Email**, the cell phone (or home phone when there is no cell-phone column), and primary insurance when its subscriber number is present. The preview flags patient numbers that appear rounded by a spreadsheet. WebPT does not publicly specify whether this download uses XLS or XLSX; Balm can read both.
 
-The following are **Balm layouts for a reviewed conversion**, not undocumented native provider schemas. Preserve the original exports and retain a conversion record showing how each field was obtained. Never rename a PDF to CSV or infer patient links from filenames alone.
+For appointments:
 
-| File kind | CSV header | Meaning |
-| --- | --- | --- |
-| patients | `Patient ID,First Name,Last Name,Date of Birth,Email,Phone Number` | Stable source ID and names required; remaining fields may be empty. |
-| appointments | `Source ID,Patient ID,Start At,End At,Status` | Stable appointment ID; patient reference; explicit offset timestamps; reviewed status. |
-| notes | `Source ID,Patient ID,Title,Body,Date` | Historical text only, imported read-only by the domain layer. Not a native clinical note export, signed Balm note or PDF import. |
-| balances | `Patient ID,Balance` | One reconciled net USD opening balance per patient. Not an invoice or payment. |
-| insurance | `Source ID,Patient ID,Payer,Member ID,Group Number` | Policy provenance ID, patient reference and coverage identifiers. Group number may be empty. Does not establish eligibility or billing readiness. |
+1. Open **Analytics → Reports → Visits → Scheduled Visits**.
+2. Choose the date range, one treating therapist and one appointment type.
+3. Under **Options**, include **Patient ID**. Select **Export Data → CSV**.
+4. Upload it with the patient list. In Balm, choose that therapist’s practitioner record and the matching service. Each upload uses one practitioner and service.
 
-Copyable examples, all synthetic:
+Balm reads **Patient Name, Appointment Date, Start Time, End Time, Visit Status, Treating Therapist and Appointment Type**. These reports use different patient identifiers, so Balm links a visit only when its full patient name identifies exactly one uploaded patient. An absent or duplicate name stops the import and names the affected row. Check every link in the preview. Times use the clinic’s time zone, including historical clock changes; an ambiguous or missing clock-change time is refused.
 
-```csv
-Patient ID,First Name,Last Name,Date of Birth,Email,Phone Number
-source-1001,Maya,Santos,1988-04-12,maya@patients.example,+1 202-555-0101
-```
+WebPT limits Scheduled Visits to three years. Confirmed or scheduled visits become booked; checked-in or checked-out visits become attended; canceled visits and no-shows keep those states. WebPT calls a visit with no recorded status **Other**. Balm keeps it booked and warns you to check past visits before billing; it does not assume attendance. A blank or unknown state stops the import. Overlapping visits remain in the preview and require your review.
 
-```csv
-Source ID,Patient ID,Start At,End At,Status
-visit-201,source-1001,2026-11-02T09:00:00-05:00,2026-11-02T09:45:00-05:00,booked
-```
+Charts, balances, authorizations and complete insurance policies are not moved by these reports. WebPT’s full ZIP export does not contain scheduling or payment data, and its complete column descriptions are not publicly documented. Balm does not read that ZIP.
 
-```csv
-Source ID,Patient ID,Title,Body,Date
-note-301,source-1001,Historical progress note,Synthetic historical record only.,2026-10-05
-```
+Sources: [WebPT Patient Lists fields](https://discover.webpt.com/docs/webpt-analytics-patient-lists.md), [CSV download](https://discover.webpt.com/v1/docs/webpt-analytics-analysis-grid-style-reports), [Excel patient list](https://discover.webpt.com/docs/webpt-emr-simple-patient-lists-email-and-exporting.md), [Scheduled Visits fields](https://discover.webpt.com/v1/docs/webpt-analytics-scheduled-visits), [full data export](https://discover.webpt.com/docs/webpt-emr-data-exports.md).
 
-```csv
-Patient ID,Balance
-source-1001,125.50
-```
+## SimplePractice
 
-```csv
-Source ID,Patient ID,Payer,Member ID,Group Number
-policy-401,source-1001,Example Health Plan,EX-SYNTH-1001,REHAB-01
-```
+1. Sign in as the account owner or someone who can see the full client list.
+2. Open **Analytics → Reports → Client details**.
+3. Include all clinicians, client types and statuses you want to move.
+4. Select **Export → CSV**. In the newer report layout, select **Manage report → Download CSV**. The Excel download also works.
+5. Upload the unchanged download as Balm’s patient list.
 
-Headers are case-insensitive, trim surrounding whitespace and treat underscores as spaces. Patient ID also accepts Client ID, Source ID or ID. First/last names accept First/Last/Surname; birth date accepts DOB/Birth Date/Birthday; email accepts Email Address; phone accepts Phone/Mobile/Mobile Phone/Mobile Number. Appointments accept Starts At/Ends At and Start Time/End Time, but their values still require complete offset timestamps. Notes accept Note Text and Note Date. Balance accepts Amount; payer accepts Insurer/Primary Insurance, member ID accepts Insurance ID and group number accepts Group ID. Multiple aliases for the same field in one file are rejected rather than picking one.
+Balm reads **Client, Email, Phone number, Primary insurance and Insurance ID** from the documented report. Check the first and last names in the preview, especially compound names. This report does not document birth dates or permanent client numbers. An email address is needed for a patient without either. Two rows identifying the same person stop the import. A policy without a member number is left out with a warning; the patient can still move in.
 
-For SimplePractice or Jane patient reports with Client/Patient/Patient Name/Client Name/Name instead of split names, the adapter splits a comma name as `Last, First`, otherwise at the first space. It flags every split for review. This rule does not establish the legal parts of a compound name. Supply explicit first/last names when needed.
+Appointments, balances, charts and restricted clients’ separated records are not included. The current appointment and billing reports do not have enough publicly documented information for Balm to import them safely. Keep a complete SimplePractice data export, including separated data, before closing your account. Balm does not unpack its ZIP or vCard files.
 
-If such a report has no patient ID, normalized full name plus email is used for a derived preview ID, or normalized full name plus birth date when email is absent. Name alone is refused. Duplicate derived IDs are errors. Review distinct people sharing an email and changes to email/birth date across exports; derived IDs are not provider IDs. Use the exact ID shown in the preview in converted related files. The adapter never matches related rows by name. Client details' Primary insurance plus Insurance ID produces one policy; a payer with no member ID is an error.
+Sources: [Client details fields](https://support.simplepractice.com/hc/en-us/articles/13218379819661-Understanding-your-clients-and-appointments-reports), [report downloads](https://support.simplepractice.com/hc/en-us/articles/46494400564237-Exporting-your-reports), [complete export and separated data](https://support.simplepractice.com/hc/en-us/articles/207625506-Exporting-client-information-through-data-exports).
 
-## Validation and reconciliation
+## Jane: direct import is not available yet
 
-Every row carries its original filename and physical starting line, including multiline quoted text. Unknown columns are listed under `unmappedColumns`; the original CSV remains in `files`. Invalid/held rows appear under `unmappedRows`, with named error diagnostics. Duplicate headers, duplicate source IDs within each record kind, duplicate opening balances, broken CSV quoting and mismatched cell counts are refused. Any related row whose patient ID is absent from this bundle gets `missing_patient_reference`. Preview errors must block applying the bundle.
+Jane documents **Reports → Patient List → ⋯ → Export to Excel or CSV → Download CSV File**, but its public guides do not show the complete columns of the downloaded file. We could not verify those columns or obtain a native sample. Balm cannot yet promise a safe import. Keep your download unchanged; do not spend time reshaping it for Balm.
 
-Dates accept real ISO `YYYY-MM-DD` dates, or numeric MDY/DMY dates using the selected format (default MDY). Ambiguous day/month combinations are flagged. Invalid dates are never rolled into another month. Source timestamps require `Z` or an explicit UTC offset, with no guessing of server or clinic time zone; convert local scheduler times using the clinic's historical daylight-saving rules first. End must be after start. Overlapping appointments remain present for domain reconciliation. This normalizer does not assign source practitioners or services; the import command must review their destination mapping.
+A patient-list sample with fictional details, preserving Jane’s original headers, is needed before direct import can be supported. Appointment, insurance, balance and chart downloads are also unsupported. Jane’s accounts-receivable report does not subtract account credits, so its total cannot safely become each patient’s opening balance.
 
-Statuses normalize booked/scheduled to `booked`, attended/arrived/completed to `attended`, canceled/cancelled to `cancelled`, and no-show/no_show/did not arrive to `no_show`. Other statuses require an explicit conversion.
+Sources: [Jane’s patient reports](https://jane.app/guide/patients-reports), [CSV download instructions](https://jane.app/guide/send-an-email-to-all-patients), [Excel download instructions](https://jane.app/guide/exporting-reports-and-customizing-them-in-excel), [accounts receivable](https://jane.app/guide/accounts-receivable-report).
 
-Balances use exact integer cents parsed from decimal text, with no rounding. `125.50`, `$125.50`, `1,250.00`, `-20.00` and `(20.00)` are accepted; fractions finer than cents, malformed grouping, formulas and non-USD symbols are rejected. Negative balances mean credit. Keep payer responsibility separate from patient opening balances and reconcile the total to the original reports.
+## Cliniko
 
-Limits: 25 uniquely named files; 1,000,000 UTF-8 bytes per CSV; 100 nonempty data rows total and at most 100 normalized records (including policies extracted from patient report rows). Header-only files are errors. First/last names are at most 80 characters each; email 254, phone 40, note title 240, historical note text 100,000. Original exports are not emailed by normalization. No PDF, ZIP, Excel or vCard parser is implemented here.
+As a Cliniko administrator, open **Settings → Data & docs → Data exports → Patients**, set both dates to **Any time**, then **Export data**. Download the **Data file** CSV to preserve patient numbers and upload it unchanged.
 
-## Synthetic evidence
+Balm reads the patient number, first and last name, birth date, email and mobile. The patient file does not contain appointments, charts or billing records. [Cliniko’s patient export instructions](https://help.cliniko.com/en/articles/1780957-exporting-patients).
 
-Each provider folder in the [move-in test fixtures](https://github.com/just-every/run-balm/tree/main/tests/fixtures/movein) contains patients, appointments, notes, balances and insurance CSVs. Only Cliniko's patient file represents the directly supported native-header subset. All other files are Balm conversions. Each bundle has two patients, three appointments (including an overlapping pair), one multiline historical note, two policies and $165.50 in opening balances. `Legacy flag` demonstrates an unmapped column. All contacts use reserved `.example` addresses and fictional 555 numbers.
+## Check before you switch
 
-`simplepractice-client-details-report.csv` uses the documented report column labels with synthetic rows, demonstrating report identity review and unmapped administrative columns. `invalid-patients.csv` and `invalid-balances-mapped.csv` cover an impossible date, ambiguous dates, a duplicate patient identity, a sub-cent amount and an absent patient reference. These are normalization evidence, not proof of full native exports or the complete MOVE-002 through MOVE-006 acceptance journeys.
+- Check every patient’s name and birth date. Select the date order used in the file; dates that could be read two ways are flagged.
+- Compare the patient count with the total shown in the old system. For visits, compare each month’s count. The initial file count is calculated from the upload; enter the old system’s total for an independent check.
+- Read every warning and every column left out. Errors stop the import. A difference or omission needs your written reason before you can proceed.
+- After importing, open **View reconciliation** in the history. It keeps the totals and your acceptance reason. Open a patient’s file to see the imported records.
+- Keep your original charts, invoices, payments, claims, authorizations and intake forms. These patient reports do not establish a complete clinic migration. Opening balances previously brought into Balm are separate from collectible invoices and do not appear on payment statements.
 
-## Use a reviewed bundle in Balm
-
-1. Under **Move in**, choose the source, upload each prepared CSV, and map its appointments to one active practitioner and service. Split a conversion into separate bundles when the mapping differs. At most 100 source rows and 100 normalized records fit one bundle.
-2. Choose **Preview move-in**. Check names, source IDs, filenames, row numbers, every omitted column, and the named overlapping appointments. No records have been written.
-3. Compare patient counts, appointments by month and each patient's opening balance with the original system. The default source column is calculated from the uploaded rows; it is not an independent provider total. Enter the control totals from the original reports and choose **Check totals again**. Appointment months use the clinic time zone, including historical daylight-saving offsets.
-4. Resolve errors by correcting the conversion and uploading again. A differing total or omission requires a recorded owner reason. Check the confirmation and choose **Apply move-in**. The reviewed files, mapping and control totals must still match the preview.
-5. Read **View reconciliation** in the history. The source controls, destination totals, omissions and owner reason remain with the job. Open a client file to read the historical text and carried balance/policy details. Historical text has no edit action; reception cannot read it.
-6. Uploading the unchanged files with the same mapping reuses the job and adds nothing, even if the source controls are entered differently. An undone bundle stays undone on repeat; it is not silently applied again. Changes to already imported source records are refused rather than overwriting current records.
-7. **Undo this move-in** removes the entire bundle in one transaction. Any later patient/appointment edit or dependent clinical work blocks the whole undo; it never removes only the unaffected half. The reconciliation remains in the history.
-
-Opening balances are read-only migration records, displayed separately from the native invoice/payment ledger. They are not collectible invoices or insurance claims and do not contribute to Balm's payment statement. Insurance identifiers do not establish coverage or eligibility.
+The documented report fields were checked against these vendor guides on 18 October 2026. Automated checks use fictional records in those documented shapes; no private clinic export was used.

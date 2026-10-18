@@ -61,7 +61,7 @@ export function intakePage(d: any) {
 
 export function offerPage(d: any) {
   const o = d.offer, when = localTime(o.start_at, o.time_zone), what = `${h(o.service)} with ${h(o.practitioner)} on ${h(when)}`
-  if (d.state === 'yours') return `<h1>You're booked, ${h(o.first_name)}</h1><p>${what}. We emailed you the details and your intake link.</p>`
+  if (d.state === 'yours') return `<h1>You're booked, ${h(o.first_name)}</h1><p>${what}.</p><p>${o.intake_on_file ? 'Your intake form is already on file. No new form is needed.' : o.intake_requested ? 'Please complete your intake form using your private intake link before the visit.' : 'You already have an open intake link. Please complete that form before the visit.'}</p>`
   if (d.state === 'taken') return `<h1>This time has been taken</h1><p>Sorry, ${h(o.first_name)}: someone else on the waitlist accepted ${what} first. You are still on ${h(o.clinic_name)}'s waitlist, and we will email you when another time opens up.</p>`
   if (d.state === 'past') return `<h1>This offer has closed</h1><p>${what} is too close to book from the waitlist now. You are still on the waitlist.</p>`
   return `<h1>A time opened up</h1><p>Hello ${h(o.first_name)}. ${h(o.clinic_name)} has a time for you: <strong>${what}</strong>.</p><p>It was offered to everyone waiting for it, and the first person to accept gets it.</p>

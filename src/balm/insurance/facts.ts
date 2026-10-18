@@ -2,7 +2,7 @@ import { bill, cpt, type Charge } from '../charting/cpt'
 import { audit, commit, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
 import { policyFor } from './access'
-import { authorizationsFor } from './authorization'
+import { claimAuthorization, claimAuthorizations } from './claim-authorization'
 import { medicareSpending } from './medicare'
 import { applyMedicareServices } from './medicare-claim'
 import type { ClaimSnapshot } from './types'
@@ -38,7 +38,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     one(db,"SELECT * FROM bm_invoices WHERE appointment_id=? AND status='approved'",visit.id),
     one(db,'SELECT * FROM bm_insurance_settings WHERE id=1'),
     one(db,'SELECT * FROM bm_payer_enrollments WHERE payer_id=? AND practitioner_id=?',policy.payer_id,visit.practitioner_id),
-    authorizationsFor(db,policy.client_id)
+    claimAuthorizations(db,policy.client_id)
   ])
   insist(invoice,'approve_the_visit_invoice_before_preparing_a_claim',409)
   const serviceDate=hostDateAt(new Date(visit.start_at),visit.time_zone),year=Number(serviceDate.slice(0,4))
@@ -56,7 +56,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const estimatedAllowed=lines.reduce((sum,l)=>sum+(fees.find(f=>f.code===l.code)?.cents??0)*l.units,0)
   const threshold=annual?.threshold_cents??null,used=spending.usedCents
   const required=!!policy.medicare&&threshold!==null&&used+estimatedAllowed>threshold
-  const auth=auths.filter(a=>a.policy_id===policy.id&&a.starts_on<=serviceDate&&a.ends_on>=serviceDate&&(!a.practitioner_id||a.practitioner_id===visit.practitioner_id)).sort((a,b)=>b.starts_on.localeCompare(a.starts_on)||b.id.localeCompare(a.id))[0]
+  const auth=claimAuthorization(auths,policy.id,serviceDate,visit.practitioner_id,input.authorizationCorrection)
   const rendering=nameParts(visit.practitioner_name)
   const value:ClaimSnapshot & {estimatedAllowedCents:number;policyCovers:boolean;authorizationExhausted:boolean;basis:Data}={
     patient:{first:visit.first_name,last:visit.last_name,dob:visit.date_of_birth??'',sex:policy.patient_sex},
@@ -69,7 +69,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     authorization:auth?.number??null,serviceDate,diagnoses:diag,lines,signedNotes:signed.map(n=>({id:n.id,digest:n.signed_sha256,revision:n.signed_revision})),
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
     kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
-    basis:{policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
+    basis:{...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
     policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_visits>auth.visits
   }
   return applyMedicareServices(value)

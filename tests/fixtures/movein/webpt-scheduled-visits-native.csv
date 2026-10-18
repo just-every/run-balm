@@ -1,0 +1,4 @@
+Clinic Name,Patient Name,Patient ID,Case Title,Treating Therapist,Case Therapist,Appointment Type,Appointment Date,Visit Status,Start Time,End Time,Check-in Time,Likelihood to Attend
+Example Clinic,"Santos, Maya",101,Shoulder,"Morgan, Taylor","Morgan, Taylor",Follow-Up,07/15/2026,Checked Out,09:00 AM,09:45 AM,08:55 AM,Historical
+Example Clinic,"Santos, Maya",101,Shoulder,"Morgan, Taylor","Morgan, Taylor",Follow-Up,11/02/2026,Confirmed,09:00 AM,09:45 AM,,High
+Example Clinic,"Reed, Noah",102,Knee,"Morgan, Taylor","Morgan, Taylor",Follow-Up,11/02/2026,Other,09:00 AM,09:45 AM,,High

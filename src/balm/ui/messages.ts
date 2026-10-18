@@ -19,7 +19,7 @@ export function messageResult(state: any, notice: any) {
   const value = result(notice)
   if (!value?.linkId || !value?.expiresAt) return ''
   if (value.url) return `<div class="notice" role="status"><strong>Private message link, shown once.</strong><p>Give this link only to the patient. It replaces earlier links for this destination.</p><p><a href="${h(value.url)}">${h(value.url)}</a></p></div>`
-  if (state.local && value.mail === 'sent') return '<div class="notice" role="status">The message is saved. Balm on this computer sends no email, so the patient got no notice: choose <strong>Show a private link once to give to the patient</strong> to open it for them.</div>'
+  if (value.mail === 'suppressed') return '<div class="notice" role="status">The message is saved. Email is suppressed on this install, so the patient got no notice: choose <strong>Show a private link once to give to the patient</strong> to open it for them.</div>'
   return `<div class="notice${value.mail === 'sent' ? '' : ' error'}" role="${value.mail === 'sent' ? 'status' : 'alert'}">${value.mail === 'sent'
     ? 'The patient was emailed a private link. The email contains no clinical content.'
     : 'The message page is saved, but its email notice could not be sent. Check the clinic mail settings, then send a new link or show a private link to the patient.'}</div>`

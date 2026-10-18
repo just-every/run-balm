@@ -1,4 +1,5 @@
 import { audit, commit, guard, now, rows, stmt, type Actor } from '../domain/model.ts'
+import { chunks, textChunks } from './batches.ts'
 import { identityText } from './targets.ts'
 import { type BundlePlan, targetId } from './bundle-plan.ts'
 
@@ -18,37 +19,50 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   const notes = await Promise.all(bundle.notes.map(async n => ({ ...n, id: await targetId(bundle.provider, 'note', n.sourceId), clientId: clients.get(n.patientId)! })))
   const balances = await Promise.all(bundle.balances.map(async (b, index) => ({ ...b, sourceId: `${b.patientId}:${index}`, id: await targetId(bundle.provider, 'balance', `${b.patientId}:${index}`), clientId: clients.get(b.patientId)! })))
   const insurance = await Promise.all(bundle.insurance.map(async i => ({ ...i, id: await targetId(bundle.provider, 'insurance', i.sourceId), clientId: clients.get(i.patientId)! })))
+  const report = JSON.stringify(reportFor(plan))
   const body = [
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)', plan.settingsVersion),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_movein_jobs WHERE source_json=?)', plan.sourceJson),
-    guard(db, `NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN bm_erasure_journal e ON e.identity_hash=json_extract(p.value,'$.identityHash'))`, JSON.stringify(patients)),
-    guard(db, `NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN bm_clients c ON 'client:'||lower(trim(c.first_name))||'|'||lower(trim(c.last_name))||'|'||COALESCE(c.date_of_birth,'')=json_extract(p.value,'$.identity'))`, JSON.stringify(patients)),
-    stmt(db, `INSERT INTO bm_movein_jobs(id,provider,fingerprint,state,created_at,created_by,acceptance_reason,source_json,report_json) VALUES(?,?,?,'applied',?,?,?,?,?)`, jobId, bundle.provider, plan.fingerprint, at, who.id, acceptanceReason, plan.sourceJson, JSON.stringify(reportFor(plan))),
-    stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via)
-      SELECT json_extract(value,'$.id'),json_extract(value,'$.firstName'),json_extract(value,'$.lastName'),json_extract(value,'$.dateOfBirth'),json_extract(value,'$.email'),json_extract(value,'$.phone'),?,'import' FROM json_each(?)`, at, JSON.stringify(patients)),
+    stmt(db, `INSERT INTO bm_movein_jobs(id,provider,fingerprint,state,created_at,created_by,acceptance_reason,source_json,report_json) VALUES(?,?,?,'applied',?,?,?,?,?)`, jobId, bundle.provider, plan.fingerprint, at, who.id, acceptanceReason, plan.sourceJson, report.length > 200_000 ? JSON.stringify({ chunked: true }) : report),
   ]
+  for (const [kind, value] of [['source', plan.sourcePayload], ['report', report]] as const) {
+    if (kind === 'source' ? value === plan.sourceJson : value.length <= 200_000) continue
+    textChunks(value).forEach((data, part) => body.push(stmt(db, 'INSERT INTO bm_movein_payloads(job_id,kind,part,data) VALUES(?,?,?,?)', jobId, kind, part, data)))
+  }
+  for (const group of chunks(patients)) body.push(
+    guard(db, `NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN bm_erasure_journal e ON e.identity_hash=json_extract(p.value,'$.identityHash'))`, JSON.stringify(group)),
+    guard(db, `NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN bm_clients c ON 'client:'||lower(trim(c.first_name))||'|'||lower(trim(c.last_name))||'|'||COALESCE(c.date_of_birth,'')=json_extract(p.value,'$.identity'))`, JSON.stringify(group)),
+    stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via)
+      SELECT json_extract(value,'$.id'),json_extract(value,'$.firstName'),json_extract(value,'$.lastName'),json_extract(value,'$.dateOfBirth'),json_extract(value,'$.email'),json_extract(value,'$.phone'),?,'import' FROM json_each(?)`, at, JSON.stringify(group)),
+  )
   if (appointments.length) body.push(
     guard(db, "EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=? AND active=1 AND role='practitioner' AND erased_at IS NULL)", plan.practitionerId, plan.practitionerVersion),
     guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=? AND active=1)', plan.serviceId, plan.serviceVersion),
-    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,created_at,created_by)
-      SELECT json_extract(value,'$.id'),json_extract(value,'$.clientId'),?,?,json_extract(value,'$.startAt'),json_extract(value,'$.endAt'),json_extract(value,'$.status'),'staff',?,? FROM json_each(?)`, plan.practitionerId, plan.serviceId, at, who.id, JSON.stringify(appointments)),
   )
-  body.push(
-    stmt(db, `INSERT INTO bm_movein_notes(id,job_id,client_id,source_id,title,body,source_date) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.title'),json_extract(value,'$.body'),json_extract(value,'$.date') FROM json_each(?)`, jobId, JSON.stringify(notes)),
-    stmt(db, `INSERT INTO bm_movein_balances(id,job_id,client_id,source_id,amount_cents) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.cents') FROM json_each(?)`, jobId, JSON.stringify(balances)),
-    stmt(db, `INSERT INTO bm_movein_insurance(id,job_id,client_id,source_id,payer,member_id,group_number) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.payer'),json_extract(value,'$.memberId'),json_extract(value,'$.groupNumber') FROM json_each(?)`, jobId, JSON.stringify(insurance)),
+  for (const group of chunks(appointments)) body.push(
+    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,created_at,created_by)
+      SELECT json_extract(value,'$.id'),json_extract(value,'$.clientId'),?,?,json_extract(value,'$.startAt'),json_extract(value,'$.endAt'),json_extract(value,'$.status'),'staff',?,? FROM json_each(?)`, plan.practitionerId, plan.serviceId, at, who.id, JSON.stringify(group)),
+  )
+  for (const group of chunks(notes)) body.push(
+    stmt(db, `INSERT INTO bm_movein_notes(id,job_id,client_id,source_id,title,body,source_date) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.title'),json_extract(value,'$.body'),json_extract(value,'$.date') FROM json_each(?)`, jobId, JSON.stringify(group))
+  )
+  for (const group of chunks(balances)) body.push(
+    stmt(db, `INSERT INTO bm_movein_balances(id,job_id,client_id,source_id,amount_cents) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.cents') FROM json_each(?)`, jobId, JSON.stringify(group))
+  )
+  for (const group of chunks(insurance)) body.push(
+    stmt(db, `INSERT INTO bm_movein_insurance(id,job_id,client_id,source_id,payer,member_id,group_number) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.payer'),json_extract(value,'$.memberId'),json_extract(value,'$.groupNumber') FROM json_each(?)`, jobId, JSON.stringify(group))
   )
   const sets = [patients, appointments, notes, balances, insurance]
   const kinds = ['patient', 'appointment', 'note', 'balance', 'insurance']
   const shapes = await schema(db)
   for (let i = 0; i < tables.length; i++) {
     const table = tables[i], shape = shapes.filter(c => c.table_name === table).map(c => c.column_name)
-    body.push(stmt(db, `INSERT INTO bm_movein_records(job_id,provider,kind,source_id,target_table,target_id,snapshot)
-      SELECT ?,?,?,json_extract(p.value,'$.sourceId'),?,t.id,${snapshot(shape)} FROM json_each(?) p JOIN ${quote(table)} t ON t.id=json_extract(p.value,'$.id')`, jobId, bundle.provider, kinds[i], table, JSON.stringify(sets[i])))
+    for (const group of chunks<unknown>(sets[i])) body.push(stmt(db, `INSERT INTO bm_movein_records(job_id,provider,kind,source_id,target_table,target_id,snapshot)
+      SELECT ?,?,?,json_extract(p.value,'$.sourceId'),?,t.id,${snapshot(shape)} FROM json_each(?) p JOIN ${quote(table)} t ON t.id=json_extract(p.value,'$.id')`, jobId, bundle.provider, kinds[i], table, JSON.stringify(group)))
   }
   body.push(audit(db, who, 'movein.applied', null, jobId, bundle.provider))
-  body.push(stmt(db, `INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail)
-    SELECT ?,?,?,'movein.patient_imported',json_extract(value,'$.id'),?,? FROM json_each(?)`, at, who.email, who.role, jobId, bundle.provider, JSON.stringify(patients)))
+  for (const group of chunks(patients)) body.push(stmt(db, `INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail)
+    SELECT ?,?,?,'movein.patient_imported',json_extract(value,'$.id'),?,? FROM json_each(?)`, at, who.email, who.role, jobId, bundle.provider, JSON.stringify(group)))
   await commit(db, who, body)
   return jobId
 }

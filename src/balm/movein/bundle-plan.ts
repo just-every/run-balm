@@ -43,15 +43,16 @@ function expectedTotals(input: unknown, actual: Totals): Totals {
 /** Fingerprint binds exact source records, mapping and the owner's control totals. */
 export async function planBundle(db: D1Database, input: Record<string, unknown>) {
   if (typeof input.provider !== 'string' || !Array.isArray(input.files) || input.files.some(f => !f || typeof f !== 'object' || typeof f.name !== 'string' || typeof f.kind !== 'string' || typeof f.csv !== 'string')) throw new ImportError('invalid_bundle', 400)
-  const bundle = normalizeBundle(input), diagnostics = [...bundle.diagnostics]
+  const settings = await one(db, 'SELECT time_zone,version FROM bm_settings WHERE id=1')
+  const bundle = normalizeBundle(input, settings!.time_zone as string), diagnostics = [...bundle.diagnostics]
   const diagnostic = (code: string, message: string, error = false) => diagnostics.push({ severity: error ? 'error' : 'warning', code, message, file: '' })
   const practitionerId = typeof input.practitionerId === 'string' ? input.practitionerId : ''
   const serviceId = typeof input.serviceId === 'string' ? input.serviceId : ''
-  const settings = await one(db, 'SELECT time_zone,version FROM bm_settings WHERE id=1')
   const timeZone = settings!.time_zone as string
   const source = expectedTotals(input.expectedTotals, totals(bundle, bundle.appointments, timeZone))
   const fingerprint = await sha256(JSON.stringify({ version: 1, bundle, practitionerId, serviceId, expectedTotals: source, timeZone }))
-  const sourceJson = JSON.stringify({ bundle, practitionerId, serviceId })
+  const sourcePayload = JSON.stringify({ bundle, practitionerId, serviceId })
+  const sourceJson = sourcePayload.length > 200_000 ? JSON.stringify({ version: 2, sha256: await sha256(sourcePayload) }) : sourcePayload
   const previous = await rows(db, 'SELECT id,state FROM bm_movein_jobs WHERE source_json=?', sourceJson)
   const [clients, erased, staff, services] = await Promise.all([
     rows(db, 'SELECT id,first_name,last_name,date_of_birth FROM bm_clients'), rows(db, 'SELECT identity_hash FROM bm_erasure_journal'),
@@ -64,22 +65,24 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const patients = await Promise.all(bundle.patients.map(async p => ({ ...p, id: await targetId(bundle.provider, 'patient', p.sourceId), identityHash: await sha256(identityText(p.firstName, p.lastName, p.dateOfBirth)) })))
   const bundleIdentities = new Set<string>()
   for (const p of patients) {
-    if (bundleIdentities.has(p.identityHash)) diagnostic('duplicate_patient_identity', `Patient ${p.sourceId} has the same name and birth date as another row. Resolve the identity before importing.`, true)
+    if (bundleIdentities.has(p.identityHash)) diagnostic('duplicate_patient_identity', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) has the same name and birth date as another row. Resolve the identity before importing.`, true)
     bundleIdentities.add(p.identityHash)
-    if (identities.has(identityText(p.firstName, p.lastName, p.dateOfBirth))) diagnostic('existing_patient', `Patient ${p.sourceId} already exists in Balm.`, true)
-    if (erasedIdentities.has(p.identityHash)) diagnostic('erased_patient', `Patient ${p.sourceId} was previously erased.`, true)
+    if (identities.has(identityText(p.firstName, p.lastName, p.dateOfBirth))) diagnostic('existing_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) already exists in Balm.`, true)
+    if (erasedIdentities.has(p.identityHash)) diagnostic('erased_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) was previously erased.`, true)
   }
   if (bundle.appointments.length && (!staff.length || !services.length)) diagnostic('appointment_mapping_required', 'Map an active practitioner and service to import appointments. Unmapped appointments will be omitted.')
   const mapped = !!staff.length && !!services.length
   const appointments = mapped ? await Promise.all(bundle.appointments.map(async a => ({ ...a, id: await targetId(bundle.provider, 'appointment', a.sourceId) }))) : []
   const planned = totals(bundle, appointments, timeZone)
-  for (let i = 0; i < appointments.length; i++) for (let j = i + 1; j < appointments.length; j++) {
-    const a = appointments[i], b = appointments[j]
-    if (a.status === 'booked' && b.status === 'booked' && a.startAt < b.endAt && b.startAt < a.endAt) diagnostic('imported_overlap', `Appointments ${a.sourceId} (${a.file}, row ${a.row}) and ${b.sourceId} (${b.file}, row ${b.row}) overlap for the mapped practitioner. Both will be preserved; check their mapping.`)
+  const ordered = appointments.filter(a => a.status === 'booked').sort((a, b) => a.startAt.localeCompare(b.startAt))
+  let previousEnd = '', previousVisit: typeof ordered[number] | null = null
+  for (const a of ordered) {
+    if (previousVisit && a.startAt < previousEnd) diagnostic('imported_overlap', `Visits in ${previousVisit.file}, row ${previousVisit.row}, and ${a.file}, row ${a.row} overlap. Both are kept; check the assigned practitioner.`)
+    if (a.endAt > previousEnd) { previousEnd = a.endAt; previousVisit = a }
   }
   const mismatches = compare(source, planned)
   const requiresAcceptance = mismatches.length > 0 || diagnostics.some(d => !isError(d)) || bundle.unmappedColumns.length > 0 || bundle.unmappedRows.length > 0
-  return { bundle, sourceJson, timeZone, settingsVersion: settings!.version, provider: bundle.provider, fingerprint, patients, appointments, notes: bundle.notes, balances: bundle.balances, insurance: bundle.insurance,
+  return { bundle, sourceJson, sourcePayload, timeZone, settingsVersion: settings!.version, provider: bundle.provider, fingerprint, patients, appointments, notes: bundle.notes, balances: bundle.balances, insurance: bundle.insurance,
     practitionerId, serviceId, practitionerVersion: staff[0]?.version, serviceVersion: services[0]?.version,
     counts: { patients: patients.length, appointments: appointments.length, notes: bundle.notes.length, balances: bundle.balances.length, insurance: bundle.insurance.length },
     diagnostics, unmappedColumns: bundle.unmappedColumns, unmappedRows: bundle.unmappedRows,

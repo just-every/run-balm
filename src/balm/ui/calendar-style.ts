@@ -7,9 +7,9 @@ const placement = range(1, 97).map(n => `.rs${n}{grid-row-start:${n}}`).join('')
   + range(1, 96).map(n => `.re${n}{grid-row-end:span ${n}}`).join('')
   + range(1, 41).map(n => `.cs${n}{grid-column-start:${n}}`).join('')
   // Five columns (five practitioners, or four rooms and No room) still fit the card beside the panel at 1440; six or more scroll.
-  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:${n > 3 ? 64 : 88}px repeat(${n},minmax(${n > 4 ? 136 : n > 1 ? 172 : 220}px,1fr))}`).join('')
+  + range(1, 40).map(n => `.cal.n${n}{grid-template-columns:${n > 3 ? 64 : 88}px repeat(${n},minmax(min-content,1fr))}.cal.n${n}>.cal-track{min-width:${n > 4 ? 136 : n > 1 ? 172 : 220}px}`).join('')
   // The week fits its card: seven day columns share the width, and the booking panel moves under the grid.
-  + '.cal.wk.n7{grid-template-columns:64px repeat(7,minmax(0,1fr))}'
+  + '.cal.wk.n7{grid-template-columns:64px repeat(7,minmax(min-content,1fr))}.cal.wk.n7>.cal-track{min-width:0}'
 
 export const calendarStyle = placement + `
 [hidden]{display:none!important}
@@ -21,6 +21,10 @@ export const calendarStyle = placement + `
 .cal-filter{display:flex;gap:8px;align-items:flex-end}.cal-filter label{font-size:12.5px;color:var(--soft);font-weight:500}.cal-filter select{min-height:38px;min-width:170px}.cal-filter button{min-height:38px}
 .cal-wrap{overflow-x:auto;background:var(--rer-surface);border:1px solid var(--line);border-radius:var(--radius-card);box-shadow:var(--shadow-card)}
 .cal{display:grid;grid-template-rows:60px;grid-auto-rows:19px;position:relative;min-width:100%}
+.cal-track{display:grid;grid-template-columns:minmax(min-content,1fr);grid-template-rows:subgrid}
+.overlap{display:flex;min-width:min-content;pointer-events:none;z-index:1}
+.overlap-lane{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:19px;align-content:start;flex:1;min-width:132px}
+.overlap .appt{margin-left:3px;margin-right:3px;pointer-events:auto}
 .cal-head{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;min-width:0;padding:8px 14px;background:var(--rer-surface);border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
 .cal-head.cs1{left:0;z-index:4;border-left:0;color:var(--soft);font-size:13px}
 .cal-head span{min-width:0}.cal-head strong{display:block;font-size:13.5px;font-weight:600;line-height:1.3;color:var(--ink)}.cred{white-space:nowrap}.cal-head small{display:block;font-size:12px;line-height:1.3;color:var(--soft)}

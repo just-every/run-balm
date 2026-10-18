@@ -48,7 +48,7 @@ function linkResult(s: any, notice: any) {
   if (!r?.purpose || !r.delivery) return ''
   const what = r.purpose === 'card' ? 'card form' : 'statement and pay link'
   return r.url ? `<div class="notice" role="status"><strong>Patient link ready.</strong> Hand the patient this screen or open the ${what} for them now (shown once): <a href="${h(r.url)}">${h(r.url)}</a></div>`
-    : s.local ? `<div class="notice" role="status">Balm on this computer sends no email, so nothing reached the patient. Use <strong>${r.purpose === 'card' ? 'Open the card form here' : 'Open the pay page here'}</strong> instead.</div>`
+    : r.delivered === 'suppressed' ? `<div class="notice" role="status">Email is suppressed on this install, so nothing reached the patient. Use <strong>${r.purpose === 'card' ? 'Open the card form here' : 'Open the pay page here'}</strong> instead.</div>`
     : `<div class="notice" role="status">The ${what} went to the patient by ${r.delivery === 'text' ? 'text' : 'email'}.</div>`
 }
 

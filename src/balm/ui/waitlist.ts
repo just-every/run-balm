@@ -2,7 +2,7 @@ import { clientName, desk, empty, entry, field, form, h, hidden, panel, practiti
 
 const dateLabel = (date: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(date + 'T00:00:00Z'))
 const outcomes: Record<string, string> = { accepted: 'Accepted', too_late: 'Too late' }
-const deliveries: Record<string, string> = { sent: 'Emailed', no_email: 'No email address', mail_unavailable: 'Mail not set up', pending: 'Sending' }
+const deliveries: Record<string, string> = { sent: 'Emailed', suppressed: 'Not emailed: email is suppressed on this install', no_email: 'No email address', mail_unavailable: 'Mail not set up', pending: 'Sending' }
 
 /** Practitioner (or anyone), service, dates and a note; the client is chosen by the caller. */
 export function waitlistForm(s: any, back: string, client: string) {

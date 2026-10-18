@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { harness } from './harness.mjs'
-import { clinic } from './clinic.mjs'
+import { clinic, pastVisit } from './clinic.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 
 test('booked visit is reminded on schedule, confirmed in one reply, moved and canceled safely; private messages stay in Balm', { timeout: 120_000 }, async () => {
@@ -96,4 +96,51 @@ test('booked visit is reminded on schedule, confirmed in one reply, moved and ca
     assert.ok(file.audit.some(a => a.action === 'message.read'))
     assert.ok(file.audit.every(a => !a.detail.includes(clinical) && !a.detail.includes(reply)))
   } finally { await h.close() }
+
+  // Local mail suppression must remain visible through the same scheduling and approval doors.
+  const local = await harness({ auth: { AUTH_LOCAL: 'true' } })
+  try {
+    await local.finishSetup()
+    await local.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane' })
+    const service = await local.cmd('service.save', { name: 'Therapy visit', durationMinutes: 45, priceCents: 9500 })
+    const practitioner = await local.cmd('staff.save', { name: 'Priya', email: 'priya@clinic.example', role: 'practitioner', active: true, profession: 'Physiotherapist' })
+    await local.cmd('hours.save', { practitionerId: practitioner.id, hours: [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00', end: '24:00' })) })
+    const client = await local.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', email: 'ava@client.example' })
+    await local.cmd('reminders.settings', { leadMinutes: '1440', sms: false })
+    const booked = await local.cmd('appointment.book', { clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, date: '2099-03-02', time: '10:00' })
+    assert.equal(booked.mail, 'suppressed')
+    const due = Date.parse(booked.startAt) - 1440 * 60_000
+    const worker = await local.mf.getWorker()
+    await worker.scheduled({ scheduledTime: due, cron: '* * * * *' })
+    await worker.scheduled({ scheduledTime: due + 60_000, cron: '* * * * *' })
+    let file = (await local.send('/api/balm/clients/' + client.id, undefined, local.owner)).value
+    assert.equal(file.reminderHistory.length, 1)
+    assert.equal(file.reminderHistory[0].state, 'failed')
+    assert.equal(file.reminderHistory[0].sent_at, null)
+    assert.match(file.reminderHistory[0].outcome, /no email/)
+    const page = await local.send('/app/clients/' + client.id, undefined, local.owner)
+    assert.match(page.text, /Not sent/)
+    assert.doesNotMatch(page.text, /Accepted by mail provider/)
+
+    const visit = await pastVisit(local, client.id, practitioner, service.id)
+    await local.cmd('appointment.attend', { id: visit })
+    const invoice = await local.cmd('invoice.prepare', { appointmentId: visit })
+    await local.cmd('invoice.approve', { id: invoice.id })
+    const referral = await local.cmd('case.open', { clientId: client.id, receivedOn: '2020-01-01', referringFirst: 'Anil', referringLast: 'Patel' })
+    const readCase = async () => (await local.send('/api/balm/cases', undefined, local.owner)).value.cases.find(c => c.referral.id === referral.id)
+    const step = (await readCase()).steps.find(s => s.kind === 'statement.send')
+    assert.ok(step)
+    await local.cmd('case.approve', { caseId: referral.id, key: step.key, digest: step.digest }, local.owner, 409)
+    const after = await readCase()
+    assert.equal(after.history[0].status, 'failed')
+    assert.equal(after.history[0].result.delivery, 'suppressed')
+    assert.ok(after.steps.some(s => s.kind === 'statement.send'), 'suppressed mail leaves the statement proposed')
+    const casesPage = await local.send('/app/cases', undefined, local.owner)
+    assert.match(casesPage.text, /Not sent: email is suppressed/)
+    assert.doesNotMatch(casesPage.text, /Statement link emailed/)
+    file = (await local.send('/api/balm/clients/' + client.id, undefined, local.owner)).value
+    assert.equal(file.billing.links[0].delivery_result, 'suppressed')
+    assert.ok(file.audit.some(a => a.action === 'paylink.not_sent'))
+    assert.equal(local.mail.length, 0, 'local work never reaches the mail provider')
+  } finally { await local.close() }
 })

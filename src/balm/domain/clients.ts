@@ -46,9 +46,33 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
   return { id: clientId }
 }
 
-/** The whole file this actor may read. Reading it records every access. */
 /** Rows on one page of a file's access audit, newest first. */
 export const AUDIT_PAGE_SIZE = 50
+
+/** Presentation only: consecutive reads by one actor form an expandable entry.
+ * Writes, actor changes and a five-minute idle gap always start a new entry.
+ * The underlying append-only rows and their ordinary JSON pagination stay intact. */
+async function auditEntries(db: D1Database, clientId: string, before: number | null) {
+  const list = await rows(db, `WITH access AS (
+    SELECT sequence,at,actor_email,actor_role,action,subject_id,detail,
+      CASE WHEN action IN ('file.viewed','portal.viewed','agent.context') OR action LIKE '%.read' OR action LIKE '%\\_read' ESCAPE '\\' THEN 1 ELSE 0 END AS is_read
+    FROM bm_audit WHERE client_id=?${before ? ' AND sequence<?' : ''}
+  ), previous AS (
+    SELECT *,LAG(at) OVER w AS previous_at,LAG(actor_email) OVER w AS previous_email,
+      LAG(actor_role) OVER w AS previous_role,LAG(is_read) OVER w AS previous_read
+    FROM access WINDOW w AS (ORDER BY sequence)
+  ), boundaries AS (
+    SELECT *,CASE WHEN is_read=1 AND previous_read=1 AND actor_email=previous_email AND actor_role=previous_role
+      AND (julianday(at)-julianday(previous_at))*86400 BETWEEN 0 AND 300 THEN 0 ELSE 1 END AS starts_entry FROM previous
+  ), grouped AS (
+    SELECT *,SUM(starts_entry) OVER (ORDER BY sequence) AS entry_id FROM boundaries
+  ) SELECT MAX(sequence) AS sequence,MIN(sequence) AS first_sequence,MAX(at) AS at,MIN(at) AS first_at,
+      actor_email,actor_role,COUNT(*) AS record_count,
+      json_group_array(json_object('sequence',sequence,'at',at,'action',action,'subject_id',subject_id,'detail',detail)) AS records
+    FROM grouped GROUP BY entry_id ORDER BY sequence DESC LIMIT ?`, clientId, ...(before ? [before] : []), AUDIT_PAGE_SIZE + 1)
+  return { entries: list.slice(0, AUDIT_PAGE_SIZE).map(a => ({ ...a, records: JSON.parse(a.records) })),
+    page: { before, older: list.length > AUDIT_PAGE_SIZE ? list[AUDIT_PAGE_SIZE - 1].first_sequence : null, size: AUDIT_PAGE_SIZE } }
+}
 
 /** A client's file; `auditBefore` (an audit sequence) opens an older page of its access audit. */
 export async function clientFile(db: D1Database, who: Actor, key: unknown, auditBefore?: unknown) {
@@ -66,13 +90,15 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const before = /^[1-9]\d{0,15}$/.test(String(auditBefore ?? '')) ? Number(auditBefore) : null
   const auditRows = who.role === 'owner' ? await rows(db, `SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=?${before ? ' AND sequence<?' : ''} ORDER BY sequence DESC LIMIT ?`, client.id, ...(before ? [before] : []), AUDIT_PAGE_SIZE + 1) : null
   const auditPage = auditRows ? { before, older: auditRows.length > AUDIT_PAGE_SIZE ? auditRows[AUDIT_PAGE_SIZE - 1].sequence : null, total: Number((await one(db, 'SELECT COUNT(*) AS n FROM bm_audit WHERE client_id=?', client.id))!.n), size: AUDIT_PAGE_SIZE } : null
+  const groupedAudit = who.role === 'owner' ? await auditEntries(db, client.id as string, before) : null
   await commit(db, who, [
     audit(db, who, 'file.viewed', client.id as string, client.id as string, [intake ? `intake ${intake.length}` : 'no clinical intake', notes ? `notes ${notes.length}` : 'no notes', auditRows ? 'audit' : ''].filter(Boolean).join('; ')),
     ...(intake ?? []).map(r => audit(db, who, 'intake.read', client.id as string, r.id as string)),
     ...(notes ?? []).map(n => audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)),
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
-  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage }
+  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+    auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 
 /** Only a client with no appointments, notes, intake, invoices, card payments, card on file or import history can be erased. */

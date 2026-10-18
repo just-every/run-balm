@@ -5,7 +5,7 @@ import { calendarDate, timestamp, usdCents } from './values.ts'
 
 export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], format: DateFormat): void {
   const diagnostic = (severity: 'error' | 'warning', code: string, message: string, row?: number, column?: string) => bundle.diagnostics.push({ severity, code, message, file: file.name, ...(row === undefined ? {} : { row }), ...(column ? { column } : {}) })
-  const headers = rows[0]?.cells.map(v => v.trim()) ?? [], keys = headers.map(headerKey), columns = layouts[file.kind]
+  const headers = rows[0]?.cells.map(v => v.trim()) ?? [], keys = headers.map(headerKey), columns = layouts[file.kind].map(c => bundle.provider === 'webpt' && file.kind === 'patients' && c.key === 'phone' && headers.some(h => ['Cell Phone', 'Home Phone', 'Phone'].includes(h)) ? { ...c, names: [headers.includes('Cell Phone') ? 'Cell Phone' : headers.includes('Home Phone') ? 'Home Phone' : 'Phone'] } : c)
   const at = new Map<string, number>()
   for (const column of columns) {
     const matches = keys.flatMap((key, index) => column.names.some(n => headerKey(n) === key) ? [index] : [])
@@ -19,7 +19,7 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
   const missing = columns.filter(c => c.required && (at.get(c.key) ?? -1) < 0)
   if (file.kind !== 'patients' && file.kind !== 'balances' && (at.get('sourceId') ?? -1) < 0) missing.push({ key: 'sourceId', names: ['Source ID'], required: true })
   if (missing.length || !headers.length) {
-    diagnostic('error', 'conversion_required', `CSV needs ${missing.map(c => c.names[0]).join(', ') || 'a header row'}. This provider report cannot be safely imported without a reviewed conversion; see MOVE-IN-FORMATS.md.`, rows[0]?.row)
+    diagnostic('error', 'conversion_required', `CSV needs ${missing.map(c => c.names[0]).join(', ') || 'a header row'}. This file does not contain the details needed for this kind of record. Check that you downloaded the export named on the Move in page.`, rows[0]?.row)
     for (const row of rows.slice(1).filter(r => r.cells.some(c => c.trim()))) bundle.unmappedRows.push({ file: file.name, row: row.row, reason: 'conversion_required' })
     return
   }
@@ -27,9 +27,9 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
     for (const row of rows.slice(1).filter(r => r.cells.some(c => c.trim()))) bundle.unmappedRows.push({ file: file.name, row: row.row, reason: 'invalid_headers' })
     return
   }
-  const nativeClinikoPatients = bundle.provider === 'cliniko' && file.kind === 'patients' && keys.includes('patient id') && keys.includes('first name') && keys.includes('last name')
-  const reportPatients = ['simplepractice', 'jane'].includes(bundle.provider) && file.kind === 'patients' && (at.get('fullName') ?? -1) >= 0
-  if (!nativeClinikoPatients) diagnostic('warning', reportPatients ? 'report_identity_review' : 'mapped_csv_conversion', reportPatients ? 'Report names and derived IDs require review. Original report fields outside the supported subset remain unmapped.' : 'This is the Balm mapped CSV layout, not a verified native provider export. Reconcile the conversion against the original provider files.')
+  const reportPatients = ['simplepractice', 'jane', 'webpt'].includes(bundle.provider) && file.kind === 'patients' && ((at.get('fullName') ?? -1) >= 0 || (bundle.provider === 'webpt' && keys.includes('name (first)')))
+  if (reportPatients) diagnostic('warning', 'report_identity_review', 'Check the first and last names in the preview. If the report has no patient number, Balm uses the name and email or birth date to recognize an unchanged upload. Other report columns are listed below.')
+  const seen = new Set<string>(file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind].map(p => p.sourceId))
   let nonempty = 0
   for (const { cells, row } of rows.slice(1)) {
     if (!cells.some(c => c.trim())) continue
@@ -46,7 +46,6 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
         if ((!firstName || !lastName) && fullName) {
           const comma = /^([^,]+),\s*(.+)$/.exec(fullName), words = fullName.split(/\s+/)
           ;[firstName, lastName] = comma ? [comma[2], comma[1]] : [words[0], words.slice(1).join(' ')]
-          diagnostic('warning', 'name_split_review', 'A full report name was split into first and last name; review compound names and suffixes before applying.', row, headers[at.get('fullName')!])
         }
         column = 'First Name'; if (!firstName || firstName.length > 80 || /[\u0000-\u001f\u007f]/.test(firstName)) throw new Error('A first name of at most 80 characters is required.')
         column = 'Last Name'; if (!lastName || lastName.length > 80 || /[\u0000-\u001f\u007f]/.test(lastName)) throw new Error('A last name of at most 80 characters is required.')
@@ -55,25 +54,27 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
         let sourceId = get('sourceId')
         if (!sourceId) {
           column = 'Patient ID'
-          if (!reportPatients || (!email && !dateOfBirth)) throw new Error('A stable patient ID is required. A named report row without an ID needs a date of birth or email to derive an ID.')
+          if (!reportPatients || (!email && !dateOfBirth)) throw new Error('This patient needs an email address, date of birth or patient number so Balm can distinguish them from someone with the same name.')
           sourceId = `derived:${encodeURIComponent(`${firstName} ${lastName}`.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim())}:${encodeURIComponent(email || dateOfBirth!)}`
-          diagnostic('warning', 'derived_patient_id', 'Patient ID was derived from normalized full name and email (or birth date if email is absent). It is not a provider ID; use the preview ID in converted related files.', row, 'Patient ID')
         }
         column = 'Patient ID'; if (sourceId.length > 600 || /[\u0000-\u001f\u007f]/.test(sourceId)) throw new Error('Patient ID is malformed or too long.')
-        if (/^[=']|^\d+(?:\.\d+)?e[+-]?\d+$/i.test(sourceId)) throw new Error('Patient ID appears to be spreadsheet-formatted. Use the provider Data file export with raw IDs or convert against the original without rounding.')
-        if (bundle.patients.some(p => p.sourceId === sourceId)) throw new Error('Duplicate or ambiguous patient identity; assign distinct reviewed patient IDs.')
+        if (/^[=']|^\d+(?:\.\d+)?e[+-]?\d+$/i.test(sourceId)) throw new Error('This patient number appears to have been rounded or changed by a spreadsheet. Download the original file again and upload it without opening and saving it in Excel.')
+        if (seen.has(sourceId)) throw new Error('Two rows identify the same patient. Check the duplicate rows in the original report.')
+        seen.add(sourceId)
         const payer = get('payer'), memberId = get('memberId')
-        if (payer && !memberId) { column = 'Insurance ID'; throw new Error('Primary insurance has no member ID. Correct the policy or move it to an explicit insurance CSV.') }
+        if (payer && !memberId) diagnostic('warning', 'incomplete_insurance', 'Insurance has no member number. The patient can move in, but this policy is left out; check the original insurance record before billing.', row, 'Insurance ID')
         bundle.patients.push({ ...location, sourceId, firstName, lastName, dateOfBirth, email: email || null, phone: phone || null })
-        if (payer) bundle.insurance.push({ ...location, sourceId: `primary:${sourceId}`, patientId: sourceId, payer, memberId, groupNumber: '' })
+        if (payer && memberId) bundle.insurance.push({ ...location, sourceId: `primary:${sourceId}`, patientId: sourceId, payer, memberId, groupNumber: '' })
       } else if (file.kind === 'balances') {
         const patientId = required('patientId', 600); column = 'Balance'
         const cents = usdCents(get('amount'))
-        if (bundle.balances.some(b => b.patientId === patientId)) throw new Error('More than one opening balance for this patient; reconcile to one net balance before import.')
+        if (seen.has(patientId)) throw new Error('More than one opening balance for this patient; reconcile to one net balance before import.')
+        seen.add(patientId)
         bundle.balances.push({ ...location, patientId, cents })
       } else {
         const sourceId = required('sourceId', 600), patientId = required('patientId', 600)
-        if (bundle[file.kind].some(r => r.sourceId === sourceId)) throw new Error(`Duplicate ${file.kind} source ID.`)
+        if (seen.has(sourceId)) throw new Error(`Duplicate ${file.kind} source ID.`)
+        seen.add(sourceId)
         if (file.kind === 'appointments') {
           column = 'Start At'; const startAt = timestamp(required('startAt'))
           column = 'End At'; const endAt = timestamp(required('endAt'))

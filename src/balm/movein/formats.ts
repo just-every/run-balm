@@ -1,3 +1,4 @@
+import { normalizeWebptAppointments } from './webpt.ts'
 import { readCsv } from './formats/reader.ts'
 import { normalizeRows } from './formats/rows.ts'
 
@@ -22,7 +23,7 @@ export type Bundle = {
 }
 
 /** Pure preview normalization. It neither writes records nor infers patient identity. */
-export function normalizeBundle(value: unknown): Bundle {
+export function normalizeBundle(value: unknown, timeZone = ''): Bundle {
   const input = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>
   const bundle: Bundle = { provider: String(input.provider ?? '') as Provider, files: [], patients: [], appointments: [], notes: [], balances: [], insurance: [], diagnostics: [], unmappedColumns: [], unmappedRows: [] }
   const issue = (code: string, message: string, file = '') => bundle.diagnostics.push({ severity: 'error', code, message, file })
@@ -31,8 +32,7 @@ export function normalizeBundle(value: unknown): Bundle {
   if (!Array.isArray(input.files) || !input.files.length) { issue('missing_files', 'Upload at least one CSV file.'); return bundle }
   if (input.files.length > 25) { issue('too_many_files', 'Upload at most 25 files per bundle.'); return bundle }
   const names = new Set<string>()
-  let rowCount = 0
-  for (const raw of input.files) {
+  for (const raw of [...input.files].sort((a, b) => Number(b?.kind === 'patients') - Number(a?.kind === 'patients'))) {
     if (!raw || typeof raw !== 'object' || typeof raw.name !== 'string' || typeof raw.kind !== 'string' || typeof raw.csv !== 'string') { issue('invalid_file', 'Every file must have string kind, name and csv fields.'); continue }
     const file = { kind: raw.kind, name: raw.name, csv: raw.csv } as BundleFile
     bundle.files.push(file)
@@ -41,9 +41,8 @@ export function normalizeBundle(value: unknown): Bundle {
     if (!['patients', 'appointments', 'notes', 'balances', 'insurance'].includes(file.kind)) { issue('unsupported_kind', 'This CSV category is unsupported.', file.name); continue }
     try {
       const rows = readCsv(file.csv)
-      rowCount += rows.slice(1).filter(r => r.cells.some(c => c.trim())).length
-      if (rowCount > 100) { issue('too_many_rows', 'A bundle may contain at most 100 nonempty data rows across all CSV files.', file.name); continue }
-      normalizeRows(bundle, file, rows, (input.dateFormat ?? 'MDY') as DateFormat)
+      const format = (input.dateFormat ?? 'MDY') as DateFormat
+      if (!normalizeWebptAppointments(bundle, file, rows, format, timeZone)) normalizeRows(bundle, file, rows, format)
     }
     catch (error) { issue('invalid_csv', error instanceof Error ? error.message : 'The CSV could not be read.', file.name) }
   }
@@ -54,9 +53,9 @@ export function normalizeBundle(value: unknown): Bundle {
       bundle.unmappedRows.push({ file: record.file, row: record.row, reason: 'missing_patient_reference' })
     }
   }
-  if (bundle.patients.length + bundle.appointments.length + bundle.notes.length + bundle.balances.length + bundle.insurance.length > 100) issue('too_many_records', 'A bundle may normalize to at most 100 records, including insurance extracted from patient report rows.')
-  if (!bundle.files.some(f => f.kind === 'notes')) bundle.diagnostics.push({ severity: 'warning', code: 'notes_not_supplied', message: 'No historical text notes CSV was supplied. Clinical notes are not established as migrated by this bundle.', file: '' })
-  if (bundle.provider === 'simplepractice') bundle.diagnostics.push({ severity: 'warning', code: 'separated_data_unverified', message: 'CSV files cannot establish whether separated data for restricted clients was included. Review the original export settings and affected client list; this bundle is not evidence of a complete export.', file: '' })
-  bundle.diagnostics.push({ severity: 'warning', code: 'document_import_not_supported', message: 'This CSV normalizer does not import PDF charts, intake forms, attachments, ZIP archives, authorizations or claims. Retain and reconcile those originals separately.', file: '' })
+  if (bundle.patients.length + bundle.appointments.length + bundle.notes.length + bundle.balances.length + bundle.insurance.length > 50_000) issue('too_many_records', 'Upload up to 50,000 records at a time, including insurance policies.')
+  if (!bundle.files.some(f => f.kind === 'notes')) bundle.diagnostics.push({ severity: 'warning', code: 'notes_not_supplied', message: 'No historical notes were uploaded. Keep the original charts; this import does not move them.', file: '' })
+  if (bundle.provider === 'simplepractice') bundle.diagnostics.push({ severity: 'warning', code: 'separated_data_unverified', message: 'This report does not include restricted clients’ clinical and billing records. Keep the full SimplePractice export, including separated data, before closing your account.', file: '' })
+  bundle.diagnostics.push({ severity: 'warning', code: 'document_import_not_supported', message: 'PDF charts, intake forms, attachments, ZIP archives, authorizations and claims are not imported. Keep those original records separately.', file: '' })
   return bundle
 }

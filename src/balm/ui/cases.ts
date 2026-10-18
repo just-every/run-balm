@@ -10,6 +10,7 @@ const cites = (list: any[]) => `<ul class="case-cites">${list.map(c => `<li><a h
 
 function outcome(r: any, kind: string) {
   if (r.error) return `Not done: ${r.error}`
+  if (r.delivery === 'suppressed') return 'Not sent: email is suppressed on this install'
   if (kind === 'authorization.request') return r.delivery === 'sent' ? `Emailed to ${r.to}${r.attachment ? ` with ${r.attachment}` : ''}` : `Not sent (${String(r.delivery).replace(/_/g, ' ')})`
   if (kind === 'statement.send') return r.delivery === 'sent' ? `Statement link emailed to ${r.to}` : `Not sent (${String(r.delivery).replace(/_/g, ' ')})`
   if (kind === 'eligibility.check') return r.status === 'prepared' ? `270 inquiry prepared for export. ${r.line ?? ''}` : `270 inquiry ${r.status}`

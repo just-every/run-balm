@@ -42,8 +42,41 @@ export async function bookingWarnings(db: D1Database, clientId: string, date: st
     const a = current ?? choices[0], plannedVisits = Math.max(1, (plannedDates ?? [on]).filter(d => d >= a.starts_on && d <= a.ends_on).length), left = Math.max(0,a.visits-a.used_visits-a.reserved_visits)
     const base = {policyId:p.id,authorizationId:a.id,remainingVisits:left,expiresOn:a.ends_on,blocking:a.booking_action==='block'}
     if (!current) warnings.push({...base,code:'authorization_outside_dates',message:'The visit is outside the authorization dates.'})
-    else if (left<plannedVisits) warnings.push({...base,code:'authorization_exhausted',message:`This booking needs ${plannedVisits} visit${plannedVisits===1?'':'s'}, but only ${left} unreserved authorized visits remain.`})
-    else if (left<=2) warnings.push({...base,blocking:false,code:'authorization_low',message:`${left} unreserved authorized visit${left===1?'':'s'} remain.`})
+    else if (left<plannedVisits) warnings.push({...base,code:'authorization_exhausted',message:`This booking needs ${plannedVisits} visit${plannedVisits===1?'':'s'}, but only ${left} unreserved authorized visit${left===1?' remains':'s remain'}.`})
+    else if (left<=2) warnings.push({...base,blocking:false,code:'authorization_low',message:`${left} unreserved authorized visit${left===1?' remains':'s remain'}.`})
   }
   return warnings
+}
+
+/** Existing bookings reserve visits in date order, after attended visits.
+ * They are not new bookings competing with every other existing reservation. */
+export async function existingVisitWarnings(db: D1Database, clientId: string): Promise<Record<string, BookingWarning[]>> {
+  const [policies, auths, visits, settings] = await Promise.all([
+    rows(db, 'SELECT id,starts_on,ends_on,eligibility_status FROM bm_policies WHERE client_id=? AND priority=1', clientId),
+    authorizationsFor(db, clientId),
+    rows(db, "SELECT id,start_at,practitioner_id FROM bm_appointments WHERE client_id=? AND status='booked' ORDER BY start_at,id", clientId),
+    one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'),
+  ])
+  const reserved = new Map<string, number>(), result: Record<string, BookingWarning[]> = {}
+  for (const visit of visits) {
+    const on = hostDateAt(new Date(visit.start_at), settings!.time_zone), warnings: BookingWarning[] = []
+    for (const policy of policies) {
+      if (on < policy.starts_on || (policy.ends_on && on > policy.ends_on)) warnings.push({ code: 'policy_outside_coverage', message: 'The visit is outside the policy coverage dates.', policyId: policy.id, blocking: false })
+      if (policy.eligibility_status === 'inactive' || policy.eligibility_status === 'changed') warnings.push({ code: 'eligibility_' + policy.eligibility_status, message: policy.eligibility_status === 'inactive' ? 'The latest eligibility response says coverage is inactive.' : 'The latest eligibility response names other coverage. Review the policy.', policyId: policy.id, blocking: false })
+      const choices = auths.filter(a => a.policy_id === policy.id && (!a.practitioner_id || a.practitioner_id === visit.practitioner_id))
+      if (!choices.length) continue
+      const current = choices.find(a => a.starts_on <= on && a.ends_on >= on), authorization = current ?? choices[0]
+      const base = { policyId: policy.id, authorizationId: authorization.id, expiresOn: authorization.ends_on, blocking: authorization.booking_action === 'block' }
+      if (!current) warnings.push({ ...base, code: 'authorization_outside_dates', message: 'The visit is outside the authorization dates.' })
+      else {
+        const position = (reserved.get(authorization.id) ?? 0) + 1
+        reserved.set(authorization.id, position)
+        const left = Math.max(0, authorization.visits - authorization.used_visits - authorization.reserved_visits)
+        if (authorization.used_visits + position > authorization.visits) warnings.push({ ...base, code: 'authorization_exhausted', remainingVisits: left, message: 'This booked visit exceeds the authorized visit count.' })
+        else if (authorization.used_visits + authorization.reserved_visits <= authorization.visits && left <= 2) warnings.push({ ...base, code: 'authorization_low', remainingVisits: left, blocking: false, message: `${left} unreserved authorized visit${left === 1 ? ' remains' : 's remain'}.` })
+      }
+    }
+    result[visit.id] = warnings
+  }
+  return result
 }

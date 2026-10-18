@@ -79,13 +79,25 @@ const auditWords: Record<string, string> = {
   'paylink.opened_at_desk': 'Opened a pay page at the desk', 'paylink.sent': 'Sent a pay link', 'sms.consent_recorded': 'Text consent recorded', 'sms.consent_removed': 'Text consent removed',
 }
 const auditAction = (code: string) => auditWords[code] ?? (code.replace(/[._]/g, ' ').replace(/^\w/, c => c.toUpperCase()))
+const auditDetail = (s: any, value: unknown) => h(String(value ?? '')
+  .replace(/(-?\d+) cents\b/g, (_, cents) => money(Number(cents)))
+  .replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))
+
+function auditEntry(s: any, a: any) {
+  const records = [...a.records].sort((x: any, y: any) => y.sequence - x.sequence)
+  const actions = new Map<string, number>()
+  for (const r of records) actions.set(r.action, (actions.get(r.action) ?? 0) + 1)
+  const labels = [...actions].map(([action, count]) => `<span title="${h(action)}">${h(auditAction(action))}${count > 1 ? ` × ${count}` : ''}</span>`).join('<br>')
+  const detail = records.length === 1 ? auditDetail(s, records[0].detail) : `<details><summary>${records.length} access records</summary><ul class="plain">${records.map((r: any) => `<li>${stamp(s, r.at)} · ${h(auditAction(r.action))}${r.subject_id ? ` · record ${h(r.subject_id)}` : ''}${r.detail ? `<br>${auditDetail(s, r.detail)}` : ''}</li>`).join('')}</ul></details>`
+  return `<tr><td data-label="When">${stamp(s, a.at)}${a.first_at !== a.at ? `<br><span class="help">Since ${stamp(s, a.first_at)}</span>` : ''}</td><td data-label="Who">${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td data-label="Action">${labels}</td><td data-label="Detail">${detail}</td></tr>`
+}
 
 function auditPanel(s: any, f: any) {
   if (!f.audit) return ''
-  const pg = f.auditPage, path = `/app/clients/${f.client.id}`, shown = f.audit.length
-  const range = pg.before ? `Older entries, ${shown} shown` : pg.total === 1 ? 'One entry' : shown === pg.total ? `All ${pg.total} entries` : `The newest ${shown} of ${pg.total} entries`
+  const pg = f.auditEntriesPage, path = `/app/clients/${f.client.id}`, shown = f.auditEntries.length
+  const range = pg.before ? `Older activity, ${shown} entries shown` : `${shown} ${pg.older ? 'newest ' : ''}${shown === 1 ? 'entry' : 'entries'} · ${f.auditPage.total} underlying records`
   const pager = `<nav class="pager" aria-label="Access audit pages"><span class="help">${range}. Times are in ${h(zoneLabel(zoneOf(s)))}.</span>${pg.before ? `<a href="${h(path)}#audit">Newest entries</a>` : ''}${pg.older ? `<a href="${h(path)}?auditBefore=${h(pg.older)}#audit">Older entries</a>` : ''}</nav>`
-  return panel('Access audit', `<p id="audit">Every opening of this file, every read of intake answers and notes, every change and every download, newest first, ${pg.size} to a page. Your own view of this page is recorded too.</p>${pager}<div class="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.audit.map((a: any) => `<tr><td>${stamp(s, a.at)}</td><td>${h(a.actor_email)}<br><span class="help">${h(a.actor_role)}</span></td><td title="${h(a.action)}">${h(auditAction(a.action))}</td><td>${h(String(a.detail ?? '').replace(/\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, iso => localTime(iso, zoneOf(s))))}</td></tr>`).join('')}</tbody></table></div>${pg.older || pg.before ? pager : ''}`, 'full')
+  return panel('Access audit', `<p id="audit">Every opening, clinical read, change and download is kept. Consecutive reads by the same person are grouped until a change, another reader or a five-minute pause; expand an entry for each original time and record. Changes and downloads have their own entries. Newest first, ${pg.size} entries to a page. Your own view is recorded too.</p>${pager}<div class="table"><table class="audit-table"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${f.auditEntries.map((a: any) => auditEntry(s, a)).join('')}</tbody></table></div>${pg.older || pg.before ? pager : ''}`, 'full')
 }
 
 export function clientFilePage(s: any, f: any, notice: any) {

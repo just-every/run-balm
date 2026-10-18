@@ -1,5 +1,5 @@
 import { hostDateAt } from '../availability/timezone'
-import { desk, empty, entry, field, form, h, hidden, money, owner, panel, select, stamp, status, textarea, usDate, zoneOf } from './shared'
+import { desk, empty, entry, field, form, h, hidden, money, owner, panel, select, stamp, status, textarea, usDate, when, zoneOf } from './shared'
 import { authorizationForm, policyForm } from './insurance-policy'
 import { medicareClaimForms } from './insurance-medicare'
 import { claimErrors, claimNumber, insuranceResult, x12Link, x12Upload } from './insurance-shared'
@@ -7,6 +7,26 @@ import { claimErrors, claimNumber, insuranceResult, x12Link, x12Upload } from '.
 const benefitLabel: Record<string, string> = { '1': 'Active coverage', '6': 'Inactive coverage', A: 'Coinsurance', B: 'Copay', C: 'Deductible', F: 'Visit limit', R: 'Other coverage' }
 const periodLabel: Record<string, string> = { '22': 'service year', '23': 'calendar year', '29': 'remaining', '27': 'visit' }
 const serviceLabel: Record<string, string> = { '30': 'Health plan', AD: 'Occupational therapy', AE: 'Physical medicine', AF: 'Speech therapy' }
+function coverageWarnings(s: any, f: any) {
+  const groups = new Map<string, { warning: any; visits: any[] }>()
+  for (const [appointmentId, warnings] of Object.entries(f.insurance.warnings ?? {})) {
+    const visit = f.appointments.find((a: any) => a.id === appointmentId)
+    if (!visit) continue
+    for (const warning of warnings as any[]) {
+      const key = [warning.code, warning.policyId, warning.authorizationId].join(':')
+      const group = groups.get(key) ?? { warning, visits: [] }
+      if (!group.visits.some(v => v.id === visit.id)) group.visits.push(visit)
+      groups.set(key, group)
+    }
+  }
+  return [...groups.values()].map(({ warning, visits }) => {
+    const authorization = f.insurance.authorizations.find((a: any) => a.id === warning.authorizationId)
+    const label = authorization ? `Authorization ${authorization.number}: ` : ''
+    const message = warning.code === 'authorization_exhausted' ? `${visits.length} booked visit${visits.length === 1 ? ' exceeds' : 's exceed'} the authorized visit count. Review these visits with the payer before treatment.` : warning.message
+    const affected = warning.code === 'authorization_low' ? '' : `<ul>${visits.sort((a, b) => a.start_at.localeCompare(b.start_at)).map(v => `<li><a href="#visit-${h(v.id)}">${when(s, v.start_at)} · ${h(v.service)} with ${h(v.practitioner)}</a></li>`).join('')}</ul>`
+    return `<div class="notice"><p>${h(label + message)}</p>${affected}</div>`
+  }).join('')
+}
 function benefits(e: any) {
   const payload = typeof e.benefits === 'string' ? JSON.parse(e.benefits) : e.benefits
   return (payload?.benefits ?? []).map((b: any) => `<li><strong>${h(benefitLabel[b.information] ?? `Benefit ${b.information}`)}</strong> · ${h(b.serviceTypes.map((t: string) => serviceLabel[t] ?? t).join(', '))}${b.amountCents !== null ? ` · ${money(b.amountCents)}` : ''}${b.percent !== null ? ` · ${(b.percent * 100).toFixed(0)}%` : ''}${b.quantity !== null ? ` · ${h(b.quantity)} ${b.quantityQualifier === 'VS' ? 'visits' : h(b.quantityQualifier)}` : ''}${b.timePeriod ? ` · ${h(periodLabel[b.timePeriod] ?? `period ${b.timePeriod}`)}` : ''}${b.network ? ` · ${b.network === 'Y' ? 'in network' : b.network === 'N' ? 'out of network' : h(b.network)}` : ''}</li>`).join('')
@@ -20,7 +40,7 @@ function coverage(s: any, f: any, path: string) {
     const auths = i.authorizations.filter((a: any) => a.policy_id === p.id).map((a: any) => entry(`Authorization ${a.number}`, `<p>${status(`${a.remaining_visits ?? Math.max(0, a.visits - a.used_visits - (a.reserved_visits ?? 0))} of ${a.visits} visits left`)}<br>${a.used_visits} used${a.reserved_visits ? ` · ${a.reserved_visits} booked` : ''} · expires ${h(usDate(a.ends_on, zoneOf(s)))}</p>${desk(s) ? `<details><summary>Edit authorization</summary>${authorizationForm(s, p.id, path, a)}</details>` : ''}`, `authorization-${a.id}`)).join('')
     return entry(p.payer_name ?? s.insurance.payers.find((x: any) => x.id === p.payer_id)?.name ?? 'Insurance policy', `<p>${status(p.eligibility_status)} Member ${h(p.member_id)}${p.plan_name ? ` · ${h(p.plan_name)}` : ''}<br>${h(usDate(p.starts_on, zoneOf(s)))}${p.ends_on ? ` to ${h(usDate(p.ends_on, zoneOf(s)))}` : ''}</p>${p.eligibility_checked_at ? `<p class="help">Checked ${stamp(s, p.eligibility_checked_at)}. Benefits are not a guarantee of payment.</p>` : '<p class="help">Coverage has not been checked.</p>'}${elig}${desk(s) ? `<details><summary>Record an eligibility check made by phone or website</summary><p class="help">Call the payer’s provider line or look the member up on its website, then record what it said. This counts as the eligibility check for the patient’s case.</p>${form('insurance.eligibility.record', path, hidden('policyId', p.id) + field('serviceDate', 'For visits on', today, 'date', 'required') + select('status', 'Coverage', [['active', 'Active'], ['inactive', 'Not active']], 'active') + field('copay', 'Copay ($, if they said)', '', 'text', 'inputmode="decimal" maxlength="12" placeholder="30.00"') + field('source', 'Who said so, and the call or page reference', '', 'text', 'required maxlength="300" placeholder="UHC provider line, Dana, call ref 12345"'), 'Record eligibility check')}</details><details><summary>Prepare an electronic eligibility inquiry (270)</summary><p class="help">A 270 file goes to your clearinghouse; the payer’s 271 answer is uploaded back here.</p>${form('insurance.eligibility.prepare', path, hidden('policyId', p.id) + field('serviceDate', 'Service date', today, 'date', 'required'), 'Prepare 270 inquiry')}</details><details><summary>Edit policy</summary>${policyForm(s, f.client.id, path, p)}</details>` : ''}${auths || empty('No authorization recorded.')}${desk(s) ? `<details><summary>Add authorization</summary>${authorizationForm(s, p.id, path)}</details>` : ''}`)
   }).join('')
-  return panel('Coverage and authorized visits', `<div id="insurance">${Object.values(i.warnings ?? {}).flat().map((w: any) => `<p class="notice">${h(w.message)}</p>`).join('')}</div>` + (list || empty('No insurance policies yet.')) + (desk(s) ? s.insurance.payers.length ? `<details><summary>Add insurance policy</summary>${policyForm(s, f.client.id, path)}</details>` : '<p>Add a payer from the <a href="/app/insurance">Insurance page</a> first.</p>' : ''))
+  return panel('Coverage and authorized visits', `<div id="insurance">${coverageWarnings(s, f)}</div>` + (list || empty('No insurance policies yet.')) + (desk(s) ? s.insurance.payers.length ? `<details><summary>Add insurance policy</summary>${policyForm(s, f.client.id, path)}</details>` : '<p>Add a payer from the <a href="/app/insurance">Insurance page</a> first.</p>' : ''))
 }
 function claims(s: any, f: any, path: string) {
   const i = f.insurance

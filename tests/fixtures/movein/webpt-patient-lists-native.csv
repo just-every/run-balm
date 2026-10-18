@@ -1,0 +1,3 @@
+Patient Name,Gender,Date of Birth,Phone,Address,City,State,Zip,Email,Patient Identification,Employer,Insurance,Policy Begin Date,Policy End Date,Physician,Therapist,Clinic Access,Patient Status
+"Santos, Maya",Female,04/12/1988,+1 202-555-0101,100 Example Street,Chicago,IL,60601,maya@patients.example,,,,,,"Chen, Alice","Morgan, Taylor",Example Clinic,Active
+"Reed, Noah",Male,11/23/1979,+1 202-555-0102,200 Example Street,Chicago,IL,60602,noah@patients.example,,,,,,"Chen, Alice","Morgan, Taylor",Example Clinic,Active
