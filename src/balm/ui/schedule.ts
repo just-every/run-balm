@@ -1,3 +1,4 @@
+import { calendarFeedPanel } from './calendar-feed'
 // The schedule, laid out as the owner-picked Today screen: the day's heading and
 // counts, the clinician columns, and the selected visit's patient panel beside
 // them; the booking panel takes that place when no visit is selected.
@@ -132,6 +133,6 @@ export function schedule(s: any, notice: any = {}) {
   const side = selectedPanel(s, c, notice) || (canBook(s) ? bookPanel(s, c, notice) : '')
   const how = `<p class="help cal-help">Times are in ${h(zoneLabel(c.zone))}. ${canBook(s) ? 'Select a visit to change it, drag it to a new time, or select an empty time to book.' : ''} Shaded times are outside the practitioner’s hours.</p>`
   return `<div class="today${side ? '' : ' single'}${c.view === 'week' ? ' week' : ''}"><div class="today-main">${heading(s, c)}${offered}${owner(s) ? setupChecklist(s) : ''}${calendarGrid(s, c)}${calendarAgenda(s, c)}${moveForm(c)}${how}${intro}</div>${side ? `<aside class="today-side">${side}</aside>` : ''}</div>`
-    + `<div class="grid today-more">${notesToSign(s)}${documentationDailyClose(s)}${listPanel(s, c)}</div>`
+    + `<div class="grid today-more">${notesToSign(s)}${documentationDailyClose(s)}${listPanel(s, c)}${calendarFeedPanel(s, notice)}</div>`
 }
 

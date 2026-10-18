@@ -413,8 +413,8 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 14 | 1 | 0 | 15 |
-| Target and push further | 5 | 52 | 37 | 94 |
-| All | 19 | 53 | 37 | 109 |
+| Target and push further | 6 | 52 | 36 | 94 |
+| All | 20 | 53 | 36 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -436,7 +436,7 @@ Judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1
 | `SCHED-006` | Patient self-service scheduling | target | partial | `src/balm/domain/booking.ts` | Returning patients matched at /book continue their file; no portal booking, self-reschedule or cancel, rules or embedding |
 | `SCHED-007` | Service types, locations and availability rules | target | partial | `src/balm/domain/clinic.ts`; `src/balm/availability/engine.ts` | Services carry length and price and the engine accepts overrides; no locations, CPT defaults, per-service practitioners, stored holidays or buffers |
 | `SCHED-008` | Check-in, attendance and change history | target | partial | `src/balm/domain/booking.ts`; `src/balm/payments/index.ts`; `tests/balm.test.mjs`; `tests/payments.test.mjs` | Check-in on the day, attended, no-show and canceled are audited, and an attended visit without a signed note is listed to sign; attendance starts no note or charge by itself |
-| `SCHED-009` | Calendar subscription | target | missing |  | No calendar feed |
+| `SCHED-009` | Calendar subscription | target | done | `src/balm/domain/calendar-feed.ts`; `src/balm/ui/calendar-feed.ts`; `tests/schedule.test.mjs` (SCHED-009) | Practitioner-owned private iCalendar subscriptions contain UTC times and initials only, retain stable cancellation entries, and immediately refuse replaced, revoked or deactivated credentials. Subscription credentials are hashed and excluded from archives. |
 | `SCHED-010` | Practitioner capacity and double-booking | target | partial | `src/balm/domain/booking.ts`; `tests/balm.test.mjs` | The race-safe overlap refusal ships at a fixed capacity of one; no per-practitioner or per-service capacity, side-by-side overlapping visits, online double-booking setting, Medicare overlap warning or overlap-tolerant import |
 | `INTAKE-001` | One-use intake bound to its form version | published | partial | `src/balm/domain/intake.ts`; `src/balm/domain/booking.ts`; `src/balm/domain/waitlist.ts`; `src/balm/http.ts`; `tests/balm.test.mjs`; `tests/schedule.test.mjs` | Re-judged 18 October 2026. Current-form renewal is missing: intakeAsk treats any response for the patient as on file, regardless of form version. Its open-link check requires a booked future visit, a token hash and no response for that visit (excluding the visits just booked), with no form-version or token-expiry check. Token lookup rejects canceled visits but has no expiry check; view and submit use the latest form, with a stale submitted form ID refused, rather than a version fixed at link creation. Staff bookings store new token hashes before suppressing their delivery; /book always creates and emails a fresh link, even for an exactly matched returning patient. Waitlist tests prove current-intake suppression and reuse of an open link; tests do not prove these across all booking doors, no duplicate tokens, expiry, past-booking email suppression, renewal after publication, or preservation of earlier answers' form version after publication. |
 | `INTAKE-002` | Intake packets and outcome questionnaires | target | partial | `src/balm/domain/intake.ts`; `src/balm/ui/intake.ts` | One versioned form, edited with a form builder, with four question types; no packets per service or scored outcome questionnaires |

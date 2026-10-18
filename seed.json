@@ -38,6 +38,12 @@
       "clauses": [
         "CHART-007"
       ]
+    },
+    {
+      "id": "calendar-subscription",
+      "clauses": [
+        "SCHED-009"
+      ]
     }
   ],
   "nonGoals": [
