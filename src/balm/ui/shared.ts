@@ -1,5 +1,5 @@
 // Server-rendered forms on Base's theme; the helpers follow Strap's (src/strap/ui/shared.ts).
-import { localTime } from '../domain/invoices'
+import { dollars, localTime } from '../domain/invoices'
 const escapes: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 export const h = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => escapes[c])
 export const rows = (s: any, key: string): any[] => Array.isArray(s[key]) ? s[key] : []
@@ -39,7 +39,8 @@ export const entry = (title: string, body: string, anchor = '') => `<article cla
 export const result = (notice: any) => notice.result?.result ?? notice.result
 /** Cents as a person types dollars: 9500 is 95.00. */
 export const dollarsField = (cents: unknown) => cents === null || cents === undefined || cents === '' ? '' : (Number(cents) / 100).toFixed(2)
-export const money = (cents: unknown) => `${Number(cents ?? 0) < 0 ? '-' : ''}$${(Math.abs(Number(cents ?? 0)) / 100).toFixed(2)}`
+/** An amount in US dollars, grouped the US way ("$2,480.00"), from the one formatter every screen shares. */
+export const money = (cents: unknown) => dollars(Number(cents ?? 0))
 /** The clinic's IANA time zone; every date and time on a page is shown in it. */
 export const zoneOf = (s: any): string => s.settings.time_zone
 /** An instant in the clinic's time zone, with the weekday. */

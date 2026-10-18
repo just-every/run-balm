@@ -8,7 +8,9 @@ import { insuredCharge } from '../insurance/invoice-price'
 import { audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
-export const dollars = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+/** An amount for people, in US dollars grouped the US way: "$2,480.00", "-$12.50". Every screen, document and email uses it. */
+export const dollars = (cents: number) => usd.format(cents / 100)
 export const localTime = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
 /** A YYYY-MM-DD date of birth as Apr 12, 1988. */
 const usBirthDate = (date: unknown) => /^\d{4}-\d\d-\d\d$/.test(String(date ?? '')) ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(date + 'T00:00:00Z')) : date

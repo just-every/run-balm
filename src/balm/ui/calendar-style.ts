@@ -45,13 +45,14 @@ export const calendarStyle = placement + `
 .appt-tags::before{content:'';flex:none;width:0;height:100%;margin-right:-5px}
 .appt .tag{display:inline-block;flex:none;max-width:none;white-space:nowrap;background:var(--chip);color:var(--body);font-size:11px;line-height:16px;padding:0 5px;border-radius:5px}
 .appt .tag.coral{background:var(--coral-tint);color:var(--coral-ink)}.appt .tag.sage{background:var(--sage-tint);color:var(--sage-ink)}.appt .tag.honey{background:var(--honey-tint);color:var(--honey-ink)}
-.appt .tag.k3{display:none}
+.appt .tag.k3{display:none}.appt .tag .brief{display:none}
 @container (max-width:185px){.appt .go{display:none}}
 @container (max-width:215px){.appt .mark{display:none}.appt.size1 .t-to,.appt.size2 .t-to{display:none}}
 .appt.size1{padding:2px 8px;align-items:center}.appt.size1 .appt-copy{flex-direction:row;gap:6px;align-items:baseline}.appt.size1 .appt-tags,.appt.size1 .mark{display:none}
 .appt.size2{padding:1px 8px}.appt.size2 strong{line-height:16px}.appt.size2 .appt-tags{height:14px}.appt.size2 .tag{line-height:14px;font-size:11px}.appt.size2 .appt-copy{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'time name' 'tags tags';column-gap:6px;align-items:baseline}.appt.size2 strong{grid-area:name}.appt.size2 .appt-time{grid-area:time}.appt.size2 .appt-tags{grid-area:tags;margin:1px 0 0}.appt.size2 .mark{display:none}
-/* A narrow half-hour card keeps its start time and the whole name: time and the first chip on one line, the name under them. */
-@container (max-width:215px){.appt.size2 .appt-copy{grid-template-areas:'time tags' 'name name'}.appt.size2 .appt-tags{margin:0;align-self:center}}
+/* A narrow half-hour card keeps its start time and the whole name: time and the first chip on one line, the name under them.
+   Its flag chip takes its short form so the note state still fits beside it. */
+@container (max-width:215px){.appt.size2 .appt-copy{grid-template-areas:'time tags' 'name name'}.appt.size2 .appt-tags{margin:0;align-self:center}.appt.size2 .tag .full{display:none}.appt.size2 .tag .brief{display:inline}}
 .appt.tone-sage{--card:var(--sage-wash);--edge:var(--sage-tint);--glyph:var(--check);--chip:var(--sage-tint)}
 .appt.tone-honey{--card:var(--rer-surface);--edge:var(--line-strong);--glyph:var(--honey-ink);--chip:var(--row);border-left-color:var(--honey)}
 .appt.tone-coral{--card:var(--coral-wash);--edge:var(--coral-tint);--glyph:var(--coral);--chip:var(--coral-tint)}

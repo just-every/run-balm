@@ -1,9 +1,9 @@
 import { validNpi, parseIcd10 } from '../payments/codes'
 import type { ClaimSnapshot, ScrubError } from './types'
+import { dollars as usd } from '../domain/invoices'
 
 /** Each refusal is named and tied to a field the biller can correct. No claim
  * is marked clean by guessing missing provider, diagnosis or pricing facts. */
-const usd=(cents:number)=>'$'+(cents/100).toFixed(2)
 
 export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
   const errors:ScrubError[]=[],add=(code:string,field:string,message:string)=>errors.push({code,field,message})

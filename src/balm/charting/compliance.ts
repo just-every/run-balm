@@ -4,6 +4,7 @@ import { hostDateAt } from '../availability/timezone'
 import { medicareSpending } from '../insurance/medicare'
 import { audit, commit, guard, human, insist, integer, need, one, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { template } from './templates'
+import { dollars } from '../domain/invoices'
 
 export const documentationElements = { totalTreatmentMinutes: 'Total treatment minutes', totalTimedMinutes: 'Total timed minutes', subjective: 'Subjective', objective: 'Objective measures and interventions', assessment: 'Assessment', goals: 'Goals', plan: 'Plan' }
 export type Documentation = { totalTreatmentMinutes: number | null; totalTimedMinutes: number | null; assistantInvolved: boolean; supervisorId: string | null }
@@ -63,7 +64,7 @@ export async function documentationAlerts(db: D1Database, visitId: string, revis
     const visitEstimate = bill(revision?.charges ? JSON.parse(revision.charges) : []).lines.reduce((sum,line) => sum + line.units * (fees.find(f => f.code === line.code)?.cents ?? 0), 0)
     const projected = spending.usedCents + visitEstimate
     if (!spending.annual) alerts.push({ kind: 'kx', message: `Configure Medicare thresholds for ${date.slice(0, 4)} before billing.` })
-    else if (projected + config.kx_near_cents >= spending.annual.threshold_cents) alerts.push({ kind: 'kx', message: `Medicare KX threshold ${projected >= spending.annual.threshold_cents ? 'reached' : 'near'}: $${(projected / 100).toFixed(2)} recognized or estimated including this visit of $${(spending.annual.threshold_cents / 100).toFixed(2)}. Review medical necessity before billing.` })
+    else if (projected + config.kx_near_cents >= spending.annual.threshold_cents) alerts.push({ kind: 'kx', message: `Medicare KX threshold ${projected >= spending.annual.threshold_cents ? 'reached' : 'near'}: ${dollars(projected)} recognized or estimated including this visit of ${dollars(spending.annual.threshold_cents)}. Review medical necessity before billing.` })
   }
   if (revision) {
     const doc: Documentation = revision.documentation ? JSON.parse(revision.documentation) : documentationInput({})

@@ -46,15 +46,18 @@ export function visitTone(a: any) {
 }
 export const toneIcon: Record<string, string> = { coral: 'warning', sage: 'checked', honey: 'pen', muted: 'x', sky: 'calendar' }
 
-/** The chips a card carries, most important first; narrow cards keep only the first ones. */
+/** The chips a card carries, most important first: the coral flag, the note state, the service, then the payer, so a
+ * narrow card that keeps only the first ones still shows whether its note is signed and drops the payer, which the
+ * patient panel carries. The flag has a short form ("KX", "Denied") that the narrowest half-hour cards print, so the
+ * flag and the note state share their one chip row. */
 export function visitChips(s: any, a: any) {
   const pay = s.payments?.visits?.[a.id]
-  const chips: [string, string][] = []
-  if (Number(a.claims_to_fix) > 0) chips.push(['Claim denied', 'coral'])
-  else if (Number(a.kx_required) === 1) chips.push(['KX threshold', 'coral'])
-  chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
+  const chips: [string, string, string?][] = []
+  if (Number(a.claims_to_fix) > 0) chips.push(['Claim denied', 'coral', 'Denied'])
+  else if (Number(a.kx_required) === 1) chips.push(['KX threshold', 'coral', 'KX'])
   if (a.note_status === 'signed') chips.push(['Signed', 'sage'])
   else if (a.status === 'attended') chips.push(['Note to sign', 'honey'])
+  chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
   if (pay?.copayCents > 0 && a.status === 'booked') chips.push([`${money(pay.copayCents)} copay`, ''])
   if (pay?.card) chips.push(['Card on file', ''])
   if (a.series_id) chips.push(['Series', ''])
@@ -92,7 +95,7 @@ export function visitCard(s: any, c: any, a: any, classes: string, extra = '') {
   const time = span(a.start_at, a.end_at, c.zone), tone = visitTone(a), chips = visitChips(s, a)
   return `<a class="appt st-${h(a.status)} tone-${tone} ${classes}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${extra} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}`)}">`
     + `${icon(toneIcon[tone], 'mark')}<span class="appt-copy">${timeSpans(time)}<strong>${h(a.client)}</strong>`
-    + `<span class="appt-tags">${chips.map(([text, t], k) => `<span class="tag${t ? ' ' + t : ''} k${Math.min(k, 3)}">${h(text)}</span>`).join('')}</span></span>${icon('chevron', 'go')}</a>`
+    + `<span class="appt-tags">${chips.map(([text, t, brief], k) => `<span class="tag${t ? ' ' + t : ''} k${Math.min(k, 3)}">${brief ? `<span class="full">${h(text)}</span><span class="brief">${h(brief)}</span>` : h(text)}</span>`).join('')}</span></span>${icon('chevron', 'go')}</a>`
 }
 /** A practitioner's name with the credential kept whole on one line ("CCC-SLP" never breaks). */
 export const practitionerName = (column: any) => `${h(column.label)}${column.credentials ? `, <span class="cred">${h(column.credentials)}</span>` : ''}`
