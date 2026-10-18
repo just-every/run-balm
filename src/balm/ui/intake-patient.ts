@@ -1,18 +1,10 @@
+import { insuranceCapture, insuranceCaptureScript } from './intake-insurance'
 import { patientPolicies } from './consents'
 import { field, h, hidden, select } from './shared'
 
 /** Insert immediately before the intake submit button. The containing form uses multipart/form-data. */
 export function intakePatientEnhancement(data: any) {
-  return `<fieldset><legend>Insurance (optional)</legend><p>If you are using insurance, enter the policy details and add clear photos of both sides of your card. The clinic checks these details before using them.</p>
-    ${field('insurancePayer', 'Payer / insurance company', '', 'text', 'maxlength="150"')}
-    ${field('insuranceMemberId', 'Member ID', '', 'text', 'maxlength="100"')}
-    ${field('insuranceGroup', 'Group number (if listed)', '', 'text', 'maxlength="100"')}
-    ${field('insuranceSubscriber', 'Subscriber’s full name', '', 'text', 'maxlength="150"')}
-    ${select('insuranceRelationship', 'Patient’s relationship to subscriber', [['self','Self'],['spouse','Spouse'],['child','Child'],['other','Other']], 'self', '')}
-    <label>Card front (JPEG, PNG or WebP; up to 2 MB)<input name="insuranceFront" type="file" accept="image/jpeg,image/png,image/webp"></label>
-    <label>Card back (JPEG, PNG or WebP; up to 2 MB)<input name="insuranceBack" type="file" accept="image/jpeg,image/png,image/webp"></label>
-    </fieldset>${patientSignature(data.policies)}
-  `
+  return insuranceCapture(data) + patientSignature(data.policies)
 }
 
 export function patientSignature(policies: any[]) {
@@ -30,7 +22,7 @@ export function patientSignature(policies: any[]) {
 
 export const intakePatientStyle = `.public form>fieldset{display:grid;gap:12px;padding:16px}.public fieldset p{margin:0}.intake-signature{display:block;width:100%;max-width:600px;height:200px;border:1px solid var(--field);border-radius:10px;touch-action:none;background:var(--rer-surface)}`
 
-export const intakeSignatureScript = `(()=>{
+export const intakeSignatureScript = insuranceCaptureScript + `(()=>{
       const canvas=document.getElementById('intake-signature');if(!canvas)return;
       const form=canvas.closest('form'),ctx=canvas.getContext('2d'),saved=form.elements.signature,typed=form.elements.signatureTyped,error=document.getElementById('intake-signature-error');
       let strokes=[],active=null;ctx.strokeStyle='#142232';ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';
@@ -41,5 +33,5 @@ export const intakeSignatureScript = `(()=>{
       canvas.addEventListener('pointerup',finish);canvas.addEventListener('pointercancel',finish);
       document.getElementById('intake-signature-clear').addEventListener('click',()=>{strokes=[];active=null;saved.value='';ctx.clearRect(0,0,canvas.width,canvas.height)});
       typed.addEventListener('input',()=>{if(typed.value.trim()){strokes=[];saved.value='';ctx.clearRect(0,0,canvas.width,canvas.height)}});
-      form.addEventListener('submit',e=>{finish();if(!typed.value.trim()&&strokes.reduce((n,s)=>n+s.length,0)<4){e.preventDefault();error.textContent='Draw or type your signature before sending the form.';typed.focus();return}for(const control of form.querySelectorAll('input[type=file]')){const file=control.files[0];if(file&&file.size>2097152){e.preventDefault();error.textContent='Each card photo must be 2 MB or smaller.';control.focus();return}}});
+      form.addEventListener('submit',e=>{finish();if(!typed.value.trim()&&strokes.reduce((n,s)=>n+s.length,0)<4){e.preventDefault();error.textContent='Draw or type your signature before sending the form.';typed.focus();return}for(const control of form.querySelectorAll('input[type=file]')){const file=control.files[0];if(file&&file.size>1900000){e.preventDefault();error.textContent='Each photo must be 1.9 MB or smaller.';control.focus();return}}});
     })();`

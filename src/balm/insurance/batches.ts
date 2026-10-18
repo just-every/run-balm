@@ -4,6 +4,7 @@ import { claimFactGuards } from './fences'
 import { claimFor } from './access'
 import { adapterStatus, insuranceAdapter } from './adapter'
 import { professionalBatch } from './professional'
+import { applyMedicareServices, combineMedicareLines } from './medicare-claim'
 import { scrubClaim } from './scrub'
 import type { ClaimSnapshot, InsuranceEnv } from './types'
 
@@ -19,9 +20,10 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
       facts.kx.usedCents+=extra;facts.kx.projectedCents+=extra
       if(facts.kx.thresholdCents!==null&&facts.kx.projectedCents>facts.kx.thresholdCents) {
         facts.kx.required=true
-        for(const line of facts.lines)if(!line.modifiers.includes('KX'))line.modifiers.push('KX')
-        insist(facts.medicalNecessity.trim(),'kx_medical_necessity_required_for_this_batch',409)
+        facts.lines=combineMedicareLines(facts.lines);applyMedicareServices(facts,facts.medicareServices)
+        insist(!facts.lines.some(l=>(facts.medicareServices?.[l.code]?.coverage??'covered')==='covered')||facts.medicalNecessity.trim(),'kx_medical_necessity_required_for_this_batch',409)
       }
+      facts.kx.targetedReview=facts.kx.reviewCents!==null&&facts.kx.reviewCents!==undefined&&facts.kx.projectedCents>facts.kx.reviewCents
       incurredInBatch.set(groupKey,extra+((facts as any).estimatedAllowedCents??0))
     }
     const errors=scrubClaim(facts)
@@ -30,6 +32,7 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
     insist(policy?.priority===1,'secondary_claims_are_not_supported_yet',409)
     claims.push({...claim,facts})
   }
+  insist(new Set(claims.map(c=>c.appointment_id)).size===claims.length,'a_batch_cannot_bill_the_same_visit_twice',409)
   const payer=claims[0].facts.payer.id
   insist(claims.every(c=>c.facts.payer.id===payer&&JSON.stringify(c.facts.billing)===JSON.stringify(claims[0].facts.billing)),'batch_requires_one_payer_and_billing_identity')
   const key=id(),body=professionalBatch(claims.map(c=>({id:c.id,snapshot:c.facts})),key),hash=await sha256(body),at=now()

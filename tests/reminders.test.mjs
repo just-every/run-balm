@@ -79,8 +79,11 @@ test('booked visit is reminded on schedule, confirmed in one reply, moved and ca
     assert.equal((await h.form(thread, { body: reply })).status, 303)
     assert.ok(h.mail.some(m => m.subject === 'A secure message needs your attention' && !m.text.includes(reply)))
     file = (await h.send('/api/balm/clients/' + client.id, undefined, priya.cookie)).value
-    assert.deepEqual(file.messages.messages.map(m => m.body), [clinical, reply])
-    assert.equal((await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value.messages, null)
+    assert.deepEqual(file.messages.messages.filter(m => !m.automated).map(m => m.body), [clinical, reply])
+    assert.deepEqual((await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value.messages.messages, [])
+    const autoReply = file.messages.messages.find(m => m.automated)
+    assert.ok(autoReply && autoReply.replyTo === file.messages.messages.find(m => m.body === reply).id)
+    assert.match(autoReply.body, /911/)
     const other = await h.cmd('client.save', { firstName: 'Noah', lastName: 'Kim', email: 'noah@client.example' })
     await h.cmd('message.send', { clientId: other.id, body: 'A different private conversation', delivery: 'shown' })
     assert.ok(!(await h.send(thread)).text.includes('different private conversation'))

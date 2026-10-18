@@ -4,6 +4,7 @@
 import { creditStatements } from '../payments/ledger'
 import { bill } from '../charting/cpt'
 import { approvalStatements } from './approvals'
+import { insuredCharge } from '../insurance/invoice-price'
 import { audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
@@ -37,11 +38,20 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
 export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception', 'agent')
   const appointmentId = text(input.appointmentId, 'appointment', 100)
-  const amount = input.amountCents === undefined || input.amountCents === '' ? undefined : integer(input.amountCents, 'amount_cents', 0, 10_000_000)
+  // Left blank, an insured visit is charged at its payer's fee schedule (so its claim matches), any other at the service price.
+  const amount = input.amountCents === undefined || input.amountCents === '' ? (await insuredCharge(db, appointmentId))?.cents : integer(input.amountCents, 'amount_cents', 0, 10_000_000)
   const { row, value } = await snapshot(db, appointmentId, amount)
   insist(row.status === 'attended', 'invoice_needs_an_attended_appointment', 409)
+  const replacing = input.replacesId ? await one(db, "SELECT * FROM bm_invoices WHERE id=? AND appointment_id=? AND status='draft'", text(input.replacesId, 'invoice', 100), appointmentId) : null
+  insist(!input.replacesId || replacing, 'draft_invoice_not_found', 404)
   const invoiceId = id()
   await commit(db, who, [
+    // Retain the earlier preparation; a concurrently approved draft cannot be replaced.
+    ...(replacing ? [
+      stmt(db, "UPDATE bm_invoices SET status='void',void_reason=?,version=version+1 WHERE id=? AND status='draft' AND version=?", 'Re-prepared from the current visit', replacing.id, replacing.version),
+      guard(db, 'changes()=1'),
+      audit(db, who, 'invoice.reprepared', row.client_id as string, invoiceId, replacing.id as string),
+    ] : []),
     stmt(db, `INSERT INTO bm_invoices(id,appointment_id,client_id,status,amount_cents,snapshot,prepared_by,prepared_role,prepared_at) VALUES(?,?,?,'draft',?,?,?,?,?)`,
       invoiceId, appointmentId, row.client_id, value.amountCents, JSON.stringify(value), who.email, who.role, now()),
     audit(db, who, 'invoice.prepared', row.client_id as string, invoiceId, `${value.amountCents} cents`),
@@ -91,13 +101,25 @@ export async function voidInvoice(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const invoice = await one(db, 'SELECT * FROM bm_invoices WHERE id=?', text(input.id, 'id', 100))
   insist(invoice && invoice.status !== 'void', 'invoice_not_found', 404)
+  // Each reason an invoice cannot be voided is named; only a lost race is a conflict.
+  const held = await one(db, 'SELECT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AS paid,EXISTS(SELECT 1 FROM bm_insurance_adjustments WHERE invoice_id=?) AS adjusted', invoice.id, invoice.id)
+  insist(!held?.paid, 'invoice_has_payments', 409)
+  insist(!held?.adjusted, 'invoice_has_insurance_payments', 409)
+  const claims = await rows(db, "SELECT id,status,version FROM bm_claims WHERE invoice_id=? AND status<>'corrected'", invoice.id)
+  insist(claims.every(c => c.status === 'draft' || c.status === 'ready'), 'invoice_has_a_sent_claim', 409)
+  // A claim that was never batched is withdrawn with its invoice, so the visit can be invoiced and claimed again.
+  const at = now(), reason = text(input.reason, 'reason', 300)
   await commit(db, who, [
-    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_insurance_adjustments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_claims WHERE invoice_id=?)', invoice.id, invoice.id, invoice.id),
-    stmt(db, "UPDATE bm_invoices SET status='void',void_reason=?,version=version+1 WHERE id=? AND version=?", text(input.reason, 'reason', 300), invoice.id, invoice.version),
+    guard(db, "NOT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_insurance_adjustments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_claims WHERE invoice_id=? AND status NOT IN ('draft','ready','corrected'))", invoice.id, invoice.id, invoice.id),
+    ...claims.flatMap(c => [
+      stmt(db, "UPDATE bm_claims SET status='corrected',updated_at=?,version=version+1 WHERE id=? AND version=?", at, c.id, c.version), guard(db, 'changes()=1'),
+      stmt(db, 'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)', id(), c.id, 'withdrawn', JSON.stringify({ invoiceId: invoice.id, reason }), at),
+    ]),
+    stmt(db, "UPDATE bm_invoices SET status='void',void_reason=?,version=version+1 WHERE id=? AND version=?", reason, invoice.id, invoice.version),
     guard(db, "EXISTS(SELECT 1 FROM bm_invoices WHERE id=? AND status='void')", invoice.id),
-    audit(db, who, 'invoice.voided', invoice.client_id as string, invoice.id as string),
+    audit(db, who, 'invoice.voided', invoice.client_id as string, invoice.id as string, claims.length ? `withdrew ${claims.length} unsent claim${claims.length === 1 ? '' : 's'}` : ''),
   ])
-  return { id: invoice.id, status: 'void' }
+  return { id: invoice.id, status: 'void', withdrawnClaims: claims.map(c => c.id) }
 }
 
 export async function recordPayment(db: D1Database, who: Actor, input: Data) {

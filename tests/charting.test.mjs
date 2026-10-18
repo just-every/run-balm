@@ -135,3 +135,50 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     assert.match(page, /8-minute rule · 33 timed min · 2 units/)
   }, { outbound: model })
 })
+
+test('documentation warnings follow imported treatment days and payer requirements block an incomplete signature', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
+  await h.cmd('staff.save', { id: priya.id, name: 'Priya', email: priya.email, role: 'practitioner', credentials: 'PT', active: true })
+  const visits = Array.from({ length: 10 }, (_, i) => {
+    const start = new Date(Date.now() - (9 - i) * 86400000 - 3 * 3600000)
+    return `visit-${i},patient-1,${start.toISOString()},${new Date(+start + 45 * 60000).toISOString()},attended`
+  })
+  const bundle = { provider: 'cliniko', practitionerId: priya.id, serviceId: service.id, dateFormat: 'MDY', files: [
+    { kind: 'patients', name: 'patients.csv', csv: 'Patient ID,First Name,Last Name,Date of Birth\npatient-1,Elena,Rivera,1988-04-12\n' },
+    { kind: 'appointments', name: 'appointments.csv', csv: 'Source ID,Patient ID,Start At,End At,Status\n' + visits.join('\n') + '\n' },
+  ] }
+  const preview = await h.cmd('movein.preview', bundle)
+  assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
+  await h.cmd('movein.apply', { ...bundle, fingerprint: preview.fingerprint, acceptanceReason: 'Reviewed the historical treatment attendance.' })
+  const patient = (await h.state()).clients[0], visit = (await h.state()).appointments.at(-1)
+  const payer = await h.cmd('insurance.payer.save', { name: 'Medicare therapy', payerId: 'MEDICARE', receiverId: 'CMS', unitMethod: 'cms', medicare: true })
+  const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
+  await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: 'BENEFICIARY', relationship: '18', patientSex: 'F', address: '100 River St', city: 'Albany', state: 'NY', postalCode: '12207', ...coverage })
+  await h.cmd('insurance.medicare.settings.save', { year, therapyGroup: 'pt_slp', thresholdCents: 250000, reviewCents: 300000, source: 'Synthetic annual CMS setting for this test', publishedOn: `${year - 1}-11-01` })
+  await h.cmd('insurance.medicare.save', { clientId: patient.id, year, therapyGroup: 'pt_slp', externalUsedCents: 245000, source: 'Reviewed recognized expenses from other providers' })
+  await h.cmd('documentation.settings.save', { lateDays: 3, kxNearCents: 10000 })
+  await h.cmd('documentation.payer.save', { payerId: payer.id, required: ['totalTreatmentMinutes'] })
+  const history = (await h.state()).appointments.filter(a => a.client_id === patient.id)
+  const initial = await h.cmd('note.write', { clientId: patient.id, appointmentId: history[0].id, template: 'pt.evaluation', sections: { ...daily, diagnosis: 'M25.561', goals: 'Walk stairs with good control' }, totalTreatmentMinutes: 40 }, priya.cookie)
+  await h.cmd('note.sign', { id: initial.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  const ninth = await h.cmd('note.write', { clientId: patient.id, appointmentId: history[8].id, body: 'Improving knee control.' }, priya.cookie)
+  assert.ok(!(await view(h, patient.id, priya.cookie)).notes.find(n => n.id === ninth.id).documentationAlerts.some(a => a.kind === 'progress'))
+  const oldStart = new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10)
+  await h.cmd('plan.send', { clientId: patient.id, diagnoses: 'M25.561', shortTermGoals: 'Walk stairs', longTermGoals: 'Return to community walking', frequencyPerWeek: 2, durationWeeks: 2, interventions: 'Therapeutic exercise', startDate: oldStart, physicianName: 'Anika Patel', physicianEmail: 'physician@referrer.example', signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit.id, body: 'Progressed therapeutic exercise; improving knee control.', charges: [{ code: '97110', minutes: 25 }], assistantInvolved: true }, priya.cookie)
+  const read = async () => (await view(h, patient.id, priya.cookie)).notes.find(n => n.id === note.id)
+  const kinds = new Set((await read()).documentationAlerts.map(a => a.kind))
+  for (const kind of ['progress', 'plan', 'kx', 'required', 'supervision']) assert.ok(kinds.has(kind), kind)
+  const close = (await h.state(priya.cookie)).documentationClose.find(v => v.id === visit.id)
+  for (const kind of kinds) assert.ok(close.alerts.some(a => a.kind === kind), kind)
+  const refusal = await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie, 400)
+  assert.ok(refusal.error.includes('Medicare therapy'))
+  assert.equal((await read()).status, 'draft')
+  await h.cmd('note.amend', { id: note.id, revision: 1, body: 'Progressed therapeutic exercise; improving knee control.', charges: [{ code: '97110', minutes: 25 }], totalTreatmentMinutes: 40, totalTimedMinutes: 25, assistantInvolved: true, supervisorId: sam.id }, priya.cookie)
+  const signed = await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  assert.equal(signed.status, 'signed')
+  assert.equal((await read()).revisions[0].documentation.totalTreatmentMinutes, 40)
+  const reception = await h.staff('Robin', 'reception')
+  assert.deepEqual((await h.state(reception.cookie)).documentationClose, [])
+}))

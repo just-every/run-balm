@@ -1,5 +1,7 @@
 import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
 import { bundleFormInput } from './movein/form-input'
+import { ownerProfile, saveOwnerName } from './owner-name'
+import { insuredCharge } from './insurance/invoice-price'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
@@ -27,12 +29,14 @@ import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
 import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
 import { DomainError, human, insist, need } from './domain/model'
+import { clinicAttachment, linkAttachment } from './messages/attachments'
+import { parseMessageInput } from './messages/input'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
 import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
 import { visitReply, visitReplyView } from './reminders/replies'
 import { portalResponse } from './portal/http'
 import { portalCommand, portalExercisesFor } from './portal'
-import { consentDocument, insuranceAiStatus, insurancePhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
+import { consentDocument, insuranceAiStatus, insurancePhoto, identityPhoto, intakeChart, parseIntakeInput, readInsurance, verifyInsurance } from './intake'
 import { consentView, requestConsents, signRenewals } from './intake/renewals'
 import { caseCommand, caseList } from './cases'
 import { visitSummary } from './visit-summary'
@@ -45,13 +49,13 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)) }
+  return { ...file, imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -95,6 +99,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       const [code, amount] = line.trim().split(/\s+/)
       return { code, cents: parseDollars(amount, 'fee') }
     })
+    if (name === 'insurance.eligibility.record' && typeof input.copay === 'string') input.copayCents = input.copay.trim() ? parseDollars(input.copay, 'copay') : null
     if (name === 'insurance.medicare.save' && input.threshold !== undefined) { input.thresholdCents = parseDollars(input.threshold, 'threshold'); input.externalUsedCents = parseDollars(input.externalUsed || '0', 'outside_expenses') }
     return insuranceCommand(env, who, name, input)
   }
@@ -110,6 +115,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
+  if (name === 'owner.name') return saveOwnerName(request, env, who, input)
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
@@ -151,7 +157,12 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > 1_000_000) fail('The file is larger than 1,000,000 bytes. Export a smaller date range from Cliniko and import each file in turn.', 413)
       if (value.size) {
-        if (key === 'exerciseImage') {
+        if (key === 'abnDocument') {
+          if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
+          const bytes = new Uint8Array(await value.arrayBuffer())
+          let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
+          input.abnDocument = `data:${value.type};base64,${btoa(binary)}`
+        } else if (key === 'exerciseImage') {
           if (!['image/png', 'image/jpeg', 'image/webp'].includes(value.type)) fail('choose_a_png_jpeg_or_webp_image')
           const bytes = new Uint8Array(await value.arrayBuffer())
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -265,6 +276,11 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), error: failure.text }, failure.status)
     }
   }
+  const messageAttachment = path.match(/^\/messages\/([A-Za-z0-9_-]{43})\/attachments\/([\w-]+)$/)
+  if (messageAttachment) {
+    if (request.method !== 'GET') fail('method_not_allowed', 405)
+    return await linkAttachment(env.DB, messageAttachment[1], messageAttachment[2])
+  }
   const privatePage = path.match(/^\/(visit|messages)\/([A-Za-z0-9_-]{20,64})$/)
   if (privatePage) {
     const [, matchedKind, token] = privatePage
@@ -272,7 +288,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     try {
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
-        const input = await inputBody(request)
+        const input = kind === 'messages' ? await parseMessageInput(request) : await inputBody(request)
         if (kind === 'visit') await visitReply(env, token, input)
         else await patientSend(env, token, input)
         return redirect(`/${kind}/${token}?saved=1`)
@@ -308,7 +324,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
 export async function balmResponse(request: Request, original: Bindings): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname
   const isPortal = path === '/portal' || path.startsWith('/portal/')
-  const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance)\/([\w-]+)(\.pdf|\/(front|back))$/)
+  const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance|identity)\/([\w-]+)(\.pdf|\/(front|back)|\/photo)$/)
   const isPublic = isPortal || path === '/book' || path.startsWith('/consent/') || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
   if (!isPublic && !intakeDocumentPath && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
@@ -326,10 +342,12 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
+      const messageAttachment = path.match(/^\/api\/balm\/messages\/attachments\/([\w-]+)$/)
+      if (messageAttachment) return await clinicAttachment(env.DB, who, messageAttachment[1])
       if (intakeDocumentPath) {
         const [, kind, id, suffix, side] = intakeDocumentPath
-        if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side)) fail('not_found', 404)
-        const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
+        if ((kind === 'consents' && suffix !== '.pdf') || (kind === 'insurance' && !side) || (kind === 'identity' && suffix !== '/photo')) fail('not_found', 404)
+        const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : kind === 'identity' ? await identityPhoto(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
         return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
       }
       if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
@@ -343,7 +361,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
-      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P)\/([\w-]+)$/)
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
@@ -360,7 +378,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
       if (path === '/app/action') {
-        let input = await inputBody(request); const name = url.searchParams.get('name') ?? ''
+        const name = url.searchParams.get('name') ?? ''; let input = name.startsWith('message.') ? await parseMessageInput(request) : await inputBody(request)
         if (name === 'session.signout') {
           const response = await operatorAuth(env).signOut(request)
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })

@@ -19,6 +19,8 @@ export function insist(condition: unknown, code: string, status = 400): asserts 
   if (!condition) throw new DomainError(code, status)
 }
 export const id = () => crypto.randomUUID()
+/** A first and last name, as claims and signatures need; a local install's default owner name "Owner" is not one. */
+export const fullName = (name: unknown) => typeof name === 'string' && name.trim().split(/\s+/).length >= 2 && name.trim().toLowerCase() !== 'owner'
 export const now = () => new Date().toISOString()
 export function text(value: unknown, field: string, max = 200): string {
   insist(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), `invalid_${field}`)

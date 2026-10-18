@@ -2,6 +2,7 @@
 // typed name and credentials; the signature records the time and the SHA-256 of
 // what was signed, and the database refuses any later change to a signed note
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
+import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, now, one, practitionerId, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -27,7 +28,7 @@ function signer(staff: Data, input: Data) {
 
 /** What a signature seals: the note, the exact revision, its content and the signer, at the time of signing. */
 export const signedDigest = (note: Data, revision: Data, sections: unknown, by: { name: string; credentials: string }, signedAt: string) =>
-  sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, signer: by, signedAt }))
+  sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, documentation: revision.documentation, signer: by, signedAt }))
 
 export async function signNote(db: D1Database, who: Actor, input: Data) {
   const { note, staff } = await authored(db, who, input.id)
@@ -45,9 +46,16 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
     const blank = t.sections.find(s => s.required && !sections.find((x: Data) => x.id === s.id)?.text)
     insist(!blank, `complete_${blank?.id}_before_signing`)
   } else insist(String(latest.body).trim(), 'note_is_empty')
+  const requiredVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_payer_documentation')
+  const policyVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_policies')
+  const alerts = note.appointment_id ? await documentationAlerts(db, note.appointment_id, latest, note.template) : []
+  const missing = alerts.find(a => a.blocking)
+  insist(!missing, missing?.message ?? 'complete_required_documentation')
   const by = signer(staff, input), signedAt = now()
   const digest = await signedDigest(note, latest, sections, by, signedAt)
   await commit(db, who, [
+    guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
+    guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_policies)=?', policyVersion!.total),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)', note.id, latest.number),
     ...(visit ? [guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status!='cancelled')", note.appointment_id)] : []),
     stmt(db, 'UPDATE bm_notes SET signed_at=?,signed_revision=?,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=? AND signed_at IS NULL', signedAt, latest.number, by.name, by.credentials, digest, note.id),

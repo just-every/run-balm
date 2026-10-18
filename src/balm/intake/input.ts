@@ -2,8 +2,8 @@ import { insist, text, type Data } from '../domain/model'
 
 export type Signature = { kind: 'drawn'; strokes: number[][][] } | { kind: 'typed'; name: string }
 export type Photo = { bytes: Uint8Array<ArrayBuffer>; mime: string }
-export const PHOTO_LIMIT = 2 * 1024 * 1024
-const BODY_LIMIT = 6 * 1024 * 1024
+export const PHOTO_LIMIT = 1_900_000
+const BODY_LIMIT = 15 * 1024 * 1024
 
 export function signature(input: Data): Signature {
   if (input.signatureTyped) return { kind: 'typed', name: text(input.signatureTyped, 'typed_signature', 150) }
@@ -74,7 +74,7 @@ export async function parseIntakeInput(request: Request): Promise<Data> {
     insist(!(key in input), 'duplicate_intake_field')
     if (typeof value === 'string') input[key] = value
     else {
-      insist(['insuranceFront', 'insuranceBack'].includes(key), 'unexpected_intake_file')
+      insist(['insuranceFront', 'insuranceBack', 'secondaryFront', 'secondaryBack', 'identityPhoto'].includes(key), 'unexpected_intake_file')
       if (!value.size) continue
       insist(value.size <= PHOTO_LIMIT, 'card_photo_too_large', 413)
       input[key] = `data:${value.type};base64,${base64(new Uint8Array(await value.arrayBuffer()))}`

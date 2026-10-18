@@ -1,5 +1,6 @@
 // Treatment notes on a client file: start from the visit's template, draft with
 // the scribe, edit the draft, review and sign, then add signed addenda.
+import { documentationFields, documentationSummary, documentationWarnings } from './documentation'
 import { codes } from '../charting/cpt'
 import { disciplines, template, templates } from '../charting/templates'
 import { clinician, empty, entry, field, form, h, hidden, panel, stamp, status, textarea, usDate, when, zoneOf } from './shared'
@@ -42,7 +43,7 @@ function noteEntry(s: any, f: any, n: any) {
   let actions = ''
   if (n.mine && n.status !== 'signed') {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
-    actions += `<details><summary>Edit draft</summary>${form('note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
+    actions += `<details><summary>Edit draft</summary>${form('note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
@@ -52,7 +53,7 @@ function noteEntry(s: any, f: any, n: any) {
       + '<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed this note and attest that it is accurate and complete.</span></label>', 'Sign note')}</details>`
   }
   if (n.mine && n.status === 'signed') actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
-  return entry(`${n.title}`, head + scribe + content(latest) + billing(n.billing) + signature + addenda + history + actions, `note-${n.id}`)
+  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + signature + addenda + history + actions, `note-${n.id}`)
 }
 
 /** Goals carried forward from the practitioner's latest signed note on this file. */
@@ -75,7 +76,7 @@ function compose(s: any, f: any, ask: any) {
     ? `<details open><summary>Draft with the scribe</summary>${form('note.scribe', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t.key) + textarea('dictation', 'Dictation or bullet points for this visit', '', 'required maxlength="20000" placeholder="Pt reports... Ther ex 23 min: ... Manual 10 min: ... Plan: ..."') + '<p class="help">The scribe drafts the sections and CPT minutes from what you write here, using this clinic’s own AI model. You review and sign; it never signs.</p>', 'Draft the note')}</details>`
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
   const body = t ? sectionFields(t, { goals: carriedGoals(f) }) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
-  const write = form('note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([]), 'Save draft')
+  const write = form('note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([]) + documentationFields({}, s.staff), 'Save draft')
   return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 

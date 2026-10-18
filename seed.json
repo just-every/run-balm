@@ -14,7 +14,8 @@
       "id": "clinic-operations",
       "clauses": [
         "BALM-001",
-        "INTAKE-003"
+        "INTAKE-003",
+        "INTAKE-004"
       ]
     },
     {
@@ -24,6 +25,18 @@
         "COMM-002",
         "COMM-003",
         "PORTAL-003"
+      ]
+    },
+    {
+      "id": "medicare-therapy-rules",
+      "clauses": [
+        "INS-009"
+      ]
+    },
+    {
+      "id": "documentation-compliance",
+      "clauses": [
+        "CHART-007"
       ]
     }
   ],

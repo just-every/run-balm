@@ -1,7 +1,10 @@
 import { insist, type Actor, type Data } from '../domain/model'
 import { insuranceActor } from './access'
-import { saveAuthorization, saveEnrollment, saveInsuranceSettings, saveMedicare, savePayer, savePolicy } from './setup'
-import { importEligibility, prepareEligibility, submitEligibility } from './eligibility'
+import { saveAuthorization, saveEnrollment, saveInsuranceSettings, savePayer, savePolicy } from './setup'
+import { saveMedicareSettings, saveMedicareExpenses, saveRecognizedExpense } from './medicare'
+import { saveMedicareService } from './medicare-claim'
+export { medicareSpending, medicarePosition } from './medicare'
+import { importEligibility, prepareEligibility, recordEligibility, submitEligibility } from './eligibility'
 import { correctClaim, documentNecessity, draftAppeal, prepareClaim, scrubStoredClaim } from './claims'
 import { prepareBatch, submitBatch } from './batches'
 import { importAcknowledgment } from './acknowledgments'
@@ -16,7 +19,7 @@ export type { InsuranceEnv, ClaimSnapshot, ScrubError } from './types'
  * clinical assertions remain exclusive to clinicians and the clinic owner. */
 export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:string,input:Data) {
   insist(input&&typeof input==='object'&&!Array.isArray(input),'invalid_input')
-  const clinical=['insurance.claim.necessity','insurance.denial.appeal'].includes(name)
+  const clinical=['insurance.claim.necessity','insurance.denial.appeal','insurance.medicare.service.save'].includes(name)
   const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
   switch(name) {
     case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
@@ -24,10 +27,14 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.enrollment.save':return saveEnrollment(db,who,input)
     case 'insurance.policy.save':return savePolicy(db,who,input)
     case 'insurance.authorization.save':return saveAuthorization(db,who,input)
-    case 'insurance.medicare.save':return saveMedicare(db,who,input)
+    case 'insurance.medicare.save':return saveMedicareExpenses(db,who,input)
+    case 'insurance.medicare.settings.save':return saveMedicareSettings(db,who,input)
+    case 'insurance.medicare.recognized.save':return saveRecognizedExpense(db,who,input)
+    case 'insurance.medicare.service.save':return saveMedicareService(db,who,input)
     case 'insurance.eligibility.prepare':return prepareEligibility(db,who,input)
     case 'insurance.eligibility.submit':return submitEligibility(env,who,input)
     case 'insurance.eligibility.import':return importEligibility(db,who,input)
+    case 'insurance.eligibility.record':return recordEligibility(db,who,input)
     case 'insurance.claim.prepare':return prepareClaim(db,who,input)
     case 'insurance.claim.correct':return correctClaim(db,who,input)
     case 'insurance.claim.scrub':return scrubStoredClaim(db,who,input)

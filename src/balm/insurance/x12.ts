@@ -15,12 +15,17 @@ export function element(value: unknown) {
 export const segment = (...values: unknown[]) => values.map(element).join('*')
 export const xdate = (date: string) => date.replace(/-/g,'')
 export const control = () => String(crypto.getRandomValues(new Uint32Array(1))[0]%1_000_000_000).padStart(9,'0')
-export type Envelope = {sender:string;receiver:string;production:boolean}
+export type Envelope = {sender:string;taxId:string;receiver:string;payerCode:string;production:boolean}
+/** Who a file is from and to. Until a clearinghouse assigns IDs, a file names the
+ * practice by its federal tax ID (ISA qualifier 30) and the payer by its payer ID. */
+export function parties(config:Envelope) {
+  return {senderQualifier:config.sender?'ZZ':'30',sender:config.sender||config.taxId,receiver:config.receiver||config.payerCode}
+}
 export function envelope(kind:'270'|'837', guide:string, config:Envelope, parts:string[], ref=control()) {
   const stamp = new Date().toISOString(), date = stamp.slice(0,10).replace(/-/g,''), time = stamp.slice(11,16).replace(':','')
-  const sender=element(config.sender),receiver=element(config.receiver)
+  const who=parties(config),sender=element(who.sender),receiver=element(who.receiver)
   insist(sender.length<=15 && receiver.length<=15,'x12_interchange_id_too_long')
-  const isa=['ISA','00','          ','00','          ','ZZ',sender.padEnd(15),'ZZ',receiver.padEnd(15),date.slice(2),time,'^','00501',ref,'0',config.production?'P':'T',':'].join('*')
+  const isa=['ISA','00','          ','00','          ',who.senderQualifier,sender.padEnd(15),'ZZ',receiver.padEnd(15),date.slice(2),time,'^','00501',ref,'0',config.production?'P':'T',':'].join('*')
   const group=kind==='270'?'HS':'HC'
   const st=segment('ST',kind,'0001',guide), se=segment('SE',parts.length+2,'0001')
   return [isa,segment('GS',group,sender,receiver,date,time,Number(ref),'X',guide),st,...parts,se,segment('GE',1,Number(ref)),segment('IEA',1,ref)].join('~')+'~\n'

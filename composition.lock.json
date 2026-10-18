@@ -393,7 +393,7 @@
       "source": "editions/balm/.gitignore"
     },
     "ACCEPTANCE.md": {
-      "sha256": "6add8341a31d6a4d07e913a687d8f064e7bc0af5566596a1e12fd37287301bb9",
+      "sha256": "6308e9133a0e232caf7400633c1fc5c60584fcdf611097394d019c97c65c685a",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -407,7 +407,7 @@
       "source": "editions/balm/AGENTS.md"
     },
     "CONTRACT.md": {
-      "sha256": "e3920581c71b5e543a68ca1e6ba343b520dbe90e411416bba798d22ddf1f90a8",
+      "sha256": "539bd4aa69c3d74d81b2f127472852046d35a0db4ff5c2c1388bf49e042ddea2",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -568,14 +568,14 @@
       "source": "modules/operator-auth/accounts/schema/owner-signin.sql"
     },
     "package.json": {
-      "sha256": "784ac8a93711b75a21fa78b0309738fb9ca8d8fd7bf826457447596db4f8814c",
+      "sha256": "9bcb063524719ba0f94d51441b16a7d2360cbaeaea2332ee7bf7047835ffc20f",
       "mode": 420,
       "component": "balm",
       "repository": "family",
       "source": "editions/balm/package.json"
     },
     "pnpm-lock.yaml": {
-      "sha256": "50d2ff7492e751c6054917a853b31a411353cc89122e6869c60f5bc988334914",
+      "sha256": "e570f03152469e12335ef59a3f481c4d1cfdd45a2b6ac47e4585c4ce22b65a60",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -624,7 +624,7 @@
       "source": "editions/balm/scripts/install.mjs"
     },
     "scripts/installer/local.mjs": {
-      "sha256": "589f717bd38844ee75af4aa22ac245b7f2d9e6016512f7a797b313991c48c2ba",
+      "sha256": "dd6f3bb2beca33873dcb468234602f12798a86af2a6fc7b0ae6c8ba6366887d9",
       "mode": 420,
       "component": "balm",
       "repository": "family",
@@ -638,7 +638,7 @@
       "source": "editions/balm/scripts/installer/ui/seed.mjs"
     },
     "seed.json": {
-      "sha256": "7cafd1c2ed875df92f39c6bf24b71c1cd233a06e54a61c4fc182082d76978aba",
+      "sha256": "ae1da96ad2bb1d6b485ed015931cdecc326beb9589ad0c76519c57a9935a5f59",
       "mode": 420,
       "component": "balm",
       "repository": "family",

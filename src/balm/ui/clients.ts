@@ -36,7 +36,7 @@ function appointments(s: any, f: any, notice: any) {
   const path = `/app/clients/${f.client.id}`, invoiced = new Set((f.invoices ?? []).filter((i: any) => i.status !== 'void').map((i: any) => i.appointment_id))
   const list = f.appointments.map((a: any) => entry(`${a.service} with ${a.practitioner}`, `<p>${when(s, a.start_at)}<br>${status(a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${intakeChip(a)}</p><div class="actions">`
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
-    + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"'), 'Prepare invoice') : '')
+    + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', f.insuredCharges?.[a.id] ? `Amount ($, blank for ${f.insuredCharges[a.id].payer}’s fee schedule: ${money(f.insuredCharges[a.id].cents)})` : `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"') + (f.insuredCharges?.[a.id] ? '<p class="help">The insurance claim must charge the same total as this invoice.</p>' : ''), 'Prepare invoice') : '')
     + (a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId) ? `<p><a href="/app?${h(new URLSearchParams({ view: 'day', date: hostDateAt(new Date(a.start_at), s.settings.time_zone), appt: a.id }))}">Move or change in the calendar</a></p>` + cancelForm('appointment.cancel', path, hidden('id', a.id), 'Cancel appointment', 'Cancel visit', clientName(f.client)) : '')
     + '</div>', `visit-${a.id}`)).join('')
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
@@ -56,9 +56,10 @@ function intake(s: any, f: any) {
 
 export function invoiceEntry(s: any, i: any, path: string) {
   const v = i.snapshot, outstanding = i.amount_cents - i.paid_cents - (i.adjusted_cents ?? 0)
-  const title = i.number ? `Invoice INV-${String(i.number).padStart(6, '0')}` : 'Prepared invoice'
+  const title = i.number ? `Invoice INV-${String(i.number).padStart(6, '0')}` : i.status === 'void' ? 'Earlier invoice preparation' : 'Prepared invoice'
   let actions = ''
   if (i.status === 'draft' && desk(s)) actions += form('invoice.approve', path, hidden('id', i.id) + '<label class="check"><input type="checkbox" required><span>I reviewed this exact invoice.</span></label>', 'Approve and number invoice')
+  if (i.status === 'draft' && desk(s)) actions += `<details><summary>Prepare again from the current visit</summary><p>Use this after signing the visit note or correcting its details. The earlier preparation is retained, and the new draft needs your review and approval.</p>${form('invoice.prepare', path, hidden('appointmentId', i.appointment_id) + hidden('replacesId', i.id) + field('amount', 'Amount ($)', dollarsField(i.amount_cents), 'text', 'required inputmode="decimal" maxlength="12"'), 'Re-prepare invoice')}</details>`
   if (i.status === 'approved' && desk(s)) {
     actions += `<p><a href="/api/balm/invoices/${h(i.id)}.html">Download invoice</a></p>`
     if (outstanding > 0) actions += `<details><summary>Record a payment received</summary>${form('payment.record', path, hidden('invoiceId', i.id) + field('amount', 'Amount received ($)', dollarsField(outstanding), 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"') + field('reference', 'Payment reference (unique)', '', 'text', 'required maxlength="120"'), 'Record payment')}</details>`

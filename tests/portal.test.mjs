@@ -54,11 +54,122 @@ test('a clinician assigns an illustrated home exercise, the signed-in patient op
     assert.ok(assigned.seenAt); assert.ok(assigned.doneAt); assert.equal(assigned.doneDates.length, 1)
     const deskFile = await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)
     assert.equal(deskFile.value.homeExercises, null)
+    // PORTAL-003: the patient uploads an original photo through the real
+    // multipart portal door. Content and filenames stay out of notices/audit.
+    const photoBytes = Buffer.from(png.split(',')[1], 'base64')
+    const upload = async (path, fields, cookie, filename = 'shoulder-photo.png', bytes = photoBytes, mime = 'image/png') => {
+      const body = new FormData()
+      for (const [key, value] of Object.entries(fields)) body.set(key, value)
+      body.set('attachment', new File([bytes], filename, { type: mime }))
+      const encoded = new Request(h.origin + path, { method: 'POST', body })
+      return h.mf.dispatchFetch(h.origin + path, { method: 'POST', headers: { origin: h.origin, cookie, 'content-type': encoded.headers.get('content-type') }, body: new Uint8Array(await encoded.arrayBuffer()), redirect: 'manual' })
+    }
+    const patientText = 'My shoulder has been sore after the new exercise.'
+    let submitted = await upload('/portal/action', { name: 'message.send', recipient: priya.id, body: patientText, clientId: foreign.id }, patientCookie)
+    assert.equal(submitted.status, 303, await submitted.text())
+    let clinicalFile = (await h.send('/api/balm/clients/' + client.id, undefined, priya.cookie)).value
+    const patientMessage = clinicalFile.messages.messages.find(m => m.body === patientText)
+    assert.equal(patientMessage.practitionerId, priya.id)
+    assert.equal(patientMessage.attachments.length, 1)
+    const original = patientMessage.attachments[0]
+    const automatic = clinicalFile.messages.messages.filter(m => m.automated && m.replyTo === patientMessage.id)
+    assert.equal(automatic.length, 1)
+    assert.match(automatic[0].body, /911/)
+    assert.ok((await h.send('/portal/home', undefined, patientCookie)).text.includes(automatic[0].body))
+    const clinicNotice = h.mail.filter(m => m.subject === 'A secure message needs your attention')
+    assert.ok(clinicNotice.some(m => m.to.includes('priya@clinic.example')))
+    assert.ok(clinicNotice.every(m => !m.to.includes('rosa@clinic.example') && !m.text.includes(patientText) && !m.html.includes('shoulder-photo')))
+    const downloadPath = '/api/balm/messages/attachments/' + original.id
+    assert.equal((await h.send(downloadPath)).status, 401)
+    assert.equal((await h.send(downloadPath, undefined, reception.cookie)).status, 404)
+    assert.equal((await h.send(downloadPath, undefined, other.cookie)).status, 404)
+    const download = await h.mf.dispatchFetch(h.origin + downloadPath, { headers: { cookie: priya.cookie } })
+    assert.equal(download.status, 200)
+    assert.equal(download.headers.get('cache-control'), 'no-store')
+    assert.match(download.headers.get('content-disposition'), /^attachment;/)
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), photoBytes)
+    const patientDownload = await h.mf.dispatchFetch(h.origin + '/portal/messages/attachments/' + original.id, { headers: { cookie: patientCookie } })
+    assert.equal(patientDownload.status, 200)
+    assert.deepEqual(Buffer.from(await patientDownload.arrayBuffer()), photoBytes)
+
+    // A clinic reply also stores an original attachment and stays in the same destination.
+    const clinicReply = 'Pause that exercise until we review it at your next visit.'
+    submitted = await upload('/app/action?name=message.send&returnTo=' + encodeURIComponent('/app/clients/' + client.id),
+      { clientId: client.id, replyTo: patientMessage.id, body: clinicReply, delivery: 'shown' }, priya.cookie, 'exercise-guide.png')
+    assert.equal(submitted.status, 200, await submitted.text())
+    clinicalFile = (await h.send('/api/balm/clients/' + client.id, undefined, priya.cookie)).value
+    const replyMessage = clinicalFile.messages.messages.find(m => m.body === clinicReply)
+    assert.equal(replyMessage.replyTo, patientMessage.id)
+    assert.equal(replyMessage.attachments.length, 1)
+    const clinicalLink = await h.cmd('message.link', { clientId: client.id, delivery: 'shown' }, priya.cookie)
+    const clinicalPath = new URL(clinicalLink.url).pathname
+    const linkedDownload = await h.mf.dispatchFetch(h.origin + clinicalPath + '/attachments/' + original.id)
+    assert.equal(linkedDownload.status, 200)
+    assert.deepEqual(Buffer.from(await linkedDownload.arrayBuffer()), photoBytes)
+
+    // Routing excludes the reception user from all clinical content, including
+    // attachment metadata and private credentials, and delivers administrative messages to them.
+    const deskText = 'Could you send a receipt for my last visit?'
+    submitted = await upload('/portal/action', { name: 'message.send', recipient: 'front_desk', body: deskText }, patientCookie, 'receipt-question.png')
+    assert.equal(submitted.status, 303, await submitted.text())
+    const desk = (await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value.messages
+    assert.ok(desk.messages.some(m => m.body === deskText))
+    assert.ok(desk.messages.every(m => m.route === 'front_desk'))
+    assert.ok(!JSON.stringify(desk).includes(patientText) && !JSON.stringify(desk).includes(original.id))
+    const deskMessage = desk.messages.find(m => m.body === deskText)
+    assert.ok(h.mail.some(m => m.subject === 'A secure message needs your attention' && m.to.includes('rosa@clinic.example')))
+    const deskReply = await h.cmd('message.send', { clientId: client.id, replyTo: deskMessage.id, body: 'Your receipt is in the statements section.', delivery: 'shown' }, reception.cookie)
+    const deskPath = new URL(deskReply.url).pathname
+    const deskPage = await h.send(deskPath)
+    assert.ok(deskPage.text.includes(deskText) && !deskPage.text.includes(patientText))
+    assert.equal((await h.send(deskPath + '/attachments/' + original.id)).status, 404)
+    assert.equal((await h.send('/api/balm/messages/attachments/' + deskMessage.attachments[0].id, undefined, reception.cookie)).status, 200)
+    assert.equal((await h.send('/api/balm/messages/attachments/' + deskMessage.attachments[0].id, undefined, priya.cookie)).status, 404)
+    await h.cmd('message.send', { clientId: client.id, replyTo: patientMessage.id, body: 'Forbidden clinical reply', delivery: 'shown' }, reception.cookie, 404)
+    await h.cmd('message.revoke', { clientId: client.id }, reception.cookie)
+    assert.equal((await h.send(deskPath)).status, 404)
+    assert.equal((await h.send(clinicalPath)).status, 200, 'reception cannot revoke practitioner credentials')
+    assert.ok(!(await h.send('/api/balm/clients/' + client.id, undefined, priya.cookie)).value.messages.messages.some(m => m.body === deskText))
+
+    // Two treating practitioners still have separate clinical destinations.
+    await pastVisit(h, client.id, other, service.id, h.owner, 8)
+    assert.equal((await h.form('/portal/action', { name: 'message.send', recipient: other.id, body: 'A private question for my second practitioner.' }, patientCookie)).status, 303)
+    const secondThread = (await h.send('/api/balm/clients/' + client.id, undefined, other.cookie)).value.messages
+    assert.ok(secondThread.messages.some(m => m.body === 'A private question for my second practitioner.'))
+    assert.ok(!JSON.stringify(secondThread).includes(patientText))
+    assert.equal((await h.send(downloadPath, undefined, other.cookie)).status, 404)
+    const unrelated = await h.staff('Morgan')
+    assert.equal((await h.form('/portal/action', { name: 'message.send', recipient: unrelated.id, body: 'Not assigned to this patient.' }, patientCookie)).status, 404)
+    const countBefore = (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value.messages.messages.length
+    submitted = await upload('/portal/action', { name: 'message.send', recipient: priya.id, body: 'Invalid file is not retained.' }, patientCookie, 'bad.png', Buffer.from('This is not an image file.'), 'image/png')
+    assert.equal(submitted.status, 400, await submitted.text())
+    assert.equal((await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value.messages.messages.length, countBefore)
+    await assert.rejects(h.db.prepare('UPDATE bm_message_attachments SET filename=? WHERE id=?').bind('changed.png', original.id).run())
+    await assert.rejects(h.db.prepare('UPDATE bm_messages SET route=? WHERE id=?').bind('front_desk', patientMessage.id).run())
+    await assert.rejects(h.db.prepare('DELETE FROM bm_messages WHERE id=?').bind(automatic[0].id).run())
+
+    // A different authenticated patient cannot fetch the uploaded original.
+    await h.form('/portal', { email: 'una@patient.example' })
+    const otherNotice = h.mail.findLast(m => m.to.includes('una@patient.example') && m.text.includes('/portal/confirm?token='))
+    const otherToken = new URL(otherNotice.text.match(/https?:\/\/[^\s]+\/portal\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
+    const otherSignin = await h.mf.dispatchFetch(h.origin + '/portal/confirm', { method: 'POST', headers: { origin: h.origin, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: otherToken }), redirect: 'manual' })
+    const otherCookie = otherSignin.headers.get('set-cookie').split(';')[0]
+    assert.equal((await h.send('/portal/messages/attachments/' + original.id, undefined, otherCookie)).status, 404)
+    await h.cmd('message.revoke', { clientId: client.id }, priya.cookie)
+    assert.equal((await h.send(clinicalPath + '/attachments/' + original.id)).status, 404)
     const statement = await h.send('/portal/statement.pdf', undefined, patientCookie)
     assert.equal(statement.status, 200); assert.match(statement.text, /^%PDF/)
     assert.equal((await h.form('/portal/signout', {}, patientCookie)).status, 303)
     assert.equal((await h.send('/portal/home', undefined, patientCookie)).status, 303)
-    const audit = (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value.audit
+    const audit = []
+    let before = ''
+    do {
+      const auditFile = (await h.send('/api/balm/clients/' + client.id + (before ? '?auditBefore=' + before : ''), undefined, h.owner)).value
+      audit.push(...auditFile.audit)
+      before = auditFile.auditPage.older
+    } while (before)
+    for (const action of ['message.sent', 'message.read', 'message.auto_replied', 'message.attachment_added', 'message.attachment_downloaded']) assert.ok(audit.some(a => a.action === action), action)
+    assert.ok(!JSON.stringify(audit).includes(patientText) && !JSON.stringify(audit).includes('shoulder-photo.png'))
     for (const action of ['exercise.assigned', 'exercise.seen', 'exercise.done', 'exercise.adherence_read']) assert.ok(audit.some(a => a.action === action), action)
     assert.ok(!JSON.stringify(audit).includes('Straighten your knee'))
   } finally { await h.close() }

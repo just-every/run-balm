@@ -12,6 +12,8 @@ const exec = promisify(execFile)
 const cli = resolve('node_modules/@runeditrun/rer/global/rer.mjs')
 const command = async (cwd, args, expected = 0) => {
   let result
+  const started = Date.now()
+  console.log(`archive ${args[0]} started`)
   // These commands own a separate checkout, not the parent verify operation.
   const env = { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }
   delete env.RER_LOCAL_OPERATION
@@ -20,6 +22,7 @@ const command = async (cwd, args, expected = 0) => {
   if (env.RER_JOB_POLICY) args = args.filter(arg => arg !== '--no-queue')
   try { result = { ...await exec(process.execPath, [cli, ...args], { cwd, env, maxBuffer: 2e6 }), code: 0 } }
   catch (error) { result = error }
+  console.log(`archive ${args[0]} finished in ${Date.now()-started}ms`)
   assert.equal(result.code, expected, `${args[0]}: ${result.stdout ?? ''} ${result.stderr ?? ''}`)
 }
 async function checkout(root) {
@@ -28,18 +31,22 @@ async function checkout(root) {
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
 test('public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
-  const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased')
+  const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
-    for (const path of [source,restored,erased]) await checkout(path)
+    for (const path of [source,restored,erased,refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:2e6 })
     h=await harness({root:source})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
+    await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
+    const payer=await h.cmd('insurance.payer.save',{name:'Archive Health',payerId:'ARCHIVE',receiverId:'ARCHIVE'})
+    const card='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII='
+    const insurance={insurancePayerId:payer.id,insuranceMemberId:'ARCHIVE-MEMBER',insuranceRelationship:'self',insurancePatientSex:'F',insuranceStartsOn:'2026-01-01',insuranceAddress:'200 Oak St',insuranceCity:'Austin',insuranceState:'TX',insurancePostalCode:'78701',insuranceFront:card,insuranceBack:card,identityPhoto:card}
     const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0])
     const token=booked.location.match(/\/intake\/([\w-]+)/)[1]
     const intakePage=await h.send('/intake/'+token)
-    assert.equal((await h.form('/intake/'+token,{formId:'intake-v1',q_reason:'Restored ankle sprain',q_emergency:'Kim 0400',q_consent:'yes',consentVersion:intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee'})).status,303)
+    assert.equal((await h.form('/intake/'+token,{formId:'intake-v1',q_reason:'Restored ankle sprain',q_emergency:'Kim 0400',q_consent:'yes',consentVersion:intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee',...insurance})).status,303)
     const maya=(await h.state()).clients.find(c=>c.first_name==='Maya')
     const visit=await pastVisit(h,maya.id,priya,service.id)
     await h.cmd('appointment.attend',{id:visit})
@@ -55,18 +62,30 @@ test('public CLI archive round trip refuses damaged or populated stores and resp
     const old=join(temporary,'before.rer'),later=join(temporary,'later.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
     const bytes=await readFile(old,'utf8');for(const kept of ['Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported'])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes('"token_hash"'))
-    await command(restored,['import','--input',old,'--yes','--no-queue'])
-    await command(restored,['export','--output',again,'--no-queue'])
     const rows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
-    assert.ok(rows(bytes).length>0);assert.deepEqual(rows(await readFile(again,'utf8')),rows(bytes))
-    await command(restored,['import','--input',old,'--yes','--no-queue'],4)
+    assert.ok(rows(bytes).length>0)
     const corrupt=join(temporary,'corrupt.rer');await writeFile(corrupt,bytes.replace('Restored treatment note','Changed treatment note'),{mode:0o600})
+    // Each pair owns independent stores. Keep all CLI cases with at most two children.
     // Checksum damage is a transfer failure (1); restore policy conflicts remain 4.
-    await command(erased,['import','--input',corrupt,'--yes','--no-queue'],1)
-    h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
-    await command(source,['export','--output',later,'--no-queue'])
-    await command(erased,['import','--input',old,'--journal',later,'--yes','--no-queue'],4)
-    await command(erased,['import','--input',later,'--yes','--no-queue'])
+    await Promise.all([
+      command(restored,['import','--input',old,'--yes','--no-queue']),
+      (async()=>{
+        await command(erased,['import','--input',corrupt,'--yes','--no-queue'],1)
+        await command(source,['import','--input',old,'--yes','--no-queue'],4)
+      })(),
+    ])
+    await Promise.all([
+      command(restored,['export','--output',again,'--no-queue']),
+      (async()=>{
+        h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
+        await command(source,['export','--output',later,'--no-queue'])
+      })(),
+    ])
+    assert.deepEqual(rows(await readFile(again,'utf8')),rows(bytes))
+    await Promise.all([
+      command(refused,['import','--input',old,'--journal',later,'--yes','--no-queue'],4),
+      command(erased,['import','--input',later,'--yes','--no-queue']),
+    ])
     const proxy=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try { assert.equal((await proxy.env.DB.prepare('SELECT first_name FROM bm_clients WHERE id=?').bind(p.id).first()).first_name,'Erased') }
     finally { await proxy.dispose() }

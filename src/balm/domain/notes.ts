@@ -3,12 +3,13 @@
 // draft adds a revision and never rewrites the earlier text. A note written from
 // a discipline template keeps its sections and CPT minutes per revision; signing
 // locks it (src/balm/domain/signing.ts) and later changes are addenda.
+import { documentationAlerts, documentationInput, type Documentation } from '../charting/compliance'
 import { bill, cpt, type Charge } from '../charting/cpt'
 import { template, type Template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, integer, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
 import { clientVisible } from './clients'
 
-export type Written = { sections: { id: string; label: string; text: string }[] | null; charges: Charge[]; body: string }
+export type Written = { documentation: Documentation; sections: { id: string; label: string; text: string }[] | null; charges: Charge[]; body: string }
 
 const clean = (value: unknown, field: string, max: number) => {
   if (value === undefined || value === null) return ''
@@ -34,10 +35,15 @@ export function charges(input: Data): Charge[] {
 
 /** A template's sections from JSON {sections: {id: text}} or the form's section_<id> fields. */
 export function written(input: Data, t: Template | undefined): Written {
-  if (!t) return { sections: null, charges: charges(input), body: text(input.body, 'note', 20_000) }
+  const documentation = documentationInput(input)
+  const list = charges(input)
+  const timed = list.filter(c => cpt(c.code)?.timed).reduce((sum,c) => sum+c.minutes,0)
+  insist(documentation.totalTimedMinutes === null || documentation.totalTimedMinutes >= timed, 'total_timed_minutes_must_include_all_timed_interventions')
+  insist(documentation.totalTreatmentMinutes === null || documentation.totalTreatmentMinutes >= timed, 'total_treatment_minutes_must_include_all_timed_interventions')
+  if (!t) return { documentation, sections: null, charges: charges(input), body: text(input.body, 'note', 20_000) }
   const given = input.sections && typeof input.sections === 'object' ? input.sections : {}
   const sections = t.sections.map(s => ({ id: s.id, label: s.label, text: clean(given[s.id] ?? input['section_' + s.id], s.id, 8000) }))
-  return { sections, charges: charges(input), body: sections.filter(s => s.text).map(s => `${s.label}\n${s.text}`).join('\n\n') }
+  return { documentation, sections, charges: charges(input), body: sections.filter(s => s.text).map(s => `${s.label}\n${s.text}`).join('\n\n') }
 }
 
 export async function ownAppointment(db: D1Database, who: Actor, clientId: string, appointmentId: unknown) {
@@ -62,8 +68,8 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,?)', noteId, client.id, appointment?.id ?? null, author, now(), t?.key ?? ''),
-    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by) VALUES(?,1,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
-      content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy),
+    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by,documentation) VALUES(?,1,?,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
+      content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy, JSON.stringify(content.documentation)),
     audit(db, who, draftedBy === 'scribe' ? 'note.scribe_drafted' : 'note.written', client.id as string, noteId, t?.key ?? 'free text'),
   ])
   return { id: noteId, revision: 1, template: t?.key ?? '' }
@@ -81,8 +87,8 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
   insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
   const content = written(input, template(note.template))
   await commit(db, who, [
-    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges) VALUES(?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
-      optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges)),
+    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
+      optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation)),
     audit(db, who, 'note.amended', note.client_id as string, note.id as string, `revision ${latest + 1}`),
   ])
   return { id: note.id, revision: latest + 1 }
@@ -99,12 +105,13 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const marks = notes.map(() => '?').join(',')
   const revisions = await rows(db, `SELECT * FROM bm_note_revisions WHERE note_id IN (${marks}) ORDER BY number DESC`, ...notes.map(n => n.id))
   const addenda = await rows(db, `SELECT * FROM bm_note_addenda WHERE note_id IN (${marks}) ORDER BY written_at`, ...notes.map(n => n.id))
-  return notes.map(n => {
-    const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
+  return Promise.all(notes.map(async n => {
+    const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
     return { id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
+      documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
       billing: bill(own[0]?.charges ?? []), revisions: own,
       addenda: addenda.filter(a => a.note_id === n.id).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
-  })
+  }))
 }

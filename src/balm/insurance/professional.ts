@@ -1,15 +1,16 @@
 import { insist } from '../domain/model'
 import type { ClaimSnapshot } from './types'
-import { envelope, money, segment as s, xdate } from './x12'
+import { envelope, money, parties, segment as s, xdate } from './x12'
 
 /** 5010 professional, primary claims. Institutional/COB claims require other
  * loops and are refused by the preparation door instead of emitting guesses. */
 export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],batchId:string) {
   insist(claims.length>0,'claim_batch_empty')
   const first=claims[0].snapshot,b=first.billing
+  const config={sender:b.sender,taxId:b.taxId,receiver:first.payer.receiver,payerCode:first.payer.code,production:b.production},who=parties(config)
   const parts=[s('BHT','0019','00',batchId.replace(/-/g,''),xdate(new Date().toISOString().slice(0,10)),new Date().toISOString().slice(11,16).replace(':',''),'CH'),
-    s('NM1','41',2,b.name,'','','','','46',b.sender),s('PER','IC',b.contact,'TE',b.phone),
-    s('NM1','40',2,first.payer.name,'','','','','46',first.payer.receiver),
+    s('NM1','41',2,b.name,'','','','','46',who.sender),s('PER','IC',b.contact,'TE',b.phone),
+    s('NM1','40',2,first.payer.name,'','','','','46',who.receiver),
     s('HL',1,'',20,1),s('NM1','85',2,b.name,'','','','','XX',b.npi),s('N3',b.address),s('N4',b.city,b.state,b.postal),s('REF','EI',b.taxId)]
   let hl=1
   for(const claim of claims) {
@@ -31,5 +32,5 @@ export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],ba
       parts.push(s('LX',i+1),`SV1*HC:${line.code}${line.modifiers.length?':'+line.modifiers.join(':'):''}*${money(line.amountCents)}*UN*${line.units}***${line.diagnosisPointers.join(':')}`,s('DTP','472','D8',xdate(c.serviceDate)),s('REF','6R',`${claim.id.replace(/-/g,'')}${i+1}`))
     })
   }
-  return envelope('837','005010X222A1',{sender:b.sender,receiver:first.payer.receiver,production:b.production},parts)
+  return envelope('837','005010X222A1',config,parts)
 }
