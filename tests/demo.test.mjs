@@ -13,7 +13,7 @@ function clinicDay(days) {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
-test('a demo opens on a lived-in clinic: its drafts are approvable and a booking email is simulated', async () => {
+test('a demo opens on a lived-in clinic: its drafts are approvable and email stays suppressed', async () => {
   const h = await harness({ entry: 'tests/demo-worker.ts', auth: { RER_DEMO: '1', MAIL_FROM: '', ...settings } })
   try {
     const s = await h.state()
@@ -26,15 +26,16 @@ test('a demo opens on a lived-in clinic: its drafts are approvable and a booking
     await h.cmd('intake.publish', { id: 'demo-intake-v2' })
     const ava = s.clients.find(c => c.first_name === 'Ava'), maya = s.staff.find(p => p.name === 'Maya Ellison')
     const booked = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: maya.id, serviceId: 'demo-svc-followup', date: clinicDay(8), time: '09:00' })
-    assert.equal(booked.mail, 'sent')
+    assert.equal(booked.mail, 'suppressed')
     // A staff invitation is an email to a person too: it completes and nothing is kept.
     await h.cmd('staff.invite', { id: s.staff.find(p => p.name === 'Daniel Okafor').id })
-    // Canceling a massage this week offers the freed time to the waitlist by (simulated) email.
+    // Canceling a massage still prepares the offer, with no email claimed as sent.
     const sophie = s.clients.find(c => c.first_name === 'Sophie')
     const freed = s.appointments.find(a => a.status === 'booked' && a.service_id === 'demo-svc-massage' && a.client_id !== sophie.id && Date.parse(a.start_at) > Date.now() + 3 * 3600_000 && Date.parse(a.start_at) < Date.now() + 6 * 86400_000)
     const cancelled = await h.cmd('appointment.cancel', { id: freed.id })
     assert.ok(cancelled.waitlist.people >= 1)
-    assert.deepEqual((await h.db.prepare('SELECT DISTINCT delivery FROM bm_offer_recipients').all()).results.map(r => r.delivery), ['sent'])
+    assert.deepEqual((await h.db.prepare('SELECT DISTINCT delivery FROM bm_offer_recipients').all()).results.map(r => r.delivery), ['suppressed'])
+    assert.equal(h.mail.length, 0, 'demo actions never reach the mail provider')
     assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM rer_mail_development_outbox').first()).n, 0)
     const page = await h.send('/app', undefined, h.owner)
     assert.equal(page.status, 200)
