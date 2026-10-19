@@ -427,3 +427,9 @@ test('PAY-006: three authorized monthly card charges, consented reminder sequenc
     assert.ok(auditedFile.audit.some(a => a.action === 'balance_reminders.stopped'))
   } finally { await h.close() }
 })
+
+// PAY-004 includes its public API, staff form data, patient-session documents and scheduler.
+test('PAY-004: reviewed write-offs, external credit/refund, periodic statements and financial reports preserve original money facts', { timeout: 120000 }, async () => {
+  const { accountLedgerJourney } = await import('./account-ledger-journey.mjs')
+  await accountLedgerJourney()
+})

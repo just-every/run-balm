@@ -32,7 +32,7 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
@@ -62,6 +62,9 @@ test('HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: publ
     const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
     await h.cmd('invoice.approve',{id:invoice.id})
     await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Backup-EFTPOS-1'})
+    const external=await h.cmd('pay.entry.prepare',{clientId:maya.id,kind:'credit',amount:'30.00',reason:'Archived external prepayment',reference:'Archive-external-30',occurredOn:'2001-01-02'})
+    await h.cmd('pay.entry.approve',{id:external.id,sha256:external.sha256,attest:true})
+    const externalReceipt=(await h.send('/api/balm/receipts/'+external.id+'.pdf',undefined,h.owner)).text
     const csv=await readFile('tests/fixtures/cliniko-patients.csv','utf8'),preview=await h.cmd('import.preview',{csv})
     await h.cmd('import.apply',{csv,fingerprint:preview.fingerprint})
     await h.cmd('disclosure.record',{clientId:maya.id,recipient:'Attorney Archive, records@example.test',purpose:'Patient-directed release',basis:'Written authorization',records:'Signed treatment note and intake',releasedAt:'2001-01-02T12:00:00Z'})
@@ -120,6 +123,10 @@ test('HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: publ
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const setup=await restoredClinic.form('/setup',{confirm:'yes'},cookie)
       assert.equal(setup.status,303);assert.equal(setup.location,'/app')
+      const restoredEntry=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.billing.account.entries.find(e=>e.id===external.id)
+      assert.equal(restoredEntry.sha256,external.sha256,'PAY-004 exact approved proposal survives CLI archive')
+      assert.ok(restoredEntry.approved_by)
+      assert.equal((await restoredClinic.send('/api/balm/receipts/'+external.id+'.pdf',undefined,cookie)).text,externalReceipt,'PAY-004 original external receipt survives CLI archive')
       const restoredMail=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.mailHistory
       assert.ok(restoredMail.some(m=>m.kind==='intake'&&m.state==='delivered'),'COMM-001 verified delivery survives the public CLI archive round trip')
       const restoredState=await restoredClinic.state(cookie)

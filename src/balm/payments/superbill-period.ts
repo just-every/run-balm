@@ -41,7 +41,7 @@ function visitBlocks(f: Visit): Block[] {
 }
 
 function totals(charges: number, paid: number, adjusted: number): [string, string][] {
-  return [['Total charges', dollars(charges)], ['Paid', dollars(paid)], ['Insurance adjustments', dollars(adjusted)], ['Balance', dollars(charges - paid - adjusted)]]
+  return [['Total charges', dollars(charges)], ['Paid', dollars(paid)], ['Adjustments', dollars(adjusted)], ['Balance', dollars(charges - paid - adjusted)]]
 }
 
 /** Approved visits in an inclusive clinic-local period, using invoice identities and ledger payments. */
@@ -77,7 +77,7 @@ export async function periodSuperbillPdf(db: D1Database, clientId: string, from:
     ...visits.flatMap(visitBlocks),
     { kind: 'heading', text: 'Period totals' },
     { kind: 'facts', rows: totals(charges, paid, adjusted) },
-    { kind: 'notes', lines: ['CPT units come from the approved invoice’s signed-note billing when present, otherwise from the visit’s recorded codes. Payments and insurance adjustments are the amounts posted to these invoices.', 'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },
+    { kind: 'notes', lines: ['CPT units come from the approved invoice’s signed-note billing when present, otherwise from the visit’s recorded codes. Payments and adjustments are the amounts posted to these invoices.', 'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },
   ]
   return { name: `superbill-${from}-through-${to}.pdf`, bytes: pdf({ header: 'Patient superbill', title: 'Period superbill', blocks }) }
 }

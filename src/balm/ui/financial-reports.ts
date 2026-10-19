@@ -3,7 +3,7 @@
 import { empty, h, money, panel } from './shared'
 
 const buckets = [['0-30', '0–30 days'], ['31-60', '31–60'], ['61-90', '61–90'], ['91-120', '91–120'], ['over-120', 'Over 120']] as const
-const table = (heads: string[], body: string[][]) => `<div class="table"><table><thead><tr>${heads.map(x => `<th scope="col">${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map((r, i) => `<tr${i === body.length - 1 ? ' class="total"' : ''}>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+const table = (heads: string[], body: string[][], recordRows = false) => `<div class="table"><table${recordRows ? ' class="ledger"' : ''}><thead><tr>${heads.map(x => `<th scope="col">${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map((r, i) => `<tr${i === body.length - 1 ? ' class="total"' : ''}>${r.map((c, j) => `<td${recordRows ? ` data-label="${h(heads[j])}"` : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
 const cents = (value: unknown) => value === null || value === undefined ? '—' : h(money(value))
 
 export function financialSections(s: any) {
@@ -13,14 +13,14 @@ export function financialSections(s: any) {
   const m = f.summary
   const summary = table(['Measure', 'Value'], [
     ['Charges (by date of service)', `${cents(m.chargesCents)} · ${h(m.charges)} invoices`], ['Payments posted', cents(m.paymentsCents)], ['· Insurance (ERA)', cents(m.insurancePaymentsCents)],
-    ['· Card', cents(m.cardPaymentsCents)], ['· Desk', cents(m.deskPaymentsCents)], ['Insurance adjustments', cents(m.adjustmentsCents)],
+    ['· Card', cents(m.cardPaymentsCents)], ['· Desk', cents(m.deskPaymentsCents)], ['Adjustments', cents(m.adjustmentsCents)],
     ['Collections per attended visit', `${cents(m.collectionsPerVisitCents)} · ${h(m.attendedVisits)} visits`], ['Days in A/R', h(m.daysInAr ?? '—')], ['A/R at the end of the period', cents(m.arCents)]])
   const aging = (section: any, label: string, key: string) => section.rows.length
     ? table([label, ...buckets.map(([, title]) => title), 'Total'], [...section.rows.map((r: any) => [h(r[key]), ...buckets.map(([b]) => cents(r[b])), cents(r.total)]), ['All', ...buckets.map(([b]) => cents(section.total[b])), cents(section.total.total)]])
     : empty('Nothing outstanding.')
-  const deposits = f.deposits.rows.length ? table(['Date', 'Source', 'Reference', 'Received', 'Posted to invoices', 'Held as credit', 'Not posted'],
-    [...f.deposits.rows.map((d: any) => [h(d.date), h(d.source), h(d.reference), cents(d.receivedCents), cents(d.postedCents), cents(d.creditCents), cents(d.unpostedCents)]),
-      ['', 'All', '', cents(f.deposits.total.receivedCents), cents(f.deposits.total.postedCents), cents(f.deposits.total.creditCents), cents(f.deposits.total.unpostedCents)]]) : empty('No money recorded in these dates.')
+  const deposits = f.deposits.rows.length ? table(['Date', 'Source', 'Reference', 'Received', 'Posted to invoices', 'Held as credit', 'Not posted', 'External refunds'],
+    [...f.deposits.rows.map((d: any) => [h(d.date), h(d.source), h(d.reference), cents(d.receivedCents), cents(d.postedCents), cents(d.creditCents), cents(d.unpostedCents), cents(d.refundedCents)]),
+      ['', 'All', '', cents(f.deposits.total.receivedCents), cents(f.deposits.total.postedCents), cents(f.deposits.total.creditCents), cents(f.deposits.total.unpostedCents), cents(f.deposits.total.refundedCents)]], true) : empty('No money recorded in these dates.')
   return panel('Financial summary', `<p class="help">Whole clinic, ${h(f.from)} through ${h(f.to)}. Charges are approved invoices by date of service; payments and adjustments count on the day they were posted. Days in A/R is A/R at the end of the period divided by average daily charges over the period.</p>` + summary + link('summary', 'summary'), 'full', 'report-financial-summary')
     + panel('A/R aging by payer', '<p class="help">Open balances on invoices whose claim is still open at the payer, aged from the date of service to the last day.</p>' + aging(f.agingByPayer, 'Payer', 'payer') + link('aging-payer', 'payer aging'), 'full', 'report-aging-payer')
     + panel('A/R aging by patient', '<p class="help">Open balances the patient owes, aged from the date of service to the last day.</p>' + aging(f.agingByPatient, 'Patient', 'patient') + link('aging-patient', 'patient aging'), 'full', 'report-aging-patient')

@@ -3,7 +3,7 @@ import { periodSuperbillForm } from './superbill-period'
 import { localTime } from '../domain/invoices'
 import { attachmentInput } from '../messages/attachments'
 import { messageAttachments } from './messages'
-import { h, hidden, money, select } from './shared'
+import { h, hidden, money, select, usDate } from './shared'
 
 export const patientForm = (name: string, fields: string, button: string, attrs = '') => `<form method="post" action="/portal/action">${hidden('name', name)}${fields}<button type="submit" ${attrs}>${h(button)}</button></form>`
 const card = (id: string, title: string, body: string) => `<section id="${id}" class="card portal-section"><h2>${title}</h2>${body}</section>`
@@ -24,6 +24,7 @@ function forms(d: any) {
 function statements(d: any) {
   const b = d.billing
   return `<p class="balance">${money(b.balanceCents)} <span>balance</span></p><p><a href="/portal/statement.pdf">Download statement PDF</a></p>`
+    + (b.issuedStatements?.length ? `<h3>Issued statements</h3><ul>${b.issuedStatements.map((i: any) => `<li><a href="/portal/statements/${h(i.id)}.pdf">Statement ${h(usDate(i.due_on, 'UTC'))} · ${money(i.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + (b.receipts.length ? `<h3>Receipts</h3><ul>${b.receipts.map((r: any) => `<li><a href="/portal/receipts/${h(r.id)}.pdf">Receipt ${h(r.receipt_number)} · ${money(r.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + periodSuperbillForm('/portal/superbill.pdf')
     + (b.superbills.length ? `<h3>Superbills</h3><ul>${b.superbills.map((i: any) => `<li><a href="/portal/superbills/${h(i.id)}.pdf">Superbill for invoice ${h(i.number)}</a></li>`).join('')}</ul>` : '')

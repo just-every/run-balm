@@ -1,6 +1,8 @@
 // Patient payment commands and the state the pages read. Every command resolves
 // the live actor and enforces its role here; writes re-check authority in their
 // own D1 batch (domain/model commit). Stripe calls use the clinic's sealed key.
+import { statementsFor } from './statements'
+import { accountEntriesFor, approveAccountEntry, prepareAccountEntry } from './account-entries'
 import { visibleAppointment } from '../domain/booking'
 import { clientVisible } from '../domain/clients'
 import { audit, commit, guard, human, insist, need, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
@@ -55,13 +57,17 @@ async function chargeInvoice(env: SmsEnv, db: D1Database, who: Actor, input: Dat
   insist(invoice, 'approved_invoice_not_found', 404)
   const open = (await openInvoices(db, invoice.client_id as string)).find(i => i.id === invoice.id)
   insist(open, 'there_is_no_patient_balance_to_charge_check_insurance_status', 409)
-  return chargeCardOnFile(env, db, who, { clientId: invoice.client_id as string, amountCents: open.open_cents, kind: 'charge', invoiceId: invoice.id as string, description: `Payment to ${await clinicName(db)}` })
+  const balance = (await ledger(db, String(invoice.client_id))).patientBalanceCents
+  insist(balance > 0, 'there_is_no_patient_balance_to_charge_check_insurance_status', 409)
+  return chargeCardOnFile(env, db, who, { clientId: invoice.client_id as string, amountCents: Math.min(open.open_cents, balance), kind: 'charge', invoiceId: invoice.id as string, description: `Payment to ${await clinicName(db)}` })
 }
 
 export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, name: string, input: Data) {
   insist(who.role !== 'agent', 'agents_can_only_prepare', 403)
-  if (['pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
+  if (['pay.statements.save', 'pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
   switch (name) {
+    case 'pay.entry.prepare': return prepareAccountEntry(db, who, input)
+    case 'pay.entry.approve': return approveAccountEntry(db, who, input)
     case 'pay.stripe.connect': return connectStripe(env, db, who, input)
     case 'pay.stripe.disconnect': return disconnectStripe(env, db, who)
     case 'pay.npi.save': return savePractitionerNpi(db, who, input)
@@ -104,6 +110,8 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
     codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,
     ...await clientPlans(db, clientId),
+    account: await accountEntriesFor(db, clientId),
+    statements: await statementsFor(db, clientId),
     payments: await rows(db, 'SELECT id,kind,amount_cents,applied_cents,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
     links: await rows(db, 'SELECT id,purpose,created_by,created_at,expires_at,delivery,delivery_result,opened_at FROM bm_pay_links WHERE client_id=? ORDER BY created_at DESC LIMIT 10', clientId),
     stripe: await stripeView(env, db), smsBlock: smsBlock(env),

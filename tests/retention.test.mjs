@@ -164,3 +164,35 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   await h.cmd('retention.destroy',{...preview,confirm:true},h.owner,409)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_retention_permits').first()).n,0)
 }))
+
+// New financial record kinds retain anonymous arithmetic when their chart is destroyed.
+test('PAY-004 HIPAA-002: external receipts, allocations and unused-credit refunds retain totals without private originals',()=>run(async h=>{
+  const {service,practitioners:[priya]}=await clinic(h)
+  const patient=await h.cmd('client.save',{firstName:'External',lastName:'Private',dateOfBirth:'1950-01-01'})
+  const visit=await pastVisit(h,patient.id,priya,service.id)
+  await ageVisit(h,visit)
+  // Establish a historical unsigned chart before attending; no signed record is rewritten.
+  const note=crypto.randomUUID()
+  await h.db.prepare("INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,'pt.daily')").bind(note,patient.id,visit,priya.id,'1990-01-02T02:00:00.000Z').run()
+  await h.cmd('appointment.attend',{id:visit},priya.cookie)
+  const invoice=await h.cmd('invoice.prepare',{appointmentId:visit});await h.cmd('invoice.approve',{id:invoice.id})
+  const post=async(kind,amount,reference,extra={})=>{
+    const e=await h.cmd('pay.entry.prepare',{clientId:patient.id,kind,amount,reference,reason:'Private financial reason',occurredOn:'2001-01-02',...extra})
+    await h.cmd('pay.entry.approve',{id:e.id,sha256:e.sha256,attest:true});return e
+  }
+  await post('write_off','5.00','Private-writeoff',{invoiceId:invoice.id})
+  const credit=await post('credit','100.00','Private-receipt')
+  await post('refund','4.00','Private-refund',{creditId:credit.id})
+  const year=new Date().getUTCFullYear(),range=`from=${year}-01-01&to=${year}-12-31`
+  const before=(await h.send('/api/balm/reports/financial?'+range,undefined,h.owner)).value
+  await h.cmd('retention.save',policy)
+  const preview=await h.cmd('retention.preview',{clientId:patient.id})
+  assert.equal(preview.records.bm_account_entries,3);assert.equal(preview.records.bm_account_postings,3)
+  await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
+  const after=(await h.send('/api/balm/reports/financial?'+range,undefined,h.owner)).value
+  assert.deepEqual(after.summary,before.summary)
+  assert.deepEqual(after.deposits.total,before.deposits.total)
+  assert.deepEqual(after.agingByPatient.total,before.agingByPatient.total)
+  assert.ok(!JSON.stringify(after).includes('Private-receipt')&&!JSON.stringify(after).includes('Private-refund'))
+  assert.equal((await h.send('/api/balm/receipts/'+credit.id+'.pdf',undefined,h.owner)).status,404)
+}))

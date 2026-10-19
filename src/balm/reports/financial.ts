@@ -1,13 +1,13 @@
 import { anonymousFinancialFacts } from '../retention/accounting'
 // Owner-only financial reports (REPORT-002), read from the same records as each
 // patient's ledger (src/balm/payments/ledger.ts): approved invoices are charges,
-// posted payments and ERA adjustments reduce them, and an invoice with a claim
+// posted payments and approved adjustments reduce them, and an invoice with a claim
 // still open at the payer is owed by that payer, otherwise by the patient.
 // Balm sees no bank account and no Stripe payouts: deposits are the money Balm
 // recorded, grouped the way it reaches the bank, for the owner to compare.
 import { hostDateAt } from '../availability/timezone'
 import { csvCell } from '../domain/disclosures'
-import { audit, commit, human, insist, need, rows, type Actor, type Data } from '../domain/model'
+import { audit, commit, human, insist, need, type Actor, type Data } from '../domain/model'
 import { reportRange } from './range'
 
 export const financialKinds = ['summary', 'aging-payer', 'aging-patient', 'deposits'] as const
@@ -23,21 +23,22 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   const r = await reportRange(db, input), local = (iso: unknown) => hostDateAt(new Date(String(iso)), r.zone)
   const inRange = (iso: unknown) => { const d = local(iso); return d >= r.from && d <= r.to }
   const before = (iso: unknown) => Date.parse(String(iso)) < Date.parse(r.end)
-  const [invoices, payments, adjustments, cards, remittances, visits] = (await db.batch<Data>([
+  const [invoices, payments, adjustments, cards, remittances, visits, accountEntries] = (await db.batch<Data>([
     db.prepare(`SELECT i.id,i.client_id,i.amount_cents,a.start_at,c.first_name||' '||c.last_name AS client,
       (SELECT y.name FROM bm_claims q JOIN bm_policies p ON p.id=q.policy_id JOIN bm_payers y ON y.id=p.payer_id
         WHERE q.invoice_id=i.id AND q.status NOT IN ('corrected','paid','partial') ORDER BY q.created_at DESC LIMIT 1) AS open_payer
       FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_clients c ON c.id=i.client_id WHERE i.status='approved'`),
-    db.prepare('SELECT invoice_id,amount_cents,reference,recorded_at,card_payment_id FROM bm_payments'),
-    db.prepare('SELECT invoice_id,amount_cents,reason,recorded_at FROM bm_insurance_adjustments'),
+    db.prepare('SELECT invoice_id,amount_cents,reference,recorded_at,card_payment_id,account_entry_id FROM bm_payments'),
+    db.prepare('SELECT invoice_id,amount_cents,reason,recorded_at FROM bm_invoice_adjustments'),
     db.prepare("SELECT id,amount_cents,applied_cents,succeeded_at FROM bm_card_payments WHERE status='succeeded'"),
     db.prepare(`SELECT m.id,m.payer_id,m.trace,m.amount_cents,m.imported_at,y.name AS payer FROM bm_insurance_imports m JOIN bm_payers y ON y.id=m.payer_id WHERE m.kind='835' ORDER BY m.imported_at,m.id`),
     db.prepare("SELECT start_at FROM bm_appointments WHERE status='attended'"),
+    db.prepare("SELECT id,credit_id,kind,amount_cents,reference,posted_at FROM bm_posted_account_entries WHERE kind IN ('credit','refund')"),
   ])).map(x => x.results)
   const anonymous = await anonymousFinancialFacts(db)
   invoices.push(...anonymous[0])
-  payments.push(...anonymous[1]); adjustments.push(...anonymous[2]); cards.push(...anonymous[3]); visits.push(...anonymous[4])
-  const kindOf = (p: Data) => String(p.reference).startsWith('era:') ? 'insurance' : p.card_payment_id ? 'card' : 'desk'
+  payments.push(...anonymous[1]); adjustments.push(...anonymous[2]); cards.push(...anonymous[3]); visits.push(...anonymous[4]); accountEntries.push(...anonymous[5])
+  const kindOf = (p: Data) => p.account_entry_id ? 'desk' : String(p.reference).startsWith('era:') ? 'insurance' : p.card_payment_id ? 'card' : 'desk'
 
   // Charges by date of service; payments and adjustments by the date they were posted.
   const charged = invoices.filter(i => inRange(i.start_at))
@@ -70,18 +71,33 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
 
   // Deposits: each ERA check or EFT as the payer sent it, card payments by the day
   // Stripe took them (before Stripe's fees and payout timing), desk payments by day.
-  const deposits: { date: string; source: string; reference: string; receivedCents: number; postedCents: number; creditCents: number; unpostedCents: number }[] = []
+  const deposits: { date: string; source: string; reference: string; receivedCents: number; postedCents: number; creditCents: number; unpostedCents: number; refundedCents: number }[] = []
   for (const m of remittances.filter(m => inRange(m.imported_at))) {
-    const postedCents = sum(payments, p => p.remittance_id === m.id || String(p.reference).startsWith(`era:${m.payer_id}:${m.trace}:`))
-    deposits.push({ date: local(m.imported_at), source: `ERA · ${m.payer}`, reference: String(m.trace), receivedCents: Number(m.amount_cents ?? 0), postedCents, creditCents: 0, unpostedCents: Number(m.amount_cents ?? 0) - postedCents })
+    const postedCents = sum(payments, p => before(p.recorded_at) && (p.remittance_id === m.id || String(p.reference).startsWith(`era:${m.payer_id}:${m.trace}:`)))
+    deposits.push({ date: local(m.imported_at), source: `ERA · ${m.payer}`, reference: String(m.trace), receivedCents: Number(m.amount_cents ?? 0), postedCents, creditCents: 0, unpostedCents: Number(m.amount_cents ?? 0) - postedCents, refundedCents: 0 })
   }
-  const days = <T>(list: Data[], at: string) => { const map = new Map<string, Data[]>(); for (const x of list) if (inRange(x[at])) { const d = local(x[at]); map.set(d, [...(map.get(d) ?? []), x]) } return [...map].sort(([a], [b]) => a.localeCompare(b)) }
+  const days = (list: Data[], at: string) => { const map = new Map<string, Data[]>(); for (const x of list) if (inRange(x[at])) { const d = local(x[at]); map.set(d, [...(map.get(d) ?? []), x]) } return [...map].sort(([a], [b]) => a.localeCompare(b)) }
   for (const [date, list] of days(cards, 'succeeded_at')) {
-    const ids = new Set(list.map(c => c.id)), received = sum(list), postedCents = sum(payments, p => ids.has(p.card_payment_id)), creditCents = list.reduce((t, c) => t + Number(c.amount_cents) - Number(c.applied_cents), 0)
-    deposits.push({ date, source: 'Card payments (Stripe)', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: received, postedCents, creditCents, unpostedCents: received - postedCents - creditCents })
+    const ids = new Set(list.map(c => c.id)), received = sum(list), postedCents = sum(payments, p => ids.has(p.card_payment_id) && before(p.recorded_at)), creditCents = received - postedCents
+    deposits.push({ date, source: 'Card payments (Stripe)', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: received, postedCents, creditCents, unpostedCents: received - postedCents - creditCents, refundedCents: 0 })
   }
-  for (const [date, list] of days(payments.filter(p => kindOf(p) === 'desk'), 'recorded_at')) {
-    deposits.push({ date, source: 'Recorded at the desk', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: sum(list), postedCents: sum(list), creditCents: 0, unpostedCents: 0 })
+  for (const [date, list] of days(payments.filter(p => kindOf(p) === 'desk' && !p.account_entry_id), 'recorded_at')) {
+    deposits.push({ date, source: 'Recorded at the desk', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: sum(list), postedCents: sum(list), creditCents: 0, unpostedCents: 0, refundedCents: 0 })
+  }
+  // An external credit is cash received once. Its later invoice allocations are
+  // collections on their posting day, but never a second cash receipt. Held
+  // credit and allocations reflect only facts posted by this report's end.
+  for (const entry of accountEntries.filter(e => inRange(e.posted_at))) {
+    const date = local(entry.posted_at), amount = Number(entry.amount_cents)
+    if (entry.kind === 'credit') {
+      const postedCents = sum(payments, p => p.account_entry_id === entry.id && before(p.recorded_at))
+      const refundedCents = sum(accountEntries, e => e.kind === 'refund' && e.credit_id === entry.id && before(e.posted_at))
+      deposits.push({ date, source: 'External credit receipt', reference: entry.reference || 'Destroyed receipt', receivedCents: amount,
+        postedCents, creditCents: amount - postedCents - refundedCents, unpostedCents: 0, refundedCents: 0 })
+    } else {
+      deposits.push({ date, source: 'External unused-credit refund (not Stripe)', reference: entry.reference || 'Destroyed refund',
+        receivedCents: -amount, postedCents: 0, creditCents: 0, unpostedCents: 0, refundedCents: amount })
+    }
   }
   deposits.sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source))
 
@@ -97,7 +113,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     },
     agingByPayer: { rows: payerRows, total: totalRow(payerRows) },
     agingByPatient: { rows: patientRows, total: totalRow(patientRows) },
-    deposits: { rows: deposits, total: { receivedCents: deposits.reduce((t, d) => t + d.receivedCents, 0), postedCents: deposits.reduce((t, d) => t + d.postedCents, 0), creditCents: deposits.reduce((t, d) => t + d.creditCents, 0), unpostedCents: deposits.reduce((t, d) => t + d.unpostedCents, 0) } },
+    deposits: { rows: deposits, total: { receivedCents: deposits.reduce((t, d) => t + d.receivedCents, 0), postedCents: deposits.reduce((t, d) => t + d.postedCents, 0), creditCents: deposits.reduce((t, d) => t + d.creditCents, 0), unpostedCents: deposits.reduce((t, d) => t + d.unpostedCents, 0), refundedCents: deposits.reduce((t, d) => t + d.refundedCents, 0) } },
   }
 }
 
@@ -118,10 +134,10 @@ export function financialCsv(report: FinancialReports, kind: FinancialKind) {
     table.push(['All', ...agingBuckets.map(b => dollars((section.total as Data)[b])), dollars(section.total.total)])
   }
   if (kind === 'deposits') {
-    table.push(['date', 'source', 'reference', 'received_usd', 'posted_usd', 'credit_held_usd', 'unposted_usd'])
-    for (const d of report.deposits.rows) table.push([d.date, d.source, d.reference, dollars(d.receivedCents), dollars(d.postedCents), dollars(d.creditCents), dollars(d.unpostedCents)])
+    table.push(['date', 'source', 'reference', 'received_usd', 'posted_usd', 'credit_held_usd', 'unposted_usd', 'refunded_usd'])
+    for (const d of report.deposits.rows) table.push([d.date, d.source, d.reference, dollars(d.receivedCents), dollars(d.postedCents), dollars(d.creditCents), dollars(d.unpostedCents), dollars(d.refundedCents)])
     const t = report.deposits.total
-    table.push(['', 'All', '', dollars(t.receivedCents), dollars(t.postedCents), dollars(t.creditCents), dollars(t.unpostedCents)])
+    table.push(['', 'All', '', dollars(t.receivedCents), dollars(t.postedCents), dollars(t.creditCents), dollars(t.unpostedCents), dollars(t.refundedCents)])
   }
   return table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }

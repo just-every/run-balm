@@ -31,7 +31,7 @@ export async function chargeDueInstallments(env: Bindings, db: D1Database, today
     const clientId = String(installment.client_id), amount = Math.min(Number(installment.monthly_cents), await availablePlanBalance(db, clientId))
     if (amount < 50) {
       // A balance under Stripe's minimum stays visible for human handling.
-      const unpaid = await one(db, `SELECT ${availableBalanceSql} AS cents`, clientId, clientId, clientId)
+      const unpaid = await one(db, `SELECT ${availableBalanceSql} AS cents`, clientId, clientId, clientId, clientId)
       const hasPending = await one(db, "SELECT id FROM bm_card_payments WHERE client_id=? AND status IN ('open','processing','requires_action')", clientId)
       if (hasPending) continue
       await stmt(db, "UPDATE bm_plan_installments SET status=?,outcome=? WHERE id=? AND status='scheduled'", unpaid!.cents > 0 ? 'review' : 'skipped', unpaid!.cents > 0 ? 'Balance is below the card processor minimum; collect at the desk' : 'Patient balance is paid', installment.id).run()
@@ -44,7 +44,7 @@ export async function chargeDueInstallments(env: Bindings, db: D1Database, today
         clientId, amountCents: amount, kind: 'charge', paymentId, description: 'Authorized monthly payment plan',
         reservation: [
           guard(db, "EXISTS(SELECT 1 FROM bm_payment_plans p JOIN bm_clients c ON c.id=p.client_id JOIN bm_cards card ON card.id=p.card_id WHERE p.id=? AND p.status='active' AND c.erased_at IS NULL AND card.removed_at IS NULL)", installment.plan_id),
-          guard(db, `(${availableBalanceSql})>=?`, clientId, clientId, clientId, amount),
+          guard(db, `(${availableBalanceSql})>=?`, clientId, clientId, clientId, clientId, amount),
           stmt(db, "UPDATE bm_plan_installments SET status='reserved',payment_id=?,amount_cents=?,reserved_at=? WHERE id=? AND status='scheduled'", paymentId, amount, at, installment.id), guard(db, 'changes()=1'),
           audit(db, scheduler, 'payment_plan.installment_reserved', clientId, installment.id, `${amount} cents`),
         ],

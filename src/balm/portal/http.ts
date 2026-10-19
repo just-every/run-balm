@@ -37,9 +37,9 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       const doc = await portalPeriodSuperbill(env.DB, patient, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
       return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
     }
-    const documentPath = path.match(/^\/portal\/(receipts|superbills)\/([\w-]+)\.pdf$/)
+    const documentPath = path.match(/^\/portal\/(receipts|superbills|statements)\/([\w-]+)\.pdf$/)
     if (documentPath && request.method === 'GET') {
-      const doc = await portalDocument(env.DB, patient, documentPath[1] === 'receipts' ? 'receipt' : 'superbill', documentPath[2])
+      const doc = await portalDocument(env.DB, patient, documentPath[1] === 'receipts' ? 'receipt' : documentPath[1] === 'statements' ? 'statement' : 'superbill', documentPath[2])
       return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
     }
     if (path === '/portal/action' && request.method === 'POST') {

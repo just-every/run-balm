@@ -1,3 +1,5 @@
+import { externalReceipts } from '../payments/account-documents'
+import { statementsFor, statementOriginal } from '../payments/statements'
 import { patientPlans } from '../payments/plans'
 import { periodSuperbillPdf } from '../payments/superbill-period'
 import { type Bindings } from '../../auth.server'
@@ -36,7 +38,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     paymentPlans: await patientPlans(db, patient.clientId),
-    billing: { ...balance, block, statementUrl: '/portal/statement.pdf', receipts, superbills },
+    billing: { ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
   }
 }
 
@@ -88,13 +90,13 @@ export async function portalStatement(db: D1Database, patient: Patient) {
   return document
 }
 
-export async function portalDocument(db: D1Database, patient: Patient, kind: 'receipt' | 'superbill', key: string) {
-  insist(kind === 'receipt' || kind === 'superbill', 'document_not_found', 404)
-  const allowed = kind === 'receipt'
-    ? await one(db, "SELECT id FROM bm_card_payments WHERE id=? AND client_id=? AND status='succeeded' AND receipt_number IS NOT NULL", key, patient.clientId)
+export async function portalDocument(db: D1Database, patient: Patient, kind: 'receipt' | 'superbill' | 'statement', key: string) {
+  insist(kind === 'receipt' || kind === 'superbill' || kind === 'statement', 'document_not_found', 404)
+  const allowed = kind === 'statement' ? await one(db, 'SELECT id FROM bm_patient_statements WHERE id=? AND client_id=?', key, patient.clientId) : kind === 'receipt'
+    ? await one(db, "SELECT id FROM bm_card_payments WHERE id=? AND client_id=? AND status='succeeded' AND receipt_number IS NOT NULL UNION ALL SELECT id FROM bm_posted_account_entries WHERE id=? AND client_id=? AND receipt_base64 IS NOT NULL", key, patient.clientId, key, patient.clientId)
     : await one(db, "SELECT id FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", key, patient.clientId)
   insist(allowed, 'document_not_found', 404)
-  const document = kind === 'receipt' ? await receiptPdf(db, key) : await superbillPdf(db, key)
+  const document = kind === 'statement' ? await statementOriginal(db, patient.clientId, key) : kind === 'receipt' ? await receiptPdf(db, key) : await superbillPdf(db, key)
   await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, kind + '.downloaded', patient.clientId, key)])
   return document
 }
