@@ -8,13 +8,13 @@ export const documentationWarnings = (alerts: any[]) => alerts.length ? `<div cl
 export function documentationSettingsPanel(s:any) {
  const d=s.documentation
  if(!d)return ''
- return panel('Documentation requirements',form('documentation.settings.save','/app/clinic',field('lateDays','Plan certification deadline (days)',d.settings.late_days,'number','required min="1" max="90"')+field('kxNear','Warn within ($) of the KX threshold',dollarsField(d.settings.kx_near_cents),'text','required inputmode="decimal" maxlength="12"'),'Save documentation warnings')
+ return panel('Documentation requirements',form('documentation.settings.save','/app/clinic',field('lateDays','Plan certification deadline (days)',d.settings.late_days,'number','required min="1" max="90"')+field('unsignedNoteHours','Unsigned note deadline (hours)',d.settings.unsigned_note_hours,'number','required min="1" max="720"')+field('kxNear','Warn within ($) of the KX threshold',dollarsField(d.settings.kx_near_cents),'text','required inputmode="decimal" maxlength="12"'),'Save documentation warnings')
  +d.payers.map((p:any)=>`<details><summary>${h(p.name)}: required note elements</summary>${form('documentation.payer.save','/app/clinic',hidden('payerId',p.id)+Object.entries(documentationElements).map(([key,label])=>`<label class="check"><input type="checkbox" name="require_${h(key)}"${JSON.parse(p.required).includes(key)?' checked':''}><span>${h(label)}</span></label>`).join(''),'Save payer requirements')}</details>`).join(''))
 }
 export function documentationDailyClose(s:any) {
  const items=s.documentationClose??[]
  if(!items.length)return ''
- return panel('Daily close: documentation',`<p>Clinical warnings from attended visits. Open the file to review the note, plan, payer requirements and billing.</p><ul class="plain">${items.map((i:any)=>`<li><a href="/app/clients/${h(i.client_id)}">${h(i.client)}</a> · ${h(i.practitioner)} · ${stamp(s,i.start_at)}${documentationWarnings(i.alerts)}</li>`).join('')}</ul>`,'full')
+ return panel('Daily close: documentation',`<p>Clinical warnings from attended visits and every overdue unsigned note. Open the file to review the note, plan, payer requirements and billing.</p><ul class="plain">${items.map((i:any)=>`<li><a href="/app/clients/${h(i.client_id)}${i.noteId ? '#note-'+h(i.noteId) : ''}">${h(i.client)}${i.noteId ? ' · unsigned note' : ''}</a> · ${h(i.practitioner)} · ${stamp(s,i.start_at)}${i.dueAt ? `<br>Signature due ${stamp(s,i.dueAt)}` : ''}${documentationWarnings(i.alerts)}</li>`).join('')}</ul>`,'full')
 }
 
 export function documentationSummary(value: any = {}, staff: any[] = []) {

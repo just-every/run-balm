@@ -9,7 +9,7 @@ import { clinic, pastVisit, visitDate } from './clinic.mjs'
 const daily = { subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
 const view = async (h, clientId, cookie) => (await h.send('/api/balm/clients/' + clientId, undefined, cookie)).value
 
-test('a note starts from the visit’s template, is signed and locked, takes addenda, and the plan of care is certified from the physician’s link', () => run(async h => {
+test('CHART-004: sign and lock a note, keep its original beside addenda, close overdue drafts, and certify the plan of care from the physician’s link', () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const reception = await h.staff('Rosa', 'reception')
@@ -33,20 +33,69 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   await sign({ revision: 2 }, sam.cookie, 404)
   const signed = await sign({ revision: 2 })
   assert.deepEqual([signed.status, signed.signer.name, signed.signer.credentials], ['signed', 'Priya', 'PT, DPT'])
+  const original = (await view(h, client.id, priya.cookie)).notes.find(n => n.id === note.id)
+  assert.equal(original.signature.signedAt, signed.signedAt)
+  assert.equal(original.signature.sha256, signed.sha256)
+  const lockedPage = (await h.send('/app/clients/' + client.id, undefined, priya.cookie)).text
+  assert.ok(lockedPage.includes('Add an addendum'))
+  assert.ok(!lockedPage.includes('Edit draft'))
 
   // Signed is locked, in the handler and in the database; changes become signed addenda.
-  await h.cmd('note.amend', { id: note.id, revision: 2, sections: daily }, priya.cookie, 409)
+  const locked = await h.cmd('note.amend', { id: note.id, revision: 2, sections: daily }, priya.cookie, 409)
+  assert.equal(locked.code, 'note_signed_add_an_addendum')
   await sign({ revision: 2 }, priya.cookie, 409)
   assert.match(String(await h.db.prepare("INSERT INTO bm_note_revisions(note_id,number,body,written_at) VALUES(?,3,'x','now')").bind(note.id).run().catch(e => e.message)), /note_locked/)
   await h.cmd('note.addendum', { id: note.id, body: 'Late entry: patient reported mild swelling after the session.' }, sam.cookie, 404)
   await h.cmd('note.addendum', { id: note.id, body: 'Late entry: patient reported mild swelling after the session.' }, priya.cookie)
   const own = (await view(h, client.id, priya.cookie)).notes[0]
   assert.equal(own.status, 'signed'); assert.equal(own.signature.revision, 2); assert.equal(own.addenda.length, 1)
+  assert.deepEqual(own.signature, original.signature)
+  assert.deepEqual(own.revisions, original.revisions)
+  assert.deepEqual([own.addenda[0].body, own.addenda[0].name, own.addenda[0].credentials], ['Late entry: patient reported mild swelling after the session.', 'Priya', 'PT, DPT'])
+  const amendedPage = (await h.send('/app/clients/' + client.id, undefined, priya.cookie)).text
+  assert.ok(amendedPage.includes(daily.subjective) && amendedPage.includes(own.addenda[0].body))
   assert.deepEqual(own.revisions[0].sections.map(s => s.label), ['Subjective', 'Objective measures', 'Assessment', 'Goal progress', 'Plan'])
   assert.match((await h.send(schedule, undefined, priya.cookie)).text, /All 1 note signed/)
   const desk = await h.state(reception.cookie)
   assert.equal(desk.appointments.find(a => a.id === visit).note_status, 'signed')
   assert.ok(!JSON.stringify(desk).includes('Knee pain'))
+
+  // Time passage is arranged in stored creation times; all notes and edits use
+  // the command door. Older drafts cannot hide behind a newer signed note.
+  const unmarkedVisit = await pastVisit(h, client.id, priya, service.id, reception.cookie, 6)
+  const drafts = []
+  for (const [appointmentId, author, age] of [[visit, priya, 25], [visit, priya, 26], [null, priya, 25], [unmarkedVisit, priya, 25], [null, priya, 23], [null, sam, 25]]) {
+    const draft = await h.cmd('note.write', { clientId: client.id, appointmentId, body: 'Private unsigned treatment narrative.' }, author.cookie)
+    await h.db.prepare('UPDATE bm_notes SET created_at=? WHERE id=?').bind(new Date(Date.now() - age * 3600_000).toISOString(), draft.id).run()
+    drafts.push(draft)
+  }
+  await h.cmd('note.amend', { id: drafts[0].id, revision: 1, body: 'Revised private unsigned treatment narrative.' }, priya.cookie)
+  const overdueIds = async cookie => (await h.state(cookie)).documentationClose.filter(i => i.noteId).map(i => i.noteId).sort()
+  assert.deepEqual(await overdueIds(priya.cookie), drafts.slice(0, 4).map(n => n.id).sort())
+  assert.deepEqual(await overdueIds(sam.cookie), [drafts[5].id])
+  assert.deepEqual(await overdueIds(h.owner), [...drafts.slice(0, 4), drafts[5]].map(n => n.id).sort())
+  assert.deepEqual((await h.state(reception.cookie)).documentationClose, [])
+  const close = (await h.state(priya.cookie)).documentationClose
+  assert.ok(!JSON.stringify(close).toLowerCase().includes('private unsigned treatment narrative'))
+  assert.ok(close.find(i => i.noteId === drafts[0].id).dueAt)
+  const closePage = (await h.send(schedule, undefined, priya.cookie)).text
+  for (const draft of drafts.slice(0, 4)) assert.ok(closePage.includes('#note-' + draft.id))
+  assert.ok(!closePage.includes('#note-' + drafts[4].id) && !closePage.includes('#note-' + drafts[5].id))
+  const settings = { lateDays: 30, kxNearCents: 20000, unsignedNoteHours: 48 }
+  await h.cmd('documentation.settings.save', settings, priya.cookie, 403)
+  await h.cmd('documentation.settings.save', { ...settings, unsignedNoteHours: 0 }, h.owner, 400)
+  const settingsPage = (await h.send('/app/clinic', undefined, h.owner)).text
+  assert.ok(settingsPage.includes('name="unsignedNoteHours"'))
+  const settingsAction = settingsPage.match(/action="([^"]*name=documentation.settings.save[^"]*)"/)[1].replaceAll('&amp;', '&')
+  assert.equal((await h.form(settingsAction, { lateDays: '30', kxNear: '200.00', unsignedNoteHours: '48' }, h.owner)).status, 303)
+  assert.deepEqual(await overdueIds(priya.cookie), [])
+  await h.cmd('documentation.settings.save', { ...settings, unsignedNoteHours: 12 })
+  assert.deepEqual(await overdueIds(priya.cookie), drafts.slice(0, 5).map(n => n.id).sort())
+  // Existing integrations that only save plan/KX settings preserve the deadline.
+  await h.cmd('documentation.settings.save', { lateDays: 30, kxNearCents: 20000 })
+  assert.deepEqual(await overdueIds(priya.cookie), drafts.slice(0, 5).map(n => n.id).sort())
+  await h.cmd('note.sign', { id: drafts[2].id, revision: 1, signature: 'Priya', attest: true }, priya.cookie)
+  assert.ok(!(await overdueIds(priya.cookie)).includes(drafts[2].id))
 
   // The plan of care goes to the referring physician, who signs from the link without an account.
   const plan = await h.cmd('plan.send', { clientId: client.id, diagnoses: 'M22.2X1 Patellofemoral disorders, right knee', shortTermGoals: 'Stairs reciprocally in 3 weeks', longTermGoals: 'Return to running 5 km pain-free',
@@ -66,7 +115,12 @@ test('a note starts from the visit’s template, is signed and locked, takes add
   const front = (await view(h, client.id, reception.cookie)).plans[0]
   assert.deepEqual([front.status, front.content], ['certified', null])
   assert.match((await h.send(schedule, undefined, reception.cookie)).text, /Plan of care signed by Dr\. Anika Patel/)
-  const audit = (await view(h, client.id, h.owner)).audit
+  let auditPage = await view(h, client.id, h.owner)
+  const audit = [...auditPage.audit]
+  while (auditPage.auditPage.older) {
+    auditPage = (await h.send(`/api/balm/clients/${client.id}?auditBefore=${auditPage.auditPage.older}`, undefined, h.owner)).value
+    audit.push(...auditPage.audit)
+  }
   for (const action of ['note.signed', 'note.addendum', 'plan.sent', 'plan.opened', 'plan.certified']) assert.ok(audit.some(a => a.action === action), action)
 }))
 
