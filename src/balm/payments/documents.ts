@@ -17,7 +17,7 @@ export async function superbillFacts(db: D1Database, invoiceId: string) {
   insist(invoice, 'invoice_not_found', 404)
   const v = JSON.parse(invoice.snapshot as string), codes = (await visitCodes(db, { appointmentId: invoice.appointment_id as string }))[invoice.appointment_id as string]
   // CPT units the visit's signed notes billed (frozen on the invoice) win over codes entered for the visit.
-  const procedures: Data[] = v.procedures?.length ? v.procedures.map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? codes.cpt.find(c => c.code === p.code)?.modifiers ?? '', units: p.units, from: 'notes' }))
+  const procedures: Data[] = v.procedures?.length ? v.procedures.filter((p: Data) => p.units > 0).map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? codes.cpt.find(c => c.code === p.code)?.modifiers ?? '', units: p.units, from: 'notes' }))
     : codes.cpt.map(c => ({ ...c, description: '', from: 'visit' }))
   const missing = [
     ...(invoice.npi ? [] : ['the practitioner’s NPI (Clinic → Billing identifiers)']),
@@ -45,7 +45,7 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
     { kind: 'table', columns: [{ label: 'CPT', width: 1.2 }, { label: 'Modifiers', width: 1.3 }, { label: 'Description', width: 4 }, { label: 'Diagnosis', width: 1.4 }, { label: 'Units', width: 0.9, right: true }],
       rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', letters.slice(0, f.diagnoses.length).split('').join(', '), String(p.units)]),
       totals: [['Total charges', dollars(f.invoice.amount_cents as number)], ['Paid', dollars(f.paidCents)], ['Insurance adjustments', dollars(Number(f.invoice.adjusted_cents))], ['Balance', dollars((f.invoice.amount_cents as number) - f.paidCents - Number(f.invoice.adjusted_cents))]] },
-    { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? 'CPT units are those billed from the signed treatment note by the CMS 8-minute rule.' : 'CPT codes and units as recorded for the visit.',
+    { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? `CPT units are those billed from the signed treatment note by ${f.v.timedUnitBasis?.method === 'ama' ? 'AMA/CPT per-service substantial portion' : f.v.timedUnitBasis?.method === null ? 'CMS calculation pending payer method selection' : 'the CMS 8-minute rule'}.` : 'CPT codes and units as recorded for the visit.',
       'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },
   ]
   return { name: `superbill-${number}.pdf`, bytes: pdf({ header: f.v.clinic.name, title: 'Superbill', blocks }) }
