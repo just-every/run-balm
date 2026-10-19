@@ -501,10 +501,10 @@ test('REF-003: two episodes of one patient keep visits, authorization use, outco
   // Filed before any episode: never guessed into one by date.
   const legacyVisit = await pastVisit(h, patient.id, priya, service.id, h.owner, 19)
   const legacyDoc = await h.cmd('chart.document.upload', mriUpload(patient.id, shift(-10)), priya.cookie)
-  const knee = await h.cmd('episode.open', { clientId: patient.id, title: 'Left knee' }, reception.cookie)
-  const back = await h.cmd('episode.open', { clientId: patient.id, title: 'Low back' }, priya.cookie)
+  const knee = await h.cmd('episode.open', { clientId: patient.id, title: 'Left knee', start: 'direct_access' }, reception.cookie)
+  const back = await h.cmd('episode.open', { clientId: patient.id, title: 'Low back', start: 'direct_access' }, priya.cookie)
   await h.cmd('episode.open', { clientId: patient.id, title: 'Not my patient' }, sam.cookie, 404)
-  const elsewhere = await h.cmd('episode.open', { clientId: other.id, title: 'Shoulder' })
+  const elsewhere = await h.cmd('episode.open', { clientId: other.id, title: 'Shoulder', start: 'direct_access' })
 
   // With two open episodes every staff action that files a record must choose one.
   const coverage = { startsOn: shift(-30), endsOn: shift(30) }

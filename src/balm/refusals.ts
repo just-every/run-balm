@@ -2,6 +2,17 @@
 // code (the JSON doors return it as `code`); pages show the sentence for it.
 const sentences: Record<string, string> = {
   slot_unavailable: 'Sorry, that time was just taken. Choose another time; your details are kept.',
+  choose_an_episode: 'This patient has more than one open episode of care. Choose the episode this belongs to.',
+  episode_not_open: 'That episode of care is closed. Choose an open episode.',
+  episode_has_booked_visits: 'This episode still has booked visits. Cancel or move them before closing it.',
+  episode_closed: 'This episode of care is already closed.',
+  choose_a_referral_or_direct_access: 'Choose the referral this episode starts from, or direct access.',
+  referral_already_started_an_episode: 'That referral already started an episode of care.',
+  referral_lost: 'That referral was recorded as lost.',
+  referral_has_visits: 'This referral has booked or attended visits, so it was not lost. Cancel booked visits first if the patient is not coming.',
+  npi_registry_unavailable: 'The NPPES NPI registry could not be reached, so the NPI was not checked. Try again, or record the NPI by hand (it stays labelled not checked).',
+  npi_lookup_not_enabled: 'The NPPES lookup is off. The owner can turn it on in Clinic settings; until then NPIs are recorded by hand and labelled not checked.',
+  npi_not_found_in_nppes: 'The NPPES NPI registry has no provider with that NPI. Check the number.',
   time_taken: 'That time is already booked. Choose another time.',
   online_booking_closed: 'Online booking is closed. Please contact the clinic.',
   too_many_online_bookings: 'Too many bookings were made from here recently. Please contact the clinic.',

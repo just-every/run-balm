@@ -1,3 +1,4 @@
+import { preserveReferrals } from '../reports/referrals'
 // @ts-ignore The pinned Base module is JavaScript without declarations.
 import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
@@ -57,7 +58,7 @@ export async function destroyRecords(db: D1Database, who: Actor, input: Data) {
     ...await portability.redactionStatements(),...await portability.invalidateTransfersStatements(),
     stmt(db,'INSERT INTO bm_retention_permits(client_id,preview_id) VALUES(?,?)',client.id,previewId),...captureScope(db,previewId,found),
     stmt(db,"UPDATE bm_audit SET detail='' WHERE client_id=? AND detail<>''",client.id),
-    ...preserveAccounting(db,client.id,receiptId),...preserveOperations(db,client.id,receiptId),...purgeCopies(db,client.id,copies),
+    ...preserveAccounting(db,client.id,receiptId),...preserveOperations(db,client.id,receiptId),...await preserveReferrals(db,client.id,(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string),...purgeCopies(db,client.id,copies),
     stmt(db,'INSERT OR IGNORE INTO bm_erasure_journal(identity_hash,kind,erased_at) VALUES(?,?,?)',await clientIdentity(client.first_name,client.last_name,client.date_of_birth),'client',Date.now()),
     ...purgeScope(db,found),...imported.after.map(prepared),...readonlyChecks(imported.final).map(prepared),stmt(db,'DELETE FROM ik_d1_assertions'),
     stmt(db,'INSERT INTO bm_destructions(id,preview_digest,destroyed_at,approved_by,policy,inventory) VALUES(?,?,?,?,?,?)',receiptId,digest,at,who.id,JSON.stringify(receiptPolicy),preview.inventory),

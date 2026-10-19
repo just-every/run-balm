@@ -9,6 +9,7 @@ import archivePolicy from '../archive-policy.mjs'
 import { intakeFor } from './intake'
 import { notesFor } from './notes'
 import { episodeIndex } from '../episodes'
+import { referralsFor } from '../referrals'
 import { changesInEpisode, episodeSummaries, seriesByEpisode } from '../episodes/summary'
 import { authorizationsFor } from '../insurance/authorization'
 import { careTeamOnly, noteAccess } from './care-team'
@@ -125,7 +126,8 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const measures = notes ? seriesByEpisode(notes) : null
   const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesInEpisode(measures, n)])) : null
   const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
-  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  const referrals = teamOnly || who.role === 'agent' ? null : await referralsFor(db, client.id as string, (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string)
+  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 

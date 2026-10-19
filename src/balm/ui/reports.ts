@@ -31,7 +31,10 @@ export function reportsPage(s: any) {
       ['Practitioner', 'Available minutes', 'Booked minutes', 'Attended minutes', 'Utilization', 'Productivity'], x => [x.practitioner, x.availableMinutes, x.bookedMinutes, x.attendedMinutes, pct(x.utilization), pct(x.productivity)], 'utilization')
     + section('payroll', 'Visit counts for payroll', 'Attended visits and their booked minutes, by practitioner and service.',
       ['Practitioner', 'Service', 'Attended visits', 'Attended minutes'], x => [x.practitioner, x.service ?? '', x.attendedVisits, x.attendedMinutes], 'payroll')
-    + panel('Referral conversion', '<p>Balm does not record referrals yet, so there is no referral conversion to report. It is added here when referrals are recorded.</p>', 'full', 'report-referrals')
+    + panel('Referral conversion', '<p class="help">Referrals received in the range, by source and by referring provider. Scheduled counts referrals whose episode has a booked or attended visit (or got further); evaluated, a signed initial evaluation; discharged, a closed episode; lost, recorded by a person. With a practitioner chosen, only referrals whose first visit is with them count.</p>'
+      + (r.referrals.rows.length ? table(['Source or referring provider', 'Received', 'Scheduled', 'Evaluated', 'Discharged', 'Lost', 'Not yet scheduled', 'Scheduled share'],
+        [...r.referrals.rows, { ...r.referrals.total, group: 'total', name: 'All referrals' }].map((x: any) => [x.group === 'source' ? `Source: ${x.name}` : x.group === 'provider' ? `Provider: ${x.name}` : x.name, x.received, x.scheduled, x.evaluated, x.discharged, x.lost, x.open, pct(x.conversion)]))
+        : empty('No referrals received in this range.')) + download('referrals', 'referral conversion'), 'full', 'report-referrals')
     + financialSections(s)
     + '</div>'
 }

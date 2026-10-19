@@ -4,6 +4,7 @@ import {run} from './harness.mjs'
 import {readFile} from 'node:fs/promises'
 import {clinic,pastVisit,slots} from './clinic.mjs'
 import {fakeProviders} from './fakes/stripe.mjs'
+import {individual,nppesRegistry} from './fakes/nppes.mjs'
 
 // Last month in Brisbane (UTC+10, no daylight saving), so the whole month is history.
 const now=new Date(Date.now()+10*3600_000),first=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1))
@@ -71,7 +72,7 @@ test('REPORT-001: a month of visits, plans, evaluations, utilization and payroll
  assert.deepEqual(row('utilization',priya),{practitionerId:priya.id,practitioner:'Priya',availableMinutes:priyaAvailable,bookedMinutes:285,attendedMinutes:240,utilization:rate(285,priyaAvailable),productivity:rate(240,priyaAvailable)})
  assert.deepEqual(row('utilization',sam),{practitionerId:sam.id,practitioner:'Sam',availableMinutes:samAvailable,bookedMinutes:90,attendedMinutes:60,utilization:rate(90,samAvailable),productivity:rate(60,samAvailable)})
  assert.deepEqual(report.payroll.rows.map(r=>[r.practitioner,r.service,r.attendedVisits,r.attendedMinutes]),[['Priya','Initial consultation',5,240],['Sam','Follow-up visit',2,60]])
- assert.equal(report.referrals,null,'no referral records exist to convert')
+ assert.equal(report.referrals.total.received,0,'no referrals were recorded in this month')
  assert.ok(!JSON.stringify(report).match(/Santos|Reed|Cruz|Park|Chen|Knee pain/),'aggregates never name patients or carry note text')
 
  // Practitioner filter.
@@ -168,4 +169,79 @@ test('REPORT-002: charges, payments, adjustments, A/R aging by payer and patient
   assert.match((await h.send('/app/reports?'+query,undefined,h.owner)).text,/id="report-deposits"/)
   for(const cookie of [(await h.staff('Rosa','reception')).cookie,priya.cookie])assert.equal((await h.send('/api/balm/reports/financial',undefined,cookie)).status,403)
  },{auth:{BALM_INSURANCE_ADAPTER_URL:'https://gateway.example/submit',BALM_INSURANCE_ADAPTER_TOKEN:'fixture-gateway-key'},outbound:async request=>request.url==='https://gateway.example/submit'?Response.json({status:'submitted',reference:'fixture-batch-accepted'}):stripe.handler(request)})
+})
+
+test('REF-001: three referrals entered with NPPES lookup, two scheduled and one lost; conversion by provider and source matches REPORT-001 and its CSV',()=>{
+ const calls=[],registry={'1234567893':individual('Anika','Patel','MD',['207X00000X','Orthopaedic Surgery'],'Austin'),'1609000009':individual('Lee','Wong','DO',['208100000X','Physical Medicine & Rehabilitation'],'Dallas'),'1609000017':503}
+ return run(async h=>{
+  await h.finishSetup()
+  const {service,practitioners:[priya,sam]}=await clinic(h,['Priya','Sam'])
+  const reception=await h.staff('Rosa','reception')
+  const today=new Date(Date.now()+10*3600_000).toISOString().slice(0,10),later=new Date(Date.now()+(10+72)*3600_000).toISOString().slice(0,10)
+  const [ana,ben,cara]=await Promise.all(['Ana','Ben','Cara'].map(first=>h.cmd('client.save',{firstName:first,lastName:'Referral',dateOfBirth:'1980-01-01'})))
+  // OWN-001: the NPPES lookup is off until the owner turns it on; until then an NPI is recorded by hand, labelled not checked.
+  await h.cmd('referral.npi_lookup',{npi:'1234567893'},reception.cookie,409)
+  const unchecked=await h.cmd('case.open',{clientId:cara.id,receivedOn:'2026-01-01',referringFirst:'Lee',referringLast:'Wong',referringNpi:'1609000009',source:'other_provider'},reception.cookie)
+  assert.equal(unchecked.npiSource,'entered'); assert.equal(calls.length,0,'no registry request while the lookup is off')
+  await h.cmd('referral.nppes_setting',{enabled:'true'},reception.cookie,403)
+  await h.cmd('referral.nppes_setting',{enabled:'true'})
+  assert.match((await h.send('/app/clinic',undefined,h.owner)).text,/The lookup is on\./)
+  // NPI lookup reads the registry; only the NPI is sent.
+  const found=await h.cmd('referral.npi_lookup',{npi:'1234567893'},reception.cookie)
+  assert.deepEqual([found.name,found.credential,found.kind],['Anika Patel','MD','individual'])
+  assert.match(found.taxonomy,/207X00000X · Orthopaedic Surgery/)
+  assert.deepEqual(calls.at(-1),{npi:'1234567893',version:'2.1'})
+  await h.cmd('referral.npi_lookup',{npi:'1234567890'},reception.cookie,400)
+  await h.cmd('referral.npi_lookup',{npi:'1609000025'},reception.cookie,404)
+  await h.cmd('referral.npi_lookup',{npi:'1609000017'},reception.cookie,424)
+  const refer=(clientId,npi,source,extra={},cookie=reception.cookie,status=200)=>h.cmd('case.open',{clientId,receivedOn:today,referringFirst:'typed',referringLast:'name',referringNpi:npi,source,diagnosis:'M25.561',reason:'Evaluate and treat',...extra},cookie,status)
+  const a=await refer(ana.id,'1234567893','physician',{episodeTitle:'Right knee'})
+  assert.equal(a.npiSource,'nppes'); assert.ok(a.episodeId)
+  const b=await refer(ben.id,'1234567893','physician')
+  await refer(cara.id,'1609000017','other_provider',{},reception.cookie,424)
+  const c=await refer(cara.id,'1609000009','other_provider')
+  const byHand=await refer(cara.id,'1609000017','website',{npiByHand:'on',receivedOn:'2026-01-02'})
+  assert.equal(byHand.npiSource,'entered')
+  await refer(cara.id,'1609000018','website',{npiByHand:'on'},reception.cookie,400)
+  await refer(ana.id,'1234567893','physician',{},priya.cookie,403)
+  await refer(ana.id,'1234567893','gossip',{},reception.cookie,400)
+  // Schedule two: Ana's started episode, and Ben's referral started from his file.
+  await h.cmd('episode.open',{clientId:ben.id,title:'Low back'},reception.cookie,400)
+  const benEpisode=await h.cmd('episode.open',{clientId:ben.id,title:'Low back',start:b.id},reception.cookie)
+  await h.cmd('episode.open',{clientId:ben.id,title:'Again',start:b.id},reception.cookie,409)
+  await h.cmd('appointment.book',{clientId:ana.id,practitionerId:sam.id,serviceId:service.id,date:later,time:'10:00'},reception.cookie)
+  const benVisit=await pastVisit(h,ben.id,priya,service.id,reception.cookie,3)
+  await h.cmd('appointment.attend',{id:benVisit},reception.cookie)
+  const evaluation=await h.cmd('note.write',{clientId:ben.id,appointmentId:benVisit,template:'pt.evaluation',sections:{subjective:'Low back pain 5/10.',objective:'Lumbar flexion limited.',assessment:'Mechanical low back pain.',plan:'Core program.',diagnosis:'M54.50',goals:'Lift 20 lb without pain'},totalTreatmentMinutes:40},priya.cookie)
+  await h.cmd('note.sign',{id:evaluation.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  await h.cmd('episode.close',{id:benEpisode.id,reason:'Discharged after one visit'},reception.cookie)
+  await h.cmd('referral.lost',{id:a.id,reason:'x'},reception.cookie,409)
+  await h.cmd('referral.lost',{id:c.id,reason:'Chose a clinic nearer home'},priya.cookie,403)
+  await h.cmd('referral.lost',{id:c.id,reason:'Chose a clinic nearer home'},reception.cookie)
+  await h.cmd('referral.lost',{id:c.id},reception.cookie,409)
+  await h.cmd('episode.open',{clientId:cara.id,title:'Too late',start:c.id},reception.cookie,409)
+  // The referral report: conversion by provider and by source.
+  const report=(await h.send(`/api/balm/reports?from=${today}&to=${today}`,undefined,h.owner)).value.referrals
+  const row=(group,name)=>report.rows.find(r=>r.group===group&&r.name===name)
+  const counts=r=>['received','scheduled','evaluated','discharged','lost','open','conversion'].map(k=>r[k])
+  assert.deepEqual(counts(row('source','Physician')),[2,2,1,1,0,0,100])
+  assert.deepEqual(counts(row('source','Other provider')),[1,0,0,0,1,0,0])
+  assert.deepEqual(counts(row('provider','Anika Patel · NPI 1234567893 (NPPES)')),[2,2,1,1,0,0,100])
+  assert.deepEqual(counts(row('provider','Lee Wong · NPI 1609000009 (NPPES)')),[1,0,0,0,1,0,0])
+  assert.deepEqual(counts(report.total),[3,2,1,1,1,0,66.7])
+  assert.ok(!row('source','Website'),'the inclusive range leaves out the January referral')
+  const csv=csvRows((await h.send(`/api/balm/reports/referrals.csv?from=${today}&to=${today}`,undefined,h.owner)).text)
+  assert.deepEqual(csv[0],['by','source_or_referring_provider','received','scheduled','evaluated','discharged','lost','not_yet_scheduled','scheduled_percent'])
+  assert.deepEqual(csv.slice(1),[...report.rows,{...report.total,name:'All referrals'}].map(r=>[r.group,r.name,...counts(r).map(v=>v===null?'':String(v))]),'REPORT-001 CSV matches the referral report')
+  const priyaOnly=(await h.send(`/api/balm/reports?from=${today}&to=${today}&practitionerId=${priya.id}`,undefined,h.owner)).value.referrals
+  assert.deepEqual(counts(priyaOnly.total),[1,1,1,1,0,0,100],'only the referral whose first visit is with Priya')
+  // Staff track each referral's stage; the registry name replaces what was typed.
+  const cases=(await h.send('/app/cases',undefined,reception.cookie)).text
+  assert.ok(cases.includes(`id="case-${c.id}"`)&&/data-stage="lost"/.test(cases)&&/data-stage="scheduled"/.test(cases)&&/data-stage="discharged"/.test(cases))
+  assert.match(cases,/NPI 1234567893: Anika Patel, MD · 207X00000X · Orthopaedic Surgery \(NPPES registry, retrieved [A-Z][a-z]{2} \d{1,2}, \d{4}\)/)
+  assert.match(cases,/NPI 1609000017: entered by hand, not checked with NPPES/)
+  const benFile=(await h.send('/api/balm/clients/'+ben.id,undefined,reception.cookie)).value
+  assert.deepEqual(benFile.referrals.map(r=>[r.id,r.stage,r.episode_id]),[[b.id,'discharged',benEpisode.id]])
+  assert.ok(!calls.some(x=>Object.keys(x).some(k=>!['npi','version'].includes(k))))
+ },{outbound:nppesRegistry(registry,calls)})
 })

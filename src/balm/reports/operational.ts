@@ -7,8 +7,9 @@ import { datePlus, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { csvCell } from '../domain/disclosures'
 import { human, insist, need, rows, text, type Actor, type Data } from '../domain/model'
 import { reportRange } from './range'
+import { referralConversion } from './referrals'
 
-export const reportKinds = ['visits', 'plans', 'evaluations', 'utilization', 'payroll'] as const
+export const reportKinds = ['visits', 'plans', 'evaluations', 'utilization', 'payroll', 'referrals'] as const
 export type ReportKind = typeof reportKinds[number]
 
 type Practitioner = { id: string; name: string }
@@ -131,8 +132,7 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
     evaluations: { rows: evaluationList, total: total(evaluationList) },
     utilization: { rows: timeList.map(withTimeRate), total: withTimeRate(total(timeList) as any) },
     payroll: { rows: payrollList, total: total(payrollList) },
-    // Balm records no referrals yet; referral conversion starts with them.
-    referrals: null,
+    referrals: await referralConversion(db, f),
   }
 }
 
@@ -144,11 +144,12 @@ const columns: Record<ReportKind, [string, string][]> = {
   evaluations: [['practitioner', 'practitioner'], ['pt', 'pt_evaluations'], ['ot', 'ot_evaluations'], ['slp', 'slp_evaluations'], ['total', 'total']],
   utilization: [['practitioner', 'practitioner'], ['availableMinutes', 'available_minutes'], ['bookedMinutes', 'booked_minutes'], ['attendedMinutes', 'attended_minutes'], ['utilization', 'utilization_percent'], ['productivity', 'productivity_percent']],
   payroll: [['practitioner', 'practitioner'], ['service', 'service'], ['attendedVisits', 'attended_visits'], ['attendedMinutes', 'attended_minutes']],
+  referrals: [['group', 'by'], ['name', 'source_or_referring_provider'], ['received', 'received'], ['scheduled', 'scheduled'], ['evaluated', 'evaluated'], ['discharged', 'discharged'], ['lost', 'lost'], ['open', 'not_yet_scheduled'], ['conversion', 'scheduled_percent']],
 }
 
 /** One report as CSV: a header, a row per practitioner (and service for payroll), then the all-practitioner total. */
 export function operationalCsv(report: OperationalReports, kind: ReportKind) {
   const cols = columns[kind], section = report[kind] as { rows: Data[]; total: Data }
   const line = (row: Data) => cols.map(([key]) => csvCell(row[key] ?? '')).join(',')
-  return [cols.map(([, label]) => csvCell(label)).join(','), ...section.rows.map(line), line({ ...section.total, practitioner: 'All practitioners' })].join('\r\n') + '\r\n'
+  return [cols.map(([, label]) => csvCell(label)).join(','), ...section.rows.map(line), line({ ...section.total, practitioner: 'All practitioners', name: 'All referrals' })].join('\r\n') + '\r\n'
 }

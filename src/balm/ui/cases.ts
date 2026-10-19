@@ -1,6 +1,8 @@
 // The case agent's page: every referral as one case, where it stands stage by
 // stage, and the next step lined up with the records it used, for a person to approve.
-import { check, empty, field, form, h, hidden, panel, select, stamp, textarea } from './shared'
+import { check, empty, field, form, h, hidden, panel, select, stamp, status, textarea, usDate, zoneOf } from './shared'
+import { referralSources } from '../referrals'
+import { hostDateAt } from '../availability/timezone'
 import { payerFileUploads } from './insurance-shared'
 
 const path = '/app/cases'
@@ -41,7 +43,18 @@ function caseCard(s: any, c: any, wording: any) {
   const track = `<ol class="case-track">${c.stages.map((x: any) => `<li class="case-stage is-${h(x.state)}"><span class="case-dot" aria-hidden="true"></span><span class="case-stage-text"><strong>${h(x.label)}</strong> <span class="case-state">${h(stateWord[x.state])}</span><br>${x.cite ? `<a href="${h(x.cite.href)}">${h(x.text)}</a>` : h(x.text)}${x.next ? `<br><span class="case-todo">Next: <a href="${h(x.next.href)}">${h(x.next.text)}</a></span>` : ''}</span></li>`).join('')}</ol>`
   const next = c.steps.length ? `<section class="case-next"><h3>${c.steps.length === 1 ? 'Next step' : `Next steps (${c.steps.length})`}</h3>${c.steps.map((x: any) => stepCard(c, x, wording)).join('')}</section>` : nextUp(c)
   const history = c.history.length ? `<details class="case-history"><summary>Approved steps (${c.history.length})</summary><ul class="plain">${c.history.map((x: any) => `<li><strong>${h(x.title)}</strong><br>Approved by ${h(x.approved_by)} (${h(x.approved_role)}) ${stamp(s, x.approved_at)} · ${h(x.status === 'sending' ? 'in progress' : outcome(x.result, x.kind))}${x.wording ? `<details><summary>Wording sent</summary><p class="secure-body">${h(x.wording)}</p></details>` : ''}</li>`).join('')}</ul></details>` : ''
-  return `<article class="case" id="case-${h(r.id)}"><header class="case-head"><div><h2><a href="/app/clients/${h(c.client.id)}">${h(c.client.name)}</a></h2><p class="help">${h(c.payer ?? 'Self-pay')} · referral from ${h(r.referring_first)} ${h(r.referring_last)}${r.diagnosis ? ` · ${h(r.diagnosis)}` : ''}${r.reason ? ` · ${h(r.reason)}` : ''}</p></div><p class="case-standing is-${h(c.standing.state)}">${h(c.standing.text)}</p></header>${track}${next}${history}</article>`
+  return `<article class="case" id="case-${h(r.id)}"><header class="case-head"><div><h2><a href="/app/clients/${h(c.client.id)}">${h(c.client.name)}</a></h2><p class="help">${h(c.payer ?? 'Self-pay')} · referral from ${h(r.referring_first)} ${h(r.referring_last)}${r.diagnosis ? ` · ${h(r.diagnosis)}` : ''}${r.reason ? ` · ${h(r.reason)}` : ''}</p></div><p class="case-standing is-${h(c.standing.state)}">${h(c.standing.text)}</p></header>${referralLine(s, c)}${track}${next}${history}</article>`
+}
+
+const stageWords: Record<string, string> = { received: 'Received, not yet scheduled', scheduled: 'Scheduled', evaluated: 'Evaluated', discharged: 'Discharged', lost: 'Lost' }
+const npiLine = (c: any, zone: string) => { const r = c.referral
+  return !r.referring_npi ? 'No NPI recorded' : r.npi_source === 'nppes' && c.provider ? `NPI ${r.referring_npi}: ${c.provider.name}${c.provider.credential ? `, ${c.provider.credential}` : ''}${c.provider.taxonomy ? ` · ${c.provider.taxonomy}` : ''} (NPPES registry, retrieved ${usDate(hostDateAt(new Date(c.provider.retrieved_at), zone), zone)})` : `NPI ${r.referring_npi}: entered by hand, not checked with NPPES` }
+/** REF-001: where the referral stands, from its episode's own records, and recording a lost one. */
+function referralLine(s: any, c: any) {
+  const st = c.referralStage, r = c.referral, source = referralSources.find(([k]) => k === r.source)?.[1] ?? r.source
+  const dates = [['received', st.receivedOn], ['scheduled', st.scheduledOn], ['evaluated', st.evaluatedOn], ['discharged', st.dischargedOn], ['lost', st.lostOn]].filter(([, d]) => d).map(([k, d]) => `${k} ${h(usDate(d, zoneOf(s)))}`).join(' · ')
+  return `<p class="referral-stage" data-stage="${h(st.stage)}">${status(stageWords[st.stage])} · ${h(source)} · ${h(npiLine(c, zoneOf(s)))}<br><span class="help">${dates}${r.lost_reason ? ` · ${h(r.lost_reason)}` : ''}${r.episode_id || st.stage === 'lost' ? '' : ' · no episode started yet: start one from the patient’s file'}</span></p>`
+    + (st.stage === 'received' ? `<details><summary>Mark this referral lost</summary>${form('referral.lost', '/app/cases', hidden('id', r.id) + field('reason', 'Reason (optional)', '', 'text', 'maxlength="300" placeholder="Chose another clinic"'), 'Mark lost', true)}</details>` : '')
 }
 
 function openForm(s: any) {
@@ -50,7 +63,10 @@ function openForm(s: any) {
   const policies: [unknown, unknown][] = [['', 'No insurance (self-pay)'], ...choices.filter((x: any) => x.policy_id).map((x: any) => [x.policy_id, `${x.first_name} ${x.last_name} · ${x.payer_name} · member ${x.member_id}`] as [unknown, unknown])]
   return panel('Open a case from a referral', `<details><summary>New referral</summary>${form('case.open', path, select('clientId', 'Patient', clients) + select('policyId', 'Insurance policy for this case', policies, '', '')
     + field('receivedOn', 'Referral received on', '', 'date', 'required') + `<div class="pair">${field('referringFirst', 'Referring provider first name', '', 'text', 'required maxlength="80"')}${field('referringLast', 'Last name', '', 'text', 'required maxlength="80"')}</div>`
-    + field('referringNpi', 'Referring provider NPI', '', 'text', 'inputmode="numeric" maxlength="10" pattern="[0-9]{10}"') + field('diagnosis', 'Diagnosis (ICD-10 and words)', '', 'text', 'maxlength="200" placeholder="M23.611 · right knee ACL"')
+    + select('source', 'Referral source', referralSources.map(([k, v]) => [k, v] as [unknown, unknown]), 'physician')
+    + field('referringNpi', 'Referring provider NPI', '', 'text', 'inputmode="numeric" maxlength="10" pattern="[0-9]{10}"')
+    + '<p class="help">Balm looks the NPI up in the NPPES registry and keeps the registry’s name for the provider; only the NPI is sent.</p>' + check('npiByHand', 'Record the NPI by hand without checking NPPES (it stays labelled not checked)', '')
+    + field('episodeTitle', 'Start its episode of care now (title, optional)', '', 'text', 'maxlength="120" placeholder="Right knee"') + field('diagnosis', 'Diagnosis (ICD-10 and words)', '', 'text', 'maxlength="200" placeholder="M23.611 · right knee ACL"')
     + textarea('reason', 'What was ordered', '', 'maxlength="2000"') + field('authorizationEmail', 'Where this payer takes authorization requests (email)', '', 'email', 'maxlength="254"')
     + '<p class="help">The case follows the patient’s visits from this date on. Authorization requests go to the address above only after a person approves them.</p>', 'Open case')}</details>`)
 }

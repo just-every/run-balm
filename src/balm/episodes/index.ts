@@ -4,6 +4,7 @@
 // between open episodes, and an explicit close that leaves signed records unchanged.
 // Episodes add no read rights: each record keeps the access rules it already had.
 import { clientVisible } from '../domain/clients'
+import { episodeStart } from '../referrals'
 import { audit, commit, guard, human, id, insist, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
 
 /** The bucket for records no episode holds; its id is the empty string. */
@@ -63,12 +64,16 @@ async function manager(db: D1Database, who: Actor, clientKey: unknown) {
   return clientVisible(db, who, clientKey)
 }
 
+/** REF-001: every episode starts from a received referral of this patient or a direct-access entry. */
 export async function openEpisode(db: D1Database, who: Actor, input: Data) {
   const client = await manager(db, who, input.clientId)
   const title = text(input.title, 'episode_title', 120), episodeId = id()
+  const zone = (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string
+  const start = await episodeStart(db, who, client, episodeId, input, zone)
   await commit(db, who, [
     stmt(db, 'INSERT INTO bm_episodes(id,client_id,title,opened_at,opened_by) VALUES(?,?,?,?,?)', episodeId, client.id, title, now(), who.email),
     audit(db, who, 'episode.opened', client.id as string, episodeId),
+    ...start,
   ])
   return { id: episodeId, clientId: client.id, title }
 }

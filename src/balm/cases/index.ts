@@ -7,6 +7,11 @@ import type { Bindings } from '../../auth.server'
 import { audit, commit, day, email, guard, human, id, insist, need, now, one, optional, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { clientVisible } from '../domain/clients'
 import { validNpi } from '../payments/codes'
+import { lookupNpi } from '../referrals/nppes'
+import { nppesOn, providerStatement, referralStages, source } from '../referrals'
+
+/** NPPES individual names as given: last word is the surname. */
+const nppesNames = (name: string) => { const parts = name.split(' '); return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] } }
 import { perform } from './actions'
 import { caseFacts } from './facts'
 import { stages, standing } from './stages'
@@ -25,7 +30,9 @@ async function view(env: Bindings, referral: Data) {
 export async function caseList(env: Bindings, who: Actor) {
   deskOnly(who)
   const referrals = await rows(env.DB, 'SELECT r.* FROM bm_referrals r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL ORDER BY r.received_on DESC,r.created_at DESC')
-  const cases = (await Promise.all(referrals.map(r => view(env, r)))).map(({ facts, ...c }) => c)
+  const zone = (await one(env.DB, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string, stages = await referralStages(env.DB, referrals, zone)
+  const providers = new Map((await rows(env.DB, 'SELECT * FROM bm_referring_providers')).map(p => [p.npi as string, p]))
+  const cases = (await Promise.all(referrals.map(r => view(env, r)))).map(({ facts, ...c }) => ({ ...c, referralStage: stages.get(c.referral.id as string)!, provider: c.referral.npi_source === 'nppes' ? providers.get(c.referral.referring_npi as string) ?? null : null }))
   await commit(env.DB, who, [...new Set(referrals.map(r => r.client_id as string))].map(clientId => audit(env.DB, who, 'case.list_read', clientId)))
   const rank = (c: typeof cases[number]) => c.steps.some(s => !s.blocked) ? 0 : c.standing.state === 'stalled' ? 1 : c.standing.state === 'waiting' ? 2 : 3
   const choices = await rows(env.DB, `SELECT c.id,c.first_name,c.last_name,p.id AS policy_id,y.name AS payer_name,p.member_id FROM bm_clients c LEFT JOIN bm_policies p ON p.client_id=c.id LEFT JOIN bm_payers y ON y.id=p.payer_id
@@ -48,18 +55,26 @@ async function saveReferral(db: D1Database, who: Actor, input: Data) {
   if (policyId) insist(await one(db, 'SELECT 1 FROM bm_policies WHERE id=? AND client_id=?', policyId, client.id), 'choose_one_of_the_patient’s_policies')
   const npi = optional(input.referringNpi, 'referring_npi', 10)
   if (npi) insist(validNpi(npi), 'the_referring_npi_is_not_a_valid_npi')
+  // REF-001: a typed NPI is checked with NPPES and the registry's name is kept; a person may
+  // instead record it by hand, which stays labelled as not checked.
+  const byHand = input.npiByHand === true || input.npiByHand === 'on'
+  const registered = npi && !byHand && await nppesOn(db) ? await lookupNpi(npi) : null
+  const names = registered?.kind === 'individual' ? nppesNames(registered.name) : null
   const at = now(), contact = optional(input.authorizationEmail, 'authorization_email', 254)
-  const values = [client.id, policyId, day(input.receivedOn, 'received_on'), text(input.referringFirst, 'referring_first_name', 80), text(input.referringLast, 'referring_last_name', 80), npi ?? '',
-    optional(input.diagnosis, 'diagnosis', 200) ?? '', optional(input.reason, 'referral_reason', 2000) ?? '', contact ? email(contact, 'authorization_email') : '']
+  const values = [client.id, policyId, day(input.receivedOn, 'received_on'), names?.first ?? (registered ? '' : text(input.referringFirst, 'referring_first_name', 80)), names?.last ?? (registered ? registered.name : text(input.referringLast, 'referring_last_name', 80)), npi ?? '',
+    optional(input.diagnosis, 'diagnosis', 200) ?? '', optional(input.reason, 'referral_reason', 2000) ?? '', contact ? email(contact, 'authorization_email') : '', source(input.source), npi ? registered ? 'nppes' : 'entered' : '']
   if (input.id) {
     const referral = await one(db, 'SELECT * FROM bm_referrals WHERE id=?', text(input.id, 'case', 100))
     insist(referral && referral.client_id === client.id, 'case_not_found', 404)
-    await commit(db, who, [stmt(db, 'UPDATE bm_referrals SET client_id=?,policy_id=?,received_on=?,referring_first=?,referring_last=?,referring_npi=?,diagnosis=?,reason=?,authorization_email=?,version=version+1 WHERE id=? AND version=?', ...values, referral.id, referral.version), guard(db, 'changes()=1'), audit(db, who, 'case.changed', client.id as string, referral.id)])
+    await commit(db, who, [...(registered ? [providerStatement(db, registered)] : []), stmt(db, 'UPDATE bm_referrals SET client_id=?,policy_id=?,received_on=?,referring_first=?,referring_last=?,referring_npi=?,diagnosis=?,reason=?,authorization_email=?,source=?,npi_source=?,version=version+1 WHERE id=? AND version=?', ...values, referral.id, referral.version), guard(db, 'changes()=1'), audit(db, who, 'case.changed', client.id as string, referral.id)])
     return { id: referral.id }
   }
-  const key = id()
-  await commit(db, who, [stmt(db, 'INSERT INTO bm_referrals(client_id,policy_id,received_on,referring_first,referring_last,referring_npi,diagnosis,reason,authorization_email,id,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ...values, key, who.email, at), audit(db, who, 'case.opened', client.id as string, key)])
-  return { id: key }
+  const key = id(), episodeId = input.episodeTitle ? id() : null
+  // Optionally start the referral's episode of care (REF-003) at once.
+  await commit(db, who, [...(registered ? [providerStatement(db, registered)] : []),
+    ...(episodeId ? [stmt(db, 'INSERT INTO bm_episodes(id,client_id,title,opened_at,opened_by) VALUES(?,?,?,?,?)', episodeId, client.id, text(input.episodeTitle, 'episode_title', 120), at, who.email), audit(db, who, 'episode.opened', client.id as string, episodeId)] : []),
+    stmt(db, 'INSERT INTO bm_referrals(client_id,policy_id,received_on,referring_first,referring_last,referring_npi,diagnosis,reason,authorization_email,source,npi_source,id,created_by,created_at,episode_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ...values, key, who.email, at, episodeId), audit(db, who, 'case.opened', client.id as string, key)])
+  return { id: key, episodeId, npiSource: npi ? registered ? 'nppes' : 'entered' : null, provider: registered }
 }
 
 async function caseStep(env: Bindings, input: Data) {
