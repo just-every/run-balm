@@ -81,7 +81,7 @@ test('copay at check-in from the day view, then the balance by pay link: paid on
     await h.cmd('pay.codes.save', { appointmentId: visit, cpt: '9711', icd10: '' }, priya.cookie, 400)
     const superbill = await h.send(`/api/balm/superbills/${invoice.id}.pdf`, undefined, reception.cookie)
     assert.equal(superbill.status, 200)
-    for (const text of ['Superbill', '1234567893', '12 345 678 901', 'M25.561', 'M54.50', '97161', '97110', 'GP', 'Ava Ng', '$95.00']) assert.ok(pdfText(superbill).includes(text), text)
+    for (const text of ['Superbill', '1234567893', '12-3456789', 'M25.561', 'M54.50', '97161', '97110', 'GP', 'Ava Ng', '$95.00']) assert.ok(pdfText(superbill).includes(text), text)
 
     // The balance goes by text (adapter, recorded Twilio response), and the patient pays it from their link.
     const texted = await h.cmd('pay.link.create', { clientId: client.id, purpose: 'balance', delivery: 'text' }, reception.cookie)

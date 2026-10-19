@@ -1,3 +1,4 @@
+import { phoneNumber } from './us-clinic'
 // Client-file access adapted from Satchel's matter membership (src/satchel/matters.ts,
 // just-every/run-satchel @ 2d460e4): the owner and reception see every file, a
 // practitioner sees a file only through their own appointments. Every file read
@@ -32,7 +33,7 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception'); human(who)
   const previous = input.id ? await clientVisible(db, who, input.id) : null
   const values = { first: text(input.firstName, 'first_name', 80), last: text(input.lastName, 'last_name', 80),
-    dob: input.dateOfBirth ? day(input.dateOfBirth, 'date_of_birth') : null, email: input.email ? email(input.email) : null, phone: optional(input.phone, 'phone', 40) }
+    dob: input.dateOfBirth ? day(input.dateOfBirth, 'date_of_birth') : null, email: input.email ? email(input.email) : null, phone: phoneNumber(input.phone) }
   const clientId = previous?.id as string ?? id()
   const identity = await clientIdentity(values.first, values.last, values.dob)
   await commit(db, who, [

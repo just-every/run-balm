@@ -19,7 +19,7 @@ export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 /** The facts an invoice freezes; approval re-reads them and compares byte for byte. */
 export async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
   const row = await one(db, `SELECT a.id,a.start_at,a.status,a.client_id,c.first_name,c.last_name,c.date_of_birth,p.name AS practitioner,p.profession,p.provider_number,
-    s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.address,st.time_zone
+    s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.practice_npi,st.tax_id_type,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
   // Billed CPT units come only from the visit's signed notes, by the 8-minute rule.
@@ -28,7 +28,7 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
   for (const c of signed.flatMap(n => JSON.parse(n.charges as string ?? '[]'))) minutes.set(c.code, (minutes.get(c.code) ?? 0) + c.minutes)
   const procedures = bill([...minutes].map(([code, m]) => ({ code, minutes: m }))).lines.map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units }))
   return { row, value: {
-    clinic: { name: row.clinic_name, abn: row.abn, address: row.address },
+    clinic: { name: row.clinic_name, abn: row.abn, taxIdType: row.tax_id_type, practiceNpi: row.practice_npi, address: row.address },
     client: { name: `${row.first_name} ${row.last_name}`, dateOfBirth: row.date_of_birth },
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
@@ -67,7 +67,7 @@ export function artifact(number: number, value: any, approvedAt: string, zone = 
   return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><title>${invoiceNumber(number)}</title>`
     + '<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1d2a26}table{width:100%;border-collapse:collapse;margin:24px 0}td,th{border-bottom:1px solid #ccd;padding:8px;text-align:left}td:last-child,th:last-child{text-align:right}</style></head><body>'
     + `<h1>Invoice ${invoiceNumber(number)}</h1><p>Issued ${escape(new Intl.DateTimeFormat('en-US', { timeZone: zone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(approvedAt)))}</p>`
-    + `<h2>${escape(value.clinic.name)}</h2>${line('Tax ID', value.clinic.abn)}${line('Address', value.clinic.address)}`
+    + `<h2>${escape(value.clinic.name)}</h2>${line('Tax ID (' + (value.clinic.taxIdType ?? 'EIN') + ')', value.clinic.abn)}${line('Practice NPI', value.clinic.practiceNpi)}${line('Address', value.clinic.address)}`
     + `<h2>Client</h2>${line('Name', value.client.name)}${line('Date of birth', usBirthDate(value.client.dateOfBirth))}`
     + `<h2>Provider</h2>${line('Practitioner', value.practitioner.name)}${line('Profession', value.practitioner.profession)}${line('Provider number', value.practitioner.providerNumber)}`
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`

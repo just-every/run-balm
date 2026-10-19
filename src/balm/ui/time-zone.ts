@@ -40,7 +40,7 @@ export function timeZoneField(settings: any) {
 export function timeZoneStep(s: any, returnTo: string) {
   const st = s.settings
   if (s.actor.role !== 'owner') return '<h1>Almost ready</h1><p>The clinic owner is choosing the clinic’s time zone. The schedule opens here once it is saved.</p>'
-  const keep = hidden('abn', st.abn ?? '') + hidden('address', st.address ?? '') + hidden('bookingOpen', String(!!st.booking_open))
+  const keep = hidden('bookingOpen', String(!!st.booking_open))
   return '<h1>Your clinic’s time zone</h1><p>Balm shows every visit, reminder and record in your clinic’s time zone, and online booking offers times in it. Check the zone below, then save to open the schedule.</p>'
     + `<section class="panel">${form('settings.save', returnTo, `<label>Clinic name<input name="clinicName" type="text" value="${h(st.clinic_name === 'My clinic' ? '' : st.clinic_name)}" required maxlength="120" placeholder="Riverside Physical Therapy"></label>` + timeZoneField(st) + keep, 'Save and open the schedule')}</section>`
     + '<p class="help">You can change the name and zone later on the Clinic page.</p>'

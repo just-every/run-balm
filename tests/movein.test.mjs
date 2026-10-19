@@ -77,7 +77,7 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
 test('downloaded WebPT reports and SimplePractice spreadsheets move in through the page, including a clinic-size patient list', () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [therapist] } = await clinic(h)
-  await h.cmd('settings.save', { clinicName: 'Lakeview Therapy', timeZone: 'America/Chicago', abn: '36-4829175', address: '100 Example Street, Chicago IL' })
+  await h.cmd('settings.save', { clinicName: 'Lakeview Therapy', timeZone: 'America/Chicago', taxId: '36-4829175', address: '100 Example Street, Chicago IL' })
   const input = { provider: 'webpt', practitionerId: therapist.id, serviceId: service.id, files: [
     { kind: 'appointments', name: 'Scheduled Visits.csv', csv: await readFile('tests/fixtures/movein/webpt-scheduled-visits-native.csv', 'utf8') },
     { kind: 'patients', name: 'Patient Lists.csv', csv: await readFile('tests/fixtures/movein/webpt-patient-lists-native.csv', 'utf8') },

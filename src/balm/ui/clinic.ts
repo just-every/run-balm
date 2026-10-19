@@ -1,3 +1,4 @@
+import { clinicIdentityFields } from './clinic-identity'
 import { documentationSettingsPanel } from './documentation'
 import { template } from '../charting/templates'
 import { templateSelect } from './notes'
@@ -28,7 +29,7 @@ function you(s: any) {
 
 export function clinic(s: any, notice: any = {}) {
   const st = s.settings
-  const settings = panel('Clinic details', form('settings.save', '/app/clinic', field('clinicName', 'Clinic name', st.clinic_name, 'text', 'required maxlength="120"') + timeZoneField(st) + `<div class="pair">${field('abn', 'Tax ID (shown on invoices)', st.abn, 'text', 'maxlength="20"')}${select('bookingOpen', 'Online booking', [['true', 'Open'], ['false', 'Closed']], String(!!st.booking_open))}</div>` + field('address', 'Address (shown on invoices and reminders)', st.address, 'text', 'maxlength="300"'), 'Save clinic details'))
+  const settings = panel('Clinic details', form('settings.save', '/app/clinic', field('clinicName', 'Clinic name', st.clinic_name, 'text', 'required maxlength="120"') + timeZoneField(st) + clinicIdentityFields(st) + select('bookingOpen', 'Online booking', [['true', 'Open'], ['false', 'Closed']], String(!!st.booking_open)), 'Save clinic details'))
   const serviceList = rows(s, 'services').map(x => entry(x.name, `<p>${x.duration_minutes} min · ${money(x.price_cents)} ${x.active ? '' : status('Inactive')}<br><span class="help">Notes start from: ${h(template(x.note_template)?.title ?? 'free text')}</span></p><details><summary>Edit service</summary>${form('service.save', '/app/clinic', hidden('id', x.id) + serviceFields(x), 'Save service')}</details>`)).join('')
   const staff = rows(s, 'staff').map(p => entry(p.name, `<p>${status(p.active ? 'Active' : 'Inactive')} ${status(p.role)}<br>${h(p.email)}${p.profession ? `<br>${h(p.profession)}` : ''}${p.provider_number ? ` · provider ${h(p.provider_number)}` : ''}${p.credentials ? ` · signs as ${h(p.credentials)}` : ''}</p>${p.role === 'practitioner' ? hoursFor(s, p) : ''}`
     + `<details><summary>Edit staff member</summary>${form('staff.save', '/app/clinic', hidden('id', p.id) + hidden('version', p.version) + staffFields(p), 'Save staff member')}</details>`

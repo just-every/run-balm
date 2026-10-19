@@ -36,7 +36,7 @@ export function bookPage(d: any) {
   const details = (p.start || retime) && d.slots ? `<section class="panel" id="details"><h2>3. Your details</h2>${heading}
     <form method="post" action="/book#details"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
     <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" value="${value('firstName')}"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name" value="${value('lastName')}"></label></div>
-    <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
+    <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" type="tel" placeholder="+1 (312) 555-0100" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
     <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email" value="${value('email')}"></label>
     <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
     <label class="check"><input type="checkbox" name="privacy" value="on" required${typed.privacy === 'on' ? ' checked' : ''}><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>

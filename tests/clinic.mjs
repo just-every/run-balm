@@ -6,7 +6,7 @@ const allWeek = [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00',
 
 /** A clinic with one service and the named practitioners, open every day. */
 export async function clinic(h, names = ['Priya']) {
-  await h.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane', abn: '12 345 678 901', address: '1 River St, Brisbane QLD' })
+  await h.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane', taxId: '12-3456789', address: '1 River St, Brisbane QLD' })
   const service = await h.cmd('service.save', { name: 'Initial consultation', durationMinutes: 45, priceCents: 9500 })
   const practitioners = []
   for (const name of names) {
@@ -24,7 +24,7 @@ export async function slots(h, serviceId, practitionerId) {
   return [...page.text.matchAll(/start=([0-9T%A-Z.-]+Z)/g)].map(m => decodeURIComponent(m[1]))
 }
 export async function bookOnline(h, serviceId, practitionerId, start, client = {}) {
-  const fields = { serviceId, practitionerId, start, firstName: 'Maya', lastName: 'Lee', dateOfBirth: '1988-04-02', email: 'maya@client.example', phone: '0400 000 000', privacy: 'on', ...client }
+  const fields = { serviceId, practitionerId, start, firstName: 'Maya', lastName: 'Lee', dateOfBirth: '1988-04-02', email: 'maya@client.example', phone: '(312) 555-0100', privacy: 'on', ...client }
   return h.form('/book', fields)
 }
 /** A staff booking that has already started, so it can be marked attended. */

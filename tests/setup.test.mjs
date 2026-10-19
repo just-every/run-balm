@@ -10,7 +10,7 @@ const localClock = t => new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour:
 const unescape = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
 const hiddenValue = (html, name) => unescape(html.match(new RegExp(`name="${name}" value="([^"]*)"`))[1])
 
-test('a new clinic chooses its own time zone first; weekly hours set with the form decide the times /book offers, breaks and days off included', () => run(async h => {
+test('US-001: US clinic setup, availability, booking and immutable USD invoices', () => run(async h => {
   await h.finishSetup()
   // No zone is assumed: the owner's first page asks for it (US zones first), and booking waits for it.
   const first = await h.send('/app/clinic', undefined, h.owner)
@@ -18,7 +18,7 @@ test('a new clinic chooses its own time zone first; weekly hours set with the fo
   assert.match(first.text, /<option value="">Choose your clinic’s time zone<\/option><optgroup label="United States"><option value="America\/New_York">/)
   assert.match((await h.send('/book')).text, /Online booking is not open yet/)
   assert.equal((await h.cmd('appointment.book', { clientId: 'none', practitionerId: 'none', serviceId: 'none', date: '2030-01-07', time: '09:00' }, h.owner, 409)).code, 'clinic_time_zone_not_set')
-  const chosen = await h.form('/app/action?name=settings.save&returnTo=%2Fapp', { clinicName: 'Lakeside Therapy', timeZone: zone, abn: '', address: '', bookingOpen: 'true' }, h.owner)
+  const chosen = await h.form('/app/action?name=settings.save&returnTo=%2Fapp', { clinicName: 'Lakeside Therapy', timeZone: zone, taxId: '12-3456789', taxIdType: 'EIN', practiceNpi: '1234567893', streetAddress: '100 Lake Street', city: 'Chicago', state: 'IL', postalCode: '60601-1234', bookingOpen: 'true' }, h.owner)
   assert.equal(chosen.status, 303); assert.equal(chosen.location, '/app')
   assert.match((await h.send('/app', undefined, h.owner)).text, /Times are in Central time \(America\/Chicago\)\./)
   const service = await h.cmd('service.save', { name: 'Evaluation', durationMinutes: 45, priceCents: 15000 })
@@ -28,6 +28,7 @@ test('a new clinic chooses its own time zone first; weekly hours set with the fo
   assert.equal(outside.status, 400); assert.match(outside.text, /Monday: a break must fall inside the working hours/)
   assert.equal((await h.form('/app/action?name=hours.save&returnTo=/app/clinic', hours, h.owner)).status, 303)
   const clinicPage = await h.send('/app/clinic', undefined, h.owner)
+  assert.match(clinicPage.text, /value="1234567893"/); assert.match(clinicPage.text, /value="60601-1234"/)
   assert.match(clinicPage.text, /Monday 9:00 AM–12:00 PM, 1:00 PM–5:00 PM/); assert.match(clinicPage.text, /Wednesday 8:00 AM–12:00 PM/)
   assert.doesNotMatch(clinicPage.text, /Weekly hours \(JSON\)/)
 
@@ -45,9 +46,27 @@ test('a new clinic chooses its own time zone first; weekly hours set with the fo
   const booked = await bookOnline(h, service.id, sarah.id, one, { email: 'ana@patient.example', firstName: 'Ana' })
   assert.equal(booked.status, 303, booked.text)
   assert.match(booked.location, /^\/intake\//)
+  const patient = (await h.state()).clients.find(c => c.first_name === 'Ana')
+  const file = await h.send('/api/balm/clients/' + patient.id, undefined, h.owner)
+  assert.equal(file.value.client.phone, '+13125550100')
+  const details = { clinicName: 'Lakeside Therapy', timeZone: zone }
+  for (const invalid of [{ taxId: '123' }, { practiceNpi: '1234567890' }, { state: 'ZZ' }, { postalCode: '6060' }]) await h.cmd('settings.save', { ...details, ...invalid }, h.owner, 400)
+  await h.cmd('hours.save', { practitionerId: sarah.id, hours: [0,1,2,3,4,5,6].map(weekday => ({ weekday, start: '00:00', end: '24:00' })) })
+  let past = Date.now() - 3 * 3600_000
+  if (localClock(past) > '22:00') past -= 3 * 3600_000
+  const visit = await h.cmd('appointment.book', { clientId: patient.id, practitionerId: sarah.id, serviceId: service.id, date: localDate(past), time: localClock(past) })
+  await h.cmd('appointment.attend', { id: visit.appointmentId }, sarah.cookie)
+  const invoice = await h.cmd('invoice.prepare', { appointmentId: visit.appointmentId })
+  await h.cmd('invoice.approve', { id: invoice.id })
+  const download = await h.send(`/api/balm/invoices/${invoice.id}.html`, undefined, h.owner)
+  assert.equal(download.status, 200)
+  for (const fact of ['USD', '$150.00', '12-3456789', '1234567893', '100 Lake Street, Chicago, IL 60601-1234', 'Apr 2, 1988']) assert.ok(download.text.includes(fact), fact)
+  await h.cmd('settings.save', { ...details, taxIdType: 'SSN', taxId: '123-45-6789' })
+  assert.equal((await h.state()).settings.tax_id_type, 'SSN')
+  assert.equal((await h.send(`/api/balm/invoices/${invoice.id}.html`, undefined, h.owner)).text, download.text, 'issued invoice keeps its original identity')
 }))
 
-test('a Cliniko patient export is uploaded as a file, read with US dates, flagged where ambiguous, and imported from a readable preview', () => run(async h => {
+test('US-001: a Cliniko patient export is uploaded as a file, read with US dates, flagged where ambiguous, and imported from a readable preview', () => run(async h => {
   await h.finishSetup()
   await h.cmd('settings.save', { clinicName: 'Lakeside Therapy', timeZone: zone })
   const upload = async (name, text, dateFormat) => {

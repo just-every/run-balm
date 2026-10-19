@@ -1,3 +1,4 @@
+import { phoneNumber } from './us-clinic'
 import { evaluateSlot, listAvailableSlots, type AvailabilityConstraints } from '../availability/engine'
 import { datePlus, hostDateAt, wallClockInstants, zonedParts } from '../availability/timezone'
 import { audit, commit, day, email, guard, human, id, insist, integer, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
@@ -118,7 +119,7 @@ export async function bookOnline(db: D1Database, input: Data) {
   const start = instant(input.start), end = new Date(start.getTime() + service.duration_minutes * 60_000)
   const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false), start, end, clinic.time_zone)
   insist(verdict.valid, 'slot_unavailable', 409)
-  const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: optional(input.phone, 'phone', 40) }
+  const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }
   insist(input.privacy === true || input.privacy === 'on' || input.privacy === 'yes', 'privacy_acknowledgement_required')
   const pending = await one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?`, client.email, now())
   insist((pending?.n ?? 0) < 3, 'too_many_online_bookings', 429)

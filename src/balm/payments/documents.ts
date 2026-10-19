@@ -8,7 +8,7 @@ import { cardLabel, ledger, receiptNumber } from './ledger'
 import { pdf, type Block } from './pdf'
 
 const usDate = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso))
-const clinicFacts = (c: Data): [string, string][] => [['Clinic', c.clinic_name ?? c.name], ...(c.address ? [['Address', c.address] as [string, string]] : []), ...(c.abn ? [['Tax ID (EIN)', c.abn] as [string, string]] : [])]
+const clinicFacts = (c: Data): [string, string][] => [['Clinic', c.clinic_name ?? c.name], ...(c.address ? [['Address', c.address] as [string, string]] : []), ...(c.abn ? [['Tax ID (' + (c.tax_id_type ?? c.taxIdType ?? 'EIN') + ')', c.abn] as [string, string]] : []), ...((c.practice_npi ?? c.practiceNpi) ? [['Practice NPI', c.practice_npi ?? c.practiceNpi] as [string, string]] : [])]
 
 /** Everything a superbill shows for one approved invoice, and what is still missing. */
 export async function superbillFacts(db: D1Database, invoiceId: string) {
