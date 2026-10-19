@@ -292,7 +292,7 @@ The owner-approved scope (16 October 2026) names what Balm was missing against t
 
 ### Mobile and integrations
 
-- **MOBILE-001 — Tablet-first clinician web app.** Clinicians run the schedule, check-in, notes, home programs and payments on a tablet or phone browser at the treatment table, and a draft note survives a dropped connection. **Acceptance evidence:** Complete a visit end to end on a tablet viewport, drop the network mid-note and see the draft kept and saved on reconnect.
+- **MOBILE-001 — Tablet-first clinician web app.** Clinicians run the schedule, check-in, notes, home programs and payments on a tablet or phone browser at the treatment table, under `BALM-001`’s existing role limits: practitioners check in, document and assign exercises; the owner or reception handles payments. A clinician-owner can complete the entire visit. A draft note survives a dropped connection in the same open tab: Save queues one immutable request, reconnect retries that same request and creates at most one saved revision, and later edits remain visible until separately saved. Clinical draft text stays in tab memory only, with no local/session storage, IndexedDB, service worker or disk cache. Closing or reloading warns before discarding unsaved work. A 401/403 stops automatic retries until sign-in as the original author and an explicit Save; a changed/signed revision refuses overwrite and keeps the unsaved text for comparison. Signing and scribe requests are never replayed offline. Future scheduling (`SCHED-002`–`SCHED-010`), charting (`CHART-002`–`CHART-013`), home program (`PORTAL-002`, `PORTAL-007`) and payment (`PAY-002`–`PAY-009`) capabilities inherit tablet/phone usability before shipping, and new note editors inherit this guarded draft behavior. **Acceptance evidence:** Complete a visit end to end on a tablet viewport, drop the network mid-note and see the draft kept and saved on reconnect.
 
 - **MOBILE-002 — Native clinician and patient apps.** iOS and Android apps give clinicians the schedule, notes, scribe recording and secure push alerts without PHI on the lock screen, and give patients their portal, home program, messages and payments. **Acceptance evidence:** Install both apps from TestFlight and an Android test track, record a scribe visit, sign the note and see a push alert with no clinical text.
 
@@ -419,8 +419,8 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 14 | 1 | 0 | 15 |
-| Target and push further | 12 | 47 | 35 | 94 |
-| All | 26 | 48 | 35 | 109 |
+| Target and push further | 13 | 46 | 35 | 94 |
+| All | 27 | 47 | 35 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -521,7 +521,7 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | `MOVE-005` | Full Cliniko migration | target | partial | `src/balm/movein/csv.ts`; `src/balm/movein/bundle.ts`; `docs/MOVE-IN-FORMATS.md`; `tests/movein.test.mjs`; `tests/setup.test.mjs` | Direct patient CSV subset with US dates remains; reviewed conversion CSVs additionally import appointments, historical text, opening balances and policy identifiers with source totals, one-batch apply, re-import and undo. Synthetic proof only; no Cliniko API, calendar-event/attendee join, group appointments, attachments, source practitioner/service/location mapping or native invoice migration. |
 | `MOVE-006` | Reconciled cutover | target | partial | `src/balm/movein/bundle-plan.ts`; `src/balm/movein/bundle-storage.ts`; `src/balm/ui/movein-bundle.ts`; `tests/movein.test.mjs` | Saved source and destination patient counts, visits by month, historical-document/policy counts and opening balances compare uploaded files with editable source controls. Errors block apply; differences/omissions need a reason bound to the preview. Large imports use bounded groups in one guarded transaction; large reviewed source data and reports are retained in pieces. A 1,284-patient apply, unchanged repeat and guarded undo are proven. Limits are 50,000 records and 20 MB per file. Complete native packages, invoice counts, carried claims/authorizations and A/R run-out remain outstanding. |
 | `MOVE-007` | Pre-cutover A/R run-out | target | missing |  | No migrated claims, remittance matching to them or unmatched-remittance queue |
-| `MOBILE-001` | Tablet-first clinician web app | target | partial | `src/balm/ui/style.ts` | One responsive breakpoint; no tested tablet journey or offline draft |
+| `MOBILE-001` | Tablet-first clinician web app | target | done | `src/balm/ui/note-drafts.ts`; `src/balm/domain/draft-requests.ts`; `tests/mobile.test.mjs` (MOBILE-001); `tests/charting.test.mjs` (MOBILE-001); `verification.json` | Tablet schedule/check-in/attendance, guarded disconnected drafts, sign, home exercise and payment journey; queued later edits, lost-response replay, sign-in recovery, conflict refusal and reload warning proven. Existing BALM-001 role limits retained. Memory-only policy and role interpretation approved by ct, 19 October 2026. Product states inspected at 1440/390. |
 | `MOBILE-002` | Native clinician and patient apps | target | missing |  | No native apps |
 | `INTEG-001` | API, webhooks, agent keys and FHIR export | target | partial | `src/balm/credentials.ts`; `docs/AGENT-COMMANDS.md`; `tests/balm.test.mjs` | Owner-bound agent keys read names, appointments and invoices and prepare work; no general scoped API, webhooks or FHIR export |
 | `INTEG-002` | Opt-in marketing contact sync | target | missing |  | No marketing contact sync |

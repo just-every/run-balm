@@ -1,3 +1,4 @@
+import { noteDraftScript } from './note-drafts'
 import branding from '../../branding.json'
 import { agent, copyScript } from './agent'
 import { clientFilePage, clientList } from './clients'
@@ -26,8 +27,8 @@ type Notice = { message?: string; error?: string; result?: any; invited?: string
 
 const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))
 /** `script` is one inline script the page runs, allowed by its hash alone. The theme file carries the tokens and fonts; the style is allowed by its hash. */
-async function documentFor(title: string, body: string, status: number, script = '', formTargets = '', bodyClass = '') {
-  const policy = `style-src 'self' 'sha256-${await digest(style)}'; font-src 'self'; img-src 'self' data:` + (script ? `; script-src 'sha256-${await digest(script)}'` : '')
+async function documentFor(title: string, body: string, status: number, script = '', formTargets = '', bodyClass = '', allowDraftRequests = false) {
+  const policy = `style-src 'self' 'sha256-${await digest(style)}'; font-src 'self'; img-src 'self' data:` + (script ? `; script-src 'sha256-${await digest(script)}'` : '') + (allowDraftRequests ? "; connect-src 'self'" : '')
   const html = `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title><link rel="preload" href="/fonts/inter/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="stylesheet" href="/rer-theme.css"><style>${style}</style></head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}${script ? `<script>${script}</script>` : ''}</body></html>`
   return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `default-src 'none'; ${policy}; base-uri 'none'; form-action 'self'${formTargets}; frame-ancestors 'none'`, 'referrer-policy': 'same-origin', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' } })
 }
@@ -58,7 +59,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
     : `<div class="crumb">${file ? `<a href="/app/clients">Clients</a>${icon('chevron')}<strong>${h(title)}</strong>` : `<strong>${h(title)}</strong>`}</div><span class="grow"></span>${book}`
   const notices = `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
   const body = shell(state, { tabs, section, zoneUnset, top, content: notices + content })
-  return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '')
+  return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)
 }
 
 export async function renderPublic(kind: 'book' | 'consent' | 'intake' | 'offer' | 'pay' | 'plan' | 'visit' | 'messages' | 'missing' | 'local-link' | 'refused', data: any, status = 200): Promise<Response> {
