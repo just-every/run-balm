@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { harness } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
+import { portalBilling, portalLogin } from './portal-billing.mjs'
 
 const sms = { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', TWILIO_AUTH_TOKEN: 'test-token', TWILIO_FROM: '+15005550006' }
 const tokenOf = url => new URL(url).pathname.split('/')[2]
@@ -215,5 +216,64 @@ test('PAY-005: a period superbill includes each signed visit and ledger payment,
     const other = await h.cmd('client.save', { firstName:'Ava', lastName:'Ng', dateOfBirth:'1992-06-15' })
     const otherLink = await h.cmd('pay.link.create', { clientId: other.id, purpose:'card',delivery:'shown' })
     assert.equal((await h.send(new URL(otherLink.url).pathname+`/superbill.pdf?from=${from}&to=${to}`)).status,409, 'a patient without visits cannot obtain another patient’s superbill')
+  } finally { await h.close() }
+})
+
+
+test('PORTAL-004: paid and unpaid visits, every current document, portal payment to zero and patient isolation', { timeout: 120_000 }, async () => {
+  const { h, stripe, patient, invoices, cookie } = await portalBilling()
+  try {
+    let page = await h.send('/portal/home', undefined, cookie)
+    assert.equal(page.status, 200)
+    assert.match(page.text, /\$95\.00 <span>balance/)
+    const receiptLinks = [...page.text.matchAll(/href="(\/portal\/receipts\/[^" ]+\.pdf)"/g)].map(m => m[1])
+    const superbillLinks = [...page.text.matchAll(/href="(\/portal\/superbills\/[^" ]+\.pdf)"/g)].map(m => m[1])
+    assert.equal(receiptLinks.length, 1)
+    assert.deepEqual(superbillLinks.map(p => p.split('/').at(-1).replace('.pdf', '')).sort(), [...invoices].sort())
+    const receipt = await h.send(receiptLinks[0], undefined, cookie)
+    assert.equal(receipt.status, 200)
+    assert.match(receipt.text, /^%PDF/)
+    for (const text of ['Marisol Diaz', '$95.00', 'Visa', '4242']) assert.ok(receipt.text.includes(text), text)
+    for (const path of superbillLinks) {
+      const doc = await h.send(path, undefined, cookie)
+      assert.equal(doc.status, 200)
+      for (const text of ['Marisol Diaz', '97110', 'GP', 'M25.561', '1234567893', '1245319599', '$95.00']) assert.ok(doc.text.includes(text), text)
+    }
+    const statement = await h.send('/portal/statement.pdf', undefined, cookie)
+    assert.equal(statement.status, 200)
+    for (const text of ['Marisol Diaz', '$190.00', '$95.00', 'Paid online', 'Balance due']) assert.ok(statement.text.includes(text), text)
+
+    // Session identity selects the ledger even if a different client id is posted.
+    const foreign = await h.cmd('client.save', { firstName: 'Una', lastName: 'Other', email: 'una@patient.example' })
+    const otherCookie = await portalLogin(h, 'una@patient.example')
+    for (const path of [...receiptLinks, ...superbillLinks]) {
+      assert.equal((await h.send(path, undefined, otherCookie)).status, 404)
+      assert.equal((await h.send(path)).status, 303)
+    }
+    const opened = await h.form('/portal/action', { name: 'payment.open', clientId: foreign.id }, cookie)
+    assert.equal(opened.status, 303)
+    const pay = await h.send(opened.location)
+    assert.match(pay.text, /Balance due \$95\.00/)
+    const checkout = await h.form(opened.location + '?do=pay', { amount: '95.00' })
+    assert.equal(checkout.status, 303)
+    const session = stripe.complete(checkout.location.split('/').at(-1))
+    assert.equal(session.amount, 9500)
+    assert.equal((await h.send(opened.location + '?paid=' + session.id)).status, 200)
+    assert.equal((await h.send(opened.location + '?paid=' + session.id)).status, 200)
+    page = await h.send('/portal/home', undefined, cookie)
+    assert.match(page.text, /\$0\.00 <span>balance/)
+    assert.equal([...page.text.matchAll(/href="\/portal\/receipts\//g)].length, 2)
+    const file = (await h.send('/api/balm/clients/' + patient.id, undefined, h.owner)).value
+    assert.equal(file.billing.ledger.balanceCents, 0)
+    assert.equal(file.billing.ledger.lines.filter(l => l.kind === 'card').length, 2)
+    assert.deepEqual(file.invoices.filter(i => invoices.includes(i.id)).map(i => i.paid_cents), [9500, 9500])
+    const finalStatement = await h.send('/portal/statement.pdf', undefined, cookie)
+    assert.match(finalStatement.text, /Balance due[^]*\$0\.00/)
+    for (const action of ['statement.downloaded', 'receipt.downloaded', 'superbill.downloaded', 'paylink.portal_opened']) assert.ok(file.audit.some(a => a.action === action), action)
+    await h.cmd('pay.stripe.disconnect', {})
+    const disconnected = await h.send('/portal/home', undefined, cookie)
+    assert.doesNotMatch(disconnected.text, />Pay balance</)
+    assert.equal((await h.form('/portal/action', { name: 'payment.open' }, cookie)).status, 409)
+    assert.equal((await h.send('/portal/statement.pdf', undefined, cookie)).status, 200)
   } finally { await h.close() }
 })
