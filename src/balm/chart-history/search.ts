@@ -24,7 +24,8 @@ export async function chartHistory(db: D1Database, who: Actor, file: Data, zone:
     .sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id))
   const selected = matching.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE)
   await commit(db, who, [documentScope(db, who, clientId), audit(db, who, 'chart.history_searched', clientId),
-    ...selected.map(r=>audit(db,who,r.audit,clientId,r.id)),
+    // Existing file readers already audit their records once per request.
+    ...selected.filter(r=>r.audit==='chart.document_read').map(r=>audit(db,who,r.audit,clientId,r.id)),
   ])
   return { filters:{historyText:query,historyFrom:from,historyTo:to,historyType:kind}, page, pageSize:PAGE_SIZE, total:matching.length,
     entries:selected.map(({text,audit,...r})=>r) }
