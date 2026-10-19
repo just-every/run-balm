@@ -4,6 +4,7 @@ import { cancellationStatements, getVisitPolicy } from '../scheduling/policy'
 // overlap or fall outside hours is shown, and the series saves only when each
 // such date was moved to a free time or skipped by a person, never dropped.
 import { datePlus, hostDateAt, weekdayForDate } from '../availability/timezone'
+import { medicareStatements } from '../scheduling/capacity'
 import { appointmentStatements, bookable, clockMinute, intakeToken, placementGuards, placeVisit, roomFor, settings, visibleAppointment } from './booking'
 import { audit, commit, day, DomainError, guard, human, id, insist, integer, need, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -59,7 +60,7 @@ async function basis(db: D1Database, who: Actor, input: Data) {
 async function check(db: D1Database, b: Awaited<ReturnType<typeof basis>>, list: { date: string; time: string; skip: boolean }[]) {
   const checked: Occurrence[] = [], kept: { start: number; end: number }[] = []
   for (const o of list) {
-    const place = await placeVisit(db, b.zone, { practitionerId: b.practitioner.id as string, durationMinutes: b.service.duration_minutes, date: o.date, minute: clockMinute(o.time), roomId: b.roomId })
+    const place = await placeVisit(db, b.zone, { practitionerId: b.practitioner.id as string, serviceId: b.service.id as string, durationMinutes: b.service.duration_minutes, date: o.date, minute: clockMinute(o.time), roomId: b.roomId })
     const occurrence: Occurrence = { ...o, startAt: place.start?.toISOString(), endAt: place.end?.toISOString(), ...(place.problem ? { problem: place.problem } : {}), ...(place.clash ? { clash: place.clash } : {}) }
     if (!occurrence.problem && place.start && kept.some(k => k.start < place.end!.getTime() && k.end > place.start!.getTime())) occurrence.problem = 'overlaps_another_visit_in_this_series'
     if (!occurrence.problem && !o.skip && place.start) kept.push({ start: place.start.getTime(), end: place.end!.getTime() })
@@ -94,12 +95,14 @@ export async function bookSeries(db: D1Database, who: Actor, input: Data) {
   const kept = occurrences.filter(o => !o.skip), skipped = occurrences.filter(o => o.skip).map(o => o.date)
   insist(kept.length > 0, 'every_date_is_skipped')
   const seriesId = id(), token = intakeToken(), ids = kept.map(() => id())
+  const medicare = (await Promise.all(kept.map((o, i) => medicareStatements(db, who, { clientId: b.client.id as string, practitionerId: b.practitioner.id as string, startAt: o.startAt!, endAt: o.endAt!, appointmentId: ids[i] }, input.acknowledgeMedicareOverlap)))).flat()
   await commit(db, who, [
     stmt(db, 'INSERT INTO bm_series(id,client_id,practitioner_id,service_id,room_id,pattern,skipped,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
       seriesId, b.client.id, b.practitioner.id, b.service.id, b.roomId, JSON.stringify(b.pattern), JSON.stringify(skipped), new Date().toISOString(), who.email),
     // The intake link goes with the first visit only.
     ...(await Promise.all(kept.map(async (o, i) => appointmentStatements(db, who, { id: ids[i], clientId: b.client.id, practitionerId: b.practitioner.id, serviceId: b.service.id,
       startAt: o.startAt, endAt: o.endAt, bookedVia: 'staff', tokenHash: i === 0 ? await sha256(token) : null, roomId: b.roomId, seriesId })))).flat(),
+    ...medicare,
     audit(db, who, 'series.booked', b.client.id as string, seriesId, `${kept.length} visits, ${skipped.length} skipped`),
   ])
   return { seriesId, booked: kept.length, skipped, appointmentIds: ids, appointmentId: ids[0], token, startAt: kept[0].startAt, clientId: b.client.id }
@@ -141,15 +144,19 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
   const exclude = later.map(a => a.id as string), occurrences: (Occurrence & { id: string; version: number })[] = []
   for (const a of later) {
     const date = hostDateAt(new Date(a.start_at), clinic.time_zone)
-    const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, durationMinutes: Math.round((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000), date, minute, roomId, exclude })
+    const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: a.service_id, durationMinutes: Math.round((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000), date, minute, roomId, exclude })
     occurrences.push({ id: a.id, version: a.version, date, time: clock(minute), skip: false, startAt: place.start?.toISOString(), endAt: place.end?.toISOString(), ...(place.problem ? { problem: place.problem, clash: place.clash } : {}) })
   }
   const conflicts = occurrences.filter(o => o.problem)
   if (conflicts.length) throw new DomainError('series_has_conflicts', 409, { moveRest: true, occurrences, conflicts: conflicts.length })
+  // SCHED-010: moving over another Medicare patient's minutes needs the same acknowledgement as booking.
+  const medicare = new Map<string, D1PreparedStatement[]>()
+  for (const o of occurrences) medicare.set(o.id, await medicareStatements(db, who, { clientId: row.client_id, practitionerId: target, startAt: o.startAt!, endAt: o.endAt!, appointmentId: o.id, except: exclude }, input.acknowledgeMedicareOverlap))
   await commit(db, who, [
     ...occurrences.flatMap(o => [
       guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", o.id, o.version),
-      ...placementGuards(db, { practitionerId: target, roomId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
+      ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
+      ...medicare.get(o.id)!,
       stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, o.startAt, o.endAt, o.id),
       audit(db, who, 'appointment.moved', row.client_id, o.id, `rest of series; ${o.startAt}`),
     ]),

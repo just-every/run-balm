@@ -15,7 +15,7 @@ import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
 import { zoneLabel } from './time-zone'
 import { icon } from './icons'
 import { patientPanel } from './visit-panel'
-import { cancelForm, clientName, desk, empty, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, stamp, status } from './shared'
+import { check, cancelForm, clientName, desk, empty, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, stamp, status } from './shared'
 import { fullName } from '../domain/model'
 
 function setupChecklist(s: any) {
@@ -96,7 +96,7 @@ function selectedPanel(s: any, c: any, notice: any) {
     : `<a class="button start" href="/app/clients/${h(a.client_id)}?compose=${h(a.id)}#notes">${a.note_status === 'unsigned' ? 'Open the note' : 'Start a note'}${icon('arrow')}</a>`
   let actions = ''
   if (a.status === 'booked' && mine) {
-    actions += `<details><summary>Move this visit</summary>${form('appointment.move', back, hidden('id', a.id) + hidden('version', a.version) + moveFields(s, c, a), 'Move visit')}</details>`
+    actions += `<details><summary>Move this visit</summary>${form('appointment.move', back, hidden('id', a.id) + hidden('version', a.version) + moveFields(s, c, a) + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Move visit')}</details>`
     if (a.series && a.series.remaining > 1) actions += `<details><summary>Move this and the later visits in the series (${a.series.remaining})</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + moveFields(s, c, a, 'rest'), `Move ${a.series.remaining} visits`)}<p class="help">Each keeps its date. If any would overlap or fall outside hours, nothing moves and the dates are listed.</p></details>`
     if (a.series && a.series.booked > 1) actions += `<details><summary>Move the whole series (${a.series.booked} booked visits)</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + hidden('scope', 'all') + moveFields(s, c, a, 'all'), 'Move whole series')}</details>` + cancelForm('series.cancel_rest', back, hidden('appointmentId', a.id) + hidden('scope', 'all'), `Cancel the whole series (${a.series.booked} booked visits)`, 'Cancel whole series', a.client, a.series.booked)
     actions += `${cancelForm('appointment.cancel', back, hidden('id', a.id), 'Cancel this visit', 'Cancel visit', a.client)}${a.series && a.series.remaining > 1 ? cancelForm('series.cancel_rest', back, hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, `Cancel ${a.series.remaining} visits`, a.client, a.series.remaining) : ''}<p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
@@ -114,7 +114,7 @@ function bookPanel(s: any, c: any, notice: any) {
   const back = calendarLink(c), clientSelect = clients.length ? select('clientId', 'Client', clients.map(x => [x.id, clientName(x)])) : ''
   const one = clients.length ? form('appointment.book', back, clientSelect + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), practitioner)
     + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`])) + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : '')
-    + `<div class="pair">${field('date', 'Date', date || c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div><p class="help">Any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>`, 'Book visit') : empty('Add a client first on the Clients page.')
+    + `<div class="pair">${field('date', 'Date', date || c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div><p class="help">Any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>` + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Book visit') : empty('Add a client first on the Clients page.')
   return `<div id="book">` + panel(c.newSlot ? `Book ${clockLabel(+time.slice(0, 2) * 60 + +time.slice(3))}, ${longDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Book a visit',
     `${bookingResult(s, notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date || c.date, time })}</details>` : ''}`) + '</div>'
 }

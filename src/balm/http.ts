@@ -9,6 +9,7 @@ import { clinicalActor, downloadDocument, uploadDocument } from './chart-history
 import { fileHistory } from './chart-history/search'
 import { episodeCommand } from './episodes'
 import { referralCommand } from './referrals'
+import { saveCapacity } from './scheduling/capacity'
 import { bookedIntake } from './domain/intake-requests'
 import { saveClientAlert, alertsFor } from './domain/alerts'
 import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
@@ -132,6 +133,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name.startsWith('episode.')) return episodeCommand(env.DB, who, name, input)
   if (name.startsWith('referral.')) return referralCommand(env.DB, who, name, input)
+  if (name === 'capacity.save') return saveCapacity(env.DB, who, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
   if (name === 'care_team.grant') return grantCareTeam(env.DB, who, input)

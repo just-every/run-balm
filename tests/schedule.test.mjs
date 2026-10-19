@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run, harness } from './harness.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
-import { clinic, pastVisit, visitDate } from './clinic.mjs'
+import { clinic, pastVisit, visitDate, slots } from './clinic.mjs'
+import { portalLogin } from './portal-billing.mjs'
+import { readFile } from 'node:fs/promises'
 
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
 const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
@@ -416,4 +418,85 @@ test('SCHED-006: returning patients book, move and cancel under live clinic rule
   const h=await harness()
   try { await (await import('./self-service-journey.mjs')).selfServiceJourney(h) }
   finally { await h.close() }
+})
+
+test('SCHED-010: a PT with capacity 2 takes two patients side by side and refuses a third, a race gets one booking, online offers only free times, Medicare overlap is warned and recorded, and imports land overlaps named by capacity', {timeout:120_000}, async()=>{
+  await run(async h=>{
+    await h.finishSetup()
+    const { service: evaluation, practitioners: [priya] } = await clinic(h)
+    const reception = await h.staff('Rosa','reception')
+    const followUp = await h.cmd('service.save',{name:'PT follow-up',durationMinutes:45,priceCents:9000})
+    await h.cmd('capacity.save',{practitionerId:priya.id,capacity:2},reception.cookie,403)
+    await h.cmd('capacity.save',{practitionerId:priya.id,capacity:2})
+    await h.cmd('capacity.save',{serviceId:followUp.id,capacity:2})
+    const day=brisbane(Date.now()+3*86400_000).slice(0,10), at=time=>new Date(`${day}T${time}:00+10:00`).toISOString()
+    const patients=[]
+    for(const first of ['Ana','Ben','Cy','Dee','Eli','Fay']) patients.push(await h.cmd('client.save',{firstName:first,lastName:'Cap',dateOfBirth:'1980-01-01',email:first.toLowerCase()+'@patient.example'}))
+    const book=(client,time,extra={},cookie=reception.cookie)=>h.send('/api/balm/command',{name:'appointment.book',input:{clientId:client.id,practitionerId:priya.id,serviceId:followUp.id,date:day,time,...extra}},cookie)
+    // Two at 9:00 succeed and sit side by side; a third, or a capacity-1 evaluation, is refused.
+    const first=await book(patients[0],'09:00'), second=await book(patients[1],'09:00')
+    assert.deepEqual([first.status,second.status],[200,200],second.text)
+    assert.equal((await book(patients[2],'09:00')).value.code,'practitioner_already_booked')
+    assert.equal((await book(patients[2],'09:15',{serviceId:evaluation.id})).value.code,'practitioner_already_booked','the evaluation service keeps capacity 1')
+    const calendar=(await h.send(`/app?view=day&date=${day}&id=${priya.id}`,undefined,reception.cookie)).text
+    const lanes=calendar.match(/<div class="overlap [^"]*">([\s\S]*?)<\/div><\/div>/)
+    assert.ok(lanes&&(lanes[0].match(/class="overlap-lane"/g)||[]).length===2,'two lanes in the practitioner’s column')
+    for(const v of [first,second]) assert.ok(calendar.includes(v.value.result.appointmentId),'both visits are in the column')
+    // Moving into the full 9:00 is refused as booking is.
+    const later=(await book(patients[2],'11:00')).value.result
+    assert.equal((await h.send('/api/balm/command',{name:'appointment.move',input:{id:later.appointmentId,date:day,time:'09:00'}},reception.cookie)).value.code,'practitioner_already_booked')
+    // Race two staff bookings for the last 11:00 place: exactly one succeeds.
+    const raced=await Promise.all([book(patients[3],'11:00'),book(patients[4],'11:00',{},h.owner)])
+    assert.deepEqual(raced.map(r=>r.status).sort(),[200,409])
+    // /book and the portal offer only times with no live visit: 9:00 is not offered, nor 13:00 with one patient booked.
+    await book(patients[5],'13:00')
+    let offered=await slots(h,followUp.id,priya.id)
+    assert.ok(offered.length&&!offered.includes(at('09:00'))&&!offered.includes(at('13:00'))&&offered.includes(at('14:00')))
+    await pastVisit(h,patients[0].id,priya,evaluation.id)
+    const portal=await portalLogin(h,'ana@patient.example')
+    const portalPage=(await h.send(`/portal/schedule?serviceId=${followUp.id}&practitionerId=${priya.id}&from=${day}`,undefined,portal)).text
+    assert.ok(portalPage.includes(`value="${at('14:00')}"`)&&!portalPage.includes(`value="${at('09:00')}"`)&&!portalPage.includes(`value="${at('13:00')}"`),'portal offers the same free times')
+    // Online double-booking on: times with a place left are offered; full ones still are not.
+    await h.cmd('capacity.save',{serviceId:followUp.id,capacity:2,onlineDoubleBooking:'on'})
+    offered=await slots(h,followUp.id,priya.id)
+    assert.ok(offered.includes(at('13:00'))&&!offered.includes(at('09:00'))&&!offered.includes(at('11:00')))
+    await h.cmd('capacity.save',{serviceId:followUp.id,capacity:2})
+    // Two Medicare patients at 10:00: warned before saving, booked anyway, recorded on both visits.
+    const payer=await h.cmd('insurance.payer.save',{name:'Medicare Part B',payerId:'MEDICARE',receiverId:'CMS',unitMethod:'cms',medicare:true})
+    const medicare=[]
+    for(const first of ['Mo','Ned']){
+      const c=await h.cmd('client.save',{firstName:first,lastName:'Medicare',dateOfBirth:'1950-01-01'})
+      await h.cmd('insurance.policy.save',{clientId:c.id,payerId:payer.id,memberId:first+'1EG4TE5MK72',relationship:'18',patientSex:'M',address:'1 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2026-01-01',endsOn:'2027-12-31'})
+      medicare.push(c)
+    }
+    const m1=await book(medicare[0],'10:00',{acknowledgeInsurance:'on'})
+    assert.equal(m1.status,200,m1.text)
+    const warned=await book(medicare[1],'10:00',{acknowledgeInsurance:'on'})
+    assert.equal(warned.value.code,'medicare_overlap_warning')
+    const m2=await book(medicare[1],'10:00',{acknowledgeInsurance:'on',acknowledgeMedicareOverlap:'on'})
+    assert.equal(m2.status,200,m2.text)
+    for(const [c,own,other] of [[medicare[0],m1,m2],[medicare[1],m2,m1]]){
+      const visit=(await h.send('/api/balm/clients/'+c.id,undefined,h.owner)).value.appointments.find(a=>a.id===own.value.result.appointmentId)
+      assert.deepEqual(visit.medicareOverlaps.map(o=>[o.other,o.by]),[[other.value.result.appointmentId,reception.email]])
+    }
+    assert.match((await h.send('/app/clients/'+medicare[0].id,undefined,reception.cookie)).text,/booked anyway by rosa@clinic\.example/)
+  })
+  // Migrated WebPT scheduler visits land as booked; overlap beyond capacity is named, never refused.
+  await run(async h=>{
+    await h.finishSetup()
+    const { service, practitioners: [therapist] } = await clinic(h)
+    await h.cmd('settings.save', { clinicName: 'Lakeview Therapy', timeZone: 'America/Chicago', taxId: '36-4829175', address: '100 Example Street, Chicago IL' })
+    const input = { provider: 'webpt', practitionerId: therapist.id, serviceId: service.id, files: [
+      { kind: 'appointments', name: 'Scheduled Visits.csv', csv: await readFile('tests/fixtures/movein/webpt-scheduled-visits-native.csv', 'utf8') },
+      { kind: 'patients', name: 'Patient Lists.csv', csv: await readFile('tests/fixtures/movein/webpt-patient-lists-native.csv', 'utf8') } ] }
+    await h.cmd('capacity.save',{practitionerId:therapist.id,capacity:2}); await h.cmd('capacity.save',{serviceId:service.id,capacity:2})
+    assert.ok(!(await h.cmd('movein.preview', input)).diagnostics.some(d=>d.code==='imported_overlap'),'within capacity 2 the 9:00 pair is not named')
+    await h.cmd('capacity.save',{practitionerId:therapist.id,capacity:1})
+    const preview=await h.cmd('movein.preview', input)
+    const named=preview.diagnostics.filter(d=>d.code==='imported_overlap')
+    assert.equal(named.length,1); assert.match(named[0].message,/row 3.*row 4.*capacity of 1/)
+    await h.cmd('movein.apply', { ...input, fingerprint: preview.fingerprint, acceptanceReason: 'Both 9:00 visits were booked this way in WebPT; the aide supervises the second.' })
+    const charts=await Promise.all(preview.patients.map(p=>h.send('/api/balm/clients/'+p.id,undefined,h.owner)))
+    assert.equal(charts.flatMap(c=>c.value.appointments).filter(a=>a.status==='booked').length,2,'both overlapping visits landed')
+  })
 })

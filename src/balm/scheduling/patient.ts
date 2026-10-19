@@ -60,7 +60,7 @@ export async function moveOwnAppointment(db: D1Database, clientId: string, input
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND cancellation_notice_hours=?)', policy.noticeHours),
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND client_id=? AND status='booked' AND version=? AND start_at>=?)", a.id, clientId, a.version, threshold),
     guard(db, "julianday(?)>=julianday('now')+?/24.0 AND julianday(?)>=julianday('now')+?/24.0", a.start_at, policy.noticeHours, placement.startAt, policy.noticeHours),
-    ...placementGuards(db, { practitionerId: a.practitioner_id, roomId: a.room_id, ...placement, except: a.id }),
+    ...placementGuards(db, { practitionerId: a.practitioner_id, serviceId: a.service_id, roomId: a.room_id, ...placement, except: a.id }),
     stmt(db, "UPDATE bm_appointments SET start_at=?,end_at=?,patient_response='confirmed',patient_response_at=?,version=version+1 WHERE id=?", placement.startAt, placement.endAt, now(), a.id),
     audit(db, who, 'appointment.moved', clientId, a.id, `${a.start_at} -> ${placement.startAt}`),
   ])

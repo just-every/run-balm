@@ -1,3 +1,4 @@
+import { overflow } from '../scheduling/capacity'
 import { normalizeBundle } from './formats.ts'
 import { ImportError } from './errors.ts'
 import { sha256, rows, one } from '../domain/model.ts'
@@ -56,8 +57,8 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const previous = await rows(db, 'SELECT id,state FROM bm_movein_jobs WHERE source_json=?', sourceJson)
   const [clients, erased, staff, services] = await Promise.all([
     rows(db, 'SELECT id,first_name,last_name,date_of_birth FROM bm_clients'), rows(db, 'SELECT identity_hash FROM bm_erasure_journal'),
-    rows(db, "SELECT id,version FROM bm_staff WHERE active=1 AND role='practitioner' AND erased_at IS NULL AND id=?", practitionerId),
-    rows(db, 'SELECT id,version FROM bm_services WHERE active=1 AND id=?', serviceId),
+    rows(db, "SELECT id,version,capacity FROM bm_staff WHERE active=1 AND role='practitioner' AND erased_at IS NULL AND id=?", practitionerId),
+    rows(db, 'SELECT id,version,capacity FROM bm_services WHERE active=1 AND id=?', serviceId),
   ])
   const ownIds = new Set(await Promise.all(bundle.patients.map(p => targetId(bundle.provider, 'patient', p.sourceId))))
   const identities = new Set(clients.filter(c => !previous.length || !ownIds.has(c.id)).map(c => identityText(c.first_name, c.last_name, c.date_of_birth)))
@@ -75,10 +76,14 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const appointments = mapped ? await Promise.all(bundle.appointments.map(async a => ({ ...a, id: await targetId(bundle.provider, 'appointment', a.sourceId) }))) : []
   const planned = totals(bundle, appointments, timeZone)
   const ordered = appointments.filter(a => a.status === 'booked').sort((a, b) => a.startAt.localeCompare(b.startAt))
-  let previousEnd = '', previousVisit: typeof ordered[number] | null = null
+  // SCHED-010: visits land as the source booked them; only overlap beyond the mapped
+  // practitioner's and service's capacity is named, never refused.
+  const capacity = mapped ? Math.min(Number(staff[0].capacity), Number(services[0].capacity)) : 1
+  const placed: { id: string; start_at: string; end_at: string; capacity: number; visit: typeof ordered[number] }[] = []
   for (const a of ordered) {
-    if (previousVisit && a.startAt < previousEnd) diagnostic('imported_overlap', `Visits in ${previousVisit.file}, row ${previousVisit.row}, and ${a.file}, row ${a.row} overlap. Both are kept; check the assigned practitioner.`)
-    if (a.endAt > previousEnd) { previousEnd = a.endAt; previousVisit = a }
+    const clash = overflow(placed, capacity, a.startAt, a.endAt) as (typeof placed)[number] | null
+    if (clash) diagnostic('imported_overlap', `Visits in ${clash.visit.file}, row ${clash.visit.row}, and ${a.file}, row ${a.row} overlap beyond the practitioner’s capacity of ${capacity}. Both are kept; check the assigned practitioner.`)
+    placed.push({ id: a.id, start_at: a.startAt, end_at: a.endAt, capacity, visit: a })
   }
   const mismatches = compare(source, planned)
   const requiresAcceptance = mismatches.length > 0 || diagnostics.some(d => !isError(d)) || bundle.unmappedColumns.length > 0 || bundle.unmappedRows.length > 0

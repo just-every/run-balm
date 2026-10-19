@@ -2,6 +2,7 @@
 // code (the JSON doors return it as `code`); pages show the sentence for it.
 const sentences: Record<string, string> = {
   slot_unavailable: 'Sorry, that time was just taken. Choose another time; your details are kept.',
+  medicare_overlap_warning: 'This visit overlaps another Medicare patient with the same practitioner. One-on-one timed codes cannot be billed for both patients over the same minutes (overlapping Medicare treatment bills as group therapy, 97150). Tick “Book anyway” to save it; your name is kept on both visits.',
   choose_an_episode: 'This patient has more than one open episode of care. Choose the episode this belongs to.',
   episode_not_open: 'That episode of care is closed. Choose an open episode.',
   episode_has_booked_visits: 'This episode still has booked visits. Cancel or move them before closing it.',

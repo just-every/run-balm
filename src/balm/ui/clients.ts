@@ -23,7 +23,7 @@ import { insurancePanels } from './insurance-file'
 import { billingPanels } from './payments'
 import { zoneLabel } from './time-zone'
 import { avatar } from './shell'
-import { cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
+import { check, cancelForm, clientName, desk, dollarsField, empty, entry, field, form, h, hidden, intakeChip, intakeLine, money, owner, panel, practitioners, result, rows, select, services, stamp, status, usDate, when, zoneOf } from './shared'
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
   + `<div class="pair">${field('dateOfBirth', 'Date of birth', c?.date_of_birth ?? '', 'date')}${field('phone', 'Mobile', c?.phone ?? '', 'tel', 'maxlength="40" placeholder="+1 (312) 555-0100"')}</div>${field('email', 'Email', c?.email ?? '', 'email', 'maxlength="254"')}`
@@ -45,7 +45,7 @@ const priceOf = (s: any, a: any) => { const x = rows(s, 'services').find(x => x.
 
 function appointments(s: any, f: any, notice: any) {
   const path = `/app/clients/${f.client.id}`, invoiced = new Set((f.invoices ?? []).filter((i: any) => i.status !== 'void').map((i: any) => i.appointment_id))
-  const list = f.appointments.map((a: any) => entry(`${a.service} with ${a.practitioner}`, `<p>${when(s, a.start_at)}<br>${status(a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${intakeChip(a)}<br>${episodeLabel(f, a.episodeId)}</p><div class="actions">`
+  const list = f.appointments.map((a: any) => entry(`${a.service} with ${a.practitioner}`, `<p>${when(s, a.start_at)}<br>${status(a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${intakeChip(a)}<br>${episodeLabel(f, a.episodeId)}${(a.medicareOverlaps ?? []).map((o: any) => `<br><span class="help" data-medicare-overlap="${h(o.other)}">Overlaps another Medicare patient’s visit; booked anyway by ${h(o.by)} ${stamp(s, o.at)}</span>`).join('')}</p><div class="actions">`
     + (desk(s) || a.practitioner_id === s.actor.staffId ? assignForm(f, 'visit', a.id, a.episodeId, path) : '')
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
     + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', f.insuredCharges?.[a.id] ? `Amount ($, blank for ${f.insuredCharges[a.id].payer}’s fee schedule: ${money(f.insuredCharges[a.id].cents)})` : `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"') + (f.insuredCharges?.[a.id] ? '<p class="help">The insurance claim must charge the same total as this invoice.</p>' : ''), 'Prepare invoice') : '')
@@ -55,7 +55,7 @@ function appointments(s: any, f: any, notice: any) {
   const book = services(s).length && choices.length ? `<details><summary>Book an appointment</summary>${form('appointment.book', path, hidden('clientId', f.client.id) + episodeField(f)
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
     + (rows(s, 'rooms').length ? select('roomId', 'Room', [['', 'No room'], ...rows(s, 'rooms').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][], '', '') : '')
-    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}): any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>`, 'Book appointment')}</details>`
+    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}): any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>` + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Book appointment')}</details>`
     + `<details${result(notice)?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, path, { clientId: f.client.id, plans: f.plans })}</details>`
     + (f.client.email ? `<details><summary>Add to the waitlist</summary>${waitlistForm(s, path, hidden('clientId', f.client.id))}</details>` : '') : ''
   return panel('Appointments', seriesResult(s, notice, path) + (list || empty('No appointments yet.')) + book)

@@ -4,6 +4,7 @@
 // same batch that closes the offer, and the others are told it is taken.
 import { hostDateAt, zonedParts } from '../availability/timezone'
 import { appointmentStatements, intakeToken, placeVisit, settings } from './booking'
+import { medicareOverlaps } from '../scheduling/capacity'
 import { clientVisible } from './clients'
 import { bookedIntake, type IntakeRequest } from './intake-requests'
 import { audit, commit, day, DomainError, guard, human, id, insist, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
@@ -78,14 +79,14 @@ export async function offerFreedSlots(db: D1Database, appointmentIds: string[]):
     JSON.stringify(appointmentIds), new Date(Date.now() + offerNoticeMinutes * 60_000).toISOString())
   for (const slot of freed) {
     const date = hostDateAt(new Date(slot.start_at), zone)
-    const candidates = await rows(db, `SELECT w.id,w.client_id,c.email,c.first_name,s.name AS service,s.duration_minutes FROM bm_waitlist w JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id
+    const candidates = await rows(db, `SELECT w.id,w.client_id,w.service_id,c.email,c.first_name,s.name AS service,s.duration_minutes FROM bm_waitlist w JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id
       WHERE w.status='waiting' AND (w.practitioner_id IS NULL OR w.practitioner_id=?) AND w.earliest_date<=? AND w.latest_date>=? AND s.active=1
       AND c.erased_at IS NULL AND c.email IS NOT NULL AND w.client_id<>? ORDER BY w.created_at`, slot.practitioner_id, date, date, slot.client_id)
     const minute = localMinute(slot.start_at, zone)
     const fits = []
     for (const entry of candidates) {
       // The waiting client's own service must fit at that start: inside hours, clear of other visits and of the room.
-      const place = await placeVisit(db, zone, { practitionerId: slot.practitioner_id, durationMinutes: entry.duration_minutes, date, minute, roomId: slot.room_id })
+      const place = await placeVisit(db, zone, { practitionerId: slot.practitioner_id, serviceId: entry.service_id, durationMinutes: entry.duration_minutes, date, minute, roomId: slot.room_id })
       if (!place.problem && place.start!.toISOString() === slot.start_at) fits.push(entry)
     }
     if (!fits.length) continue
@@ -132,7 +133,9 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
   }
   const zone = offer.time_zone, date = hostDateAt(new Date(offer.start_at), zone)
   const minute = localMinute(offer.start_at, zone)
-  const place = await placeVisit(db, zone, { practitionerId: offer.practitioner_id, durationMinutes: offer.duration_minutes, date, minute, roomId: offer.room_id })
+  const place = await placeVisit(db, zone, { practitionerId: offer.practitioner_id, serviceId: offer.service_id, durationMinutes: offer.duration_minutes, date, minute, roomId: offer.room_id })
+  // SCHED-010: a patient's acceptance never overlaps two Medicare patients; no person is there to decide.
+  if (!place.problem && (await medicareOverlaps(db, offer.client_id, offer.practitioner_id, place.start!.toISOString(), place.end!.toISOString())).length) throw new DomainError('time_taken', 409)
   const visitor = { email: offer.email, role: 'waitlist offer' }
   if (place.problem) {
     // Someone booked into the time another way: the offer closes and nobody else can take it.
