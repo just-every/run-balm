@@ -1,3 +1,4 @@
+import { periodSuperbillPdf } from '../payments/superbill-period'
 import { type Bindings } from '../../auth.server'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, text, type Data } from '../domain/model'
 import { savePatientMessage } from '../messages/patient'
@@ -93,5 +94,12 @@ export async function portalDocument(db: D1Database, patient: Patient, kind: 're
   insist(allowed, 'document_not_found', 404)
   const document = kind === 'receipt' ? await receiptPdf(db, key) : await superbillPdf(db, key)
   await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, kind + '.downloaded', patient.clientId, key)])
+  return document
+}
+
+
+export async function portalPeriodSuperbill(db: D1Database, patient: Patient, from: string, to: string) {
+  const document = await periodSuperbillPdf(db, patient.clientId, from, to)
+  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'superbill.downloaded', patient.clientId, null, 'period')])
   return document
 }

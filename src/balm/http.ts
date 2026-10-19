@@ -392,7 +392,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
       }
-      const document = await paymentDocument(env.DB, who, path)
+      const document = await paymentDocument(env.DB, who, path, url.searchParams)
       if (document) return document
       const original = path.match(/^\/api\/balm\/imports\/([\w-]+)\/original\.csv$/)
       if (original) {

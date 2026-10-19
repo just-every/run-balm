@@ -1,3 +1,4 @@
+import { periodSuperbillPdf } from './superbill-period'
 // Payment doors: the patient's private link (/pay/<token>: statement, pay, save a
 // card, receipts and superbills), Stripe's signed webhook, and the desk's
 // document downloads. Every opening and download is audited for the patient.
@@ -63,7 +64,7 @@ async function stripeWebhook(request: Request, env: Bindings) {
 /** Patient and Stripe doors, before any session is read. Null when the path is not one of them. */
 export async function paymentsPublicResponse(request: Request, env: Bindings, path: string, sameOrigin: boolean): Promise<Response | null> {
   if (path === WEBHOOK_PATH && request.method === 'POST') return stripeWebhook(request, env)
-  const match = path.match(/^\/pay\/([A-Za-z0-9_-]{24,64})(?:\/(statement\.pdf|superbills\/([\w-]+)\.pdf|receipts\/([\w-]+)\.pdf))?$/)
+  const match = path.match(/^\/pay\/([A-Za-z0-9_-]{24,64})(?:\/(statement\.pdf|superbill\.pdf|superbills\/([\w-]+)\.pdf|receipts\/([\w-]+)\.pdf))?$/)
   if (!match) return null
   const [, token, file, superbill, receipt] = match, db = env.DB, url = new URL(request.url)
   let link: any
@@ -72,10 +73,11 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
   }
   try {
     if (file) {
-      const doc = superbill ? (insist(await one(db, "SELECT 1 FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", superbill, link.client_id), 'superbill_not_found', 404), await superbillPdf(db, superbill))
+      const period = file === 'superbill.pdf'
+      const doc = period ? await periodSuperbillPdf(db, link.client_id, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '') : superbill ? (insist(await one(db, "SELECT 1 FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", superbill, link.client_id), 'superbill_not_found', 404), await superbillPdf(db, superbill))
         : receipt ? (insist(await one(db, 'SELECT 1 FROM bm_card_payments WHERE id=? AND client_id=?', receipt, link.client_id), 'receipt_not_found', 404), await receiptPdf(db, receipt))
           : await statementPdf(db, link.client_id)
-      await commit(db, null, [audit(db, patient, superbill ? 'superbill.downloaded' : receipt ? 'receipt.downloaded' : 'statement.downloaded', link.client_id, superbill ?? receipt ?? link.id)])
+      await commit(db, null, [audit(db, patient, superbill || period ? 'superbill.downloaded' : receipt ? 'receipt.downloaded' : 'statement.downloaded', link.client_id, superbill ?? receipt ?? link.id)])
       return pdfResponse(doc)
     }
     if (request.method === 'POST') {
@@ -97,16 +99,16 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
 }
 
 /** The desk's downloads: a superbill, a statement or a receipt (owner and reception). */
-export async function paymentDocument(db: D1Database, who: Actor, path: string): Promise<Response | null> {
-  const match = path.match(/^\/api\/balm\/(superbills|statements|receipts)\/([\w-]+)\.pdf$/)
+export async function paymentDocument(db: D1Database, who: Actor, path: string, params = new URLSearchParams()): Promise<Response | null> {
+  const match = path.match(/^\/api\/balm\/(superbills|period-superbills|statements|receipts)\/([\w-]+)\.pdf$/)
   if (!match) return null
   need(who, 'owner', 'reception'); human(who)
   const [, kind, key] = match
   const owner = kind === 'superbills' ? await one(db, "SELECT client_id FROM bm_invoices WHERE id=? AND status='approved'", key)
     : kind === 'receipts' ? await one(db, 'SELECT client_id FROM bm_card_payments WHERE id=? AND status=?', key, 'succeeded') : await one(db, 'SELECT id AS client_id FROM bm_clients WHERE id=? AND erased_at IS NULL', key)
   insist(owner, 'not_found', 404)
-  const doc = kind === 'superbills' ? await superbillPdf(db, key) : kind === 'receipts' ? await receiptPdf(db, key) : await statementPdf(db, key)
-  await commit(db, who, [audit(db, who, `${kind.slice(0, -1)}.downloaded`, owner.client_id as string, key)])
+  const doc = kind === 'period-superbills' ? await periodSuperbillPdf(db, key, params.get('from') ?? '', params.get('to') ?? '') : kind === 'superbills' ? await superbillPdf(db, key) : kind === 'receipts' ? await receiptPdf(db, key) : await statementPdf(db, key)
+  await commit(db, who, [audit(db, who, `${kind === 'period-superbills' ? 'superbill' : kind.slice(0, -1)}.downloaded`, owner.client_id as string, key)])
   return pdfResponse(doc)
 }
 

@@ -218,6 +218,15 @@ test('SCHED-008: check in, attend, no-show and cancel retain actor/time history;
     const page = await h.send(`/app?date=${await visitDate(h, id)}&appt=${id}`, undefined, reception.cookie)
     assert.equal(page.status, 200)
     assert.match(page.text, /Visit history/)
+    const history = page.text.match(/<summary>Visit history<\/summary>([\s\S]*?)<\/details>/)[1]
+    const entries = [...history.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(m => m[1])
+    assert.equal(entries.length, actions.length)
+    entries.forEach((entry, index) => {
+      assert.ok(entry.startsWith(actions[index].replaceAll('_', ' ') + ' · '))
+      assert.match(entry, /(?:owner|taylor|priya)@clinic.example/)
+      const at = entry.match(/datetime="([^"]+)"/)[1]
+      assert.ok(Number.isFinite(Date.parse(at)) && Math.abs(Date.now() - Date.parse(at)) < 120000, 'the actual change time is exposed')
+    })
     for (const action of actions) assert.ok(page.text.includes(action.replaceAll('_', ' ')), action)
     assert.match(page.text, /owner@clinic.example/)
     if (id !== cancelled) assert.match(page.text, /taylor@clinic.example|priya@clinic.example/)

@@ -1,3 +1,4 @@
+import { periodSuperbillForm } from './superbill-period'
 import { localTime } from '../domain/invoices'
 import { attachmentInput } from '../messages/attachments'
 import { messageAttachments } from './messages'
@@ -23,6 +24,7 @@ function statements(d: any) {
   const b = d.billing
   return `<p class="balance">${money(b.balanceCents)} <span>balance</span></p><p><a href="/portal/statement.pdf">Download statement PDF</a></p>`
     + (b.receipts.length ? `<h3>Receipts</h3><ul>${b.receipts.map((r: any) => `<li><a href="/portal/receipts/${h(r.id)}.pdf">Receipt ${h(r.receipt_number)} · ${money(r.amount_cents)}</a></li>`).join('')}</ul>` : '')
+    + periodSuperbillForm('/portal/superbill.pdf')
     + (b.superbills.length ? `<h3>Superbills</h3><ul>${b.superbills.map((i: any) => `<li><a href="/portal/superbills/${h(i.id)}.pdf">Superbill for invoice ${h(i.number)}</a></li>`).join('')}</ul>` : '')
     + (b.block ? `<p>${h(b.block)}</p>` : patientForm('payment.open', hidden('purpose', 'balance'), 'Pay balance') + patientForm('payment.open', hidden('purpose', 'card'), 'Manage payment card'))
 }

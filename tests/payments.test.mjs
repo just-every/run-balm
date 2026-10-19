@@ -14,6 +14,7 @@ async function connected(options = {}) {
   try {
     await h.finishSetup()
     const { service, practitioners: [priya] } = await clinic(h)
+  await h.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '1 River St' })
     const reception = await h.staff('Rosa', 'reception')
     const view = await h.cmd('pay.stripe.connect', { secretKey: 'sk_test_' + 'a'.repeat(24) })
     assert.equal(view.connected.accountId, 'acct_test_clinic')
@@ -162,5 +163,57 @@ test('a Stripe webhook replayed, or reported by several events and the return, m
     const file = (await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value
     assert.equal(file.billing.ledger.balanceCents, 0)
     assert.equal(file.billing.ledger.lines.filter(l => l.kind === 'card').length, 1)
+  } finally { await h.close() }
+})
+
+
+test('PAY-005: a period superbill includes each signed visit and ledger payment, refuses incomplete visits and keeps patient scope', async () => {
+  const h = await harness()
+  try {
+    await h.finishSetup()
+    const { service, practitioners: [priya] } = await clinic(h)
+    await h.cmd('settings.save', { clinicName: 'Lakeside Therapy', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '100 Lake Street, Chicago IL' })
+    await h.cmd('pay.npi.save', { staffId: priya.id, npi: '1245319599' })
+    const client = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1980-03-07', email: 'marisol@patient.example' })
+    const invoiceIds = []
+    for (const hours of [2,5]) {
+      const visit = await pastVisit(h, client.id, priya, service.id, h.owner, hours)
+      const note = await h.cmd('note.write', { clientId: client.id, appointmentId: visit, body: 'Therapeutic exercise and manual therapy completed; stairs improving.', charges: [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 10 }] }, priya.cookie)
+      await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya', credentials: 'PT, DPT', attest: true }, priya.cookie)
+      await h.cmd('pay.codes.save', { appointmentId: visit, cpt: '97110 GP x1, 97140 GP x1', icd10: 'M25.561' }, priya.cookie)
+      await h.cmd('appointment.attend', { id: visit }, priya.cookie)
+      const invoice = await h.cmd('invoice.prepare', { appointmentId: visit })
+      await h.cmd('invoice.approve', { id: invoice.id })
+      invoiceIds.push(invoice.id)
+    }
+    await h.cmd('payment.record', { invoiceId: invoiceIds[0], amountCents: 3000, reference: 'patient-check-1042' })
+    const dates = (await h.state()).appointments.map(a => new Date(Date.parse(a.start_at) + 10*3600000).toISOString().slice(0,10)).sort()
+    const from = dates[0].slice(0,7)+'-01', d = new Date(dates.at(-1)+'T00:00:00Z'), to = new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10)
+    const path = `/api/balm/period-superbills/${client.id}.pdf?from=${from}&to=${to}`
+    const period = await h.send(path, undefined, h.owner)
+    assert.equal(period.status, 200)
+    for (const text of ['Period superbill','Marisol Diaz','Lakeside Therapy','Practice NPI','Rendering NPI','1234567893','1245319599','12-3456789','97110','97140','GP','M25.561','$190.00','$30.00','$160.00']) assert.ok(pdfText(period).includes(text), text)
+    for (const id of invoiceIds) assert.equal((await h.send(`/api/balm/superbills/${id}.pdf`, undefined, h.owner)).status,200)
+    assert.equal((await h.send(path, undefined, priya.cookie)).status,403)
+    assert.equal((await h.send(path)).status,401)
+    assert.equal((await h.send(path.replace(`from=${from}`,`from=${to}`) + 'x', undefined, h.owner)).status,400)
+    const link = await h.cmd('pay.link.create', { clientId: client.id, purpose: 'balance', delivery: 'shown' })
+    const patientPath = new URL(link.url).pathname
+    assert.equal((await h.send(`${patientPath}/superbill.pdf?from=${from}&to=${to}`)).status,200)
+    assert.ok((await h.send('/app/clients/'+client.id,undefined,h.owner)).text.includes('Download period superbill'))
+    await h.form('/portal', { email: 'marisol@patient.example' })
+    const mail = h.mail.findLast(m => m.text.includes('/portal/confirm?token='))
+    const token = new URL(mail.text.match(/https?:\/\/[^\s]+\/portal\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
+    const signedIn = await h.send('/portal/confirm', { token })
+    assert.equal(signedIn.status,303)
+    assert.equal((await h.send(`/portal/superbill.pdf?from=${from}&to=${to}`,undefined,signedIn.cookie)).status,200)
+    const incompleteVisit = await pastVisit(h, client.id, priya, service.id, h.owner, 8)
+    await h.cmd('appointment.attend', { id: incompleteVisit })
+    const incompleteInvoice = await h.cmd('invoice.prepare', { appointmentId: incompleteVisit })
+    await h.cmd('invoice.approve', { id: incompleteInvoice.id })
+    assert.equal((await h.send(path, undefined, h.owner)).status,409, 'one incomplete visit refuses the whole document')
+    const other = await h.cmd('client.save', { firstName:'Ava', lastName:'Ng', dateOfBirth:'1992-06-15' })
+    const otherLink = await h.cmd('pay.link.create', { clientId: other.id, purpose:'card',delivery:'shown' })
+    assert.equal((await h.send(new URL(otherLink.url).pathname+`/superbill.pdf?from=${from}&to=${to}`)).status,409, 'a patient without visits cannot obtain another patient’s superbill')
   } finally { await h.close() }
 })

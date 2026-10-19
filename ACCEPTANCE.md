@@ -1,6 +1,6 @@
 # Acceptance
 
-Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause is judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026), with subsequent row updates reflected in these counts: 25 done, 49 partial and 35 missing of 109 clauses.
+Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause is judged from the code and tests at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026), with subsequent row updates reflected in these counts: 26 done, 48 partial and 35 missing of 109 clauses.
 
 ## First release
 
@@ -105,7 +105,7 @@ Each clause below is listed with its status and the journey that accepts it.
 - **PAY-002 — Cards on file and payments at check-in** (partial). Save a card in intake, charge a $30 copay at check-in, refund it with approval, and see the Stripe charge and refund mirrored on the patient's ledger.
 - **PAY-003 — Payment links and online prepayment** (partial). Text a link for a $120 balance, pay it, and see the balance at zero; book a prepaid service online and see the payment on the visit.
 - **PAY-004 — Statements, receipts, adjustments and refunds** (partial). Bill three visits, pay one, write off part of another with approval, and send a statement that matches the ledger.
-- **PAY-005 — Superbills** (partial). Produce a superbill for a month of visits and check every required field against the signed notes and ledger.
+- **PAY-005 — Superbills** (done). Produce a superbill for a month of visits and check every required field against the signed notes and ledger. `tests/payments.test.mjs` (PAY-005) checks multiple signed visits, practice/rendering NPIs, tax ID, CPT/ICD-10, fees and payments through desk, private link and patient-session PDF doors, incomplete-document refusal and role/patient scope.
 - **PAY-006 — Payment plans and balance reminders** (missing). Create a 3-month plan and see each charge post; leave a balance unpaid and see the reminder sequence and the review-list entry.
 - **PAY-007 — Good Faith Estimates** (missing). Book a self-pay evaluation 4 business days ahead and see the estimate issued within 1 business day; book another 12 business days ahead and see it issued within 3 business days; request an estimate without booking and see it issued within 3 business days; each estimate is kept on the file, and billing above one by $400 raises the flag.
 - **PAY-008 — Packages, memberships, products and gift cards** (missing). Sell a 5-visit package, attend two visits and see three left; sell a brace with sales tax and redeem a gift card.

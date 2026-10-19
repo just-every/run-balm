@@ -17,10 +17,11 @@ export async function superbillFacts(db: D1Database, invoiceId: string) {
   insist(invoice, 'invoice_not_found', 404)
   const v = JSON.parse(invoice.snapshot as string), codes = (await visitCodes(db, { appointmentId: invoice.appointment_id as string }))[invoice.appointment_id as string]
   // CPT units the visit's signed notes billed (frozen on the invoice) win over codes entered for the visit.
-  const procedures: Data[] = v.procedures?.length ? v.procedures.map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? '', units: p.units, from: 'notes' }))
+  const procedures: Data[] = v.procedures?.length ? v.procedures.map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? codes.cpt.find(c => c.code === p.code)?.modifiers ?? '', units: p.units, from: 'notes' }))
     : codes.cpt.map(c => ({ ...c, description: '', from: 'visit' }))
   const missing = [
     ...(invoice.npi ? [] : ['the practitioner’s NPI (Clinic → Billing identifiers)']),
+    ...(v.clinic.practiceNpi ? [] : ['the practice’s NPI on the approved invoice']),
     ...(v.clinic.abn ? [] : ['the clinic’s tax ID (Clinic details, before the invoice is approved)']),
     ...(codes.icd10.length ? [] : ['an ICD-10 diagnosis for the visit']),
     ...(procedures.length ? [] : ['a CPT code for the visit']),

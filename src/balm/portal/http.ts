@@ -3,7 +3,7 @@ import { portalAttachment } from './messages'
 import { parseMessageInput } from '../messages/input'
 import { plain } from '../refusals'
 import { renderPortal } from '../ui/portal'
-import { consumePortalLink, portalAction, portalHome, portalPatient, portalStatement, portalDocument, requestPortalLink, signOutPortal } from './index'
+import { consumePortalLink, portalAction, portalHome, portalPatient, portalStatement, portalDocument, portalPeriodSuperbill, requestPortalLink, signOutPortal } from './index'
 
 const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' }
 const redirect = (location: string, cookie?: string) => new Response(null, { status: 303, headers: { ...headers, location, ...(cookie ? { 'set-cookie': cookie } : {}) } })
@@ -31,6 +31,10 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
     if (path === '/portal/signout' && request.method === 'POST') return redirect('/portal', (await signOutPortal(env.DB, request)).cookie)
     if (path === '/portal/statement.pdf' && request.method === 'GET') {
       const doc = await portalStatement(env.DB, patient)
+      return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
+    }
+    if (path === '/portal/superbill.pdf' && request.method === 'GET') {
+      const doc = await portalPeriodSuperbill(env.DB, patient, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
       return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
     }
     const documentPath = path.match(/^\/portal\/(receipts|superbills)\/([\w-]+)\.pdf$/)

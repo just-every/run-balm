@@ -212,7 +212,7 @@ The owner-approved scope (16 October 2026) names what Balm was missing against t
 
 - **PAY-004 — Statements, receipts, adjustments and refunds.** Each patient has a ledger across visits; Balm produces receipts and periodic statements (delivered by email, portal and mail under `PAY-009`), records adjustments, write-offs and credits with a reason and approver, and applies credits to later visits. **Acceptance evidence:** Bill three visits, pay one, write off part of another with approval, and send a statement that matches the ledger.
 
-- **PAY-005 — Superbills.** For out-of-network patients Balm produces a superbill per visit or period with the practice and rendering NPIs, tax ID, CPT codes and units, ICD-10 codes, fees and payments. **Acceptance evidence:** Produce a superbill for a month of visits and check every required field against the signed notes and ledger.
+- **PAY-005 — Superbills.** For out-of-network patients Balm produces a superbill per visit or period with the practice and rendering NPIs, tax ID, CPT codes and units, ICD-10 codes, fees and payments. A period includes both selected clinic-local dates, selects approved invoices by visit date, preserves each invoice’s frozen practice/patient identity, and totals posted payments and insurance adjustments. One incomplete visit refuses the entire period document with the missing fields named. The desk, private pay link and patient portal all offer the period download under their existing access rules. Signed-note billed units frozen on the invoice take precedence over visit-entered CPT codes. **Acceptance evidence:** Produce a superbill for a month of visits and check every required field against the signed notes and ledger.
 
 - **PAY-006 — Payment plans and balance reminders.** Staff set up payment plans charged automatically to the card on file, and Balm sends balance reminders on a schedule until paid or a person stops them; accounts past a set age go to a human review list, never automatically to collections. **Acceptance evidence:** Create a 3-month plan and see each charge post; leave a balance unpaid and see the reminder sequence and the review-list entry.
 
@@ -383,7 +383,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 33 | All 14 notes signed · claims sent | `BALM-004`, `CHART-004`, `INS-006`, `REPORT-004` | partial |
 | 34 | Cards on file | `BALM-003`, `PAY-002` | partial |
 | 35 | text-to-pay links | `BALM-003`, `PAY-003`, `COMM-002` | partial |
-| 36 | superbills | `BALM-003`, `PAY-005` | partial |
+| 36 | superbills | `BALM-003`, `PAY-005` | done |
 | 37 | clear statements | `BALM-003`, `PAY-004`, `PAY-009` | partial |
 | 38 | Copays collect at check-in | `BALM-003`, `PAY-002`, `SCHED-008` | partial |
 | 39 | Text and email reminders go out on their own | `COMM-001`, `COMM-002` | partial |
@@ -419,8 +419,8 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 14 | 1 | 0 | 15 |
-| Target and push further | 11 | 48 | 35 | 94 |
-| All | 25 | 49 | 35 | 109 |
+| Target and push further | 12 | 47 | 35 | 94 |
+| All | 26 | 48 | 35 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -482,7 +482,7 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | `PAY-002` | Cards on file and payments at check-in | target | partial | `src/balm/payments/cards.ts`; `src/balm/payments/charges.ts`; `src/balm/payments/index.ts`; `tests/payments.test.mjs` | A card saved with consent through Stripe and the copay charged at check-in ship; no saving from intake or the portal, Stripe Terminal or approved refunds |
 | `PAY-003` | Payment links and online prepayment | target | partial | `src/balm/payments/links.ts`; `src/balm/sms/index.ts`; `tests/payments.test.mjs` | Expiring pay links by email post to the ledger, with texting behind the SMS adapter; no deposit or prepayment at online booking |
 | `PAY-004` | Statements, receipts, adjustments and refunds | target | partial | `src/balm/payments/ledger.ts`; `src/balm/payments/documents.ts`; `src/balm/domain/invoices.ts`; `tests/payments.test.mjs` | A ledger across visits, statement and receipt PDFs, credit applied to the next invoice and approved 835 contractual adjustments with reason and actor ship; no general manual adjustments, refunds or periodic statements |
-| `PAY-005` | Superbills | target | partial | `src/balm/payments/documents.ts`; `src/balm/payments/codes.ts`; `tests/payments.test.mjs` | A per-visit superbill with tax ID, practitioner NPI, CPT with modifiers and units and ICD-10 ships; no superbill for a period and no practice NPI |
+| `PAY-005` | Superbills | target | done | `src/balm/payments/documents.ts`; `src/balm/payments/superbill-period.ts`; `src/balm/payments/http.ts`; `src/balm/portal/data.ts`; `tests/payments.test.mjs` (PAY-005) | Per-visit and inclusive clinic-date period PDFs carry practice/rendering NPIs, tax ID, CPT units, diagnoses, charges and posted payments. Missing fields refuse the entire document; staff, private patient links and portal downloads retain their scopes and audit. |
 | `PAY-006` | Payment plans and balance reminders | target | missing |  | No payment plans or balance reminders |
 | `PAY-007` | Good Faith Estimates | target | missing |  | No Good Faith Estimates |
 | `PAY-008` | Packages, memberships, products and gift cards | target | missing |  | No packages, memberships, products or gift cards |

@@ -3,7 +3,7 @@ import { archiveExercise, assignExercise } from './programs'
 
 export { consumePortalLink, portalPatient, requestPortalLink, signOutPortal, portalManagedNotice, portalNotice } from './auth'
 export type { Patient } from './auth'
-export { portalAction, portalDocument, portalHome, portalStatement } from './data'
+export { portalAction, portalDocument, portalHome, portalStatement, portalPeriodSuperbill } from './data'
 export { portalExercisesFor } from './programs'
 export type { Exercise } from './programs'
 
