@@ -11,6 +11,7 @@ import { currentPolicies, publishPolicy } from '../intake/policies'
 import { approveInvoice, invoicesFor, prepareInvoice, recordPayment, voidInvoice } from './invoices'
 import { audit, commit, DomainError, insist, one, practitionerId, rows, type Actor, type Data } from './model'
 import { amendNote, writeNote } from './notes'
+import { recordMeasure, removeMeasure } from './measures'
 import { approveReminder, prepareReminder } from './reminders'
 import { addAddendum, signNote } from './signing'
 import { bookSeries, cancelRest, moveRest, previewSeries } from './series'
@@ -32,6 +33,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
   'appointment.attend': (db, who, input) => setAppointmentStatus(db, who, input, 'attended'),
   'appointment.no_show': (db, who, input) => setAppointmentStatus(db, who, input, 'no_show'),
   'note.write': writeNote, 'note.amend': amendNote, 'note.sign': signNote, 'note.addendum': addAddendum,
+  'note.measure': recordMeasure, 'note.measure_remove': removeMeasure,
   'invoice.prepare': prepareInvoice, 'invoice.approve': approveInvoice, 'invoice.void': voidInvoice, 'payment.record': recordPayment,
   'reminder.prepare': prepareReminder, 'reminder.approve': approveReminder,
   'intake.prepare': prepareForm, 'intake.publish': publishForm, 'consent.publish': publishPolicy,

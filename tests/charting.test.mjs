@@ -420,3 +420,73 @@ test('CHART-013: the owner grants and revokes care-team note access, and break g
   assert.deepEqual((await h.state()).breakGlass, [])
   assert.ok((await ownerAudit()).some(a => a.action === 'chart.break_glass_ended' && a.subject_id === glass.id))
 }))
+
+test('CHART-005: measures recorded at evaluation and three later visits show their change on the progress report and graph, under note access and audit', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam, lee] } = await clinic(h, ['Priya', 'Sam', 'Lee'])
+  const reception = await h.staff('Rosa', 'reception')
+  const patient = await h.cmd('client.save', { firstName: 'Ana', lastName: 'Ruiz', dateOfBirth: '1979-03-04' })
+  const flexion = [95, 105, 115, 122], lefs = [38, 46, 52, 61], notes = []
+  for (const [i, template] of ['pt.evaluation', 'pt.daily', 'pt.daily', 'pt.progress'].entries()) {
+    const visit = await pastVisit(h, patient.id, priya, service.id, h.owner, 2 + (3 - i) * 4)
+    const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, template }, priya.cookie)
+    await h.cmd('note.measure', { noteId: note.id, kind: 'rom', name: 'Knee flexion', side: 'right', value: String(flexion[i]), unit: 'degrees' }, priya.cookie)
+    await h.cmd('note.measure', { noteId: note.id, kind: 'score', name: 'LEFS', value: String(lefs[i]), unit: 'points' }, priya.cookie)
+    notes.push(note)
+  }
+  const [evaluation, , , progress] = notes
+  // Structured fields: graded muscle tests, flowsheets, and per-kind units and bounds.
+  const grade = await h.cmd('note.measure', { noteId: progress.id, kind: 'mmt', name: 'Quadriceps', side: 'right', value: '4+' }, priya.cookie)
+  assert.equal(grade.value, 4.25)
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'mmt', name: 'Quadriceps', value: '5+' }, priya.cookie, 400)
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'rom', name: 'Knee flexion', value: '120', unit: 'cm' }, priya.cookie, 400)
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'girth', name: 'Knee joint line', side: 'right', value: '41.5', unit: 'cm' }, priya.cookie)
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'gait', name: 'Timed Up and Go', value: '9.8', unit: 'seconds' }, priya.cookie)
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'balance', name: 'Single-leg stance', side: 'right', value: '22', unit: 'seconds' }, priya.cookie)
+  const flow = await h.cmd('note.measure', { noteId: progress.id, kind: 'flowsheet', name: 'Leg press', value: '40', unit: 'lb', sets: 3, reps: 10 }, priya.cookie)
+  assert.deepEqual([flow.sets, flow.reps], [3, 10])
+  await h.cmd('note.measure', { noteId: progress.id, kind: 'flowsheet', name: 'Leg press', value: '40', unit: 'lb' }, priya.cookie, 400)
+  for (const cookie of [reception.cookie, sam.cookie]) await h.cmd('note.measure', { noteId: evaluation.id, kind: 'score', name: 'LEFS', value: '70', unit: 'points' }, cookie, 404)
+
+  const file = cookie => h.send('/api/balm/clients/' + patient.id, undefined, cookie)
+  const owner = (await file(h.owner)).value
+  const knee = owner.measures.find(m => m.name === 'Knee flexion'), score = owner.measures.find(m => m.name === 'LEFS')
+  assert.deepEqual(knee.points.map(p => p.value), flexion); assert.equal(knee.baseline.noteId, evaluation.id); assert.equal(knee.change, 27)
+  assert.deepEqual(score.points.map(p => p.value), lefs); assert.equal(score.change, 23)
+  const report = owner.measureChanges[progress.id]
+  assert.deepEqual(report.filter(c => ['Knee flexion', 'LEFS'].includes(c.name)).map(c => [c.name, c.baseline, c.current, c.change]), [['Knee flexion', 95, 122, 27], ['LEFS', 38, 61, 23]])
+  const page = (await h.send('/app/clients/' + patient.id, undefined, priya.cookie)).text
+  assert.match(page, /Change since evaluation[\s\S]*Knee flexion \(right\)<\/td><td>95 degrees[^<]*<\/td><td>122 degrees<\/td><td>\+27 degrees/)
+  assert.match(page, /LEFS<\/td><td>38 points[^<]*<\/td><td>61 points<\/td><td>\+23 points/)
+  const svg = page.match(/<svg class="measure-graph"[^>]*data-measure="rom\|knee flexion\|right\|degrees">[\s\S]*?<\/svg>/)[0]
+  assert.deepEqual([...svg.matchAll(/data-value="([^"]+)"/g)].map(m => Number(m[1])), flexion, 'the graph plots exactly the recorded entries in visit order')
+  assert.match(page, /grade 4\+/)
+
+  // Signing locks the note's measures.
+  const brief = await h.cmd('note.write', { clientId: patient.id, appointmentId: await pastVisit(h, patient.id, priya, service.id, h.owner, 18), body: 'Hip check.' }, priya.cookie)
+  const hip = await h.cmd('note.measure', { noteId: brief.id, kind: 'rom', name: 'Hip abduction', side: 'left', value: '30' }, priya.cookie)
+  await h.cmd('note.sign', { id: brief.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  await h.cmd('note.measure', { noteId: brief.id, kind: 'rom', name: 'Hip abduction', value: '35' }, priya.cookie, 409)
+  await h.cmd('note.measure_remove', { id: hip.id }, priya.cookie, 409)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_measures WHERE id=?').bind(hip.id).run(), /note_locked/)
+  await assert.rejects(h.db.prepare('UPDATE bm_measures SET value=1 WHERE id=?').bind(hip.id).run(), /note_locked/)
+  const typo = await h.cmd('note.measure', { noteId: progress.id, kind: 'score', name: 'Typo', value: '1', unit: 'points' }, priya.cookie)
+  await h.cmd('note.measure_remove', { id: typo.id }, sam.cookie, 404)
+  await h.cmd('note.measure_remove', { id: typo.id }, priya.cookie)
+
+  // Readers: as notes (CHART-013), with the same read audit; reception reads none.
+  assert.equal((await file(reception.cookie)).value.measures, null)
+  assert.equal((await file(sam.cookie)).status, 404)
+  const grant = await h.cmd('care_team.grant', { clientId: patient.id, practitionerId: sam.id })
+  const granted = (await file(sam.cookie)).value
+  assert.deepEqual(granted.measures.find(m => m.name === 'Knee flexion').points.map(p => p.value), flexion)
+  await h.cmd('care_team.revoke', { id: grant.id })
+  await h.cmd('chart.break_glass', { clientId: patient.id, reason: 'Covering Priya; patient reports a fall at home.' }, lee.cookie)
+  assert.equal((await file(lee.cookie)).value.measureChanges[progress.id].find(c => c.name === 'LEFS').change, 23)
+  const audit = []; let before = ''
+  do { const page = (await h.send('/api/balm/clients/' + patient.id + (before ? '?auditBefore=' + before : ''), undefined, h.owner)).value; audit.push(...page.audit); before = page.auditPage.older } while (before)
+  assert.ok(audit.some(a => a.action === 'note.read' && a.actor_email === sam.email && a.subject_id === evaluation.id && /care team grant/.test(a.detail)))
+  assert.ok(audit.some(a => a.action === 'note.break_glass_read' && a.actor_email === lee.email && a.subject_id === progress.id))
+  assert.ok(audit.some(a => a.action === 'note.measured' && a.subject_id === evaluation.id))
+  assert.ok(audit.some(a => a.action === 'note.measure_removed' && a.subject_id === progress.id))
+}))

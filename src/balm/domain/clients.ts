@@ -8,6 +8,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { intakeFor } from './intake'
 import { notesFor } from './notes'
+import { changesAt, measureSeries } from '../charting/measures'
 import { careTeamOnly, noteAccess } from './care-team'
 import { plansFor } from './plans'
 import { invoicesFor } from './invoices'
@@ -112,7 +113,10 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
       : audit(db, who, 'note.read', client.id as string, n.id as string, `care team grant; revisions ${n.revisions.length}`)),
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
-  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  // CHART-005: series and progress changes are built only from the notes this reader reaches.
+  const measures = notes ? measureSeries(notes) : null
+  const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesAt(measures, n)])) : null
+  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 
