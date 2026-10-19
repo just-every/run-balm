@@ -47,7 +47,7 @@ export function visitTone(a: any) {
 }
 export const toneIcon: Record<string, string> = { coral: 'warning', sage: 'checked', honey: 'pen', muted: 'x', sky: 'calendar' }
 
-/** The chips a card carries, most important first: the coral flag, the note state, the service, then the payer, so a
+/** The chips a card carries, most important first: the coral flag, the note state, the visit's flags, the service, then the payer, so a
  * narrow card that keeps only the first ones still shows whether its note is signed and drops the payer, which the
  * patient panel carries. The flag has a short form ("KX", "Denied") that the narrowest half-hour cards print, so the
  * flag and the note state share their one chip row. */
@@ -59,11 +59,12 @@ export function visitChips(s: any, a: any) {
   else if (Number(a.kx_required) === 1) chips.push(['KX threshold', 'coral', 'KX'])
   if (a.note_status === 'signed') chips.push(['Signed', 'sage'])
   else if (a.status === 'attended') chips.push(['Note to sign', 'honey'])
-  chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
-  // SCHED-002 flags: intake, the covering authorization and, for the desk, the patient's open balance.
+  // SCHED-002 flags, ahead of the service and payer the patient panel also carries: intake, the covering authorization
+  // and, for the desk, the patient's open balance.
   if (a.status === 'booked') chips.push(a.intake_received || a.intake_on_file ? ['Intake in', ''] : ['Intake due', 'honey'])
-  if (a.authorization) chips.push([`${a.authorization.left} of ${a.authorization.visits} visits left`, a.authorization.left <= 2 ? 'honey' : ''])
+  if (a.authorization) chips.push([`${a.authorization.left} of ${a.authorization.visits} visits left`, a.authorization.left <= 2 ? 'honey' : '', `${a.authorization.left} left`])
   if (Number(a.balance_cents) > 0) chips.push([`${money(Number(a.balance_cents))} owed`, 'honey'])
+  chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
   if (a.equipment) chips.push([a.equipment, ''])
   if (pay?.copayCents > 0 && a.status === 'booked') chips.push([`${money(pay.copayCents)} copay`, ''])
   if (pay?.card) chips.push(['Card on file', ''])
