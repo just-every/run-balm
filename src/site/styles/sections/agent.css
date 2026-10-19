@@ -1,6 +1,7 @@
 /* 06 The case agent keeps it moving.: copy left, the agent's log on Ana's case right (page-06), three finished entries. */
 .stage-agent .stage-body { display: grid; grid-template-columns: calc(var(--u) * 586) calc(var(--u) * 830); align-items: center; padding: calc(var(--u) * 90) calc(var(--u) * 60) calc(var(--u) * 96) calc(var(--u) * 60); }
 .stage-agent .copy { margin-top: calc(var(--u) * -160); }
+@media (min-width: 1100px) { .stage-agent .copy h2 { font-size: calc(var(--u) * 79); } }
 .stage-agent .eyebrow { font-weight: 600; color: #1f5a50; }
 .agent-card { padding: calc(var(--u) * 24) calc(var(--u) * 34) calc(var(--u) * 26); border-radius: calc(var(--u) * 26); background: rgba(255, 255, 255, .9); }
 .agent-head { display: flex; align-items: center; gap: calc(var(--u) * 20); padding-bottom: calc(var(--u) * 18); border-bottom: 1px solid var(--line); }

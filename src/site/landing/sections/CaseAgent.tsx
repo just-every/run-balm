@@ -10,7 +10,7 @@ const ITEMS: { date: string; title: ReactNode; lines: Line[] }[] = [
     { icon: 'dollar', tone: 'sage', text: <>Paid $142.18 · ERA Apr 16</>, done: true },
   ] },
   { date: 'Apr 7', title: <>3 visits left on the authorization, 7 in the plan</>, lines: [
-    { icon: 'doc', tone: 'sky', text: <>Re-auth drafted from progress note · flexion 0–118°, LEFS 58/80</>, cite: 'Progress note · Apr 7' },
+    { icon: 'doc', tone: 'sky', text: <>Re-auth drafted from progress note · flexion <span className="keep">0–118°</span>, LEFS 58/80</>, cite: 'Progress note · Apr 7' },
     { icon: 'user', tone: 'lilac', text: <>Progress note signed · {therapist}</>, avatar: 'SL' },
     { icon: 'send', tone: 'sage', text: <>Sent via Availity · Apr 7 · Maria G., billing</> },
     { icon: 'shieldCheck', tone: 'sage', text: <>Aetna approved 4 visits · Apr 13</>, done: true },

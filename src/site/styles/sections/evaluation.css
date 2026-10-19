@@ -1,6 +1,7 @@
 /* 04 The scribe drafts. You sign.: copy left, the evaluation as one long document, Dr. Patel's signature lapping it. */
 .stage-evaluation .stage-body { display: grid; grid-template-columns: calc(var(--u) * 600) calc(var(--u) * 830); column-gap: calc(var(--u) * 6); align-items: center; padding: calc(var(--u) * 72) calc(var(--u) * 20) calc(var(--u) * 26) calc(var(--u) * 60); }
 .stage-evaluation .copy { margin-top: calc(var(--u) * -120); }
+@media (min-width: 1100px) { .stage-evaluation .copy h2 { font-size: calc(var(--u) * 68); } }
 .eval-art { position: relative; padding-bottom: calc(var(--u) * 200); }
 .eval-card { width: calc(var(--u) * 830); padding: calc(var(--u) * 50) calc(var(--u) * 54) calc(var(--u) * 30) calc(var(--u) * 60); border-radius: calc(var(--u) * 26); }
 .eval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(var(--u) * 20); padding-bottom: calc(var(--u) * 26); border-bottom: 1px solid var(--line); }
@@ -11,6 +12,7 @@
 .eval-rows dt { font-size: max(11px, calc(var(--u) * 14.5)); letter-spacing: .22em; text-transform: uppercase; color: #46565e; }
 .eval-rows dd { margin: 0; font-size: max(11px, calc(var(--u) * 20.5)); line-height: 1.5; color: #1e3038; }
 .eval-rows .code { margin-right: calc(var(--u) * 12); }
+.eval-item { white-space: nowrap; }
 .eval-goals li { display: flex; align-items: center; gap: calc(var(--u) * 16); }
 .eval-goals li + li { margin-top: calc(var(--u) * 10); }
 .eval-goals li::before { content: ''; flex: none; width: calc(var(--u) * 28); height: calc(var(--u) * 28); border-radius: 50%; border: 1.5px solid #9aa5aa; }
@@ -47,6 +49,10 @@
   .poc-card p { font-size: 14px; }
   .poc-card .check { width: 36px; height: 36px; }
   .signature { width: 170px; height: 50px; margin-left: 40px; }
+}
+@media (max-width: 760px) {
+  .eval-sep { display: none; }
+  .eval-item { display: block; }
 }
 @media (min-width: 761px) and (max-width: 1099px) {
   .eval-rows > div { grid-template-columns: 150px 1fr; }

@@ -9,7 +9,7 @@ export function Stairs() {
     <article className="card discharge-card">
       <h3 className="card-title">Discharge summary<span className="ds-sep"> · </span><span className="ds-meta">{patient.name} · Apr 30</span></h3>
       <dl>
-        <div><dt>Knee flexion</dt><dd>0–95° → 0–134°</dd></div>
+        <div><dt>Knee flexion</dt><dd><span className="keep">0–95°</span> → <span className="keep">0–134°</span></dd></div>
         <div><dt>LEFS</dt><dd>38 → 74 / 80</dd></div>
         <div><dt>Stairs without a rail</dt><dd><Check className="check" /></dd></div>
         <div><dt>Goals met</dt><dd>3 of 3<Check className="check" /></dd></div>

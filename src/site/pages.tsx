@@ -16,10 +16,14 @@ import run from './run.json'
 // Code cards get their Copy button only when script runs; without it the command is still there to select.
 const COPY = "document.querySelectorAll('.docs-copy').forEach(b=>{b.hidden=false;b.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(b.closest('.docs-code').querySelector('code').textContent);b.textContent='Copied';setTimeout(()=>{b.textContent='Copy'},1600)}catch{}})})"
 
+/** Names and short phrases on the homepage that never break inside themselves. */
+const HELD = /\b(?:Ana Ramirez|Sarah Lee|Dr\. Priya Patel|Priya Patel|Dr\. Patel|David Moore|Maria G\.|Physical Therapy|Riverside Orthopedics|Aetna PPO|Sent via Availity|card ending \d+|\d+ in the plan|paid by text|LEFS \d+\/\d+|\d+ visits)(?!\w)/g
+
 /** The homepage's " · " and " → " hold to the words on both sides, so no line starts or ends with one, and a date
- * ("Mar 9") or a duration ("4 min") never splits across lines. */
+ * ("Mar 9"), a duration ("4 min"), a name or a value never splits across lines. */
 const keepSeparators = (html: string) => html.replaceAll(' · ', '\u00a0·\u00a0').replaceAll(' → ', '\u00a0→\u00a0')
   .replace(/\b(Mar|Apr) (\d)/g, '$1\u00a0$2').replace(/(\d) min\b/g, '$1\u00a0min')
+  .replace(HELD, phrase => phrase.replaceAll(' ', '\u00a0'))
 
 /** The run site's own tokens (public/site/theme.css), for Base's Run and not-found pages; no floor art there. */
 const siteIdentity: EditionIdentity = { ...identity, theme: '/site/theme.css', band: undefined }

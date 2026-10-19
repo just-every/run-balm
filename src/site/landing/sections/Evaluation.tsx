@@ -1,5 +1,9 @@
+import { Fragment } from 'react'
 import { patient, physician, therapist } from '../episode'
 import { Check, Copy, Icon, Stage } from '../parts'
+
+/** A row of findings or plan terms: one line on the desk, one term per line on phones, never split inside a term. */
+const Items = ({ list }: { list: string[] }) => <>{list.map((term, i) => <Fragment key={term}>{i > 0 && <span className="eval-sep"> · </span>}<span className="eval-item">{term}</span></Fragment>)}</>
 
 /** 04: the initial evaluation the scribe drafted on Mar 10, signed by Sarah Lee, and Dr. Patel's plan-of-care
  * signature from the same note on Mar 11. */
@@ -16,9 +20,9 @@ export function Evaluation() {
         </header>
         <dl className="eval-rows">
           <div><dt>Diagnosis</dt><dd><span className="code">M25.561</span> Pain in right knee</dd></div>
-          <div><dt>Findings</dt><dd>Knee flexion 0–95° · Quad strength 4-/5 · LEFS 38/80</dd></div>
+          <div><dt>Findings</dt><dd><Items list={['Knee flexion 0–95°', 'Quad strength 4-/5', 'LEFS 38/80']} /></dd></div>
           <div><dt>Goals</dt><dd><ul className="eval-goals"><li>Stairs without a rail</li><li>Knee flexion 0–130°</li><li>LEFS 70 or higher</li></ul></dd></div>
-          <div><dt>Plan</dt><dd>2x a week · 8 weeks · 16 visits · home exercises</dd></div>
+          <div><dt>Plan</dt><dd><Items list={['2x a week', '8 weeks', '16 visits', 'home exercises']} /></dd></div>
           <div><dt>Billed</dt><dd>97162 x1 · 97110 x1</dd></div>
         </dl>
         <footer className="eval-foot">

@@ -12,7 +12,7 @@
 
 /* Type: tracked caps eyebrows, the hero's serif at section size, Inter paragraphs. */
 .eyebrow { font: 500 max(11px, calc(var(--u) * 15))/1.2 var(--font-body); letter-spacing: .32em; text-transform: uppercase; color: #3d4c55; }
-.copy h2 { margin-top: calc(var(--u) * 24); padding-bottom: .08em; font: 500 calc(var(--u) * 82)/1.02 var(--font-head); letter-spacing: -.03em; word-spacing: .05em; color: #13303a; text-wrap: balance; }
+.copy h2 { margin-top: calc(var(--u) * 24); padding-bottom: .08em; font: 500 calc(var(--u) * 74)/1.02 var(--font-head); letter-spacing: -.03em; word-spacing: .05em; color: #13303a; text-wrap: balance; }
 .copy-body { margin-top: calc(var(--u) * 22); font-size: max(15px, calc(var(--u) * 24.5)); line-height: 1.55; color: var(--body); text-wrap: pretty; }
 .copy.centred { text-align: center; }
 .card-title { font: 500 calc(var(--u) * 30)/1.15 var(--font-head); letter-spacing: -.02em; color: #13303a; }

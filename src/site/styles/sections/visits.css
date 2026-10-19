@@ -4,6 +4,7 @@
 .stage-visits .copy { display: contents; }
 .stage-visits .eyebrow { grid-column: 1; }
 .stage-visits .copy h2 { grid-column: 1; white-space: nowrap; }
+@media (min-width: 1100px) { .stage-visits .copy h2 { font-size: calc(var(--u) * 78); } }
 .stage-visits .copy-body { grid-column: 2; grid-row: 1 / span 2; align-self: end; margin: 0 0 calc(var(--u) * 18); max-width: calc(var(--u) * 520); font-size: max(15px, calc(var(--u) * 23)); }
 .visit-track { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; align-items: center; margin: calc(var(--u) * 58) calc(var(--u) * -60) 0 calc(var(--u) * -12); }
 .track-who { font-size: max(11px, calc(var(--u) * 20.5)); color: #23363e; }

@@ -76,7 +76,7 @@
 @media (min-width: 761px) and (max-width: 1099px) {
   .milestones { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, auto); grid-auto-flow: column; column-gap: 24px; }
   .milestones::before { display: none; }
-  .milestone { padding-bottom: 18px; }
+  .milestone { padding-bottom: 18px; align-content: start; }
   .ribbon-totals { grid-template-columns: repeat(4, 1fr); grid-template-areas: 'notes aetna ana balance'; }
   .ribbon-totals .t-aetna, .ribbon-totals .t-ana { border-top: 0; }
   .ribbon-totals .t-aetna { border-left: 1px solid var(--line-strong); }

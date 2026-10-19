@@ -16,8 +16,9 @@
 .ready-referral .soft-pill { margin-top: calc(var(--u) * 16); }
 
 .ready-eligibility { left: calc(var(--u) * 280); top: calc(var(--u) * 244); width: calc(var(--u) * 508); padding: calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 22); }
-.ready-eligibility .card-title { font-size: calc(var(--u) * 32); white-space: nowrap; }
-.ready-eligibility .soft-pill { margin-left: auto; }
+.ready-eligibility .ready-head { gap: calc(var(--u) * 18); }
+.ready-eligibility .card-title { font-size: calc(var(--u) * 31); white-space: nowrap; }
+.ready-eligibility .soft-pill { margin-left: auto; padding-inline: calc(var(--u) * 14); }
 .ready-table { margin-top: calc(var(--u) * 14); padding: 0 calc(var(--u) * 14) 0 calc(var(--u) * 16); }
 .ready-table div { display: flex; justify-content: space-between; gap: calc(var(--u) * 16); padding: calc(var(--u) * 11) 0; font-size: max(11px, calc(var(--u) * 19.5)); color: #2a3c44; }
 .ready-table div + div { border-top: 1px solid var(--line); }
