@@ -2,9 +2,10 @@
 // practitioner; no patient names, note text or plan narratives leave this module.
 // A day is a whole clinic-local date in the clinic's time zone; a visit belongs
 // to the local date its start falls on, and the range includes both ends.
-import { datePlus, firstInstantOfHostDate, hostDateAt, weekdayForDate } from '../availability/timezone'
+import { datePlus, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { csvCell } from '../domain/disclosures'
-import { day, human, insist, need, one, rows, text, type Actor, type Data } from '../domain/model'
+import { human, insist, need, rows, text, type Actor, type Data } from '../domain/model'
+import { reportRange } from './range'
 
 export const reportKinds = ['visits', 'plans', 'evaluations', 'utilization', 'payroll'] as const
 export type ReportKind = typeof reportKinds[number]
@@ -14,19 +15,11 @@ const percent = (part: number, whole: number) => whole > 0 ? Math.round(part / w
 const minutesBetween = (start: string, end: string) => Math.round((Date.parse(end) - Date.parse(start)) / 60_000)
 
 async function filters(db: D1Database, input: Data) {
-  const settings = await one(db, 'SELECT time_zone,holidays FROM bm_settings WHERE id=1')
-  insist(settings?.time_zone, 'clinic_time_zone_not_set', 409)
-  const zone = String(settings.time_zone), today = hostDateAt(new Date(), zone)
-  const from = input.from ? day(input.from, 'from') : today.slice(0, 8) + '01', to = input.to ? day(input.to, 'to') : today
-  insist(from <= to, 'report_date_range_reversed')
-  insist(Date.parse(to) - Date.parse(from) <= 366 * 86400_000, 'report_range_longer_than_a_year')
-  const start = firstInstantOfHostDate(from, zone), end = firstInstantOfHostDate(datePlus(to, 1), zone)
-  insist(start && end, 'invalid_report_date_range')
+  const range = await reportRange(db, input)
   const practitionerId = input.practitionerId ? text(input.practitionerId, 'practitioner', 100) : ''
   const practitioners = await rows<Practitioner>(db, "SELECT id,name FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL AND (?='' OR id=?) ORDER BY name,id", practitionerId, practitionerId)
   insist(!practitionerId || practitioners.length, 'practitioner_not_found', 404)
-  const holidays = new Set((JSON.parse(String(settings.holidays ?? '[]')) as { date: string }[]).map(h => h.date))
-  return { from, to, zone, today, practitionerId, practitioners, holidays, start: start.toISOString(), end: end.toISOString() }
+  return { ...range, practitionerId, practitioners }
 }
 
 /** The owner's operational reports for one inclusive clinic-local date range. */

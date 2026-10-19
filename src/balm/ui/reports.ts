@@ -1,6 +1,7 @@
 // The owner's operational reports: one filter form, a table per report with its
 // all-practitioner total, and a CSV download that carries the same filters.
 import { empty, field, h, panel } from './shared'
+import { financialSections } from './financial-reports'
 
 const table = (heads: string[], body: unknown[][]) => `<div class="table"><table><thead><tr>${heads.map(x => `<th scope="col">${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map((r, i) => `<tr${i === body.length - 1 ? ' class="total"' : ''}>${r.map(c => `<td>${h(c ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
 const pct = (value: unknown) => value === null || value === undefined ? '—' : `${value}%`
@@ -31,5 +32,6 @@ export function reportsPage(s: any) {
     + section('payroll', 'Visit counts for payroll', 'Attended visits and their booked minutes, by practitioner and service.',
       ['Practitioner', 'Service', 'Attended visits', 'Attended minutes'], x => [x.practitioner, x.service ?? '', x.attendedVisits, x.attendedMinutes], 'payroll')
     + panel('Referral conversion', '<p>Balm does not record referrals yet, so there is no referral conversion to report. It is added here when referrals are recorded.</p>', 'full', 'report-referrals')
+    + financialSections(s)
     + '</div>'
 }

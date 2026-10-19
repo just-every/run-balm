@@ -1,7 +1,9 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {run} from './harness.mjs'
-import {clinic,slots} from './clinic.mjs'
+import {readFile} from 'node:fs/promises'
+import {clinic,pastVisit,slots} from './clinic.mjs'
+import {fakeProviders} from './fakes/stripe.mjs'
 
 // Last month in Brisbane (UTC+10, no daylight saving), so the whole month is history.
 const now=new Date(Date.now()+10*3600_000),first=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1))
@@ -96,3 +98,74 @@ test('REPORT-001: a month of visits, plans, evaluations, utilization and payroll
  for(const cookie of [reception.cookie,sam.cookie]){assert.equal((await h.send('/api/balm/reports',undefined,cookie)).status,403);assert.equal((await h.send('/api/balm/reports/visits.csv',undefined,cookie)).status,403);assert.equal((await h.send('/app/reports',undefined,cookie)).status,403)}
  assert.equal((await h.send('/api/balm/reports',undefined,'',{authorization:'Bearer '+key.token})).status,401,'agent keys are not a credential for reports')
 }))
+
+test('REPORT-002: charges, payments, adjustments, A/R aging by payer and patient, collections per visit, days in A/R and deposits match the ledger and export as CSV',()=>{
+ const stripe=fakeProviders()
+ return run(async h=>{
+  await h.finishSetup()
+  const {service,practitioners:[priya]}=await clinic(h)
+  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
+  await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
+  await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
+  const payer=await h.cmd('insurance.payer.save',{name:'Aetna',payerId:'60054',receiverId:'AETNA',unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97140',cents:2500}]})
+  await h.cmd('insurance.enrollment.save',{payerId:payer.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
+  const year=new Date().getUTCFullYear(),coverage={startsOn:`${year-1}-01-01`,endsOn:`${year+1}-12-31`}
+  const maya=await h.cmd('client.save',{firstName:'Maya',lastName:'Lee',dateOfBirth:'1988-04-02'})
+  const policy=await h.cmd('insurance.policy.save',{clientId:maya.id,payerId:payer.id,memberId:'MEMBER123',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage})
+  const insuredVisit=async hoursAgo=>{
+   const appointmentId=await pastVisit(h,maya.id,priya,service.id,h.owner,hoursAgo);await h.cmd('appointment.attend',{id:appointmentId})
+   const note=await h.cmd('note.write',{clientId:maya.id,appointmentId,body:'Synthetic therapy visit.',charges:[{code:'97110',minutes:23},{code:'97140',minutes:15}]},priya.cookie)
+   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie);await h.cmd('pay.codes.save',{appointmentId,icd10:'M25.561'})
+   const invoice=await h.cmd('invoice.prepare',{appointmentId});await h.cmd('invoice.approve',{id:invoice.id})
+   return {appointmentId,invoice,claim:await h.cmd('insurance.claim.prepare',{appointmentId,policyId:policy.id})}
+  }
+  // Billed, sent and paid by ERA: $95 charge, $60 paid, $20 CO-45, $15 patient share then paid by card.
+  const paid=await insuredVisit(2)
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[paid.claim.id]});await h.cmd('insurance.batch.submit',{id:batch.id})
+  const fixture=async name=>(await readFile(`tests/fixtures/insurance/${name}`,'utf8')).replaceAll('{{CLAIM}}',paid.claim.id)
+  await h.cmd('insurance.acknowledgment.import',{payerId:payer.id,x12:await fixture('277CA.x12')})
+  await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:await fixture('835-paid.x12')})
+  await h.cmd('pay.stripe.connect',{secretKey:'sk_test_'+'a'.repeat(24)})
+  const link=await h.cmd('pay.link.create',{clientId:maya.id,purpose:'card',delivery:'shown'}),cardPath=new URL(link.url).pathname
+  const session=(await h.form(cardPath+'?do=card',{consent:'on'})).location.split('/').pop();stripe.complete(session)
+  assert.equal((await h.send(cardPath+'?setup='+session)).status,200)
+  await h.cmd('pay.invoice.charge',{invoiceId:paid.invoice.id})
+  // Billed and still at the payer: $95 owed by Aetna.
+  await insuredVisit(4)
+  // Self-pay, served 45 days ago, $20 paid at the desk: $75 owed by the patient.
+  const now=new Date(Date.now()+10*3600_000),today=now.toISOString().slice(0,10),shift=n=>new Date(Date.parse(today)+n*86400_000).toISOString().slice(0,10)
+  const bundle={provider:'cliniko',practitionerId:priya.id,serviceId:service.id,dateFormat:'MDY',files:[
+   {kind:'patients',name:'patients.csv',csv:'Patient ID,First Name,Last Name,Date of Birth\nn1,Noah,Kim,1979-03-04\n'},
+   {kind:'appointments',name:'appointments.csv',csv:`Source ID,Patient ID,Start At,End At,Status\nv1,n1,${shift(-45)}T00:00:00Z,${shift(-45)}T00:45:00Z,attended\n`}]}
+  const preview=await h.cmd('movein.preview',bundle);await h.cmd('movein.apply',{...bundle,fingerprint:preview.fingerprint,acceptanceReason:'Reviewed the self-pay history.'})
+  const noah=(await h.state()).clients.find(c=>c.last_name==='Kim'),noahFile=async()=>(await h.send('/api/balm/clients/'+noah.id,undefined,h.owner)).value
+  const selfPay=await h.cmd('invoice.prepare',{appointmentId:(await noahFile()).appointments[0].id});await h.cmd('invoice.approve',{id:selfPay.id})
+  await h.cmd('payment.record',{invoiceId:selfPay.id,amountCents:2000,reference:'CHECK-1001'})
+
+  // Hand count over the last 60 clinic days.
+  const query=`from=${shift(-59)}&to=${today}`,report=(await h.send('/api/balm/reports/financial?'+query,undefined,h.owner)).value
+  assert.deepEqual(report.summary,{chargesCents:28500,charges:3,paymentsCents:9500,insurancePaymentsCents:6000,cardPaymentsCents:1500,deskPaymentsCents:2000,adjustmentsCents:2000,attendedVisits:3,collectionsPerVisitCents:3167,arCents:17000,daysInAr:35.8})
+  assert.deepEqual(report.agingByPayer.rows,[{payer:'Aetna','0-30':9500,'31-60':0,'61-90':0,'91-120':0,'over-120':0,total:9500}])
+  assert.deepEqual(report.agingByPatient.rows,[{clientId:noah.id,patient:'Noah Kim','0-30':0,'31-60':7500,'61-90':0,'91-120':0,'over-120':0,total:7500}])
+  assert.deepEqual(report.deposits.rows.map(d=>[d.source,d.reference,d.receivedCents,d.postedCents,d.creditCents,d.unpostedCents]),[
+   ['Card payments (Stripe)','1 payment',1500,1500,0,0],['ERA · Aetna','EFTPAID001',6000,6000,0,0],['Recorded at the desk','1 payment',2000,2000,0,0]])
+  // The same figures as each patient's ledger.
+  const mayaLedger=(await h.send('/api/balm/clients/'+maya.id,undefined,h.owner)).value.billing.ledger,noahLedger=(await noahFile()).billing.ledger
+  assert.equal(report.agingByPayer.total.total,mayaLedger.insurancePendingCents+noahLedger.insurancePendingCents)
+  assert.equal(report.agingByPatient.total.total,mayaLedger.patientBalanceCents+noahLedger.patientBalanceCents)
+  assert.equal(report.summary.paymentsCents,mayaLedger.paymentsCents+noahLedger.paymentsCents)
+  assert.equal(report.summary.adjustmentsCents,mayaLedger.adjustmentsCents+noahLedger.adjustmentsCents)
+  assert.equal(report.deposits.total.receivedCents,report.summary.paymentsCents+report.deposits.total.creditCents+report.deposits.total.unpostedCents)
+  assert.ok((await noahFile()).audit.some(a=>a.action==='report.financial_read'),'the named patient on the aging list is audited')
+
+  // Export every report and reopen it.
+  const csv=async kind=>{const file=await h.send(`/api/balm/reports/financial/${kind}.csv?${query}`,undefined,h.owner);assert.equal(file.status,200);assert.match(file.headers.get('content-type'),/^text\/csv/);return csvRows(file.text)}
+  const summary=Object.fromEntries((await csv('summary')).slice(1))
+  assert.deepEqual([summary.charges_usd,summary.payments_usd,summary.adjustments_usd,summary.collections_per_visit_usd,summary.ar_usd,summary.days_in_ar],['285.00','95.00','20.00','31.67','170.00','35.8'])
+  assert.deepEqual((await csv('aging-payer'))[1],['Aetna','95.00','0.00','0.00','0.00','0.00','95.00'])
+  assert.deepEqual((await csv('aging-patient'))[1],['Noah Kim','0.00','75.00','0.00','0.00','0.00','75.00'])
+  const deposits=await csv('deposits');assert.equal(deposits.length,5);assert.deepEqual(deposits[2].slice(1),['ERA · Aetna','EFTPAID001','60.00','60.00','0.00','0.00']);assert.deepEqual(deposits[4].slice(3),['95.00','95.00','0.00','0.00'])
+  assert.match((await h.send('/app/reports?'+query,undefined,h.owner)).text,/id="report-deposits"/)
+  for(const cookie of [(await h.staff('Rosa','reception')).cookie,priya.cookie])assert.equal((await h.send('/api/balm/reports/financial',undefined,cookie)).status,403)
+ },{auth:{BALM_INSURANCE_ADAPTER_URL:'https://gateway.example/submit',BALM_INSURANCE_ADAPTER_TOKEN:'fixture-gateway-key'},outbound:async request=>request.url==='https://gateway.example/submit'?Response.json({status:'submitted',reference:'fixture-batch-accepted'}):stripe.handler(request)})
+})
