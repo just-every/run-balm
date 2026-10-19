@@ -57,5 +57,5 @@ function writePlan(s: any, f: any) {
 
 export function plansPanel(s: any, f: any) {
   const list = f.plans.map((p: any) => planEntry(s, f, p)).join('')
-  return panel('Plan of care', (list || empty('No plan of care yet.')) + writePlan(s, f))
+  return panel('Plan of care', (list || empty('No plan of care yet.')) + writePlan(s, f), '', 'plans')
 }

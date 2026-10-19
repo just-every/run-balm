@@ -58,6 +58,12 @@
       "clauses": [
         "CHART-010"
       ]
+    },
+    {
+      "id": "daily-close",
+      "clauses": [
+        "REPORT-004"
+      ]
     }
   ],
   "nonGoals": [

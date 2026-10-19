@@ -1,3 +1,4 @@
+import { dailyClose } from '../reports/access'
 import { alertsForClients } from './alerts'
 import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
@@ -69,5 +70,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }
