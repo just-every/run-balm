@@ -20,7 +20,7 @@ test('CHART-004: sign and lock a note, keep its original beside addenda, close o
   await pastVisit(h, client.id, sam, service.id, reception.cookie, 5)
   await h.cmd('appointment.attend', { id: visit }, priya.cookie)
   const schedule = '/app?date=' + await visitDate(h, visit, reception.cookie)
-  assert.match((await h.send(schedule, undefined, priya.cookie)).text, /Notes to sign[\s\S]*No note yet/)
+  assert.match((await h.send(schedule, undefined, priya.cookie)).text, /Notes to sign[\s\S]*Note not signed/)
 
   // The visit's template frames the note; required sections are enforced at signing, not while drafting.
   const note = await h.cmd('note.write', { clientId: client.id, appointmentId: visit, sections: { ...daily, goals: '' } }, priya.cookie)

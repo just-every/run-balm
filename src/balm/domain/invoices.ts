@@ -44,8 +44,10 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
   const amount = input.amountCents === undefined || input.amountCents === '' ? (await insuredCharge(db, appointmentId))?.cents : integer(input.amountCents, 'amount_cents', 0, 10_000_000)
   const { row, value } = await snapshot(db, appointmentId, amount)
   insist(row.status === 'attended', 'invoice_needs_an_attended_appointment', 409)
-  const replacing = input.replacesId ? await one(db, "SELECT * FROM bm_invoices WHERE id=? AND appointment_id=? AND status='draft'", text(input.replacesId, 'invoice', 100), appointmentId) : null
-  insist(!input.replacesId || replacing, 'draft_invoice_not_found', 404)
+  const automatic = !input.replacesId ? await one(db, "SELECT id FROM bm_invoices WHERE appointment_id=? AND status='draft' AND attendance_started=1", appointmentId) : null
+  const replacesId = input.replacesId || automatic?.id
+  const replacing = replacesId ? await one(db, "SELECT * FROM bm_invoices WHERE id=? AND appointment_id=? AND status='draft'", text(replacesId, 'invoice', 100), appointmentId) : null
+  insist(!replacesId || replacing, 'draft_invoice_not_found', 404)
   const invoiceId = id()
   await commit(db, who, [
     // Retain the earlier preparation; a concurrently approved draft cannot be replaced.
@@ -139,7 +141,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
 }
 
 export async function invoicesFor(db: D1Database, clientId?: string) {
-  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,
+  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,
     (SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_insurance_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
   const payments = await rows(db, `SELECT * FROM bm_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
   return list.map(i => ({ ...i, snapshot: JSON.parse(i.snapshot as string), payments: payments.filter(p => p.invoice_id === i.id) }) as Data)

@@ -12,7 +12,7 @@ import { noteChip, notesToSign, notesTally, planChip } from './chart-status'
 import { zoneLabel } from './time-zone'
 import { icon } from './icons'
 import { patientPanel } from './visit-panel'
-import { cancelForm, clientName, desk, empty, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, status } from './shared'
+import { cancelForm, clientName, desk, empty, intakeChip, field, form, h, hidden, owner, panel, practitioners, rows, select, services, stamp, status } from './shared'
 import { fullName } from '../domain/model'
 
 function setupChecklist(s: any) {
@@ -97,7 +97,8 @@ function selectedPanel(s: any, c: any, notice: any) {
     if (a.series && a.series.remaining > 1) actions += `<details><summary>Move this and the later visits in the series (${a.series.remaining})</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + moveFields(s, c, a, 'rest'), `Move ${a.series.remaining} visits`)}<p class="help">Each keeps its date. If any would overlap or fall outside hours, nothing moves and the dates are listed.</p></details>`
     actions += `${cancelForm('appointment.cancel', calendarLink(c), hidden('id', a.id), 'Cancel this visit', 'Cancel visit', a.client)}${a.series && a.series.remaining > 1 ? cancelForm('series.cancel_rest', calendarLink(c), hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, `Cancel ${a.series.remaining} visits`, a.client, a.series.remaining) : ''}<p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
   }
-  actions = `<div class="visit-actions">${actions}<p class="help"><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p></div>`
+  const history = `<details><summary>Visit history</summary><ol class="plain">${a.history.map((e: any) => `<li>${h(e.action.replace('appointment.', '').replaceAll('_', ' '))} · ${h(e.actor_email)} (${h(e.actor_role)})<br>${stamp(s, e.at)}${e.detail ? ` · ${h(e.detail)}` : ''}</li>`).join('')}</ol></details>`
+  actions = `<div class="visit-actions">${actions}${history}<p class="help"><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p></div>`
   return patientPanel(s, c, a, { visit, primary: primary ? `<div class="primary">${primary}</div>` : '', actions })
 }
 
@@ -114,7 +115,7 @@ function bookPanel(s: any, c: any, notice: any) {
     `${bookingResult(s, notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date || c.date, time })}</details>` : ''}`) + '</div>'
 }
 
-/** Every visit of the day or week, every status, with check-in: the grid's accessible twin, folded under it. One Stripe line covers every check-in. */
+/** Every visit of the day or week, every stamp, status, with check-in: the grid's accessible twin, folded under it. One Stripe line covers every check-in. */
 function listPanel(s: any, c: any) {
   const block = s.payments?.stripe?.block, once = (html: string) => block ? html.replace(`<p class="help">${h(block)}</p>`, '') : html
   const shown = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a)))

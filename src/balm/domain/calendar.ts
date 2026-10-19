@@ -44,7 +44,8 @@ export async function calendarView(db: D1Database, who: Actor, params: Record<st
         JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id LEFT JOIN bm_rooms r ON r.id=a.room_id WHERE a.id=?`, row.id)
       const series = row.series_id ? await one(db, `SELECT COUNT(*) AS total,SUM(start_at<=?) AS position,SUM(status='booked' AND start_at>=?) AS remaining,
         (SELECT skipped FROM bm_series WHERE id=?) AS skipped FROM bm_appointments WHERE series_id=?`, row.start_at, row.start_at, row.series_id, row.series_id) : null
-      selected = { ...detail, series: series ? { ...series, skipped: JSON.parse(series.skipped as string) } : null }
+      const history = await rows(db, "SELECT at,actor_email,actor_role,action,detail FROM bm_audit WHERE subject_id=? AND action LIKE 'appointment.%' ORDER BY sequence", row.id)
+      selected = { ...detail, history, series: series ? { ...series, skipped: JSON.parse(series.skipped as string) } : null }
     }
   }
   const patientAlerts = await alertsForClients(db, who, [...appointments.map(a => String(a.client_id)), ...(selected ? [String(selected.client_id)] : [])])

@@ -1,3 +1,4 @@
+import { attendanceStatements } from './attendance'
 import { phoneNumber } from './us-clinic'
 import { evaluateSlot, listAvailableSlots, type AvailabilityConstraints } from '../availability/engine'
 import { datePlus, hostDateAt, wallClockInstants, zonedParts } from '../availability/timezone'
@@ -186,9 +187,12 @@ export async function setAppointmentStatus(db: D1Database, who: Actor, input: Da
   const row = await visibleAppointment(db, who, input.id)
   insist(row.status === 'booked', 'appointment_not_booked', 409)
   if (status !== 'cancelled') insist(Date.parse(row.start_at) <= Date.now() + 3600_000, 'appointment_not_started', 409)
+  const started = status === 'attended' ? await attendanceStatements(db, who, row) : []
   await commit(db, who, [
+    guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, row.version),
     stmt(db, "UPDATE bm_appointments SET status=?,version=version+1 WHERE id=? AND status='booked' AND version=?", status, row.id, row.version),
-    guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status=?)', row.id, status),
+    guard(db, 'changes()=1'),
+    ...started,
     audit(db, who, 'appointment.' + status, row.client_id, row.id),
   ])
   return { id: row.id, status }

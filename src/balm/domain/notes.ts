@@ -63,11 +63,16 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   const key = input.template ? text(input.template, 'template', 40) : input.body === undefined ? appointment?.note_template : ''
   const t = key ? template(key) : undefined
   insist(!key || t, 'unknown_template')
-  const content = written(input, t), noteId = id()
+  const starter = appointment ? await one(db, `SELECT n.id FROM bm_notes n WHERE n.appointment_id=? AND n.author_id=? AND n.signed_at IS NULL
+    AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=n.id)=0`, appointment.id, author) : null
+  const content = written(input, t), noteId = (starter?.id as string) ?? id()
   await commit(db, who, [
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
-    stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,?)', noteId, client.id, appointment?.id ?? null, author, now(), t?.key ?? ''),
+    ...(starter ? [
+      guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>0)', noteId),
+      stmt(db, 'UPDATE bm_notes SET template=? WHERE id=? AND signed_at IS NULL', t?.key ?? '', noteId),
+    ] : [stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,?)', noteId, client.id, appointment?.id ?? null, author, now(), t?.key ?? '')]),
     stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by,documentation) VALUES(?,1,?,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
       content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy, JSON.stringify(content.documentation)),
     audit(db, who, draftedBy === 'scribe' ? 'note.scribe_drafted' : 'note.written', client.id as string, noteId, t?.key ?? 'free text'),

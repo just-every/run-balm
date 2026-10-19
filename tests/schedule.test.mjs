@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
-import { clinic } from './clinic.mjs'
+import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
 const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
@@ -174,4 +174,60 @@ test('SCHED-009: a private practitioner subscription follows bookings, moves and
   await h.cmd('staff.save', { id: priya.id, name: 'Priya', email: 'priya@clinic.example', role: 'practitioner', active: false })
   assert.equal((await h.send(active.calendarFeedPath)).status, 404, 'deactivation removes bearer access')
   assert.equal((await h.send('/api/balm/command', { name: 'calendar.feed.create', input: {} })).status, 401)
+}))
+
+
+test('SCHED-008: check in, attend, no-show and cancel retain actor/time history; attendance atomically opens clinical and billing drafts', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
+  const reception = await h.staff('Taylor', 'reception')
+  await h.cmd('service.save', { id: service.id, name: 'PT follow-up', durationMinutes: 45, priceCents: 9500, noteTemplate: 'pt.daily' })
+  const client = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1980-03-07' })
+  const visit = await pastVisit(h, client.id, priya, service.id, h.owner, 2)
+  const absent = await pastVisit(h, client.id, priya, service.id, h.owner, 4)
+  const cancelled = await pastVisit(h, client.id, priya, service.id, h.owner, 6)
+  await h.cmd('appointment.attend', { id: visit }, sam.cookie, 404)
+  await h.cmd('pay.checkin', { appointmentId: visit }, reception.cookie)
+  // Two attempts cannot start duplicate work, even when they race.
+  const attempts = await Promise.all([reception.cookie, priya.cookie].map(cookie => h.send('/api/balm/command', { name: 'appointment.attend', input: { id: visit } }, cookie)))
+  assert.deepEqual(attempts.map(r => r.status).sort(), [200, 409])
+  const file = async cookie => (await h.send('/api/balm/clients/' + client.id, undefined, cookie)).value
+  const started = await file(priya.cookie), note = started.notes[0]
+  assert.equal(started.notes.length, 1)
+  assert.equal(note.appointmentId, visit)
+  assert.equal(note.authorId, priya.id)
+  assert.equal(note.status, 'draft')
+  assert.equal(note.template, 'pt.daily')
+  assert.equal(note.revisions[0].body, '')
+  assert.ok(note.revisions[0].sections.every(s => s.text === ''))
+  assert.equal((await file(reception.cookie)).notes, null)
+  await h.cmd('note.amend', { id: note.id, revision: 0, sections: { subjective: 'Walking more comfortably.' } }, reception.cookie, 404)
+  const desk = await file(h.owner), invoice = desk.invoices.find(i => i.appointment_id === visit)
+  assert.equal(invoice.status, 'draft')
+  assert.equal(invoice.number, null)
+  assert.equal(invoice.amount_cents, 9500)
+  assert.equal(desk.billing.ledger.chargesCents, 0, 'unapproved work does not bill the patient')
+  await h.cmd('invoice.approve', { id: invoice.id }, priya.cookie, 403)
+  const written = await h.cmd('note.write', { clientId: client.id, appointmentId: visit, sections: { subjective: 'Walking more comfortably.' } }, priya.cookie)
+  assert.equal(written.id, note.id, 'first saved text continues the attendance starter')
+  assert.equal(written.revision, 1)
+  assert.equal((await file(priya.cookie)).notes.length, 1)
+  await h.cmd('appointment.no_show', { id: absent }, reception.cookie)
+  await h.cmd('appointment.cancel', { id: cancelled }, h.owner)
+  for (const [id, actions] of [[visit, ['booked', 'checked_in', 'attended']], [absent, ['booked', 'no_show']], [cancelled, ['booked', 'cancelled']]]) {
+    const page = await h.send(`/app?date=${await visitDate(h, id)}&appt=${id}`, undefined, reception.cookie)
+    assert.equal(page.status, 200)
+    assert.match(page.text, /Visit history/)
+    for (const action of actions) assert.ok(page.text.includes(action.replaceAll('_', ' ')), action)
+    assert.match(page.text, /owner@clinic.example/)
+    if (id !== cancelled) assert.match(page.text, /taylor@clinic.example|priya@clinic.example/)
+  }
+  assert.equal((await file(h.owner)).invoices.length, 1, 'no charge is started for a no-show or cancellation')
+  assert.equal((await file(h.owner)).notes.length, 1)
+  // A failed status guard must roll back starters as well as attendance.
+  const untouched = await pastVisit(h, client.id, sam, service.id, h.owner, 2)
+  const before = await h.state()
+  await h.cmd('appointment.no_show', { id: untouched }, h.owner)
+  await h.cmd('appointment.attend', { id: untouched }, h.owner, 409)
+  assert.equal((await h.state()).invoices.length, before.invoices.length)
 }))

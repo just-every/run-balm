@@ -135,6 +135,7 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
       guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", o.id, o.version),
       ...placementGuards(db, { practitionerId: target, roomId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
       stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, o.startAt, o.endAt, o.id),
+      audit(db, who, 'appointment.moved', row.client_id, o.id, `rest of series; ${o.startAt}`),
     ]),
     audit(db, who, 'series.moved_rest', row.client_id, row.series_id, `${occurrences.length} visits to ${clock(minute)}`),
   ])
