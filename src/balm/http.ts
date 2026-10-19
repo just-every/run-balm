@@ -1,3 +1,7 @@
+import { patientVisitSlots, movePatientAppointment } from './scheduling/patient'
+import { confirmVisitFee, visitFees } from './scheduling/fees'
+import { saveVisitPolicy } from './scheduling/policy'
+import { followupCommand, followupSettings, followupsFor } from './followups/settings'
 import { clinicalActor, downloadDocument, uploadDocument } from './chart-history/documents'
 import { fileHistory } from './chart-history/search'
 import { bookedIntake } from './domain/intake-requests'
@@ -9,6 +13,9 @@ import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
 import { bundleFormInput } from './movein/form-input'
 import { ownerProfile, saveOwnerName } from './owner-name'
 import { insuredCharge } from './insurance/invoice-price'
+import { acknowledgeBreakGlass, breakGlass, careTeamFor, endBreakGlass, grantCareTeam, revokeCareTeam } from './domain/care-team'
+import { financialCsv, financialKinds, financialReports, type FinancialKind } from './reports/financial'
+import { operationalCsv, operationalReports, reportKinds, type ReportKind } from './reports/operational'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
@@ -53,20 +60,24 @@ import { visitSummary } from './visit-summary'
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers })
-const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist|\/insurance|\/cases)?$/
+const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import|\/agent|\/waitlist|\/insurance|\/cases|\/reports)?$/
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string, historyInput: Record<string, unknown> = {}) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
   const zone = (await env.DB.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{time_zone:string}>())!.time_zone
-  const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  // CHART-013 care-team access alone opens the notes (and documents under break glass), not the rest of the file.
+  if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
+  const cancellations = (await env.DB.prepare('SELECT * FROM bm_visit_cancellations WHERE appointment_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(file.appointments.map(a => a.id))).all<any>()).results
+  for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
+  const enriched = { ...file, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -80,8 +91,18 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
     if (s.calendar.selected) s.calendar.summary = await visitSummary(env, who, s.calendar.selected.client_id)
   }
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
+  if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
+    .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
+  if (path === '/app/reports' && who.role === 'owner') s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
-  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => { if (status === 200) throw error }) : undefined, status)
+  const opened = file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => {
+    // A practitioner outside this chart may open it in an emergency by giving a reason (CHART-013).
+    if (who.staffRole === 'practitioner' && error instanceof DomainError && error.status === 404 && status === 200) return { breakGlassOnly: file[1] }
+    if (status === 200) throw error
+  }) : undefined
+  if (opened && 'breakGlassOnly' in opened) return renderApp(s, target, { ...notice, breakGlass: opened.breakGlassOnly }, undefined, 404)
+  if (opened && who.role === 'owner') (opened as any).careTeam = await careTeamFor(env.DB, who, file![1])
+  return renderApp(s, target, notice, opened, status)
 }
 /** A same-app page to return to, keeping only a plain calendar query. */
 function returnTarget(requested: string) {
@@ -101,9 +122,17 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name === 'visit_policy.save') return saveVisitPolicy(env.DB, who, input)
+  if (name === 'appointment.fee.confirm') return confirmVisitFee(env, env.DB, who, input)
+  if (name.startsWith('followups.')) return followupCommand(env.DB, who, name, input)
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
+  if (name === 'care_team.grant') return grantCareTeam(env.DB, who, input)
+  if (name === 'care_team.revoke') return revokeCareTeam(env.DB, who, input)
+  if (name === 'chart.break_glass') return breakGlass(env.DB, who, input)
+  if (name === 'chart.break_glass.end') return endBreakGlass(env.DB, who, input)
+  if (name === 'chart.break_glass.acknowledge') return acknowledgeBreakGlass(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
@@ -321,16 +350,21 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
         const input = kind === 'messages' ? await parseMessageInput(request) : await inputBody(request)
+        if (kind === 'visit' && input.action === 'move') {
+          const moved = await movePatientAppointment(env, token, input)
+          await sendVisitChange(env, [moved.id], 'moved')
+          return redirect('/portal?rescheduled=1')
+        }
         if (kind === 'visit') await visitReply(env, token, input)
         else await patientSend(env, token, input)
         return redirect(`/${kind}/${token}?saved=1`)
       }
-      const data = kind === 'visit' ? await visitReplyView(env, token) : await patientMessages(env, token)
+      const data = kind === 'visit' ? { ...await visitReplyView(env, token), reschedule: await patientVisitSlots(env, token, { from: url.searchParams.get('from') || undefined }) } : await patientMessages(env, token)
       return renderPublic(kind, { ...data, notice: url.searchParams.has('saved') ? 'Your reply is saved for the clinic.' : '' })
     } catch (error) {
       const failure = message(error)
       if (failure.status === 404) return renderPublic('missing', {}, 404)
-      const data = kind === 'visit' ? await visitReplyView(env, token) : await patientMessages(env, token)
+      const data = kind === 'visit' ? { ...await visitReplyView(env, token), reschedule: await patientVisitSlots(env, token, { from: url.searchParams.get('from') || undefined }) } : await patientMessages(env, token)
       return renderPublic(kind, { ...data, error: failure.text }, failure.status)
     }
   }
@@ -392,10 +426,24 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : kind === 'identity' ? await identityPhoto(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
         return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
       }
-      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
+      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path === '/app/reports' ? path + url.search : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/cases') return json(await caseList(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
+      if (path === '/api/balm/reports') return json(await operationalReports(env.DB, who, Object.fromEntries(url.searchParams)))
+      if (path === '/api/balm/reports/financial') return json(await financialReports(env.DB, who, Object.fromEntries(url.searchParams)))
+      const financial = path.match(/^\/api\/balm\/reports\/financial\/([a-z-]+)\.csv$/)
+      if (financial && (financialKinds as readonly string[]).includes(financial[1])) {
+        const report = await financialReports(env.DB, who, Object.fromEntries(url.searchParams))
+        return new Response(financialCsv(report, financial[1] as FinancialKind), { headers: { ...headers, 'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': `attachment; filename="balm-${financial[1]}-${report.from}-${report.to}.csv"`, 'content-security-policy': "default-src 'none'" } })
+      }
+      const operational = path.match(/^\/api\/balm\/reports\/([a-z]+)\.csv$/)
+      if (operational && (reportKinds as readonly string[]).includes(operational[1])) {
+        const report = await operationalReports(env.DB, who, Object.fromEntries(url.searchParams))
+        return new Response(operationalCsv(report, operational[1] as ReportKind), { headers: { ...headers, 'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': `attachment; filename="balm-${operational[1]}-${report.from}-${report.to}.csv"`, 'content-security-policy': "default-src 'none'" } })
+      }
       const reportPath = path.match(/^\/api\/balm\/clients\/([\w-]+)\/(disclosures|access-report)$/)
       if (reportPath) {
         const input = Object.fromEntries(url.searchParams), kind = reportPath[2] === 'disclosures' ? 'disclosures' : 'access'

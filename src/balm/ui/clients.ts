@@ -1,6 +1,10 @@
+import { visitFeePanel } from './visit-policy'
+import { clientPaymentPlans } from './payment-plans'
+import { followupPanel } from './followups'
 import { chartHistoryPanel } from './chart-history'
 import { alertBadges, clientAlertsPanel } from './alerts'
 import { disclosuresPanel } from './disclosures'
+import { careTeamPanel } from './care-team'
 import { payerReference } from '../payments/ledger'
 import { importedPanel } from './imported'
 import { hostDateAt } from '../availability/timezone'
@@ -41,7 +45,7 @@ function appointments(s: any, f: any, notice: any) {
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
     + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', f.insuredCharges?.[a.id] ? `Amount ($, blank for ${f.insuredCharges[a.id].payer}’s fee schedule: ${money(f.insuredCharges[a.id].cents)})` : `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"') + (f.insuredCharges?.[a.id] ? '<p class="help">The insurance claim must charge the same total as this invoice.</p>' : ''), 'Prepare invoice') : '')
     + (a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId) ? `<p><a href="/app?${h(new URLSearchParams({ view: 'day', date: hostDateAt(new Date(a.start_at), s.settings.time_zone), appt: a.id }))}">Move or change in the calendar</a></p>` + cancelForm('appointment.cancel', path, hidden('id', a.id), 'Cancel appointment', 'Cancel visit', clientName(f.client)) : '')
-    + '</div>', `visit-${a.id}`)).join('')
+    + visitFeePanel(s, a, path) + '</div>', `visit-${a.id}`)).join('')
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
   const book = services(s).length && choices.length ? `<details><summary>Book an appointment</summary>${form('appointment.book', path, hidden('clientId', f.client.id)
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
@@ -110,7 +114,9 @@ export function clientFilePage(s: any, f: any, notice: any) {
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
   const age = c.date_of_birth ? Math.floor((Date.now() - Date.parse(c.date_of_birth + 'T12:00:00Z')) / (365.2425 * 86400_000)) : null
   const payer = f.insurance?.policies?.[0]?.payer_name ?? (f.insurance ? 'Self-pay' : '')
-  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
+  // CHART-013 care-team access alone: the notes, chart history and how this chart was opened.
+  if (f.careAccess?.teamOnly) return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1></div></header><div class="grid">${careTeamPanel(s, f)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}</div>`
+  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${careTeamPanel(s, f)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${clientPaymentPlans(s, f)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${followupPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
 }
 import { portalChartPanel } from './portal-chart'
 import { intakeChartPanel } from './intake-chart'

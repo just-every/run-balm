@@ -1,4 +1,5 @@
 import { clinicalClient } from '../intake/records'
+import { breakGlassOpen, openBreakGlass } from '../domain/care-team'
 import { attachment, attachmentResponse } from '../messages/attachments'
 import { audit, commit, day, guard, human, insist, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
 
@@ -7,10 +8,23 @@ export const clinicalActor = (who: Actor) => {
   human(who)
   insist(who.role === 'owner' || !!practitionerId(who), 'clinical_access_required', 403)
 }
-/** Ct 19 Oct: every treating practitioner sees all uploaded chart documents. */
+/** Ct 19 Oct: every treating practitioner sees all uploaded chart documents, and
+ * CHART-013 open break glass reads them too. Uploading still needs a visit. */
 export function documentScope(db: D1Database, who: Actor, clientId: string) {
   return guard(db, `EXISTS(SELECT 1 FROM bm_clients c WHERE c.id=? AND c.erased_at IS NULL AND
-    (?='owner' OR EXISTS(SELECT 1 FROM bm_appointments a WHERE a.client_id=c.id AND a.practitioner_id=?)))`, clientId, who.role, practitionerId(who) ?? '')
+    (?='owner' OR EXISTS(SELECT 1 FROM bm_appointments a WHERE a.client_id=c.id AND a.practitioner_id=?) OR ${breakGlassOpen}))`, clientId, who.role, practitionerId(who) ?? '', clientId, practitionerId(who) ?? '', now())
+}
+
+/** Who reads uploaded documents: the owner, a treating practitioner, or open break glass (with its reason). */
+export async function documentReader(db: D1Database, who: Actor, clientId: string) {
+  clinicalActor(who)
+  if (who.role === 'owner') return { breakGlass: null }
+  const own = practitionerId(who)!
+  insist(await one(db, 'SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL', clientId), 'client_not_found', 404)
+  if (await one(db, 'SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?', clientId, own)) return { breakGlass: null }
+  const glass = await openBreakGlass(db, clientId, own)
+  insist(glass, 'document_not_found', 404)
+  return { breakGlass: glass.reason as string }
 }
 
 export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
@@ -32,7 +46,7 @@ export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
 
 /** Search reads metadata and entered text, never the original file's bytes. */
 export async function documentsFor(db: D1Database, who: Actor, clientId: string) {
-  clinicalActor(who); await clinicalClient(db, who, clientId)
+  await documentReader(db, who, clientId)
   return rows(db, `SELECT id,title,document_type,document_date,search_text,filename,mime,byte_length,sha256,created_at,created_by
     FROM bm_chart_documents WHERE client_id=? ORDER BY document_date DESC,id`, clientId)
 }
@@ -41,7 +55,7 @@ export async function downloadDocument(db: D1Database, who: Actor, key: string) 
   clinicalActor(who)
   const file = await one(db, 'SELECT * FROM bm_chart_documents WHERE id=?', text(key, 'document', 100))
   insist(file, 'document_not_found', 404)
-  await clinicalClient(db, who, file.client_id)
-  await commit(db, who, [documentScope(db, who, file.client_id), audit(db, who, 'chart.document_downloaded', file.client_id, file.id)])
+  const reader = await documentReader(db, who, file.client_id)
+  await commit(db, who, [documentScope(db, who, file.client_id), audit(db, who, 'chart.document_downloaded', file.client_id, file.id, reader.breakGlass ? `break glass: ${reader.breakGlass}` : '')])
   return attachmentResponse({ filename: file.filename, mime: file.mime, content: file.content_base64, digest: file.sha256 })
 }

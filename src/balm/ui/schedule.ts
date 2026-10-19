@@ -1,4 +1,6 @@
+import { visitFeePanel } from './visit-policy'
 import { dailyClosePanel } from './daily-close'
+import { breakGlassNoticePanel } from './care-team'
 import { calendarFeedPanel } from './calendar-feed'
 // The schedule, laid out as the owner-picked Today screen: the day's heading and
 // counts, the clinician columns, and the selected visit's patient panel beside
@@ -96,11 +98,11 @@ function selectedPanel(s: any, c: any, notice: any) {
   if (a.status === 'booked' && mine) {
     actions += `<details><summary>Move this visit</summary>${form('appointment.move', back, hidden('id', a.id) + hidden('version', a.version) + moveFields(s, c, a), 'Move visit')}</details>`
     if (a.series && a.series.remaining > 1) actions += `<details><summary>Move this and the later visits in the series (${a.series.remaining})</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + moveFields(s, c, a, 'rest'), `Move ${a.series.remaining} visits`)}<p class="help">Each keeps its date. If any would overlap or fall outside hours, nothing moves and the dates are listed.</p></details>`
-    if (a.series && a.series.booked > 1) actions += `<details><summary>Move the whole series (${a.series.booked} booked visits)</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + hidden('scope', 'all') + moveFields(s, c, a, 'all'), 'Move whole series')}</details>` + cancelForm('series.cancel_rest', calendarLink(c), hidden('appointmentId', a.id) + hidden('scope', 'all'), `Cancel the whole series (${a.series.booked} booked visits)`, 'Cancel whole series', a.client, a.series.booked)
-    actions += `${cancelForm('appointment.cancel', calendarLink(c), hidden('id', a.id), 'Cancel this visit', 'Cancel visit', a.client)}${a.series && a.series.remaining > 1 ? cancelForm('series.cancel_rest', calendarLink(c), hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, `Cancel ${a.series.remaining} visits`, a.client, a.series.remaining) : ''}<p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
+    if (a.series && a.series.booked > 1) actions += `<details><summary>Move the whole series (${a.series.booked} booked visits)</summary>${form('series.move_rest', back, hidden('appointmentId', a.id) + hidden('scope', 'all') + moveFields(s, c, a, 'all'), 'Move whole series')}</details>` + cancelForm('series.cancel_rest', back, hidden('appointmentId', a.id) + hidden('scope', 'all'), `Cancel the whole series (${a.series.booked} booked visits)`, 'Cancel whole series', a.client, a.series.booked)
+    actions += `${cancelForm('appointment.cancel', back, hidden('id', a.id), 'Cancel this visit', 'Cancel visit', a.client)}${a.series && a.series.remaining > 1 ? cancelForm('series.cancel_rest', back, hidden('appointmentId', a.id), `Cancel this and the rest of the series (${a.series.remaining})`, `Cancel ${a.series.remaining} visits`, a.client, a.series.remaining) : ''}<p class="help">A canceled time at least two hours ahead is offered to the waitlist by email.</p>`
   }
   const history = `<details><summary>Visit history</summary><ol class="plain">${a.history.map((e: any) => `<li>${h(e.action.replace('appointment.', '').replaceAll('_', ' '))} · ${h(e.actor_email)} (${h(e.actor_role)})<br>${stamp(s, e.at)}${e.detail ? ` · ${h(e.detail)}` : ''}</li>`).join('')}</ol></details>`
-  actions = `<div class="visit-actions">${actions}${history}<p class="help"><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p></div>`
+  actions = `<div class="visit-actions">${actions}${visitFeePanel(s, a, back)}${history}<p class="help"><a href="/app/clients/${h(a.client_id)}">Open client file</a> · <a href="${h(calendarLink(c))}">Close</a></p></div>`
   return patientPanel(s, c, a, { visit, primary: primary ? `<div class="primary">${primary}</div>` : '', actions })
 }
 
@@ -136,6 +138,6 @@ export function schedule(s: any, notice: any = {}) {
   const side = selectedPanel(s, c, notice) || (canBook(s) ? bookPanel(s, c, notice) : '')
   const how = `<p class="help cal-help">Times are in ${h(zoneLabel(c.zone))}. ${canBook(s) ? 'Select a visit to change it, drag it to a new time, or select an empty time to book.' : ''} Shaded times are outside the practitioner’s hours.</p>`
   return `<div class="today${side ? '' : ' single'}${c.view === 'week' ? ' week' : ''}"><div class="today-main">${heading(s, c)}${offered}${owner(s) ? setupChecklist(s) : ''}${calendarGrid(s, c)}${calendarAgenda(s, c)}${moveForm(c)}${how}${intro}</div>${side ? `<aside class="today-side">${side}</aside>` : ''}</div>`
-    + `<div class="grid today-more">${dailyClosePanel(s)}${notesToSign(s)}${documentationDailyClose(s)}${listPanel(s, c)}${calendarFeedPanel(s, notice)}</div>`
+    + `<div class="grid today-more">${breakGlassNoticePanel(s)}${dailyClosePanel(s)}${notesToSign(s)}${documentationDailyClose(s)}${listPanel(s, c)}${calendarFeedPanel(s, notice)}</div>`
 }
 

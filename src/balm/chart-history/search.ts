@@ -1,6 +1,6 @@
 import { existingHistory } from './records'
 import { audit, commit, day, insist, integer, optional, practitionerId, type Actor, type Data } from '../domain/model'
-import { clinicalActor, documentsFor, documentScope, documentTypes } from './documents'
+import { clinicalActor, documentReader, documentsFor, documentScope, documentTypes } from './documents'
 
 const PAGE_SIZE = 50
 const fold = (value: string) => value.toLocaleLowerCase('en-US')
@@ -16,16 +16,18 @@ export async function chartHistory(db: D1Database, who: Actor, file: Data, zone:
   const kind = optional(input.historyType, 'history_type', 30) ?? ''
   insist(!kind || historyTypes.some(([key]) => key === kind), 'invalid_history_type')
   const page = input.historyPage ? integer(input.historyPage, 'history_page', 1, 1_000_000) : 1
-  const documents = await documentsFor(db, who, clientId)
+  // A CHART-013 care-team grant reads notes only; uploaded documents need a visit or open break glass.
+  const reader = await documentReader(db, who, clientId).catch(() => null)
+  const documents = reader ? await documentsFor(db, who, clientId) : []
   const records: Data[] = documents.map(d => ({ id:d.id, title:d.title, type:d.document_type, date:d.document_date, text:[d.title,d.filename,d.search_text].join('\n'),
     filename:d.filename, byteLength:d.byte_length, filedBy:d.created_by, url:'/api/balm/chart-documents/'+d.id, action:'Download original', audit:'chart.document_read' }))
   records.push(...existingHistory(file,zone))
   const matching = records.filter(r => (!kind || r.type===kind) && ((!from && !to) || (r.date && (!from || r.date>=from) && (!to || r.date<=to))) && (!query || fold(r.text).includes(fold(query))))
     .sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id))
   const selected = matching.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE)
-  await commit(db, who, [documentScope(db, who, clientId), audit(db, who, 'chart.history_searched', clientId),
+  await commit(db, who, [...(reader ? [documentScope(db, who, clientId)] : []), audit(db, who, 'chart.history_searched', clientId),
     // Existing file readers already audit their records once per request.
-    ...selected.filter(r=>r.audit==='chart.document_read').map(r=>audit(db,who,r.audit,clientId,r.id)),
+    ...selected.filter(r=>r.audit==='chart.document_read').map(r=>audit(db,who,r.audit,clientId,r.id,reader?.breakGlass?`break glass: ${reader.breakGlass}`:'')),
   ])
   return { filters:{historyText:query,historyFrom:from,historyTo:to,historyType:kind}, page, pageSize:PAGE_SIZE, total:matching.length,
     entries:selected.map(({text,audit,...r})=>r) }

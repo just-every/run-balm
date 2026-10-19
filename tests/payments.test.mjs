@@ -4,6 +4,7 @@ import { harness } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { portalBilling, portalLogin } from './portal-billing.mjs'
+import { installmentTick, paymentPlanEdge, recordedAuthorization } from './payment-plan-fixtures.mjs'
 
 const sms = { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', TWILIO_AUTH_TOKEN: 'test-token', TWILIO_FROM: '+15005550006' }
 const tokenOf = url => new URL(url).pathname.split('/')[2]
@@ -11,7 +12,7 @@ const sessionOf = location => location.split('/').pop()
 const pdfText = response => response.text
 
 async function connected(options = {}) {
-  const stripe = fakeProviders(), h = await harness({ outbound: stripe.handler, ...options })
+  const stripe = options.stripe ?? fakeProviders(), h = await harness({ outbound: stripe.handler, ...options })
   try {
     await h.finishSetup()
     const { service, practitioners: [priya] } = await clinic(h)
@@ -275,5 +276,154 @@ test('PORTAL-004: paid and unpaid visits, every current document, portal payment
     assert.doesNotMatch(disconnected.text, />Pay balance</)
     assert.equal((await h.form('/portal/action', { name: 'payment.open' }, cookie)).status, 409)
     assert.equal((await h.send('/portal/statement.pdf', undefined, cookie)).status, 200)
+  } finally { await h.close() }
+})
+
+test('PAY-006: three authorized monthly card charges, consented reminder sequence, human aged review, stops, racing ticks and uncertain charges, with each payment in the patient portal', { timeout: 120_000 }, async () => {
+  const edge = paymentPlanEdge()
+  const { h, stripe, service, priya, reception, client } = await connected({ stripe: edge.stripe, outbound: edge.handler, https: true })
+  try {
+    const authorize = recordedAuthorization()
+    const approve = async (patientId, hours) => {
+      const visit = await pastVisit(h, patientId, priya, service.id, reception.cookie, hours)
+      await h.cmd('appointment.attend', { id: visit }, priya.cookie)
+      const invoice = await h.cmd('invoice.prepare', { appointmentId: visit }, reception.cookie)
+      await h.cmd('invoice.approve', { id: invoice.id }, reception.cookie)
+      return invoice.id
+    }
+    const card = await saveCard(h, stripe, reception, client.id)
+    await h.send(`/pay/${card.token}?setup=${card.session}`)
+    const invoices = []
+    for (const hours of [2, 5, 8]) invoices.push(await approve(client.id, hours))
+    const input = { clientId: client.id, amountCents: 9500, months: 3, firstDue: '2030-01-31', ...authorize }
+    await h.cmd('pay.plan.create', { ...input, authorized: false }, reception.cookie, 400)
+    await h.cmd('pay.plan.create', input, priya.cookie, 403)
+    const key = await h.cmd('agent.create', { label: 'Payment assistant' })
+    assert.equal((await h.send('/api/balm/agent/command', { name: 'pay.plan.create', input }, '', { authorization: 'Bearer ' + key.token })).status, 403)
+    const created = await h.cmd('pay.plan.create', input, reception.cookie)
+    await h.cmd('pay.plan.create', input, reception.cookie, 409)
+    const reminder = await h.cmd('pay.reminders.save', { clientId: client.id, everyDays: 7, firstDue: '2030-01-31', ...authorize }, reception.cookie)
+    await h.cmd('pay.review.save', { afterDays: 2 }, reception.cookie, 403)
+    await h.cmd('pay.review.save', { afterDays: 2 })
+    let file = (await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value
+    assert.deepEqual(file.billing.plans[0].installments.map(i => i.due_on), ['2030-01-31', '2030-02-28', '2030-03-31'])
+    assert.equal(file.billing.plans[0].authorized_by, 'Ava Ng')
+    assert.equal(file.billing.plans[0].authorization_evidence, authorize.evidence)
+    const page = await h.send('/app/clients/' + client.id, undefined, reception.cookie)
+    assert.match(page.text, /Payment plans/)
+    assert.match(page.text, /Stop payment plan/)
+
+    // Racing delivery ticks reserve one installment and one reminder slot.
+    await Promise.all([installmentTick(h, '2030-01-31'), installmentTick(h, '2030-01-31')])
+    let charges = stripe.calls.filter(c => c.path === '/payment_intents')
+    assert.equal(charges.length, 1)
+    assert.equal(charges[0].body.amount, '9500')
+    assert.deepEqual([charges[0].body.off_session, charges[0].body.confirm], ['true', 'true'])
+    assert.match(charges[0].idempotencyKey, /^balm-payment-plan-/)
+    assert.equal(h.mail.filter(m => m.subject.startsWith('Balance reminder')).length, 1)
+    const cookie = await portalLogin(h, 'ava@client.example')
+    let portal = await h.send('/portal/home', undefined, cookie)
+    assert.match(portal.text, /\$190\.00 <span>balance/)
+    assert.match(portal.text, /Your payment plans/)
+    assert.ok(portal.text.includes(file.billing.plans[0].authorization_text))
+    await installmentTick(h, '2030-02-07')
+    assert.equal(h.mail.filter(m => m.subject.startsWith('Balance reminder')).length, 2)
+    for (const mail of h.mail.filter(m => m.subject.startsWith('Balance reminder'))) {
+      assert.ok(mail.text.includes('/portal'))
+      assert.doesNotMatch(mail.text + mail.html, /Ava|Initial consultation|M25|\$190/)
+    }
+    assert.ok((await h.state(reception.cookie)).payments.review.accounts.some(a => a.client_id === client.id), 'the scheduled aged account enters a human review list')
+    const reviewPage = await h.send('/app/invoices', undefined, reception.cookie)
+    assert.equal(reviewPage.status, 200)
+    assert.ok(reviewPage.text.includes(`/app/clients/${client.id}`), 'PAY-006 reception can open the human review list and its patient file')
+    assert.equal((await h.state(priya.cookie)).payments.review, undefined)
+
+    await installmentTick(h, '2030-02-28')
+    portal = await h.send('/portal/home', undefined, cookie)
+    assert.match(portal.text, /\$95\.00 <span>balance/)
+    // The existing portal payment door reduces the third installment's cap.
+    const open = await h.form('/portal/action', { name: 'payment.open' }, cookie)
+    assert.equal(open.status, 303)
+    const checkout = await h.form(open.location + '?do=pay', { amount: '40.00' })
+    assert.equal(checkout.status, 303)
+    const paid = stripe.complete(sessionOf(checkout.location))
+    assert.equal((await h.send(open.location + '?paid=' + paid.id)).status, 200)
+    await Promise.all([installmentTick(h, '2030-03-31'), installmentTick(h, '2030-03-31')])
+    charges = stripe.calls.filter(c => c.path === '/payment_intents')
+    assert.deepEqual(charges.map(c => Number(c.body.amount)), [9500, 9500, 5500])
+    assert.equal(new Set(charges.map(c => c.idempotencyKey)).size, 3)
+    file = (await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value
+    assert.equal(file.billing.plans.find(p => p.id === created.id).status, 'completed')
+    assert.deepEqual(file.billing.plans[0].installments.map(i => i.status), ['paid', 'paid', 'paid'])
+    assert.equal(file.billing.reminders.find(r => r.id === reminder.id).status, 'paid')
+    assert.equal(file.billing.ledger.balanceCents, 0)
+    assert.deepEqual(file.invoices.filter(i => invoices.includes(i.id)).map(i => i.paid_cents), [9500, 9500, 9500])
+    const sentWhenPaid = h.mail.filter(m => m.subject.startsWith('Balance reminder')).length
+    await installmentTick(h, '2030-04-30')
+    assert.equal(h.mail.filter(m => m.subject.startsWith('Balance reminder')).length, sentWhenPaid)
+    assert.equal(stripe.calls.filter(c => c.path === '/payment_intents').length, 3)
+    assert.ok(!(await h.state(reception.cookie)).payments.review.accounts.some(a => a.client_id === client.id))
+    portal = await h.send('/portal/home', undefined, cookie)
+    assert.match(portal.text, /\$0\.00 <span>balance/)
+    const receipts = [...new Set([...portal.text.matchAll(/href="(\/portal\/receipts\/[^" ]+\.pdf)"/g)].map(m => m[1]))]
+    assert.equal(receipts.length, 4)
+    const foreign = await h.cmd('client.save', { firstName: 'Una', lastName: 'Other', email: 'una@patient.example' })
+    const foreignCookie = await portalLogin(h, 'una@patient.example')
+    assert.doesNotMatch((await h.send('/portal/home', undefined, foreignCookie)).text, /Your payment plans/)
+    for (const payment of file.billing.payments) {
+      assert.ok(receipts.includes(`/portal/receipts/${payment.id}.pdf`))
+      const receipt = await h.send(`/portal/receipts/${payment.id}.pdf`, undefined, cookie)
+      assert.equal(receipt.status, 200)
+      for (const text of ['Ava Ng', 'Visa', '4242', '$' + (payment.amount_cents / 100).toFixed(2)]) assert.ok(receipt.text.includes(text), text)
+      assert.equal((await h.send(`/portal/receipts/${payment.id}.pdf`, undefined, foreignCookie)).status, 404)
+    }
+    const statement = await h.send('/portal/statement.pdf', undefined, cookie)
+    assert.equal(statement.status, 200)
+    assert.match(statement.text, /Balance due[^]*\$0\.00/)
+    assert.equal(file.billing.ledger.lines.filter(l => l.kind === 'card').length, 4)
+
+    // An unpaid account keeps its reminders and human review entry until a
+    // person stops the sequence; stopping a plan prevents every future charge.
+    const foreignCard = await saveCard(h, stripe, reception, foreign.id)
+    await h.send(`/pay/${foreignCard.token}?setup=${foreignCard.session}`)
+    await approve(foreign.id, 11)
+    const foreignAuth = recordedAuthorization('Una Other')
+    const stoppedPlan = await h.cmd('pay.plan.create', { ...input, clientId: foreign.id, ...foreignAuth }, reception.cookie)
+    const stoppedReminder = await h.cmd('pay.reminders.save', { clientId: foreign.id, everyDays: 7, firstDue: '2030-05-01', ...foreignAuth }, reception.cookie)
+    await h.cmd('pay.plan.stop', { clientId: foreign.id, id: stoppedPlan.id, reason: 'Patient asked to stop card charges' }, reception.cookie)
+    await installmentTick(h, '2030-05-01')
+    await installmentTick(h, '2030-05-08')
+    const beforeStop = h.mail.filter(m => m.subject.startsWith('Balance reminder')).length
+    assert.equal(beforeStop, sentWhenPaid + 2)
+    assert.ok((await h.state(reception.cookie)).payments.review.accounts.some(a => a.client_id === foreign.id))
+    await h.cmd('pay.reminders.stop', { clientId: foreign.id, id: stoppedReminder.id, reason: 'Patient requested no more reminders' }, reception.cookie)
+    await installmentTick(h, '2030-06-01')
+    assert.equal(h.mail.filter(m => m.subject.startsWith('Balance reminder')).length, beforeStop)
+    assert.equal(stripe.calls.filter(c => c.path === '/payment_intents').length, 3)
+
+    // A real Stripe success with a lost response is never charged again, even
+    // on later months. Its webhook can still recover the existing receipt.
+    const uncertainPlan = await h.cmd('pay.plan.create', { ...input, clientId: foreign.id, firstDue: '2030-07-01', ...foreignAuth }, reception.cookie)
+    edge.loseNextPaymentResponse()
+    await installmentTick(h, '2030-07-01')
+    await installmentTick(h, '2030-07-01')
+    await installmentTick(h, '2030-08-01')
+    assert.equal(stripe.calls.filter(c => c.path === '/payment_intents').length, 4)
+    let uncertainFile = (await h.send('/api/balm/clients/' + foreign.id, undefined, reception.cookie)).value
+    const installment = uncertainFile.billing.plans.find(p => p.id === uncertainPlan.id).installments[0]
+    assert.equal(installment.status, 'review')
+    assert.equal(uncertainFile.billing.payments[0].status, 'processing')
+    assert.ok((await h.state(reception.cookie)).payments.review.attention.some(i => i.id === installment.id))
+    const intent = [...stripe.intents.values()].find(i => i.metadata.balm_payment === installment.payment_id)
+    const event = stripe.event('payment_intent.succeeded', intent)
+    assert.equal((await h.send('/api/balm/stripe/webhook', JSON.parse(event.body), '', { 'stripe-signature': event.signature, origin: '' })).status, 200)
+    await installmentTick(h, '2030-08-01')
+    uncertainFile = (await h.send('/api/balm/clients/' + foreign.id, undefined, reception.cookie)).value
+    assert.equal(uncertainFile.billing.ledger.balanceCents, 0)
+    assert.equal(stripe.calls.filter(c => c.path === '/payment_intents').length, 4)
+    assert.equal((await h.send(`/portal/receipts/${installment.payment_id}.pdf`, undefined, foreignCookie)).status, 200)
+    const auditedFile = (await h.send('/api/balm/clients/' + foreign.id, undefined, h.owner)).value
+    assert.ok(auditedFile.audit.some(a => a.action === 'payment_plan.authorized'))
+    assert.ok(auditedFile.audit.some(a => a.action === 'balance_reminders.stopped'))
   } finally { await h.close() }
 })

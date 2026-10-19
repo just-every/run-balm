@@ -24,5 +24,6 @@ export function chartHistoryPanel(s: any, f: any) {
   return panel('Chart history',`<p>Search the clinical history you can read. Uploaded documents are available to every practitioner treating this patient. Dates include both selected days.</p>${search}`
     + `<p class="help">${h(history.total)} matching record${history.total===1?'':'s'} · page ${h(history.page)}</p>${list||'<p class="empty">No matching records.</p>'}`
     + `<nav class="pager" aria-label="Chart history pages">${history.page>1?pager(history.page-1,'Previous records'):''}${history.page*history.pageSize<history.total?pager(history.page+1,'Next records'):''}</nav>`
-    + `<details><summary>Attach a chart document</summary>${upload}</details>`,'full','chart-history')
+    // Uploading needs a visit; CHART-013 care-team access alone only reads.
+    + (f.careAccess?.teamOnly ? '' : `<details><summary>Attach a chart document</summary>${upload}</details>`),'full','chart-history')
 }

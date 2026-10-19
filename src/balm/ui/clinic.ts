@@ -1,3 +1,6 @@
+import { visitPolicyPanel } from './visit-policy'
+import { paymentReviewPanel } from './payment-plans'
+import { followupSettingsPanel } from './followups'
 import { holidaysPanel } from './holidays'
 import { clinicIdentityFields } from './clinic-identity'
 import { documentationSettingsPanel } from './documentation'
@@ -42,7 +45,7 @@ export function clinic(s: any, notice: any = {}) {
   const sent = invited ? `<div class="notice" role="status"><strong>Invitation sent to ${h(invited.name)}.</strong> ${s.local
     ? `Balm is running on this computer, so no email leaves it. To work as ${h(invited.name)}, run <code>rer dev --as ${h(invited.email)}</code> in the Balm folder and open the RER_OPEN link it prints.`
     : `Balm emailed a sign-in link to ${h(invited.email)}. They select it to join; it works once. Select <strong>Invite to sign in</strong> again to send a new link.`}</div>` : ''
-  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${you(s)}${settings}${holidaysPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${clinicPayments(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
+  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${you(s)}${settings}${holidaysPanel(s)}${visitPolicyPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${followupSettingsPanel(s)}${clinicPayments(s)}${paymentReviewPanel(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
 }
 
 function serviceFields(x?: any) {

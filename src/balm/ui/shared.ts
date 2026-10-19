@@ -14,6 +14,7 @@ export const check = (name: string, label: string, attrs = 'required') => `<labe
 export const form = (command: string, path: string, body: string, button: string, secondary = false) => `<form method="post" action="/app/action?name=${encodeURIComponent(command)}&amp;returnTo=${encodeURIComponent(path)}">${body}<button type="submit"${secondary ? ' class="secondary"' : ''}>${h(button)}</button></form>`
 /** A cancel button that first asks: the person checks to confirm, and is told who gets emailed. */
 export const cancelForm = (command: string, path: string, fields: string, summary: string, button: string, client: string, count = 1) => `<details class="confirm"><summary>${h(summary)}</summary>${form(command, path, fields
+  + field('reason', 'Reason for cancellation', '', 'text', 'required maxlength="500"')
   + `<label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel ${count === 1 ? 'this visit' : `these ${count} visits`}. Balm emails ${h(client)} that ${count === 1 ? 'it is' : 'they are'} canceled, if their file has an email address.</span></label>`, button, true)}</details>`
 /** `id` anchors the card, for links such as the day view's patient tabs and the case agent's citations. */
 export const panel = (title: string, body: string, extra = '', id = '') => `<section class="panel${extra ? ' ' + extra : ''}"${id ? ` id="${h(id)}"` : ''}><h2>${h(title)}</h2>${body}</section>`

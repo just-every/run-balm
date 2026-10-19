@@ -1,3 +1,4 @@
+import { cancellationStatements, getVisitPolicy } from '../scheduling/policy'
 // Recurring visits: one request books a whole series (e.g. twice a week for six
 // weeks). Every date is checked before anything is saved; a date that would
 // overlap or fall outside hours is shown, and the series saves only when each
@@ -117,11 +118,13 @@ async function rest(db: D1Database, who: Actor, input: Data) {
 /** Cancels this visit and every later booked visit in its series. */
 export async function cancelRest(db: D1Database, who: Actor, input: Data) {
   const { row, later } = await rest(db, who, input)
+  const policy = await getVisitPolicy(db), reason = text(input.reason, 'cancellation_reason', 500)
   await commit(db, who, [
     ...later.flatMap(a => [
       guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", a.id, a.version),
       stmt(db, "UPDATE bm_appointments SET status='cancelled',version=version+1 WHERE id=?", a.id),
       audit(db, who, 'appointment.cancelled', a.client_id, a.id, 'rest of series'),
+      ...cancellationStatements(db, who, a, reason, policy),
     ]),
     audit(db, who, 'series.cancelled_rest', row.client_id, row.series_id, `${later.length} visits`),
   ])

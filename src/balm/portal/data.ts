@@ -1,3 +1,4 @@
+import { patientPlans } from '../payments/plans'
 import { periodSuperbillPdf } from '../payments/superbill-period'
 import { type Bindings } from '../../auth.server'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, text, type Data } from '../domain/model'
@@ -34,6 +35,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     past: appointments.filter(a => a.end_at < at || a.status !== 'booked').reverse(),
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
+    paymentPlans: await patientPlans(db, patient.clientId),
     billing: { ...balance, block, statementUrl: '/portal/statement.pdf', receipts, superbills },
   }
 }

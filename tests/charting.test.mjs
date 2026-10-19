@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
+import { mriUpload } from './chart-document-fixtures.mjs'
 
 const daily = { subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
 const view = async (h, clientId, cookie) => (await h.send('/api/balm/clients/' + clientId, undefined, cookie)).value
@@ -343,4 +344,79 @@ test('CHART-009: immutable MRI scan and photos, chart text/date/type search, sha
   } while(before)
   for(const action of ['chart.document_uploaded','chart.history_searched','chart.document_read','chart.document_downloaded'])assert.ok(audit.some(r=>r.action===action),action)
   assert.ok(!JSON.stringify(audit).includes('ligament')&&!JSON.stringify(audit).includes('knee-MRI-report'))
+}))
+
+test('CHART-013: the owner grants and revokes care-team note access, and break glass opens a chart for 12 hours with the owner notified and every read audited', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam, lee] } = await clinic(h, ['Priya', 'Sam', 'Lee'])
+  const reception = await h.staff('Rosa', 'reception')
+  const patient = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1984-05-06' })
+  const visit = await pastVisit(h, patient.id, priya, service.id)
+  const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Private Priya narrative: right knee effusion.' }, priya.cookie)
+  await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  const mri = await h.cmd('chart.document.upload', mriUpload(patient.id, '2026-10-01'))
+  const file = cookie => h.send('/api/balm/clients/' + patient.id, undefined, cookie)
+  const download = cookie => h.mf.dispatchFetch(h.origin + '/api/balm/chart-documents/' + mri.id, { headers: { cookie } })
+  const ownerAudit = async () => (await file(h.owner)).value.audit
+
+  // Outside the chart: refused, with only the emergency form offered.
+  assert.equal((await file(sam.cookie)).status, 404)
+  const refused = await h.send('/app/clients/' + patient.id, undefined, sam.cookie)
+  assert.equal(refused.status, 404); assert.match(refused.text, /name=chart\.break_glass/); assert.ok(!refused.text.includes('Private Priya narrative'))
+
+  // Grant: only the owner; the grantee reads every note, read-only, and nothing else of the file.
+  for (const cookie of [reception.cookie, priya.cookie]) await h.cmd('care_team.grant', { clientId: patient.id, practitionerId: sam.id }, cookie, 403)
+  const grant = await h.cmd('care_team.grant', { clientId: patient.id, practitionerId: sam.id })
+  await h.cmd('care_team.grant', { clientId: patient.id, practitionerId: sam.id }, h.owner, 409)
+  const granted = (await file(sam.cookie)).value
+  assert.deepEqual(granted.notes.map(n => [n.id, n.mine]), [[note.id, false]]); assert.match(granted.notes[0].revisions[0].body, /Private Priya narrative/)
+  assert.equal(granted.careAccess.teamOnly, true); assert.deepEqual([granted.intake, granted.plans, granted.appointments], [[], [], []])
+  assert.ok(!granted.chartHistory.entries.some(e => e.id === mri.id), 'a grant reads notes, not uploaded documents')
+  assert.equal((await download(sam.cookie)).status, 404)
+  await h.cmd('note.amend', { id: note.id, body: 'Sam rewrites it', reason: 'Correction' }, sam.cookie, 404)
+  await h.cmd('note.addendum', { id: note.id, body: 'Sam adds to it' }, sam.cookie, 404)
+  const page = await h.send('/app/clients/' + patient.id, undefined, sam.cookie)
+  assert.equal(page.status, 200); assert.match(page.text, /Private Priya narrative/); assert.match(page.text, /granted you access/)
+  assert.ok((await ownerAudit()).some(a => a.action === 'care_team.granted' && a.subject_id === grant.id))
+  assert.ok((await ownerAudit()).some(a => a.action === 'note.read' && a.actor_email === sam.email && /care team grant/.test(a.detail)))
+  assert.match((await h.send('/app/clients/' + patient.id, undefined, h.owner)).text, /id="grant-/)
+
+  // Revoke: refused again.
+  await h.cmd('care_team.revoke', { id: grant.id }, sam.cookie, 403)
+  await h.cmd('care_team.revoke', { id: grant.id })
+  assert.equal((await file(sam.cookie)).status, 404)
+  assert.ok((await ownerAudit()).some(a => a.action === 'care_team.revoked' && a.subject_id === grant.id))
+
+  // Break glass: practitioners only, with a real reason, for 12 hours of notes and documents.
+  const reason = 'Covering Priya today; patient called with acute knee swelling.'
+  await h.cmd('chart.break_glass', { clientId: patient.id, reason }, reception.cookie, 403)
+  await h.cmd('chart.break_glass', { clientId: patient.id, reason: 'urgent' }, lee.cookie, 400)
+  const before = Date.now(), glass = await h.cmd('chart.break_glass', { clientId: patient.id, reason }, lee.cookie)
+  const hours = (Date.parse(glass.expiresAt) - before) / 3600_000
+  assert.ok(Math.abs(hours - 12) < 1 / 3600, 'open for 12 hours')
+  const emergency = (await file(lee.cookie)).value
+  assert.match(emergency.notes[0].revisions[0].body, /Private Priya narrative/); assert.equal(emergency.careAccess.breakGlass.reason, reason)
+  assert.ok(emergency.chartHistory.entries.some(e => e.id === mri.id))
+  assert.equal((await download(lee.cookie)).status, 200)
+  await h.cmd('note.write', { clientId: patient.id, body: 'Lee writes into the chart' }, lee.cookie, 404)
+  const audit = await ownerAudit()
+  assert.ok(audit.some(a => a.action === 'chart.break_glass' && a.actor_email === lee.email && a.detail.includes(reason)))
+  assert.ok(audit.some(a => a.action === 'note.break_glass_read' && a.subject_id === note.id && a.detail === 'break glass: ' + reason))
+  assert.ok(audit.some(a => a.action === 'chart.document_downloaded' && a.actor_email === lee.email && a.detail === 'break glass: ' + reason))
+
+  // The owner's notice: names and the reason, labelled as an in-app notice, never note text.
+  const notices = (await h.state()).breakGlass
+  assert.deepEqual(notices.map(n => [n.id, n.practitioner, n.client, n.reason]), [[glass.id, 'Lee', 'Marisol Diaz', reason]])
+  assert.ok(!JSON.stringify(notices).includes('Private Priya narrative'))
+  const today = (await h.send('/app', undefined, h.owner)).text
+  assert.match(today, /id="break-glass-notices"/); assert.match(today, /Notified in Balm/)
+  for (const cookie of [lee.cookie, reception.cookie]) assert.equal((await h.state(cookie)).breakGlass, null)
+
+  // The owner ends it early, then acknowledges the notice.
+  await h.cmd('chart.break_glass.end', { id: glass.id }, lee.cookie, 403)
+  await h.cmd('chart.break_glass.end', { id: glass.id })
+  assert.equal((await file(lee.cookie)).status, 404); assert.equal((await download(lee.cookie)).status, 404)
+  await h.cmd('chart.break_glass.acknowledge', { id: glass.id })
+  assert.deepEqual((await h.state()).breakGlass, [])
+  assert.ok((await ownerAudit()).some(a => a.action === 'chart.break_glass_ended' && a.subject_id === glass.id))
 }))

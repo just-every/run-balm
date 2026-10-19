@@ -90,12 +90,15 @@ export async function accessReport(db: D1Database, who: Actor, clientId: string,
   return { ...period, access, disclosures }
 }
 
-/** Fixed columns; quote all cells and neutralize spreadsheet formulas in external text. */
+/** Quotes every cell and neutralizes spreadsheet formulas in external text. */
+export function csvCell(value: unknown) {
+  const raw = String(value ?? ''), safe = /^[\s]*[=+@-]/.test(raw) ? "'" + raw : raw
+  return '"' + safe.replace(/"/g, '""') + '"'
+}
+
+/** Fixed columns; every cell goes through csvCell. */
 export function reportCsv(report: Data, kind: 'disclosures' | 'access') {
-  const cell = (value: unknown) => {
-    const raw = String(value ?? ''), safe = /^[\s]*[=+@-]/.test(raw) ? "'" + raw : raw
-    return '"' + safe.replace(/"/g, '""') + '"'
-  }
+  const cell = csvCell
   const headers = ['kind', 'at', 'actor', 'role', 'action', 'subject', 'recipient', 'purpose', 'basis', 'records', 'recorded_at']
   const records: unknown[][] = (kind === 'access' ? (report.access ?? []).map((a: Data) => ['access', a.at, a.actor_email, a.actor_role, a.action, a.subject_id, '', '', '', '', '']) : [])
     .concat((report.disclosures ?? []).map((d: Data) => ['disclosure', d.released_at, d.recorded_by, 'owner', 'disclosure.recorded', d.id, d.recipient, d.purpose, d.basis, d.records, d.recorded_at]))

@@ -6,6 +6,8 @@ import { clinic } from './clinic'
 import { intakeForms } from './intake'
 import { insurancePage } from './insurance'
 import { casesPage } from './cases'
+import { reportsPage } from './reports'
+import { breakGlassRequest } from './care-team'
 import { insuranceBookingNotice } from './insurance-shared'
 import { invoices } from './invoices'
 import { movein } from './import'
@@ -23,7 +25,7 @@ import { waitlist } from './waitlist'
 import { browserZoneScript, timeZoneStep } from './time-zone'
 import { intakeSignatureScript } from './intake-patient'
 
-type Notice = { message?: string; error?: string; result?: any; invited?: string | null; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
+type Notice = { breakGlass?: string; message?: string; error?: string; result?: any; invited?: string | null; ask?: Record<string, string>; builder?: { title: string; rows: any[] } }
 
 const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))))
 /** `script` is one inline script the page runs, allowed by its hash alone. The theme file carries the tokens and fonts; the style is allowed by its hash. */
@@ -41,12 +43,14 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   // A new install opens on the time zone step until the owner saves one.
   const zoneUnset = !zoneOf(state)
   const tab = tabs.find(t => t.url === current)
-  const title = zoneUnset ? 'Clinic time zone' : current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tab?.label ?? 'Page unavailable'
+  const title = zoneUnset ? 'Clinic time zone' : notice.breakGlass ? 'Chart outside your care' : current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tab?.label ?? 'Page unavailable'
   const content = zoneUnset ? timeZoneStep(state, allowed ? path : '/app') : !allowed ? '<div class="empty-state">' + icon('shield') + '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><a class="button secondary" href="/app">Open the schedule</a></div>'
+    : notice.breakGlass ? breakGlassRequest(notice.breakGlass)
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
         : current === '/app/insurance' ? insurancePage(state, notice)
         : current === '/app/cases' ? casesPage(state)
+        : current === '/app/reports' ? reportsPage(state)
         : current === '/app/invoices' ? invoices(state)
           : current === '/app/clinic' ? clinic(state, notice)
             : current === '/app/intake' ? intakeForms(state, notice)

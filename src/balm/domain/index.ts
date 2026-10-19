@@ -1,5 +1,6 @@
 import { saveHoliday } from './holidays'
 import { dailyClose } from '../reports/access'
+import { breakGlassNotices } from './care-team'
 import { alertsForClients } from './alerts'
 import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
@@ -47,7 +48,7 @@ export async function command(db: D1Database, who: Actor, name: string, input: D
 /** Role-scoped working state. It never carries intake answers or note text. */
 export async function snapshot(db: D1Database, who: Actor) {
   const owner = who.role === 'owner', desk = owner || who.role === 'agent' || who.staffRole === 'reception', own = practitionerId(who)
-  const settings = await one(db, "SELECT holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
+  const settings = await one(db, "SELECT cancellation_notice_hours,late_cancel_fee_cents,no_show_fee_cents,holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
   const staff = await rows(db, owner ? "SELECT s.*,EXISTS(SELECT 1 FROM oa_operators o WHERE lower(o.email)=lower(s.email) AND o.status IN ('active','invited')) AS can_sign_in FROM bm_staff s WHERE s.erased_at IS NULL ORDER BY s.name" : 'SELECT id,name,role,profession,credentials FROM bm_staff WHERE active=1 AND erased_at IS NULL ORDER BY name')
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')
@@ -71,5 +72,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

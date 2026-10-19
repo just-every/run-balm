@@ -23,7 +23,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
     if (path === '/portal') {
       if (request.method === 'POST') return renderPortal('signin', await requestPortalLink(env, request, input.email))
       const patient = await portalPatient(env.DB, request).catch(() => null)
-      return patient ? redirect('/portal/home') : renderPortal('signin', {})
+      return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : '')) : renderPortal('signin', { notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : '' })
     }
     const patient = await portalPatient(env.DB, request)
     const attachment = path.match(/^\/portal\/messages\/attachments\/([\w-]+)$/)
@@ -47,7 +47,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       if (result && 'redirect' in result) return redirect(result.redirect)
       return redirect('/portal/home?saved=1' + (input.name === 'message.send' ? '#messages' : '#program'))
     }
-    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient), notice: url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
+    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient), notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Your updated visit is listed below.' : url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
     return renderPortal('signin', { error: 'This page is not available.' }, 404)
   } catch (error) {
     const status = Number((error as any)?.status) || 500

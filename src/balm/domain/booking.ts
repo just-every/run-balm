@@ -1,3 +1,4 @@
+import { cancellationStatements, feeProposalStatements, getVisitPolicy } from '../scheduling/policy'
 import { allocateIntake } from './intake-requests'
 import { attendanceStatements } from './attendance'
 import { phoneNumber } from './us-clinic'
@@ -44,11 +45,11 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
 }
 
 /** Public: open slots for one practitioner and service over a week from a clinic-local date. */
-export async function openSlots(db: D1Database, input: Data) {
+export async function openSlots(db: D1Database, input: Data, exclude: string[] = []) {
   const clinic = await settings(db)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   const from = input.from ? day(input.from, 'from') : hostDateAt(new Date(), clinic.time_zone)
-  const slots = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false), fromHostDate: from, days: 7 })
+  const slots = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, exclude), fromHostDate: from, days: 7 })
   return { from, next: datePlus(from, 7), timeZone: clinic.time_zone, practitioner, service, slots }
 }
 
@@ -60,6 +61,14 @@ function instant(value: unknown) {
   const v = text(value, 'start', 40)
   insist(/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,3})?)?Z$/.test(v) && Number.isFinite(Date.parse(v)), 'invalid_start')
   return new Date(v)
+}
+/** Patient moves use the online slot engine, excluding only their existing appointment. */
+export async function patientPlacement(db: D1Database, row: Data, input: Data) {
+  const clinic = await settings(db), start = instant(input.start)
+  const end = new Date(start.getTime() + Date.parse(row.end_at) - Date.parse(row.start_at))
+  const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), clinic.time_zone, false, [row.id])
+  insist(checkSlot(engine, start, end, clinic.time_zone).valid, 'slot_unavailable', 409)
+  return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
 /** Same-batch fences: neither the practitioner nor the room holds another live visit then. */
 export function placementGuards(db: D1Database, v: { practitionerId: unknown; roomId?: unknown; startAt: string; endAt: string; except?: string }) {
@@ -190,16 +199,19 @@ export async function visibleAppointment(db: D1Database, who: Actor, key: unknow
   return row
 }
 export async function setAppointmentStatus(db: D1Database, who: Actor, input: Data, status: 'cancelled' | 'attended' | 'no_show') {
-  need(who, 'owner', 'reception', 'practitioner');
+  need(who, 'owner', 'reception', 'practitioner'); human(who)
   const row = await visibleAppointment(db, who, input.id)
   insist(row.status === 'booked', 'appointment_not_booked', 409)
   if (status !== 'cancelled') insist(Date.parse(row.start_at) <= Date.now() + 3600_000, 'appointment_not_started', 409)
   const started = status === 'attended' ? await attendanceStatements(db, who, row) : []
+  const policy = await getVisitPolicy(db)
+  const policyWrites = status === 'cancelled' ? cancellationStatements(db, who, row, input.reason, policy) : status === 'no_show' ? feeProposalStatements(db, who, row, status, policy) : []
   await commit(db, who, [
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, row.version),
     stmt(db, "UPDATE bm_appointments SET status=?,version=version+1 WHERE id=? AND status='booked' AND version=?", status, row.id, row.version),
     guard(db, 'changes()=1'),
     ...started,
+    ...policyWrites,
     audit(db, who, 'appointment.' + status, row.client_id, row.id),
   ])
   return { id: row.id, status }

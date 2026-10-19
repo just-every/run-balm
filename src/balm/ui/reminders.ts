@@ -1,5 +1,6 @@
+import { localTime } from '../domain/invoices'
 import { smsNotSetUp } from '../sms'
-import { empty, entry, field, form, h, hidden, panel, stamp, status, when } from './shared'
+import { empty, entry, field, form, h, hidden, panel, select, stamp, status, when } from './shared'
 
 export function reminderSettingsPanel(s: any) {
   const r = s.reminders
@@ -28,5 +29,6 @@ export function visitReplyPage(data: any) {
   const a = data.appointment, s = { settings: { time_zone: a.time_zone } }
   return `<h1>Your appointment</h1><p>${h(a.clinic_name)}<br>${when(s, a.start_at)}</p>`
     + (a.patient_response === 'confirmed' ? '<div class="notice" role="status">Your visit is confirmed. The clinic can see your confirmation.</div>' : a.patient_response === 'change_requested' ? '<div class="notice" role="status">Your request for a new time is saved. The clinic will contact you; your current time stays booked until it is changed.</div>' : '<p>Let the clinic know in one reply.</p>')
+    + (data.reschedule ? `<details><summary>Choose a new appointment time</summary>${data.reschedule.canMove ? `<p>Choose a time at least ${h(data.reschedule.policy.noticeHours)} hours ahead. Your visit and intake stay on the same record.</p><form method="post" action="/visit/${h(data.token)}">${hidden('action', 'move')}${select('start', 'Available appointment times', data.reschedule.slots.map((slot: any) => [slot.startAt, localTime(slot.startAt, a.time_zone)]))}<button type="submit">Move my appointment</button></form><p><a href="/visit/${h(data.token)}?from=${h(data.reschedule.next)}">Next week</a></p>` : `<p>Contact the clinic to change this visit inside the ${h(data.reschedule.policy.noticeHours)}-hour notice window.</p>`}</details>` : '')
     + `<form method="post" action="/visit/${h(data.token)}"><div class="actions"><button name="reply" value="confirmed">Confirm my visit</button><button class="secondary" name="reply" value="change_requested">Ask for a new time</button></div></form><p class="help">This private link works until your visit starts. If the clinic moves or cancels it, this link stops working.</p>`
 }
