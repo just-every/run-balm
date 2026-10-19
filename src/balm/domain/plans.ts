@@ -96,7 +96,7 @@ export async function certifyPlan(db: D1Database, link: string, input: Data) {
 export async function plansFor(db: D1Database, who: Actor, clientId: string) {
   const clinical = who.role === 'owner' || !!practitionerId(who)
   return (await rows(db, 'SELECT * FROM bm_plans_of_care WHERE client_id=? ORDER BY created_at DESC', clientId)).map(p => ({
-    id: p.id, status: p.status, sentAt: p.sent_at, createdAt: p.created_at, physicianName: p.physician_name, physicianEmail: p.physician_email,
+    id: p.id, authorId: p.author_id, status: p.status, sentAt: p.sent_at, createdAt: p.created_at, physicianName: p.physician_name, physicianEmail: p.physician_email,
     certifiedAt: p.certified_at, certifierName: p.certifier_name, certifierCredentials: p.certifier_credentials, certifierNpi: p.certifier_npi,
     therapistName: p.therapist_name, therapistCredentials: p.therapist_credentials, mine: p.author_id === practitionerId(who), linkExpiresAt: p.sign_token_expires_at,
     content: clinical ? JSON.parse(p.content as string) : null, sha256: p.content_sha256,

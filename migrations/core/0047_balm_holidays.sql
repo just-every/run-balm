@@ -1,0 +1,1 @@
+ALTER TABLE bm_settings ADD COLUMN holidays TEXT NOT NULL DEFAULT '[]';

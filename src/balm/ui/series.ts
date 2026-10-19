@@ -11,8 +11,9 @@ const clockIn = (iso: string, zone: string) => new Intl.DateTimeFormat('en-US', 
 
 /** Why a date cannot be booked, in plain words. */
 export function problemText(o: any, zone: string) {
-  const clash = o.clash ? ` ${clockIn(o.clash.start_at, zone)}–${clockIn(o.clash.end_at, zone)} (${o.clash.service})` : ''
+  const clash = o.clash?.start_at ? ` ${clockIn(o.clash.start_at, zone)}–${clockIn(o.clash.end_at, zone)} (${o.clash.service})` : ''
   switch (o.problem) {
+    case 'clinic_holiday': return `Clinic closed: ${o.clash?.name ?? 'holiday'}`
     case 'practitioner_already_booked': return `Overlaps another visit${clash}`
     case 'room_in_use': return `The room is booked${clash}`
     case 'outside_practitioner_hours': return 'Outside the practitioner’s hours'
@@ -22,16 +23,18 @@ export function problemText(o: any, zone: string) {
   }
 }
 
-type Defaults = { clientSelect?: string; clientId?: string; practitionerId?: string; roomId?: string; firstDate?: string; time?: string }
+type Defaults = { clientSelect?: string; clientId?: string; practitionerId?: string; roomId?: string; firstDate?: string; time?: string; plans?: any[]; planId?: string }
 export function seriesForm(s: any, back: string, d: Defaults) {
   const choices = practitioners(s).filter(p => s.actor.role === 'owner' || s.actor.staffRole === 'reception' || p.id === s.actor.staffId)
   const roomList = rows(s, 'rooms').filter(r => r.active === undefined || r.active)
-  return form('series.preview', back, (d.clientId ? hidden('clientId', d.clientId) : d.clientSelect ?? '')
+  const plans = (d.plans ?? []).filter(p => p.content && (s.actor.role === 'owner' || p.mine))
+  const selected = plans.find(p => p.id === d.planId)
+  return form('series.preview', back, (selected ? hidden('planId', selected.id) + `<p>From the signed plan: ${h(selected.content.frequencyPerWeek)} visits a week for ${h(selected.content.durationWeeks)} weeks, starting ${h(dateLabel(selected.content.startDate))}. Choose the treatment weekdays.</p>` : plans.length ? select('planId', 'Plan of care cadence', [['', 'Manual pattern'], ...plans.map(p => [p.id, `${p.therapistName}: ${p.content.frequencyPerWeek} times/week for ${p.content.durationWeeks} weeks from ${p.content.startDate}`] as [unknown, unknown])], d.planId ?? '', '') + '<p class="help">Selecting a plan uses its start date and duration. Choose exactly its number of weekdays and its treating practitioner; every date is reviewed before booking.</p>' : '') + (d.clientId ? hidden('clientId', d.clientId) : d.clientSelect ?? '')
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), d.practitionerId) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
     + (roomList.length ? select('roomId', 'Room', [['', 'No room'], ...roomList.map(r => [r.id, r.name])] as [unknown, unknown][], d.roomId ?? '', '') : '')
     + `<fieldset class="weekdays"><legend>Every</legend>${weekdayNames.map((name, i) => `<label class="check"><input type="checkbox" name="weekday_${i}" value="on"><span>${name}</span></label>`).join('')}</fieldset>`
-    + `<div class="pair">${field('time', 'Start time', d.time ?? '', 'time', 'required step="300"')}${field('weeks', 'For how many weeks', 6, 'number', 'required min="1" max="26"')}</div>`
-    + field('firstDate', 'Starting', d.firstDate ?? '', 'date', 'required') + '<p class="help">Next you see every date, and any that would overlap or fall outside hours, before anything is booked.</p>', 'Check the dates')
+    + `<div class="pair">${field('time', 'Start time', d.time ?? '', 'time', 'required step="300"')}${selected ? hidden('weeks', selected.content.durationWeeks) : field('weeks', 'For how many weeks', 6, 'number', 'required min="1" max="52"')}</div>`
+    + (selected ? hidden('firstDate', selected.content.startDate) : field('firstDate', 'Starting', d.firstDate ?? '', 'date', 'required')) + '<p class="help">Next you see every date, and any that would overlap or fall outside hours, before anything is booked.</p>', 'Check the dates')
 }
 
 /** The review of every date, or the booked series. */
@@ -43,9 +46,9 @@ export function seriesResult(s: any, notice: any, back: string) {
   }
   if (!r?.preview) return ''
   const zone = r.timeZone, free = r.occurrences.filter((o: any) => !o.problem).length
-  const base = hidden('clientId', r.clientId) + hidden('practitionerId', r.practitionerId) + hidden('serviceId', r.serviceId) + hidden('roomId', r.roomId ?? '')
+  const base = hidden('planId', r.pattern.planId ?? '') + hidden('clientId', r.clientId) + hidden('practitionerId', r.practitionerId) + hidden('serviceId', r.serviceId) + hidden('roomId', r.roomId ?? '')
     + hidden('weekdays', r.pattern.weekdays.join(',')) + hidden('weeks', r.pattern.weeks) + hidden('firstDate', r.pattern.firstDate) + hidden('time', r.pattern.time)
-  const table = r.occurrences.map((o: any, i: number) => `<tr class="${o.problem ? (o.skip ? 'skipped' : 'conflict') : ''}"><td>${hidden('date_' + i, o.date)}${h(dateLabel(o.date))}</td>`
+  const table = r.occurrences.map((o: any, i: number) => `<tr class="${o.problem ? (o.skip ? 'skipped' : 'conflict') : ''}"><td>${field('date_' + i, 'Visit date ' + (i + 1), o.date, 'date', 'required')}</td>`
     + `<td><input aria-label="Start time ${h(dateLabel(o.date))}" name="time_${i}" type="time" step="300" value="${h(o.time)}" required></td>`
     + `<td>${o.problem ? `<strong>${h(problemText(o, zone))}</strong>` : 'Free'}</td>`
     + `<td><label class="check"><input type="checkbox" name="skip_${i}" value="on"${o.skip ? ' checked' : ''}><span>Skip</span></label></td></tr>`).join('')

@@ -6,7 +6,7 @@ import { clinic, pastVisit, visitDate } from './clinic.mjs'
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
 const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
 
-test('a recurring series shows its overlapping date before saving, books in one step, and moves or cancels one visit or the rest', () => run(async h => {
+test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series booking, one/rest/all moves and cancellation', () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam, jordan] } = await clinic(h, ['Priya', 'Sam', 'Jordan'])
   const room = await h.cmd('room.save', { name: 'Gym' })
@@ -14,19 +14,28 @@ test('a recurring series shows its overlapping date before saving, books in one 
   const other = await h.cmd('client.save', { firstName: 'Noah', lastName: 'Kim', dateOfBirth: '1979-11-30' })
   const first = '2099-03-02', second = '2099-03-05'
   await h.cmd('appointment.book', { clientId: other.id, practitionerId: priya.id, serviceId: service.id, date: second, time: '09:30' })
-  const pattern = { clientId: client.id, practitionerId: priya.id, serviceId: service.id, roomId: room.id, firstDate: first, weekdays: [weekday(first), weekday(second)], weeks: 6, time: '09:00' }
+  await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-02-20', time: '09:00' })
+  const plan = await h.cmd('plan.send', { clientId: client.id, diagnoses: 'M25.561', shortTermGoals: 'Climb stairs', longTermGoals: 'Walk independently', frequencyPerWeek: 2, durationWeeks: 6, startDate: first, interventions: 'Therapeutic exercise', physicianName: 'Dr Anika Patel', physicianEmail: 'anika@referrer.example', signature: 'Priya', credentials: 'PT, DPT', attest: true }, priya.cookie)
+  await h.cmd('holiday.save', { date: '2099-03-09', name: 'Clinic spring holiday' }, priya.cookie, 403)
+  await h.cmd('holiday.save', { date: '2099-03-09', name: 'Clinic spring holiday' })
+  const pattern = { planId: plan.id, clientId: client.id, practitionerId: priya.id, serviceId: service.id, roomId: room.id, firstDate: first, weekdays: [weekday(first), weekday(second)], weeks: 1, time: '09:00' }
+  await h.cmd('series.preview', { ...pattern, weekdays: [weekday(first)] }, priya.cookie, 400)
+  const planPage = (await h.send('/app/clients/' + client.id, undefined, priya.cookie)).text
+  assert.ok(planPage.includes('Plan of care cadence') && planPage.includes(plan.id))
   // Twice a week for six weeks: twelve dates, and the one that overlaps Noah's visit is shown, not dropped.
-  const preview = await h.cmd('series.preview', pattern)
+  const preview = await h.cmd('series.preview', pattern, priya.cookie)
   assert.equal(preview.occurrences.length, 12)
-  assert.deepEqual(preview.occurrences.filter(o => o.problem).map(o => [o.date, o.problem]), [[second, 'practitioner_already_booked']])
-  assert.equal(preview.conflicts, 1)
+  assert.deepEqual(preview.occurrences.filter(o => o.problem).map(o => [o.date, o.problem]), [[second, 'practitioner_already_booked'], ['2099-03-09', 'clinic_holiday']])
+  assert.equal(preview.conflicts, 2)
+  assert.equal(preview.occurrences.find(o => o.problem === 'clinic_holiday').clash.name, 'Clinic spring holiday')
+  assert.equal(preview.pattern.weeks, 6, 'cadence comes from the signed plan, not posted weeks')
   const reviewed = preview.occurrences.map(({ date, time }) => ({ date, time }))
   const refused = await h.send('/api/balm/command', { name: 'series.book', input: { ...pattern, occurrences: reviewed } }, h.owner)
   assert.equal(refused.status, 409)
   assert.equal(refused.value.detail.occurrences.find(o => o.date === second).problem, 'practitioner_already_booked')
-  assert.equal((await h.state()).appointments.filter(a => a.client_id === client.id).length, 0, 'nothing is saved while a date conflicts')
+  assert.equal((await h.state()).appointments.filter(a => a.client_id === client.id).length, 1, 'nothing is saved while a date conflicts')
   // Moving the conflicting date to a free time books all twelve in one step.
-  const booked = await h.cmd('series.book', { ...pattern, occurrences: reviewed.map(o => o.date === second ? { ...o, time: '11:00' } : o) })
+  const booked = await h.cmd('series.book', { ...pattern, occurrences: reviewed.map(o => o.date === second ? { ...o, time: '11:00' } : o.date === '2099-03-09' ? { ...o, date: '2099-03-10' } : o) }, priya.cookie)
   assert.equal(booked.booked, 12)
   const visits = () => h.state().then(s => s.appointments.filter(a => a.client_id === client.id && a.series_id === booked.seriesId).sort((a, b) => a.start_at.localeCompare(b.start_at)))
   let series = await visits()
@@ -55,10 +64,34 @@ test('a recurring series shows its overlapping date before saving, books in one 
   assert.equal((await h.cmd('series.move_rest', { appointmentId: series[2].id, time: '15:00' })).moved, 10)
   series = await visits()
   assert.deepEqual(series.map(a => brisbane(Date.parse(a.start_at)).slice(11, 16)), ['14:10', '11:00', ...Array(10).fill('15:00')])
-  // Cancel one visit, then this and the rest.
+  await h.cmd('appointment.move', { id: series[0].id, date: '2099-03-09', time: '14:10' }, h.owner, 409)
+  await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-03-09', time: '10:00' }, h.owner, 409)
+  // Cancel one visit, then this and following from visit eight; the first seven stay exactly as they were.
+
   await h.cmd('appointment.cancel', { id: series[3].id })
-  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: series[6].id })).cancelled.length, 6)
-  assert.deepEqual((await visits()).map(a => a.status), [...Array(3).fill('booked'), 'cancelled', 'booked', 'booked', ...Array(6).fill('cancelled')])
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: series[7].id })).cancelled.length, 5)
+  const earlier = series.slice(0, 7).map(a => ({ id: a.id, start_at: a.start_at }))
+  assert.deepEqual((await visits()).slice(0, 7).map(a => ({ id: a.id, start_at: a.start_at })), earlier)
+  assert.deepEqual((await visits()).map(a => a.status), [...Array(3).fill('booked'), 'cancelled', 'booked', 'booked', 'booked', ...Array(5).fill('cancelled')])
+  // Whole-series actions include the earlier booked visits even when launched from a later visit.
+  const whole = { ...pattern, planId: '', firstDate: '2099-05-04', weeks: 2 }
+  const wholePreview = await h.cmd('series.preview', whole)
+  const skipped = wholePreview.occurrences.map((o,i) => ({ date: o.date, time: o.time, skip: i === 1 }))
+  const wholeBooked = await h.cmd('series.book', { ...whole, occurrences: skipped })
+  assert.equal(wholeBooked.skipped.length, 1)
+  const wholeVisits = () => h.state().then(s => s.appointments.filter(a => a.series_id === wholeBooked.seriesId).sort((a,b) => a.start_at.localeCompare(b.start_at)))
+  const tail = (await wholeVisits()).at(-1)
+  assert.equal((await h.cmd('series.move_rest', { appointmentId: tail.id, scope: 'all', time: '13:00' }, priya.cookie)).moved, 3)
+  assert.ok((await wholeVisits()).every(a => brisbane(Date.parse(a.start_at)).slice(11,16) === '13:00'))
+  const detail = (await h.send(`/app?date=${brisbane(Date.parse(tail.start_at)).slice(0,10)}&appt=${tail.id}`, undefined, priya.cookie)).text
+  assert.ok(detail.includes('Move the whole series') && detail.includes('Cancel the whole series'))
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: tail.id, scope: 'all' }, priya.cookie)).cancelled.length, 3)
+  assert.ok((await wholeVisits()).every(a => a.status === 'cancelled'))
+  const clinicPage = (await h.send('/app/clinic', undefined, h.owner)).text
+  assert.ok(clinicPage.includes('Clinic spring holiday'))
+  await h.cmd('holiday.save', { date: '2099-03-09', remove: true })
+  await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-03-09', time: '10:00' })
+
 }))
 
 test('INTAKE-001: a canceled visit is offered to the waitlist by email; the first to accept is booked and the others are told it is taken', () => run(async h => {

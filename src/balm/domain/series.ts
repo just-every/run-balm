@@ -6,7 +6,7 @@ import { datePlus, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { appointmentStatements, bookable, clockMinute, intakeToken, placementGuards, placeVisit, roomFor, settings, visibleAppointment } from './booking'
 import { audit, commit, day, DomainError, guard, human, id, insist, integer, need, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
-const maxVisits = 60
+const maxVisits = 366
 type Occurrence = { date: string; time: string; skip: boolean; startAt?: string; endAt?: string; problem?: string; clash?: Data }
 const clock = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 
@@ -41,8 +41,18 @@ async function basis(db: D1Database, who: Actor, input: Data) {
   insist(who.role === 'owner' || who.staffRole === 'reception' || practitionerId(who) === practitioner.id, 'practitioners_book_their_own_diary', 403)
   const client = await one(db, 'SELECT id,first_name,last_name FROM bm_clients WHERE id=? AND erased_at IS NULL', text(input.clientId, 'client', 100))
   insist(client, 'client_not_found', 404)
-  const weekdays = weekdaysFrom(input), weeks = integer(input.weeks, 'weeks', 1, 26), firstDate = day(input.firstDate, 'first_date'), time = clock(clockMinute(input.time))
-  return { zone: clinic.time_zone as string, practitioner, service, client, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time } }
+  const plan = input.planId ? await one(db, 'SELECT id,content,content_sha256 FROM bm_plans_of_care WHERE id=? AND client_id=? AND author_id=?', text(input.planId, 'plan', 100), client.id, practitioner.id) : null
+  if (input.planId) {
+    insist(who.role === 'owner' || !!practitionerId(who), 'plans_are_clinical', 403)
+    insist(plan, 'plan_of_care_not_found', 404)
+  }
+  const content = plan ? JSON.parse(plan.content as string) : null
+  const weekdays = weekdaysFrom(input), weeks = content ? content.durationWeeks : integer(input.weeks, 'weeks', 1, 52), firstDate = content ? content.startDate : day(input.firstDate, 'first_date'), time = clock(clockMinute(input.time))
+  if (content) {
+    insist(weekdays.length === content.frequencyPerWeek, 'choose_the_plan_frequency_of_weekdays')
+    await commit(db, who, [audit(db, who, 'plan.read', client.id as string, plan!.id as string)])
+  }
+  return { zone: clinic.time_zone as string, practitioner, service, client, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time, ...(plan ? { planId: plan.id, planSha256: plan.content_sha256 } : {}) } }
 }
 
 async function check(db: D1Database, b: Awaited<ReturnType<typeof basis>>, list: { date: string; time: string; skip: boolean }[]) {
@@ -76,6 +86,7 @@ export async function bookSeries(db: D1Database, who: Actor, input: Data) {
   const b = await basis(db, who, input)
   const list = reviewed(input)
   insist(list, 'review_the_dates_first')
+  if (b.pattern.planId) insist(list.length === patternDates(b.pattern.firstDate, b.pattern.weekdays, b.pattern.weeks).length, 'review_every_plan_visit')
   const occurrences = await check(db, b, list)
   const result = summary(b, occurrences)
   if (result.conflicts) throw new DomainError('series_has_conflicts', 409, { preview: true, ...result })
@@ -98,7 +109,9 @@ async function rest(db: D1Database, who: Actor, input: Data) {
   const row = await visibleAppointment(db, who, input.appointmentId)
   insist(row.series_id, 'not_part_of_a_series', 409)
   insist(row.status === 'booked', 'appointment_not_booked', 409)
-  return { row, later: await rows(db, "SELECT * FROM bm_appointments WHERE series_id=? AND status='booked' AND start_at>=? ORDER BY start_at", row.series_id, row.start_at) }
+  const later = await rows(db, "SELECT * FROM bm_appointments WHERE series_id=? AND status='booked' AND (? OR start_at>=?) ORDER BY start_at", row.series_id, input.scope === 'all' ? 1 : 0, row.start_at)
+  insist(who.role === 'owner' || who.staffRole === 'reception' || later.every(a => a.practitioner_id === practitionerId(who)), 'practitioners_book_their_own_diary', 403)
+  return { row, later }
 }
 
 /** Cancels this visit and every later booked visit in its series. */

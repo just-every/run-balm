@@ -31,7 +31,7 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
@@ -59,6 +59,7 @@ test('SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip ref
     await h.cmd('import.apply',{csv,fingerprint:preview.fingerprint})
     await h.cmd('disclosure.record',{clientId:maya.id,recipient:'Attorney Archive, records@example.test',purpose:'Patient-directed release',basis:'Written authorization',records:'Signed treatment note and intake',releasedAt:'2001-01-02T12:00:00Z'})
     await h.cmd('client.alert.save',{clientId:maya.id,kind:'precaution',text:'Archive weight-bearing restriction'})
+    await h.cmd('holiday.save',{date:'2099-11-26',name:'Thanksgiving clinic closure'})
     const chartDocument=await h.cmd('chart.document.upload',mriUpload(maya.id,'2026-10-01'))
     await h.cmd('agent.create',{label:'Excluded secret'})
     const feed=await h.cmd('calendar.feed.create',{},priya.cookie)
@@ -67,7 +68,7 @@ test('SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip ref
     await h.close();h=null
     const old=join(temporary,'before.rer'),later=join(temporary,'later.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
-    const bytes=await readFile(old,'utf8');for(const kept of ['Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
+    const bytes=await readFile(old,'utf8');for(const kept of ['Thanksgiving clinic closure','Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
     const rows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
     assert.ok(rows(bytes).length>0)
     const corrupt=join(temporary,'corrupt.rer');await writeFile(corrupt,bytes.replace('Restored treatment note','Changed treatment note'),{mode:0o600})
@@ -97,6 +98,9 @@ test('SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip ref
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const setup=await restoredClinic.form('/setup',{confirm:'yes'},cookie)
       assert.equal(setup.status,303);assert.equal(setup.location,'/app')
+      const restoredState=await restoredClinic.state(cookie)
+      assert.equal(JSON.parse(restoredState.settings.holidays)[0].name,'Thanksgiving clinic closure')
+      await restoredClinic.cmd('appointment.book',{clientId:maya.id,practitionerId:priya.id,serviceId:service.id,date:'2099-11-26',time:'10:00'},cookie,409)
       const search=await restoredClinic.send('/api/balm/clients/'+maya.id+'/history?historyText=MRI&historyType=imaging',undefined,cookie)
       assert.deepEqual(search.value.entries.map(r=>r.id),[chartDocument.id])
       for(const [kind,count] of [['consent',1],['identity',1],['insurance_card',2]]) {

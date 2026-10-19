@@ -37,7 +37,7 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
     rows(db, `SELECT id,start_at AS startAt,end_at AS endAt FROM bm_appointments WHERE practitioner_id=? AND ${live} AND end_at>?`, practitioner, new Date(Date.now() - 86400_000).toISOString()),
   ])
   return {
-    hostTimeZone: zone, recurringWindows: hours as any[], overrides: [],
+    hostTimeZone: zone, recurringWindows: hours as any[], overrides: JSON.parse(String((await settings(db)).holidays)).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] })),
     constraints: { ...onlineRules, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     internalClaims: claims.filter(c => !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) })), calendarBusy: [],
   }
@@ -64,6 +64,7 @@ function instant(value: unknown) {
 /** Same-batch fences: neither the practitioner nor the room holds another live visit then. */
 export function placementGuards(db: D1Database, v: { practitionerId: unknown; roomId?: unknown; startAt: string; endAt: string; except?: string }) {
   return [
+    guard(db, "NOT EXISTS(SELECT 1 FROM bm_settings,json_each(bm_settings.holidays) h WHERE json_extract(h.value,'$.startAt')<? AND json_extract(h.value,'$.endAt')>?)", v.endAt, v.startAt),
     guard(db, `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE practitioner_id=? AND ${live} AND start_at<? AND end_at>? AND id<>?)`, v.practitionerId, v.endAt, v.startAt, v.except ?? ''),
     guard(db, "EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)", v.practitionerId),
     ...(v.roomId ? [
@@ -97,6 +98,8 @@ export async function placeVisit(db: D1Database, zone: string, v: { practitioner
   if (candidates.length !== 1) return { problem: 'ambiguous_or_missing_local_time' }
   const start = candidates[0], end = new Date(start.getTime() + v.durationMinutes * 60_000)
   if (start.getTime() <= Date.now() - 86400_000) return { start, end, problem: 'start_too_far_in_past' }
+  const holiday = JSON.parse(String((await settings(db)).holidays)).find((h: { startAt: string; endAt: string }) => h.startAt < end.toISOString() && h.endAt > start.toISOString())
+  if (holiday) return { start, end, problem: 'clinic_holiday', clash: holiday }
   const verdict = checkSlot(await engineInput(db, v.practitionerId, v.durationMinutes, zone, true, v.exclude), start, end, zone)
   const except = v.exclude ?? []
   const overlapping = (column: string, key: string) => one(db, `SELECT a.id,a.start_at,a.end_at,s.name AS service FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id
@@ -120,6 +123,8 @@ export async function bookOnline(db: D1Database, input: Data) {
   insist(clinic.booking_open === 1, 'online_booking_closed', 409)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   const start = instant(input.start), end = new Date(start.getTime() + service.duration_minutes * 60_000)
+  const holiday = JSON.parse(String((await settings(db)).holidays)).find((h: { startAt: string; endAt: string }) => h.startAt < end.toISOString() && h.endAt > start.toISOString())
+  insist(!holiday, 'clinic_holiday', 409)
   const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false), start, end, clinic.time_zone)
   insist(verdict.valid, 'slot_unavailable', 409)
   const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }

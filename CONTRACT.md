@@ -118,7 +118,7 @@ The owner-approved scope (16 October 2026) names what Balm was missing against t
 
 - **SCHED-002 — Practitioner, room and equipment calendar.** Staff work from a day and week calendar across practitioners, treatment rooms, gyms and equipment (for example a pool or an AlterG), drag to move a visit, see intake, authorization and balance flags on each visit, and print or export the day sheet. A visit can require a room or equipment and is refused when it is taken. Visits a practitioner carries at the same time under their capacity (`SCHED-010`) show side by side in that practitioner's day and week column, each with its own patient, status and flags. **Acceptance evidence:** Book two practitioners into one room at the same time and see the second refused; move a visit by drag and see its history; read the week view for three practitioners with each visit's flags; book two patients at 9:00 for a PT whose capacity is 2 and see both side by side in the PT's column.
 
-- **SCHED-003 — Recurring visit series.** A practitioner books a series (for example twice weekly for 6 weeks) from the plan of care's frequency and duration; Balm names every conflict before booking, books the rest, and lets staff edit or cancel one visit, this and following, or the whole series. **Acceptance evidence:** Book a 12-visit series that collides with a holiday and an existing visit; see the conflicts named, resolve them, and cancel "this and following" from visit 8 with earlier visits untouched.
+- **SCHED-003 — Recurring visit series.** A practitioner books a series (for example twice weekly for 6 weeks) from the plan of care's frequency and duration; Balm names every conflict before booking, books the rest, and lets staff edit or cancel one visit, this and following, or the whole series. **Acceptance evidence:** Book a 12-visit series that collides with a holiday and an existing visit; see the conflicts named, resolve them, and cancel "this and following" from visit 8 with earlier visits untouched. The plan-derived pattern starts on the plan’s start-of-care date, lasts its duration in whole weeks and requires exactly its frequency of selected weekdays; reviewed exceptions may move a date or skip it explicitly. Clinic holidays are named full local dates; a time-zone change recalculates their boundaries in the new clinic zone. Existing visits are retained for staff to resolve. One, this-and-following and whole-series actions operate on booked visits, retaining completed visits and the recorded skipped dates.
 
 - **SCHED-004 — Reschedule, cancel and no-show policy.** Staff and patients reschedule a visit without losing its history, intake or authorization link; cancellations record who and why; the clinic sets a late-cancel window and a late-cancel or no-show fee that is charged to the card on file only after a person confirms. **Acceptance evidence:** Reschedule a visit and see one appointment with its history; cancel inside the late window and see the fee proposed, approved and charged once; mark a no-show and see it in attendance reports.
 
@@ -364,7 +364,7 @@ Every capability the owner-accepted homepage states (claims table `evidence/br-b
 | 12 | Claim paid · Aetna · $142.18 | `INS-006`, `INS-007` | partial |
 | 13 | Reminder sent | `COMM-001`, `COMM-002` | partial |
 | 14 | Denied: missing KX modifier · Resubmitted | `INS-008`, `INS-009` | partial |
-| 15 | Recurring visits | `BALM-002`, `SCHED-003` | partial |
+| 15 | Recurring visits | `BALM-002`, `SCHED-003` | done |
 | 16 | waitlists | `BALM-002`, `SCHED-005` | partial |
 | 17 | online booking keep[s] the calendar full | `SCHED-001`, `SCHED-006` | partial |
 | 18 | offers the slot to your waitlist by text / Confirmed by text | `BALM-002`, `SCHED-005`, `COMM-002` | partial |
@@ -423,8 +423,8 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 16 | 43 | 35 | 94 |
-| All | 31 | 43 | 35 | 109 |
+| Target and push further | 17 | 42 | 35 | 94 |
+| All | 32 | 42 | 35 | 109 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -440,7 +440,7 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | `OWN-001` | Owned, open-source and free | target | partial | `LICENSE`; `OPERATIONS.json`; `tests/archive.test.mjs` | MIT license and the local install ship; no test proves the absence of undeclared outbound requests |
 | `SCHED-001` | Online booking from real open times | published | done | `src/balm/domain/booking.ts`; `src/balm/ui/public.ts`; `tests/balm.test.mjs` |  |
 | `SCHED-002` | Practitioner, room and equipment calendar | target | partial | `src/balm/domain/calendar.ts`; `src/balm/ui/calendar.ts`; `src/balm/ui/drag.ts`; `tests/schedule.test.mjs` | Day and week calendars by practitioner or room, including No room, place simultaneous visits in separate clickable lanes; phones list every visit in the agenda. Drag/move authority and room conflict refusal remain. No equipment, day-sheet print or export. Proven by schedule tests and local browser use at 1440 and 390, 18 October 2026. |
-| `SCHED-003` | Recurring visit series | target | partial | `src/balm/domain/series.ts`; `src/balm/ui/series.ts`; `tests/schedule.test.mjs` | Series by weekdays, time and weeks with each conflicting date shown, moved or skipped by a person, and one-visit or rest-of-series move and cancel ship; series are not booked from a plan of care's frequency and duration, and holidays are not stored, so they cannot be named as conflicts |
+| `SCHED-003` | Recurring visit series | target | done | `src/balm/domain/series.ts`; `src/balm/domain/holidays.ts`; `src/balm/domain/booking.ts`; `src/balm/ui/series.ts`; `src/balm/ui/plans.ts`; `tests/schedule.test.mjs` (SCHED-003); `tests/archive.test.mjs` | Plan-derived cadence, named local-date holiday conflicts, per-date move/skip review, atomic booking and one/rest/whole-series edits/cancel. Twelve-visit acceptance and holiday archive restore asserted through public doors; product use at 1440 and 390, 19 October 2026. |
 | `SCHED-004` | Reschedule, cancel and no-show policy | target | partial | `src/balm/domain/booking.ts`; `src/balm/mail-out.ts`; `tests/schedule.test.mjs` | Staff move, cancel (confirmed first, the patient emailed) and no-show a visit, audited on the same appointment; no patient rescheduling, cancel reasons, late-cancel window or fees |
 | `SCHED-005` | Waitlist that fills openings | target | partial | `src/balm/domain/waitlist.ts`; `src/balm/ui/waitlist.ts`; `tests/schedule.test.mjs` | Email offers to every fitting entry, first acceptance booked and others told it is taken. Acceptance reuses intake already on file or an open request instead of issuing another form. No text offers/replies, preferred days/times or ordered holds. Schedule tests and local browser proof at 1440 and 390, 18 October 2026. |
 | `SCHED-006` | Patient self-service scheduling | target | partial | `src/balm/domain/booking.ts` | Returning patients matched at /book continue their file; no portal booking, self-reschedule or cancel, rules or embedding |

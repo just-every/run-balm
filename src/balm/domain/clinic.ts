@@ -2,6 +2,7 @@
 import { createPortability } from '@runeditrun/rer/modules/portability'
 // @ts-ignore The CLI and Worker share this JavaScript archive policy.
 import archivePolicy from '../archive-policy.mjs'
+import { holidayRanges } from './holidays'
 import { clinicIdentity } from './us-clinic'
 import { template } from '../charting/templates'
 import { validNpi } from '../payments/codes'
@@ -28,6 +29,7 @@ export async function saveSettings(db: D1Database, who: Actor, input: Data) {
   await commit(db, who, [
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)', current!.version),
     stmt(db, 'UPDATE bm_settings SET clinic_name=?,time_zone=?,abn=?,address=?,booking_open=?,tax_id_type=?,practice_npi=?,street_address=?,city=?,state=?,postal_code=?,time_zone_chosen=1,version=version+1 WHERE id=1', ...values),
+    stmt(db, 'UPDATE bm_settings SET holidays=? WHERE id=1', JSON.stringify(holidayRanges(JSON.parse(current!.holidays as string), zone))),
     audit(db, who, 'settings.saved', null, null, zone !== current!.time_zone ? `time zone ${current!.time_zone} to ${zone}` : ''),
   ])
   return { saved: true }

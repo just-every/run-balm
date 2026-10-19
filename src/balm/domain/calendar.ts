@@ -42,7 +42,7 @@ export async function calendarView(db: D1Database, who: Actor, params: Record<st
     if (row) {
       const detail = await one(db, `SELECT a.*,c.first_name||' '||c.last_name AS client,c.date_of_birth,${coverage},(SELECT CASE WHEN MIN(n.signed_at IS NOT NULL)=1 THEN 'signed' WHEN COUNT(*)>0 THEN 'unsigned' END FROM bm_notes n WHERE n.appointment_id=a.id) AS note_status,(SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care,p.name AS practitioner,s.name AS service,r.name AS room FROM bm_appointments a
         JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id LEFT JOIN bm_rooms r ON r.id=a.room_id WHERE a.id=?`, row.id)
-      const series = row.series_id ? await one(db, `SELECT COUNT(*) AS total,SUM(start_at<=?) AS position,SUM(status='booked' AND start_at>=?) AS remaining,
+      const series = row.series_id ? await one(db, `SELECT COUNT(*) AS total,SUM(start_at<=?) AS position,SUM(status='booked' AND start_at>=?) AS remaining,SUM(status='booked') AS booked,
         (SELECT skipped FROM bm_series WHERE id=?) AS skipped FROM bm_appointments WHERE series_id=?`, row.start_at, row.start_at, row.series_id, row.series_id) : null
       const history = await rows(db, "SELECT at,actor_email,actor_role,action,detail FROM bm_audit WHERE subject_id=? AND action LIKE 'appointment.%' ORDER BY sequence", row.id)
       selected = { ...detail, history, series: series ? { ...series, skipped: JSON.parse(series.skipped as string) } : null }

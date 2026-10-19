@@ -1,6 +1,7 @@
 // Plan of care on a client file: its physician signature status and dates for
 // everyone who opens the file, its content for the owner and practitioners, and
 // the therapist's form to sign it and send it to the referring physician.
+import { seriesForm } from './series'
 import { hostDateAt } from '../availability/timezone'
 import { clinician, empty, entry, field, form, h, hidden, panel, result, status, textarea, usDate, when, zoneOf } from './shared'
 
@@ -23,6 +24,7 @@ function planEntry(s: any, f: any, p: any) {
   const path = `/app/clients/${f.client.id}`, zone = zoneOf(s)
   const sent = p.status === 'sent' ? `<p class="help">Sent to ${h(p.physicianName)} (${h(p.physicianEmail)}) ${h(usDate(p.sentAt, zone))}; the link expires ${h(usDate(p.linkExpiresAt, zone))}.</p>` : `<p class="help">Certified ${p.certifierNpi ? `· NPI ${h(p.certifierNpi)} ` : ''}· ${when(s, p.certifiedAt)}</p>`
   return entry(p.content ? `Plan of care from ${usDate(p.content.startDate, zone)}` : 'Plan of care', `<p>${planLine(p, zone)}</p>${sent}${p.content ? planContent(p.content, zone) : ''}`
+    + (p.content && (p.mine || s.actor.role === 'owner') ? `<details><summary>Book visits from this plan</summary>${seriesForm(s, path, { clientId: f.client.id, practitionerId: p.authorId, plans: [p], planId: p.id })}</details>` : '')
     + (p.mine && p.status === 'sent' ? form('plan.resend', path, hidden('id', p.id) + '<p class="help">A new link replaces the one sent before.</p>', 'Send a new link to the physician', true) : ''), `plan-${p.id}`)
 }
 
