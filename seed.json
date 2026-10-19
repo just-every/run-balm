@@ -37,7 +37,8 @@
     {
       "id": "documentation-compliance",
       "clauses": [
-        "CHART-007"
+        "CHART-007",
+        "CHART-004"
       ]
     },
     {

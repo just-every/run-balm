@@ -18,7 +18,8 @@ export function documentationInput(input: Data): Documentation {
 export async function saveDocumentationSettings(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const lateDays = integer(input.lateDays, 'plan_signature_days', 1, 90), kxNearCents = input.kxNearCents === undefined ? parseDollars(input.kxNear, 'kx_warning') : integer(input.kxNearCents, 'kx_warning_cents', 0, 1_000_000)
-  await commit(db, who, [stmt(db, 'UPDATE bm_documentation_settings SET late_days=?,kx_near_cents=?,version=version+1 WHERE id=1', lateDays, kxNearCents), audit(db, who, 'documentation.settings_saved', null)])
+  const unsignedNoteHours = input.unsignedNoteHours === undefined ? null : integer(input.unsignedNoteHours, 'unsigned_note_hours', 1, 720)
+  await commit(db, who, [stmt(db, 'UPDATE bm_documentation_settings SET late_days=?,kx_near_cents=?,unsigned_note_hours=COALESCE(?,unsigned_note_hours),version=version+1 WHERE id=1', lateDays, kxNearCents, unsignedNoteHours), audit(db, who, 'documentation.settings_saved', null)])
   return { saved: true }
 }
 export async function savePayerDocumentation(db: D1Database, who: Actor, input: Data) {
@@ -83,14 +84,22 @@ export async function documentationAlerts(db: D1Database, visitId: string, revis
 
 export async function documentationClose(db: D1Database, who: Actor) {
   if (who.role === 'agent' || (who.role !== 'owner' && !practitionerId(who))) return []
+  const config = (await one(db, 'SELECT unsigned_note_hours FROM bm_documentation_settings WHERE id=1'))!
   const visits = await rows(db, `SELECT a.id,a.client_id,a.start_at,c.first_name||' '||c.last_name AS client,p.name AS practitioner FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id WHERE a.status='attended' AND (?='owner' OR a.practitioner_id=?) ORDER BY a.start_at`, who.role, practitionerId(who) ?? '')
-  const list = []
+  const list: Data[] = []
   for (const visit of visits) {
-    const latest = await one(db, 'SELECT r.*,n.template,n.signed_at FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.appointment_id=? ORDER BY n.created_at DESC,r.number DESC LIMIT 1', visit.id)
+    const latest = await one(db, 'SELECT r.*,n.template,n.signed_at FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.appointment_id=? AND (?=\'owner\' OR n.author_id=?) ORDER BY n.created_at DESC,r.number DESC LIMIT 1', visit.id, who.role, practitionerId(who) ?? '')
     const alerts = await documentationAlerts(db, visit.id, latest ?? undefined, latest?.template)
-    if (!latest?.signed_at) alerts.unshift({ kind: 'unsigned', message: latest ? 'Treatment note is not signed.' : 'Treatment note has not been written.' })
+    if (!latest) alerts.unshift({ kind: 'unsigned', message: 'Treatment note has not been written.' })
     if (alerts.length) list.push({ ...visit, alerts })
   }
-  if (visits.length) await commit(db, who, [...new Set(visits.map(v => v.client_id))].map(clientId => audit(db, who, 'documentation.daily_close_read', clientId)))
+  // A newer signed note, an unmarked visit or no linked visit must never hide an
+  // overdue draft. Its original creation time keeps edits from resetting the clock.
+  const overdue = await rows(db, `SELECT n.id,n.id AS noteId,n.appointment_id AS appointmentId,n.client_id,n.created_at AS createdAt,COALESCE(a.start_at,n.created_at) AS start_at,c.first_name||' '||c.last_name AS client,p.name AS practitioner
+    FROM bm_notes n JOIN bm_clients c ON c.id=n.client_id JOIN bm_staff p ON p.id=n.author_id LEFT JOIN bm_appointments a ON a.id=n.appointment_id
+    WHERE n.signed_at IS NULL AND (?='owner' OR n.author_id=?) AND julianday(n.created_at) < julianday(?) - ? / 24.0 ORDER BY n.created_at,n.id`, who.role, practitionerId(who) ?? '', new Date().toISOString(), config.unsigned_note_hours)
+  for (const note of overdue) list.push({ ...note, dueAt: new Date(Date.parse(note.createdAt) + config.unsigned_note_hours * 3600_000).toISOString(), alerts: [{ kind: 'unsigned', message: `Treatment note is overdue for signature (practice deadline ${config.unsigned_note_hours} hours after the draft was started).` }] })
+  const clientIds = [...new Set([...visits, ...overdue].map(v => v.client_id))]
+  if (clientIds.length) await commit(db, who, clientIds.map(clientId => audit(db, who, 'documentation.daily_close_read', clientId)))
   return list
 }
