@@ -8,6 +8,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { intakeFor } from './intake'
 import { notesFor } from './notes'
+import { careTeamOnly, noteAccess } from './care-team'
 import { plansFor } from './plans'
 import { invoicesFor } from './invoices'
 import { audit, commit, day, email, guard, human, id, insist, integer, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
@@ -21,6 +22,15 @@ export async function clientVisible(db: D1Database, who: Actor, key: unknown) {
     || (own && await one(db, 'SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?', client.id, own)))
   insist(sees, 'client_not_found', 404)
   return client!
+}
+
+/** The file as a chart reader reaches it: the usual scope, or CHART-013 care-team access alone. */
+export async function chartClient(db: D1Database, who: Actor, key: unknown) {
+  try { return await clientVisible(db, who, key) } catch (error) {
+    const client = await one(db, 'SELECT * FROM bm_clients WHERE id=? AND erased_at IS NULL', text(key, 'client', 100))
+    if (client && await careTeamOnly(db, who, client.id as string)) return client
+    throw error
+  }
 }
 
 export async function listClients(db: D1Database, who: Actor) {
@@ -77,16 +87,18 @@ async function auditEntries(db: D1Database, clientId: string, before: number | n
 
 /** A client's file; `auditBefore` (an audit sequence) opens an older page of its access audit. */
 export async function clientFile(db: D1Database, who: Actor, key: unknown, auditBefore?: unknown) {
-  const client = await clientVisible(db, who, key)
+  const client = await chartClient(db, who, key)
   const own = practitionerId(who), all = who.role === 'owner' || who.staffRole === 'reception'
+  const access = await noteAccess(db, who, client.id as string), teamOnly = await careTeamOnly(db, who, client.id as string)
   const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,s.note_template,
     (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     EXISTS(SELECT 1 FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND json_array_length(COALESCE(r.charges,'[]'))>0) AS note_billed
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id WHERE a.client_id=? ORDER BY a.start_at DESC`, client.id)
   const visibleAppointments = appointments.filter(a => all || a.practitioner_id === own)
-  const intake = (await intakeFor(db, who, client.id as string))?.filter(r => who.role === 'owner' || visibleAppointments.some(a => a.id === r.appointmentId)) ?? null
+  // CHART-013 care-team access alone reads notes (and, under break glass, chart documents), nothing else.
+  const intake = teamOnly ? [] : (await intakeFor(db, who, client.id as string))?.filter(r => who.role === 'owner' || visibleAppointments.some(a => a.id === r.appointmentId)) ?? null
   const notes = await notesFor(db, who, client.id as string)
-  const plans = await plansFor(db, who, client.id as string)
+  const plans = teamOnly ? [] : await plansFor(db, who, client.id as string)
   const invoices = all ? await invoicesFor(db, client.id as string) : null
   const before = /^[1-9]\d{0,15}$/.test(String(auditBefore ?? '')) ? Number(auditBefore) : null
   const auditRows = who.role === 'owner' ? await rows(db, `SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=?${before ? ' AND sequence<?' : ''} ORDER BY sequence DESC LIMIT ?`, client.id, ...(before ? [before] : []), AUDIT_PAGE_SIZE + 1) : null
@@ -95,10 +107,12 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   await commit(db, who, [
     audit(db, who, 'file.viewed', client.id as string, client.id as string, [intake ? `intake ${intake.length}` : 'no clinical intake', notes ? `notes ${notes.length}` : 'no notes', auditRows ? 'audit' : ''].filter(Boolean).join('; ')),
     ...(intake ?? []).map(r => audit(db, who, 'intake.read', client.id as string, r.id as string)),
-    ...(notes ?? []).map(n => audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)),
+    ...(notes ?? []).map(n => who.role === 'owner' || n.mine ? audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)
+      : access.breakGlass ? audit(db, who, 'note.break_glass_read', client.id as string, n.id as string, `break glass: ${access.breakGlass.reason}`)
+      : audit(db, who, 'note.read', client.id as string, n.id as string, `care team grant; revisions ${n.revisions.length}`)),
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
-  return { client, appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, intake, notes, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 

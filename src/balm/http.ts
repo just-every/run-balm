@@ -9,6 +9,7 @@ import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
 import { bundleFormInput } from './movein/form-input'
 import { ownerProfile, saveOwnerName } from './owner-name'
 import { insuredCharge } from './insurance/invoice-price'
+import { acknowledgeBreakGlass, breakGlass, careTeamFor, endBreakGlass, grantCareTeam, revokeCareTeam } from './domain/care-team'
 import { operationalCsv, operationalReports, reportKinds, type ReportKind } from './reports/operational'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
@@ -67,6 +68,8 @@ async function state(env: Bindings, who: Actor) {
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string, historyInput: Record<string, unknown> = {}) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
   const zone = (await env.DB.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{time_zone:string}>())!.time_zone
+  // CHART-013 care-team access alone opens the notes (and documents under break glass), not the rest of the file.
+  if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
   const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
@@ -84,7 +87,14 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
-  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => { if (status === 200) throw error }) : undefined, status)
+  const opened = file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => {
+    // A practitioner outside this chart may open it in an emergency by giving a reason (CHART-013).
+    if (who.staffRole === 'practitioner' && error instanceof DomainError && error.status === 404 && status === 200) return { breakGlassOnly: file[1] }
+    if (status === 200) throw error
+  }) : undefined
+  if (opened && 'breakGlassOnly' in opened) return renderApp(s, target, { ...notice, breakGlass: opened.breakGlassOnly }, undefined, 404)
+  if (opened && who.role === 'owner') (opened as any).careTeam = await careTeamFor(env.DB, who, file![1])
+  return renderApp(s, target, notice, opened, status)
 }
 /** A same-app page to return to, keeping only a plain calendar query. */
 function returnTarget(requested: string) {
@@ -107,6 +117,11 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
+  if (name === 'care_team.grant') return grantCareTeam(env.DB, who, input)
+  if (name === 'care_team.revoke') return revokeCareTeam(env.DB, who, input)
+  if (name === 'chart.break_glass') return breakGlass(env.DB, who, input)
+  if (name === 'chart.break_glass.end') return endBreakGlass(env.DB, who, input)
+  if (name === 'chart.break_glass.acknowledge') return acknowledgeBreakGlass(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)

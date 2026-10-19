@@ -9,6 +9,7 @@ import { bill, cpt, type Charge } from '../charting/cpt'
 import { template, type Template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, integer, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
 import { clientVisible } from './clients'
+import { noteAccess } from './care-team'
 
 export type Written = { documentation: Documentation; sections: { id: string; label: string; text: string }[] | null; charges: Charge[]; body: string }
 
@@ -115,11 +116,13 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
 
 const parse = (value: unknown) => typeof value === 'string' ? JSON.parse(value) : null
 
-/** Notes this actor may read: the owner reads all, a practitioner reads only their own. */
+/** Notes this actor may read: the owner, a care-team grant or open break glass read all
+ * (CHART-013); otherwise a practitioner reads only their own. */
 export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const author = practitionerId(who)
   if (who.role !== 'owner' && !author) return null
-  const notes = await rows(db, `SELECT n.*,s.name AS author_name FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id WHERE n.client_id=? AND (?='owner' OR n.author_id=?) ORDER BY n.created_at DESC`, clientId, who.role, author ?? '')
+  const access = await noteAccess(db, who, clientId)
+  const notes = await rows(db, `SELECT n.*,s.name AS author_name FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id WHERE n.client_id=? AND (?=1 OR n.author_id=?) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '')
   if (!notes.length) return []
   const marks = notes.map(() => '?').join(',')
   const revisions = await rows(db, `SELECT * FROM bm_note_revisions WHERE note_id IN (${marks}) ORDER BY number DESC`, ...notes.map(n => n.id))

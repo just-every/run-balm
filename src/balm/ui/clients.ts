@@ -1,6 +1,7 @@
 import { chartHistoryPanel } from './chart-history'
 import { alertBadges, clientAlertsPanel } from './alerts'
 import { disclosuresPanel } from './disclosures'
+import { careTeamPanel } from './care-team'
 import { payerReference } from '../payments/ledger'
 import { importedPanel } from './imported'
 import { hostDateAt } from '../availability/timezone'
@@ -110,7 +111,9 @@ export function clientFilePage(s: any, f: any, notice: any) {
     + (owner(s) ? `<details><summary>Erase this client</summary><p>Only a client with no appointments, intake, notes, invoices, card payments, card on file or import history can be erased. Health records are retained.</p>${form('client.erase', '/app/clients', hidden('id', c.id) + '<label class="check"><input type="checkbox" required><span>I understand this erases the client’s personal details.</span></label>', 'Erase client', true)}</details>` : '')
   const age = c.date_of_birth ? Math.floor((Date.now() - Date.parse(c.date_of_birth + 'T12:00:00Z')) / (365.2425 * 86400_000)) : null
   const payer = f.insurance?.policies?.[0]?.payer_name ?? (f.insurance ? 'Self-pay' : '')
-  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
+  // CHART-013 care-team access alone: the notes, chart history and how this chart was opened.
+  if (f.careAccess?.teamOnly) return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1></div></header><div class="grid">${careTeamPanel(s, f)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}</div>`
+  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${panel('Details', details)}${careTeamPanel(s, f)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
 }
 import { portalChartPanel } from './portal-chart'
 import { intakeChartPanel } from './intake-chart'
