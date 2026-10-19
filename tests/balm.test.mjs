@@ -74,7 +74,7 @@ test('INTAKE-001: intake answers reach only the treating practitioner and the ow
   const before = h.mail.length
   for (const saved of [await staffBook(), await seriesBook()]) { assert.equal(saved.intake,'on_file'); assert.equal(saved.token,undefined) }
   assert.ok(!h.mail.slice(before).some(m => /\/intake\//.test(m.text)))
-  for (const visit of (await h.state()).appointments.filter(a=>a.client_id===clientId && a.status==='booked')) await h.cmd('appointment.cancel',{id:visit.id})
+  for (const visit of (await h.state()).appointments.filter(a=>a.client_id===clientId && a.status==='booked')) await h.cmd('appointment.cancel',{id:visit.id,reason:'Patient requested cancellation'})
   // Publishing does not rewrite old answers; the next booking requests the new form.
   const draft = await h.cmd('intake.prepare', {title:'Updated intake',questions:[{id:'reason',label:'What changed?',type:'long',required:true}]})
   const published = await h.cmd('intake.publish',{id:draft.id})
@@ -345,7 +345,7 @@ test('INTAKE-001: all booking doors retain one open request, racing bookings can
   assert.equal((await h.db.prepare('SELECT intake_token_hash FROM bm_appointments WHERE id=?').bind(past).first()).intake_token_hash,null)
   // With the prior request canceled, simultaneous staff bookings allocate one link.
   const original = (await h.state()).appointments.find(a=>a.start_at===available[0])
-  await h.cmd('appointment.cancel',{id:original.id})
+  await h.cmd('appointment.cancel',{id:original.id,reason:'Patient requested cancellation'})
   const beforeRace = h.mail.length
   const raced = await Promise.all([available[16],available[20]].map(start=>h.cmd('appointment.book',fields(start))))
   assert.deepEqual(raced.map(r=>r.intake).sort(),['ask','link_open'])
@@ -383,7 +383,7 @@ test('INTAKE-001: links stay usable in the waiting room, expire at scheduled end
   await h.cmd('appointment.move',{id:visit.appointmentId,date:ended.slice(0,10),time:ended.slice(11,16)})
   assert.equal((await h.send(path)).status,404)
   assert.equal((await h.form(path,{formId:'intake-v1'})).status,404)
-  await h.cmd('appointment.cancel',{id:following.appointmentId})
+  await h.cmd('appointment.cancel',{id:following.appointmentId,reason:'Patient requested cancellation'})
   const renewed=await h.cmd('appointment.book',fields)
   assert.equal(renewed.intake,'ask');assert.ok(renewed.token)
   const nextPath='/intake/'+renewed.token

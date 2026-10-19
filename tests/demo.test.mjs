@@ -32,7 +32,7 @@ test('a demo opens on a lived-in clinic: its drafts are approvable and email sta
     // Canceling a massage still prepares the offer, with no email claimed as sent.
     const sophie = s.clients.find(c => c.first_name === 'Sophie')
     const freed = s.appointments.find(a => a.status === 'booked' && a.service_id === 'demo-svc-massage' && a.client_id !== sophie.id && Date.parse(a.start_at) > Date.now() + 3 * 3600_000 && Date.parse(a.start_at) < Date.now() + 6 * 86400_000)
-    const cancelled = await h.cmd('appointment.cancel', { id: freed.id })
+    const cancelled = await h.cmd('appointment.cancel', { id: freed.id ,reason:'Patient requested cancellation'})
     assert.ok(cancelled.waitlist.people >= 1)
     assert.deepEqual((await h.db.prepare('SELECT DISTINCT delivery FROM bm_offer_recipients').all()).results.map(r => r.delivery), ['suppressed'])
     assert.equal(h.mail.length, 0, 'demo actions never reach the mail provider')

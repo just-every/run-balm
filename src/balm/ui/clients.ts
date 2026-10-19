@@ -1,3 +1,4 @@
+import { visitFeePanel } from './visit-policy'
 import { clientPaymentPlans } from './payment-plans'
 import { followupPanel } from './followups'
 import { chartHistoryPanel } from './chart-history'
@@ -44,7 +45,7 @@ function appointments(s: any, f: any, notice: any) {
     + (a.status === 'booked' && desk(s) && Date.parse(a.start_at) > Date.now() ? form('reminder.prepare', path, hidden('appointmentId', a.id), 'Prepare reminder text', true) : '')
     + (a.status === 'attended' && desk(s) && !invoiced.has(a.id) ? form('invoice.prepare', path, hidden('appointmentId', a.id) + field('amount', f.insuredCharges?.[a.id] ? `Amount ($, blank for ${f.insuredCharges[a.id].payer}’s fee schedule: ${money(f.insuredCharges[a.id].cents)})` : `Amount ($, blank for the service price${priceOf(s, a) ? ` of ${priceOf(s, a)}` : ''})`, '', 'text', 'inputmode="decimal" maxlength="12" placeholder="95.00"') + (f.insuredCharges?.[a.id] ? '<p class="help">The insurance claim must charge the same total as this invoice.</p>' : ''), 'Prepare invoice') : '')
     + (a.status === 'booked' && (desk(s) || a.practitioner_id === s.actor.staffId) ? `<p><a href="/app?${h(new URLSearchParams({ view: 'day', date: hostDateAt(new Date(a.start_at), s.settings.time_zone), appt: a.id }))}">Move or change in the calendar</a></p>` + cancelForm('appointment.cancel', path, hidden('id', a.id), 'Cancel appointment', 'Cancel visit', clientName(f.client)) : '')
-    + '</div>', `visit-${a.id}`)).join('')
+    + visitFeePanel(s, a, path) + '</div>', `visit-${a.id}`)).join('')
   const choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
   const book = services(s).length && choices.length ? `<details><summary>Book an appointment</summary>${form('appointment.book', path, hidden('clientId', f.client.id)
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))

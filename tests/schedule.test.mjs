@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
+import { fakeProviders } from './fakes/stripe.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
@@ -68,8 +69,8 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
   await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-03-09', time: '10:00' }, h.owner, 409)
   // Cancel one visit, then this and following from visit eight; the first seven stay exactly as they were.
 
-  await h.cmd('appointment.cancel', { id: series[3].id })
-  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: series[7].id })).cancelled.length, 5)
+  await h.cmd('appointment.cancel', { id: series[3].id, reason: 'Patient requested cancellation' })
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: series[7].id, reason: 'Patient ended the recurring visits' })).cancelled.length, 5)
   const earlier = series.slice(0, 7).map(a => ({ id: a.id, start_at: a.start_at }))
   assert.deepEqual((await visits()).slice(0, 7).map(a => ({ id: a.id, start_at: a.start_at })), earlier)
   assert.deepEqual((await visits()).map(a => a.status), [...Array(3).fill('booked'), 'cancelled', 'booked', 'booked', 'booked', ...Array(5).fill('cancelled')])
@@ -93,7 +94,7 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
   const detail = (await h.send(`/app?date=${brisbane(Date.parse(tail.start_at)).slice(0,10)}&appt=${tail.id}`, undefined, priya.cookie)).text
   assert.ok(detail.includes('Move the whole series') && detail.includes('Cancel the whole series'))
   assert.ok(detail.includes('Skipped when booked'), 'SCHED-003 skipped dates remain readable on the saved series')
-  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: tail.id, scope: 'all' }, priya.cookie)).cancelled.length, 3)
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId: tail.id, scope: 'all', reason: 'Patient ended the recurring visits' }, priya.cookie)).cancelled.length, 3)
   assert.ok((await wholeVisits()).every(a => a.status === 'cancelled'))
   const clinicPage = (await h.send('/app/clinic', undefined, h.owner)).text
   assert.ok(clinicPage.includes('Clinic spring holiday'))
@@ -103,14 +104,14 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
   // Completed visits belong to the series history; whole-series operations act only on its booked visits.
   const source = await pastVisit(h, client.id, priya, service.id)
   const past = (await h.state()).appointments.find(a => a.id === source)
-  await h.cmd('appointment.cancel', { id: source })
+  await h.cmd('appointment.cancel', { id: source, reason: 'Patient requested cancellation' })
   const localPast = brisbane(Date.parse(past.start_at)), futureDate = brisbane(Date.parse(past.start_at) + 7 * 86400_000).slice(0,10)
   const historicalPattern = { clientId:client.id,practitionerId:priya.id,serviceId:service.id,firstDate:localPast.slice(0,10),weeks:2,weekdays:[weekday(localPast.slice(0,10))],time:localPast.slice(11,16),occurrences:[{date:localPast.slice(0,10),time:localPast.slice(11,16)},{date:futureDate,time:localPast.slice(11,16)}] }
   const history = await h.cmd('series.book', historicalPattern)
   await h.cmd('appointment.attend', { id:history.appointmentIds[0] })
   const completedBefore = (await h.state()).appointments.find(a => a.id === history.appointmentIds[0])
   assert.equal((await h.cmd('series.move_rest', { appointmentId:history.appointmentIds[1],scope:'all',time:'16:00' })).moved,1)
-  assert.equal((await h.cmd('series.cancel_rest', { appointmentId:history.appointmentIds[1],scope:'all' })).cancelled.length,1)
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId:history.appointmentIds[1],scope:'all', reason: 'Patient ended the recurring visits' })).cancelled.length,1)
   const completedAfter = (await h.state()).appointments.find(a => a.id === completedBefore.id)
   assert.deepEqual([completedAfter.status,completedAfter.start_at,completedAfter.end_at], [completedBefore.status,completedBefore.start_at,completedBefore.end_at], 'SCHED-003 whole-series moves and cancellations retain completed visits unchanged')
 
@@ -139,7 +140,7 @@ test('INTAKE-001: a canceled visit is offered to the waitlist by email; the firs
   await h.cmd('waitlist.add', { clientId: cara.id, serviceId: service.id, latestDate: until, note: 'Any practitioner' })
   await h.cmd('waitlist.add', { clientId: dev.id, practitionerId: sam.id, serviceId: service.id, latestDate: until })
   await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until }, h.owner, 409)
-  const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId }, h.owner)
+  const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId, reason: 'Patient requested cancellation' }, h.owner)
   assert.equal(cancelled.status, 303)
   assert.match(cancelled.location, /offered=2$/)
   assert.ok(h.mail.some(m => m.to.includes('ava@client.example') && m.subject.endsWith('is canceled')), 'the patient is told by email')
@@ -174,7 +175,7 @@ test('INTAKE-001: a canceled visit is offered to the waitlist by email; the firs
   const acceptAgain = async time => {
     const source = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, date, time })
     await h.cmd('waitlist.add', { clientId: winnerId, practitionerId: priya.id, serviceId: service.id, latestDate: until })
-    await h.cmd('appointment.cancel', { id: source.appointmentId })
+    await h.cmd('appointment.cancel', { id: source.appointmentId, reason: 'Patient requested cancellation' })
     const email = h.mail.findLast(m => m.to.includes(winner) && m.subject.startsWith('A time opened up'))
     const offered = new URL(email.text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
     const before = h.mail.length, accepted = await h.form(offered, {})
@@ -196,7 +197,7 @@ test('INTAKE-001: a canceled visit is offered to the waitlist by email; the firs
   const published=await h.cmd('intake.publish',{id:draft.id})
   const source=await h.cmd('appointment.book',{clientId:ava.id,practitionerId:priya.id,serviceId:service.id,date,time:'13:00'})
   await h.cmd('waitlist.add',{clientId:winnerId,practitionerId:priya.id,serviceId:service.id,latestDate:until})
-  await h.cmd('appointment.cancel',{id:source.appointmentId})
+  await h.cmd('appointment.cancel',{id:source.appointmentId,reason:'Patient requested cancellation'})
   const offered=new URL(h.mail.findLast(m=>m.to.includes(winner)&&m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
   const renewal=await h.form(offered,{})
   assert.equal(renewal.status,303);assert.match(renewal.location,/^\/intake\//)
@@ -233,7 +234,7 @@ test('SCHED-009: a private practitioner subscription follows bookings, moves and
   const moved = await h.send(feed.calendarFeedPath)
   assert.match(moved.text, /DTSTART:20990302T000000Z/)
   assert.match(moved.text, /SEQUENCE:2/)
-  await h.cmd('appointment.cancel', { id: visit.appointmentId })
+  await h.cmd('appointment.cancel', { id: visit.appointmentId, reason: 'Patient requested cancellation' })
   const cancelled = await h.send(feed.calendarFeedPath)
   assert.match(cancelled.text, /STATUS:CANCELLED/)
   assert.match(cancelled.text, /SEQUENCE:3/)
@@ -292,7 +293,7 @@ test('SCHED-008: check in, attend, no-show and cancel retain actor/time history;
   assert.equal(written.revision, 1)
   assert.equal((await file(priya.cookie)).notes.length, 1)
   await h.cmd('appointment.no_show', { id: absent }, reception.cookie)
-  await h.cmd('appointment.cancel', { id: cancelled }, h.owner)
+  await h.cmd('appointment.cancel', { id: cancelled, reason: 'Patient requested cancellation' }, h.owner)
   for (const [id, actions] of [[visit, ['booked', 'checked_in', 'attended']], [absent, ['booked', 'no_show']], [cancelled, ['booked', 'cancelled']]]) {
     const page = await h.send(`/app?date=${await visitDate(h, id)}&appt=${id}`, undefined, reception.cookie)
     assert.equal(page.status, 200)
@@ -319,3 +320,94 @@ test('SCHED-008: check in, attend, no-show and cancel retain actor/time history;
   await h.cmd('appointment.attend', { id: untouched }, h.owner, 409)
   assert.equal((await h.state()).invoices.length, before.invoices.length)
 }))
+
+test('SCHED-004: staff and patient moves keep one visit, intake and authorization; reasoned late cancellation proposes a human-confirmed charge once; no-show reaches attendance reports', () => {
+  const schedStripe = fakeProviders()
+  return run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya] } = await clinic(h)
+  const reception = await h.staff('Rosa', 'reception')
+  await h.cmd('pay.stripe.connect', { secretKey: 'sk_test_' + 'a'.repeat(24) })
+  await h.cmd('visit_policy.save', { noticeHours: 24, lateCancelFeeCents: 2500, noShowFeeCents: 3000 })
+  await h.cmd('visit_policy.save', { noticeHours: 24, lateCancelFeeCents: 2500, noShowFeeCents: 3000 }, reception.cookie, 403)
+  const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', dateOfBirth: '1992-06-15', email: 'ava@client.example' })
+  const date = brisbane(Date.now() + 3 * 86400_000).slice(0, 10)
+  const booked = await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date, time: '10:00' })
+  const intakePath = '/intake/' + booked.token, intakePage = await h.send(intakePath)
+  assert.equal((await h.form(intakePath, { formId: 'intake-v1', q_reason: 'Follow-up', q_emergency: 'Alex Example +1 202 555 0110', q_consent: 'yes', consentVersion: intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1], consentAccepted: 'on', signerName: 'Ava Ng', signerRelationship: 'patient', signatureTyped: 'Ava Ng' })).status, 303)
+  const payer = await h.cmd('insurance.payer.save', { name: 'Therapy coverage', payerId: 'THERAPY', medicare: false })
+  const coverage = { startsOn: brisbane(Date.now() - 30 * 86400_000).slice(0, 10), endsOn: brisbane(Date.now() + 30 * 86400_000).slice(0, 10) }
+  const policy = await h.cmd('insurance.policy.save', { clientId: client.id, payerId: payer.id, memberId: 'AVA123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+  const authorization = await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'MOVE10', ...coverage, visits: 10, bookingAction: 'block' })
+  const file = async () => (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value
+  const before = await file()
+  await h.cmd('appointment.move', { id: booked.appointmentId, date, time: '11:00' }, reception.cookie)
+  const message = h.mail.findLast(m => m.to.includes('ava@client.example') && /\/visit\//.test(m.text))
+  assert.ok(message, 'the moved appointment delivers its current private visit link')
+  const visitPath = new URL(message.text.match(/https?:\/\/[^\s]+\/visit\/[\w-]+/)[0]).pathname
+  const patientPage = await h.send(visitPath)
+  assert.equal(patientPage.status, 200)
+  const moved = (await h.state()).appointments.find(a => a.id === booked.appointmentId)
+  const invalid = new Date(Date.parse(moved.start_at) + 7 * 60_000).toISOString()
+  assert.equal((await h.form(visitPath, { action: 'move', start: invalid })).status, 409, 'patient moves refuse off-grid slots')
+  const start = new Date(Date.parse(moved.start_at) + 3600_000).toISOString()
+  const patientMove = await h.form(visitPath, { action: 'move', start })
+  assert.equal(patientMove.status, 303, patientMove.text)
+  assert.equal((await h.send(visitPath)).status, 404, 'a moved visit invalidates its old bearer as COMM-001 requires')
+  const after = await file(), appointments = (await h.state()).appointments.filter(a => a.client_id === client.id)
+  assert.equal(appointments.length, 1)
+  assert.equal(appointments[0].id, booked.appointmentId)
+  assert.equal(appointments[0].start_at, start)
+  const intakeRecord = ({ startAt, ...record }) => record
+  assert.deepEqual(after.intake.map(intakeRecord), before.intake.map(intakeRecord), 'SCHED-004 the identical intake identity, version, answers and submission stay linked')
+  assert.equal(after.intake[0].startAt, start, 'SCHED-004 the visit-time projection follows the rescheduled appointment')
+  const retained = after.insurance.authorizations.find(a => a.id === authorization.id)
+  assert.equal(retained.reserved_visits, 1)
+  assert.equal(retained.number, 'MOVE10')
+  const history = (await h.send(`/app?date=${date}&appt=${booked.appointmentId}`, undefined, h.owner)).text
+  assert.match(history, /Patient via private visit link/)
+  assert.match(history, /rosa@clinic.example/)
+  await h.cmd('appointment.cancel', { id: booked.appointmentId }, reception.cookie, 400)
+  await h.cmd('visit_policy.save', { noticeHours: 8760, lateCancelFeeCents: 2500, noShowFeeCents: 3000 })
+  const latestVisitMail = h.mail.findLast(m => m.to.includes('ava@client.example') && /\/visit\//.test(m.text))
+  const currentVisitPath = new URL(latestVisitMail.text.match(/https?:\/\/[^\s]+\/visit\/[\w-]+/)[0]).pathname
+  assert.equal((await h.form(currentVisitPath, { action: 'move', start: new Date(Date.parse(start) + 3600_000).toISOString() })).status, 409, 'the patient must contact the clinic inside the notice window')
+  await h.cmd('appointment.cancel', { id: booked.appointmentId, reason: 'Patient requested cancellation due to a schedule conflict' }, reception.cookie)
+  const proposal = (await h.state()).visitFees.find(f => f.appointment_id === booked.appointmentId)
+  assert.equal(proposal.amount_cents, 2500)
+  assert.equal(proposal.payment_id, null)
+  assert.equal(schedStripe.calls.filter(c => c.path === '/payment_intents').length, 0)
+  const cancelledPage = (await h.send(`/app?date=${date}&appt=${booked.appointmentId}`, undefined, reception.cookie)).text
+  assert.match(cancelledPage, /Patient requested cancellation due to a schedule conflict/)
+  assert.match(cancelledPage, /rosa@clinic.example/)
+  assert.match(cancelledPage, /Nothing has been charged/)
+  const approve = { id: proposal.id, confirm: true, authorization: true, authorizationRecord: 'Patient authorized this specific $25 fee by signed consent today' }
+  await h.cmd('appointment.fee.confirm', { ...approve, confirm: false }, reception.cookie, 400)
+  await h.cmd('appointment.fee.confirm', { ...approve, authorization: false }, reception.cookie, 400)
+  await h.cmd('appointment.fee.confirm', approve, priya.cookie, 403)
+  const agent = await h.cmd('agent.create', { label: 'Schedule assistant' })
+  assert.equal((await h.send('/api/balm/agent/command', { name: 'appointment.fee.confirm', input: approve }, '', { authorization: 'Bearer ' + agent.token })).status, 403)
+  const cardLink = await h.cmd('pay.link.create', { clientId: client.id, purpose: 'card', delivery: 'shown' })
+  const cardPath = new URL(cardLink.url).pathname
+  const setup = await h.form(cardPath + '?do=card', { consent: 'on' })
+  assert.equal(setup.status, 303)
+  const session = schedStripe.complete(setup.location.split('/').at(-1))
+  assert.equal((await h.send(cardPath + '?setup=' + session.id)).status, 200)
+  const confirmations = await Promise.all([h.cmd('appointment.fee.confirm', approve, reception.cookie), h.cmd('appointment.fee.confirm', approve, h.owner)])
+  assert.ok(confirmations[0].payment.id)
+  assert.equal(new Set(confirmations.map(r => r.payment.id)).size, 1)
+  await h.cmd('appointment.fee.confirm', approve)
+  const charges = schedStripe.calls.filter(c => c.path === '/payment_intents')
+  assert.equal(charges.length, 1, 'racing approval and replay charge this proposal exactly once')
+  assert.equal(charges[0].body.amount, '2500')
+  assert.equal((await file()).billing.ledger.balanceCents, 0, 'the paid fee is matched to its own approved invoice')
+  const absent = await pastVisit(h, client.id, priya, service.id)
+  await h.cmd('appointment.no_show', { id: absent }, reception.cookie)
+  const absenceFee = (await h.state()).visitFees.find(f => f.appointment_id === absent)
+  assert.equal(absenceFee.amount_cents, 3000)
+  assert.equal(absenceFee.payment_id, null)
+  const report = (await h.send(`/api/balm/reports?from=${brisbane(Date.now() - 7 * 86400_000).slice(0, 10)}&to=${date}`, undefined, h.owner)).value
+  assert.equal(report.visits.total.noShows, 1)
+  assert.equal(schedStripe.calls.filter(c => c.path === '/payment_intents').length, 1, 'no-show marking only proposes its fee')
+}, { outbound: request => schedStripe.handler(request) })
+})
