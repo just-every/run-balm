@@ -1,4 +1,5 @@
 import { clinicalClient } from '../intake/records'
+import { episodeChoice } from '../episodes'
 import { breakGlassOpen, openBreakGlass } from '../domain/care-team'
 import { attachment, attachmentResponse } from '../messages/attachments'
 import { audit, commit, day, guard, human, insist, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
@@ -36,7 +37,8 @@ export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
   const title = text(input.title, 'document_title', 160), kind = text(input.documentType, 'document_type', 30)
   insist(documentTypes.some(([key]) => key === kind), 'invalid_document_type')
   const date = day(input.documentDate, 'document_date'), search = optional(input.searchText, 'document_search_text', 8000) ?? ''
-  await commit(db, who, [documentScope(db, who, clientId),
+  const filing = await episodeChoice(db, who, clientId, 'document', upload.id, input.episodeId)
+  await commit(db, who, [documentScope(db, who, clientId), ...filing,
     stmt(db, `INSERT INTO bm_chart_documents(id,client_id,title,document_type,document_date,search_text,filename,mime,byte_length,content_base64,sha256,created_at,created_by)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, upload.id, clientId, title, kind, date, search, upload.filename, upload.mime, upload.byteLength, upload.content, upload.digest, now(), who.email),
     audit(db, who, 'chart.document_uploaded', clientId, upload.id),

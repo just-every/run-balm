@@ -490,3 +490,124 @@ test('CHART-005: measures recorded at evaluation and three later visits show the
   assert.ok(audit.some(a => a.action === 'note.measured' && a.subject_id === evaluation.id))
   assert.ok(audit.some(a => a.action === 'note.measure_removed' && a.subject_id === progress.id))
 }))
+
+test('REF-003: two episodes of one patient keep visits, authorization use, outcomes, plans, reports and chart history apart; earlier records stay not assigned until a person files them', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
+  const reception = await h.staff('Rosa', 'reception')
+  const patient = await h.cmd('client.save', { firstName: 'Lena', lastName: 'Park', dateOfBirth: '1984-05-06' })
+  const other = await h.cmd('client.save', { firstName: 'Omar', lastName: 'Other' })
+  const shift = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
+  // Filed before any episode: never guessed into one by date.
+  const legacyVisit = await pastVisit(h, patient.id, priya, service.id, h.owner, 19)
+  const legacyDoc = await h.cmd('chart.document.upload', mriUpload(patient.id, shift(-10)), priya.cookie)
+  const knee = await h.cmd('episode.open', { clientId: patient.id, title: 'Left knee' }, reception.cookie)
+  const back = await h.cmd('episode.open', { clientId: patient.id, title: 'Low back' }, priya.cookie)
+  await h.cmd('episode.open', { clientId: patient.id, title: 'Not my patient' }, sam.cookie, 404)
+  const elsewhere = await h.cmd('episode.open', { clientId: other.id, title: 'Shoulder' })
+
+  // With two open episodes every staff action that files a record must choose one.
+  const coverage = { startsOn: shift(-30), endsOn: shift(30) }
+  const payer = await h.cmd('insurance.payer.save', { name: 'Aetna', payerId: '60054', receiverId: 'AETNA', unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }] })
+  const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: 'LP123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+  await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'AUTH-X', ...coverage, visits: 6 }, h.owner, 409)
+  await h.cmd('appointment.book', { clientId: patient.id, practitionerId: priya.id, serviceId: service.id, date: shift(3), time: '10:00', acknowledgeInsurance: 'on' }, h.owner, 409)
+  await h.cmd('chart.document.upload', mriUpload(patient.id, shift(-1)), priya.cookie, 409)
+  await h.cmd('appointment.book', { clientId: patient.id, practitionerId: priya.id, serviceId: service.id, date: shift(3), time: '10:00', episodeId: elsewhere.id, acknowledgeInsurance: 'on' }, h.owner, 409)
+  const kneeAuth = await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'AUTH-K', ...coverage, visits: 6, episodeId: knee.id })
+  const backAuth = await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'AUTH-B', ...coverage, visits: 4, episodeId: back.id })
+
+  // Document in both: visits, notes with measures, plans and uploads.
+  const chart = async (episode, hours, template, measures) => {
+    const visit = await pastVisit(h, patient.id, priya, service.id, h.owner, hours, { episodeId: episode.id, acknowledgeInsurance: 'on' })
+    const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, template }, priya.cookie)
+    for (const [kind, name, value, unit] of measures) await h.cmd('note.measure', { noteId: note.id, kind, name, value: String(value), unit }, priya.cookie)
+    await h.cmd('appointment.attend', { id: visit })
+    return { visit, note }
+  }
+  const kneeEval = await chart(knee, 17, 'pt.evaluation', [['score', 'NPRS', 7, 'points'], ['rom', 'Knee flexion', 90, 'degrees']])
+  await chart(knee, 15, 'pt.daily', [['score', 'NPRS', 5, 'points']])
+  const kneeProgress = await chart(knee, 13, 'pt.progress', [['score', 'NPRS', 3, 'points'], ['rom', 'Knee flexion', 120, 'degrees']])
+  const backEval = await chart(back, 11, 'pt.evaluation', [['score', 'NPRS', 8, 'points']])
+  const backProgress = await chart(back, 9, 'pt.progress', [['score', 'NPRS', 6, 'points']])
+  const upcoming = await h.cmd('appointment.book', { clientId: patient.id, practitionerId: priya.id, serviceId: service.id, date: shift(3), time: '10:00', episodeId: back.id, acknowledgeInsurance: 'on' })
+  const plan = (episodeId, frequencyPerWeek, durationWeeks, status = 200) => h.cmd('plan.send', { clientId: patient.id, episodeId, diagnoses: 'M25.562', shortTermGoals: 'Stairs', longTermGoals: 'Running', frequencyPerWeek, durationWeeks, interventions: 'Therapeutic exercise', startDate: shift(-3), physicianName: 'Dr Anika Patel', physicianEmail: 'physician@clinic.example', signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie, status)
+  await plan(undefined, 1, 1, 409)
+  const kneePlan = await plan(knee.id, 1, 1), backPlan = await plan(back.id, 2, 4)
+  const kneeDoc = await h.cmd('chart.document.upload', { ...mriUpload(patient.id, shift(-2)), episodeId: knee.id }, priya.cookie)
+  const backDoc = await h.cmd('chart.document.upload', { ...mriUpload(patient.id, shift(-2)), title: 'Lumbar MRI', episodeId: back.id }, priya.cookie)
+
+  // Visit counts, authorization use and outcomes are kept apart.
+  let file = await view(h, patient.id, h.owner)
+  const episode = id => file.episodes.find(e => e.id === id)
+  assert.deepEqual([episode(knee.id).visits, episode(back.id).visits, episode('').visits].map(v => [v.attended, v.booked]), [[3, 0], [2, 1], [0, 1]])
+  assert.deepEqual(episode(knee.id).authorizations.map(a => [a.id, a.used, a.reserved, a.remaining]), [[kneeAuth.id, 3, 0, 3]])
+  assert.deepEqual(episode(back.id).authorizations.map(a => [a.id, a.used, a.reserved, a.remaining]), [[backAuth.id, 2, 1, 1]])
+  assert.deepEqual([episode(knee.id).plans, episode(back.id).plans], [1, 1])
+  const nprs = file.measures.filter(m => m.name === 'NPRS').map(m => [m.episodeId, m.points.map(p => p.value), m.baseline.noteId, m.change])
+  assert.deepEqual(nprs.sort(), [[back.id, [8, 6], backEval.note.id, -2], [knee.id, [7, 5, 3], kneeEval.note.id, -4]].sort())
+  assert.deepEqual(file.measureChanges[kneeProgress.note.id].map(c => [c.name, c.baseline, c.current]), [['NPRS', 7, 3], ['Knee flexion', 90, 120]])
+  assert.deepEqual(file.measureChanges[backProgress.note.id].map(c => [c.name, c.baseline, c.current]), [['NPRS', 8, 6]])
+  const page = (await h.send('/app/clients/' + patient.id, undefined, priya.cookie)).text
+  assert.ok(page.includes(`data-measure="${knee.id}|score|nprs|none|points"`) && page.includes(`data-measure="${back.id}|score|nprs|none|points"`), 'one graph per episode series')
+  assert.ok(page.includes('Episodes of care') && page.includes('Left knee') && page.includes('Low back'))
+
+  // REPORT-001 counts plan-of-care completion per episode, in its CSV too.
+  const report = (await h.send(`/api/balm/reports?from=${shift(-5)}&to=${shift(0)}`, undefined, h.owner)).value
+  assert.deepEqual(['plans', 'completed', 'inProgress', 'droppedOff', 'attendedVisits', 'plannedVisits'].map(k => report.plans.total[k]), [2, 1, 1, 0, 5, 9])
+  assert.match((await h.send(`/api/balm/reports/plans.csv?from=${shift(-5)}&to=${shift(0)}`, undefined, h.owner)).text, /"All practitioners","2","1","1","0","5","9",/)
+
+  // Chart history: every record carries its episode and filters by it; originals reopen.
+  const search = (filters, cookie = priya.cookie) => h.send('/api/balm/clients/' + patient.id + '/history?' + new URLSearchParams(filters), undefined, cookie)
+  let found = await search({ historyEpisode: knee.id })
+  assert.deepEqual(found.value.entries.filter(r => r.type !== 'note').map(r => r.id).sort(), [kneeDoc.id, kneePlan.id].sort())
+  assert.deepEqual(found.value.entries.filter(r => r.type === 'note').map(r => r.id).length, 3)
+  assert.ok(found.value.entries.every(r => r.episodeId === knee.id))
+  assert.deepEqual((await search({ historyEpisode: back.id, historyType: 'imaging' })).value.entries.map(r => r.id), [backDoc.id])
+  assert.deepEqual((await search({ historyEpisode: 'none', historyType: 'imaging' })).value.entries.map(r => r.id), [legacyDoc.id])
+  assert.deepEqual((await search({ historyEpisode: back.id, historyType: 'plan' })).value.entries.map(r => r.id), [backPlan.id])
+  assert.equal((await search({ historyEpisode: elsewhere.id })).status, 404)
+  const original = await h.mf.dispatchFetch(h.origin + found.value.entries.find(r => r.id === kneeDoc.id).url, { headers: { cookie: priya.cookie } })
+  assert.deepEqual(Buffer.from(await original.arrayBuffer()), (await import('./chart-document-fixtures.mjs')).mriReport())
+  assert.equal((await search({ historyEpisode: knee.id }, reception.cookie)).status, 403, 'episodes add no clinical access')
+
+  // Explicit human assignment, within the record's own patient and the person's authority.
+  await h.cmd('episode.assign', { kind: 'document', recordId: legacyDoc.id, episodeId: back.id }, reception.cookie, 403)
+  await h.cmd('episode.assign', { kind: 'document', recordId: legacyDoc.id, episodeId: elsewhere.id }, priya.cookie, 404)
+  await h.cmd('episode.assign', { kind: 'document', recordId: legacyDoc.id, episodeId: back.id }, priya.cookie)
+  await h.cmd('episode.assign', { kind: 'visit', recordId: legacyVisit, episodeId: knee.id }, reception.cookie)
+  assert.deepEqual((await search({ historyEpisode: back.id, historyType: 'imaging' })).value.entries.map(r => r.id).sort(), [backDoc.id, legacyDoc.id].sort())
+  assert.equal((await search({ historyEpisode: 'none', historyType: 'imaging' })).value.total, 0)
+  file = await view(h, patient.id, h.owner)
+  assert.deepEqual([episode(knee.id).visits.booked, episode('').visits.total], [1, 0])
+
+  // An explicit close freezes the episode and leaves its signed records unchanged.
+  const lastBack = await pastVisit(h, patient.id, priya, service.id, h.owner, 7, { episodeId: back.id, acknowledgeInsurance: 'on' })
+  const signedNote = await h.cmd('note.write', { clientId: patient.id, appointmentId: lastBack, body: 'Discharge visit: independent with lumbar program.' }, priya.cookie)
+  await h.cmd('note.sign', { id: signedNote.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  await h.cmd('appointment.attend', { id: lastBack })
+  await h.cmd('episode.close', { id: back.id, reason: 'Discharged: goals met' }, priya.cookie, 409)
+  await h.cmd('appointment.cancel', { id: upcoming.appointmentId, reason: 'Patient discharged' })
+  await h.cmd('episode.close', { id: back.id, reason: 'Discharged: goals met' }, priya.cookie)
+  await h.cmd('episode.close', { id: back.id }, priya.cookie, 409)
+  await h.cmd('episode.assign', { kind: 'document', recordId: kneeDoc.id, episodeId: back.id }, priya.cookie, 409)
+  await assert.rejects(h.db.prepare('UPDATE bm_episodes SET title=? WHERE id=?').bind('Changed', back.id).run(), /episode_fixed/)
+  await assert.rejects(h.db.prepare("UPDATE bm_episode_records SET episode_id=? WHERE record_kind='document' AND record_id=?").bind(knee.id, backDoc.id).run(), /episode_not_open/)
+  file = await view(h, patient.id, h.owner)
+  const signed = file.notes.find(n => n.id === signedNote.id)
+  assert.equal(signed.status, 'signed'); assert.equal(signed.episodeId, back.id)
+  assert.equal(episode(back.id).status, 'closed'); assert.equal(episode(back.id).closeReason, 'Discharged: goals met')
+  // Discharged short of its planned visits with nothing booked: that episode dropped off.
+  const after = (await h.send(`/api/balm/reports?from=${shift(-5)}&to=${shift(0)}`, undefined, h.owner)).value
+  assert.deepEqual(['plans', 'completed', 'inProgress', 'droppedOff', 'attendedVisits', 'plannedVisits'].map(k => after.plans.total[k]), [2, 1, 0, 1, 6, 9])
+  // With one episode open, new records join it without a choice.
+  const later = await h.cmd('chart.document.upload', mriUpload(patient.id, shift(0)), priya.cookie)
+  assert.ok((await search({ historyEpisode: knee.id, historyType: 'imaging' })).value.entries.some(r => r.id === later.id))
+  const message = await h.cmd('message.send', { clientId: patient.id, body: 'Your knee program is in the portal.', delivery: 'shown' }, priya.cookie)
+  assert.deepEqual((await search({ historyEpisode: knee.id, historyType: 'message' })).value.entries.map(r => r.id), [message.messageId])
+  await h.cmd('client.erase', { id: other.id }, h.owner, 409)
+  const audit = []; let before = ''
+  do { const p = (await h.send('/api/balm/clients/' + patient.id + (before ? '?auditBefore=' + before : ''), undefined, h.owner)).value; audit.push(...p.audit); before = p.auditPage.older } while (before)
+  assert.ok(audit.some(a => a.action === 'episode.assigned' && a.subject_id === legacyDoc.id && a.detail === `document: not assigned -> ${back.id}`))
+  for (const action of ['episode.opened', 'episode.closed']) assert.ok(audit.some(a => a.action === action), action)
+}))

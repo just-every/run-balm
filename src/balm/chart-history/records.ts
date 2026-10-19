@@ -20,7 +20,7 @@ export function existingHistory(file: Data, zone: string): Data[] {
     url:path+'#historical-'+n.id,action:'Open historical note',audit:'movein.note_read'})
   for(const m of file.messages?.messages??[]){
     records.push({id:m.id,title:'Secure message',type:'message',date:date(m.sentAt),text:m.body,url:path+'#messages',action:'Open conversation',audit:'message.read'})
-    for(const a of m.attachments)records.push({id:a.id,title:a.filename,type:'message_attachment',date:date(m.sentAt),text:[a.filename,m.body].join('\n'),filename:a.filename,byteLength:a.byteLength,
+    for(const a of m.attachments)records.push({id:a.id,messageId:m.id,title:a.filename,type:'message_attachment',date:date(m.sentAt),text:[a.filename,m.body].join('\n'),filename:a.filename,byteLength:a.byteLength,
       url:'/api/balm/messages/attachments/'+a.id,action:'Download attachment',audit:'message.read'})
   }
   return records

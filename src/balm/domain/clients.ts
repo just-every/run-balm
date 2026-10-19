@@ -8,7 +8,9 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { intakeFor } from './intake'
 import { notesFor } from './notes'
-import { changesAt, measureSeries } from '../charting/measures'
+import { episodeIndex } from '../episodes'
+import { changesInEpisode, episodeSummaries, seriesByEpisode } from '../episodes/summary'
+import { authorizationsFor } from '../insurance/authorization'
 import { careTeamOnly, noteAccess } from './care-team'
 import { plansFor } from './plans'
 import { invoicesFor } from './invoices'
@@ -95,11 +97,17 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
     (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     EXISTS(SELECT 1 FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND json_array_length(COALESCE(r.charges,'[]'))>0) AS note_billed
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id WHERE a.client_id=? ORDER BY a.start_at DESC`, client.id)
+  const episodes = await episodeIndex(db, client.id as string)
+  for (const a of appointments) a.episodeId = episodes.of('visit', a.id as string)
   const visibleAppointments = appointments.filter(a => all || a.practitioner_id === own)
   // CHART-013 care-team access alone reads notes (and, under break glass, chart documents), nothing else.
   const intake = teamOnly ? [] : (await intakeFor(db, who, client.id as string))?.filter(r => who.role === 'owner' || visibleAppointments.some(a => a.id === r.appointmentId)) ?? null
   const notes = await notesFor(db, who, client.id as string)
+  // REF-003: a visit's notes (and their measures) follow the visit's episode.
+  for (const n of notes ?? []) (n as Data).episodeId = n.appointmentId ? episodes.of('visit', n.appointmentId as string) : episodes.of('note', n.id as string)
   const plans = teamOnly ? [] : await plansFor(db, who, client.id as string)
+  for (const p of plans) (p as Data).episodeId = episodes.of('plan', p.id as string)
+  const authorizations = teamOnly || who.role === 'agent' ? null : await authorizationsFor(db, client.id as string)
   const invoices = all ? await invoicesFor(db, client.id as string) : null
   const before = /^[1-9]\d{0,15}$/.test(String(auditBefore ?? '')) ? Number(auditBefore) : null
   const auditRows = who.role === 'owner' ? await rows(db, `SELECT sequence,at,actor_email,actor_role,action,subject_id,detail FROM bm_audit WHERE client_id=?${before ? ' AND sequence<?' : ''} ORDER BY sequence DESC LIMIT ?`, client.id, ...(before ? [before] : []), AUDIT_PAGE_SIZE + 1) : null
@@ -114,9 +122,10 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
   // CHART-005: series and progress changes are built only from the notes this reader reaches.
-  const measures = notes ? measureSeries(notes) : null
-  const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesAt(measures, n)])) : null
-  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  const measures = notes ? seriesByEpisode(notes) : null
+  const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesInEpisode(measures, n)])) : null
+  const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
+  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 
@@ -131,8 +140,8 @@ export async function eraseClient(db: D1Database, who: Actor, input: Data) {
     AND NOT EXISTS(SELECT 1 FROM bm_import_client_revisions WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_waitlist WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM ik_provenance WHERE destination='balm:clients' AND target_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_cards WHERE client_id=? AND removed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM bm_messages WHERE client_id=?)
-    AND NOT EXISTS(SELECT 1 FROM bm_movein_records WHERE target_table='bm_clients' AND target_id=?) AND NOT EXISTS(SELECT 1 FROM bm_home_exercises WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_disclosures WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_client_alerts WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_chart_documents WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_followups WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_payment_plans WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_balance_reminders WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_retention_holds WHERE client_id=?)`
-  const args = Array(21).fill(client.id)
+    AND NOT EXISTS(SELECT 1 FROM bm_movein_records WHERE target_table='bm_clients' AND target_id=?) AND NOT EXISTS(SELECT 1 FROM bm_home_exercises WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_disclosures WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_client_alerts WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_chart_documents WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_followups WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_payment_plans WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_balance_reminders WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_retention_holds WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_episodes WHERE client_id=?)`
+  const args = Array(22).fill(client.id)
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${unused}) THEN 1 ELSE 0 END AS ok`, ...args))?.ok === 1, 'clients_with_health_records_are_retained', 409)
   const portability = await createPortability({ db, policy: archivePolicy })
   const at = Date.now()

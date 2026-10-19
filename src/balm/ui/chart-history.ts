@@ -3,6 +3,10 @@ import { documentTypes } from '../chart-history/documents'
 import { historyTypes } from '../chart-history/search'
 import { attachmentInput } from '../messages/attachments'
 import { field, form, h, hidden, panel, select, textarea, usDate, zoneOf } from './shared'
+import { assignForm, episodeField, episodeLabel } from './episodes'
+
+// Records filed to an episode by themselves; intake and a visit's notes follow their visit.
+const filedAlone: Record<string, string> = { referral: 'document', imaging: 'document', order: 'document', signed_plan: 'document', photo: 'document', other: 'document', plan: 'plan', message: 'message', historical_note: 'historical_note' }
 
 export function chartHistoryPanel(s: any, f: any) {
   const history=f.chartHistory
@@ -11,11 +15,12 @@ export function chartHistoryPanel(s: any, f: any) {
   const search=`<form method="get" action="${h(path)}#chart-history">${field('historyText','Search chart history',filters.historyText,'search','maxlength="200"')}`
     + `<div class="pair">${field('historyFrom','From document date',filters.historyFrom,'date')}${field('historyTo','Through document date',filters.historyTo,'date')}</div>`
     + select('historyType','Document type',[['','All types'],...historyTypes.map(([key,label])=>[key,label] as [string,string])],filters.historyType,'')
+    + ((f.episodes ?? []).some((e:any)=>e.id) ? select('historyEpisode','Episode of care',[['','All episodes'],...f.episodes.filter((e:any)=>e.id).map((e:any)=>[e.id,e.title]),['none','Not assigned to an episode']] as [string,string][],filters.historyEpisode,'') : '')
     + '<button type="submit">Search history</button></form>'
   const pager=(n:number,label:string)=>`<a href="${h(path+'?'+new URLSearchParams({...filters,historyPage:String(n)})+'#chart-history')}">${label}</a>`
   const list=history.entries.map((r:any)=>`<article class="entry"><h3>${h(r.title)}</h3><p>${h(historyTypes.find(([key])=>key===r.type)?.[1]??r.type)} · ${h(r.date?usDate(r.date,zone):'Date not recorded')}`
-    + `${r.filename?`<br>${h(r.filename)} · ${h(r.byteLength)} bytes${r.filedBy?`<br>Filed by ${h(r.filedBy)}`:''}`:''}</p><a href="${h(r.url)}">${h(r.action)}</a></article>`).join('')
-  const upload=form('chart.document.upload',path,hidden('clientId',f.client.id)+field('title','Document title','','text','required maxlength="160"')
+    + `${r.filename?`<br>${h(r.filename)} · ${h(r.byteLength)} bytes${r.filedBy?`<br>Filed by ${h(r.filedBy)}`:''}`:''}<br>${episodeLabel(f,r.episodeId)}</p><a href="${h(r.url)}">${h(r.action)}</a>${filedAlone[r.type]&&!f.careAccess?.teamOnly?assignForm(f,filedAlone[r.type],r.id,r.episodeId,path):''}</article>`).join('')
+  const upload=form('chart.document.upload',path,hidden('clientId',f.client.id)+episodeField(f)+field('title','Document title','','text','required maxlength="160"')
     + select('documentType','Type of document',documentTypes.map(([key,label])=>[key,label]),'other')
     + field('documentDate','Document date',hostDateAt(new Date(),zone),'date','required')
     + textarea('searchText','Searchable text or description','','maxlength="8000" rows="3"')+attachmentInput

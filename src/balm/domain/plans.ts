@@ -4,6 +4,7 @@
 // the plan's content is fixed once sent (migrations/core/0017_balm_charting.sql).
 import { audit, commit, day, email, guard, human, insist, integer, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 import { clientVisible } from './clients'
+import { episodeChoice } from '../episodes'
 
 const LINK_DAYS = 30
 const addDays = (date: string, days: number) => new Date(Date.parse(date + 'T00:00:00Z') + days * 86400_000).toISOString().slice(0, 10)
@@ -35,7 +36,10 @@ export async function sendPlan(db: D1Database, who: Actor, input: Data) {
   }
   const physicianName = text(input.physicianName, 'physician_name', 160), physicianEmail = email(input.physicianEmail, 'physician_email')
   const link = token(), at = now(), planId = crypto.randomUUID(), serialized = JSON.stringify(content)
-  await commit(db, who, [
+  // REF-003: a plan written from a visit's note joins that visit's open episode unless another is chosen.
+  const visit = noteId ? (await one(db, "SELECT r.episode_id FROM bm_notes n JOIN bm_episode_records r ON r.record_kind='visit' AND r.record_id=n.appointment_id WHERE n.id=?", noteId))?.episode_id as string | undefined : undefined
+  const filing = await episodeChoice(db, who, client.id as string, 'plan', planId, input.episodeId, visit)
+  await commit(db, who, [...filing,
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     stmt(db, `INSERT INTO bm_plans_of_care(id,client_id,author_id,note_id,content,content_sha256,therapist_name,therapist_credentials,created_at,physician_name,physician_email,sign_token_hash,sign_token_expires_at,sent_at,status)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'sent')`, planId, client.id, author, noteId, serialized, await sha256(serialized), staff.name, content.therapist.credentials, at,

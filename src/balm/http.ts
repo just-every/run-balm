@@ -7,6 +7,7 @@ import { saveVisitPolicy } from './scheduling/policy'
 import { followupCommand, followupSettings, followupsFor } from './followups/settings'
 import { clinicalActor, downloadDocument, uploadDocument } from './chart-history/documents'
 import { fileHistory } from './chart-history/search'
+import { episodeCommand } from './episodes'
 import { bookedIntake } from './domain/intake-requests'
 import { saveClientAlert, alertsFor } from './domain/alerts'
 import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
@@ -128,6 +129,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'appointment.fee.confirm') return confirmVisitFee(env, env.DB, who, input)
   if (name.startsWith('followups.')) return followupCommand(env.DB, who, name, input)
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
+  if (name.startsWith('episode.')) return episodeCommand(env.DB, who, name, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
   if (name === 'care_team.grant') return grantCareTeam(env.DB, who, input)
@@ -157,7 +159,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       ? (Array.isArray(input.occurrences) ? input.occurrences.filter((o: any) => ![true, 'on', 'yes'].includes(o.skip)).map((o: any) => String(o.date))
         : Object.keys(input).filter(k => /^date_\d+$/.test(k) && input['skip_' + k.slice(5)] !== 'on').map(k => String(input[k])))
       : [String(input.date ?? '')]
-    const found = (await Promise.all([...new Set(dates)].map(date => bookingWarnings(env.DB, String(input.clientId), date, String(input.practitionerId ?? ''), undefined, dates)))).flat()
+    const found = (await Promise.all([...new Set(dates)].map(date => bookingWarnings(env.DB, String(input.clientId), date, String(input.practitionerId ?? ''), undefined, dates, input.episodeId ? String(input.episodeId) : undefined)))).flat()
     const warnings = [...new Map(found.map(w => [w.code + ':' + w.authorizationId + ':' + w.policyId, w])).values()]
     if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })

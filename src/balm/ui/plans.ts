@@ -1,3 +1,4 @@
+import { episodeField } from './episodes'
 // Plan of care on a client file: its physician signature status and dates for
 // everyone who opens the file, its content for the owner and practitioners, and
 // the therapist's form to sign it and send it to the referring physician.
@@ -45,7 +46,7 @@ function writePlan(s: any, f: any) {
   const part = (id: string) => evaluation?.revisions[0].sections?.find((x: any) => x.id === id)?.text ?? ''
   const today = hostDateAt(new Date(), zoneOf(s))
   const weekly = Array.from({ length: 7 }, (_, n) => `<option value="${n + 1}"${n === 1 ? ' selected' : ''}>${n + 1} ${n ? 'times' : 'time'} a week</option>`).join('')
-  return `<details><summary>Write a plan of care</summary>${form('plan.send', `/app/clients/${f.client.id}`, hidden('clientId', f.client.id) + hidden('noteId', evaluation?.id ?? '')
+  return `<details><summary>Write a plan of care</summary>${form('plan.send', `/app/clients/${f.client.id}`, hidden('clientId', f.client.id) + hidden('noteId', evaluation?.id ?? '') + episodeField(f)
     + (evaluation ? '<p class="help">Diagnoses and goals are filled from your signed evaluation; edit them as needed.</p>' : '')
     + textarea('diagnoses', 'Diagnoses (ICD-10)', part('diagnosis'), 'required maxlength="2000"') + textarea('shortTermGoals', 'Short-term goals', part('goals'), 'required maxlength="4000"')
     + textarea('longTermGoals', 'Long-term goals', '', 'required maxlength="4000"')

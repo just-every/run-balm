@@ -34,16 +34,17 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   const evaluations = (await rows(db, `SELECT n.author_id,n.template FROM bm_notes n LEFT JOIN bm_appointments a ON a.id=n.appointment_id
     WHERE n.signed_at IS NOT NULL AND n.template LIKE '%.evaluation'
     AND julianday(COALESCE(a.start_at,n.signed_at))>=julianday(?) AND julianday(COALESCE(a.start_at,n.signed_at))<julianday(?)`, f.start, f.end)).filter(n => mine(n.author_id))
-  const plans = (await rows(db, `SELECT id,client_id,author_id,json_extract(content,'$.startDate') AS start_date,
-    json_extract(content,'$.frequencyPerWeek') AS per_week,json_extract(content,'$.durationWeeks') AS weeks
-    FROM bm_plans_of_care WHERE json_extract(content,'$.startDate') BETWEEN ? AND ?`, f.from, f.to)).filter(p => mine(p.author_id))
-  const planVisits = plans.length ? await rows(db, `SELECT client_id,practitioner_id,start_at,status FROM bm_appointments WHERE status IN ('attended','booked')
-    AND client_id IN (SELECT client_id FROM bm_plans_of_care WHERE json_extract(content,'$.startDate') BETWEEN ? AND ?)`, f.from, f.to) : []
+  const episodeOf = (kind: string, column: string) => `COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='${kind}' AND record_id=${column}),'') AS episode_id`
+  const plans = await rows(db, `SELECT id,client_id,author_id,json_extract(content,'$.startDate') AS start_date,
+    json_extract(content,'$.frequencyPerWeek') AS per_week,json_extract(content,'$.durationWeeks') AS weeks,${episodeOf('plan', 'bm_plans_of_care.id')}
+    FROM bm_plans_of_care WHERE json_extract(content,'$.startDate') BETWEEN ? AND ? OR EXISTS(SELECT 1 FROM bm_episode_records WHERE record_kind='plan' AND record_id=bm_plans_of_care.id)`, f.from, f.to)
+  const planVisits = plans.length ? await rows(db, `SELECT client_id,practitioner_id,start_at,status,${episodeOf('visit', 'bm_appointments.id')} FROM bm_appointments WHERE status IN ('attended','booked')
+    AND client_id IN (SELECT client_id FROM bm_plans_of_care)`) : []
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours')
   const anonymous = await anonymousOperationalFacts(db, f)
   visits.push(...anonymous.visits.filter(v => mine(v.practitioner_id)))
   evaluations.push(...anonymous.evaluations.filter(n => mine(n.author_id)))
-  plans.push(...anonymous.plans.filter(p => mine(p.author_id)))
+  plans.push(...anonymous.plans)
   planVisits.push(...anonymous.planVisits)
 
   const byPractitioner = <T>(make: () => T) => new Map(f.practitioners.map(p => [p.id, make()]))
@@ -76,22 +77,37 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
     const discipline = String(n.template).split('.')[0] as 'pt' | 'ot' | 'slp', row = evaluationRows.get(n.author_id)!
     if (discipline in row) row[discipline]++
   }
-  // Each plan of care is one episode until episodes of care ship. It counts the
-  // attended visits with its own therapist from its start date through the last
-  // day of its planned weeks. Completed: attended at least the planned visits.
-  // Dropped off: fewer, with no visit with that therapist booked after now.
+  // REF-003: an episode of care with a plan counts once, in the range its first plan
+  // starts in. Its planned visits come from its latest-starting plan (ties: higher id),
+  // whose therapist the row belongs to; it counts every attended visit filed to the
+  // episode. A plan no episode holds is one episode by itself, as before episodes:
+  // attended visits with its own therapist, outside any episode, from its start date
+  // through the last day of its planned weeks. Completed: attended at least the planned
+  // visits. Dropped off: fewer, with no visit of that episode (or therapist) booked after now.
   const now = Date.now()
   const planRows = byPractitioner(() => ({ plans: 0, completed: 0, inProgress: 0, droppedOff: 0, attendedVisits: 0, plannedVisits: 0 }))
-  for (const plan of plans) {
-    const last = datePlus(plan.start_date, Number(plan.weeks) * 7 - 1), planned = Number(plan.per_week) * Number(plan.weeks)
-    const theirs = planVisits.filter(v => v.client_id === plan.client_id && v.practitioner_id === plan.author_id)
-    const attended = theirs.filter(v => v.status === 'attended' && (d => d >= plan.start_date && d <= last)(hostDateAt(new Date(v.start_at), f.zone))).length
-    const upcoming = theirs.some(v => v.status === 'booked' && Date.parse(v.start_at) > now)
-    const row = planRows.get(plan.author_id)!
+  const tally = (author: string, attended: number, planned: number, upcoming: boolean) => {
+    const row = planRows.get(author)!
     row.plans++; row.attendedVisits += attended; row.plannedVisits += planned
     if (attended >= planned) row.completed++
     else if (upcoming) row.inProgress++
     else row.droppedOff++
+  }
+  const episodes = new Map<string, Data[]>()
+  for (const plan of plans) {
+    if (plan.episode_id) { episodes.set(plan.episode_id, [...episodes.get(plan.episode_id) ?? [], plan]); continue }
+    if (plan.start_date < f.from || plan.start_date > f.to || !mine(plan.author_id)) continue
+    const last = datePlus(plan.start_date, Number(plan.weeks) * 7 - 1), planned = Number(plan.per_week) * Number(plan.weeks)
+    const theirs = planVisits.filter(v => !v.episode_id && v.client_id === plan.client_id && v.practitioner_id === plan.author_id)
+    const attended = theirs.filter(v => v.status === 'attended' && (d => d >= plan.start_date && d <= last)(hostDateAt(new Date(v.start_at), f.zone))).length
+    tally(plan.author_id, attended, planned, theirs.some(v => v.status === 'booked' && Date.parse(v.start_at) > now))
+  }
+  for (const [episode, list] of episodes) {
+    const first = list.reduce((a, b) => b.start_date < a ? b.start_date : a, list[0].start_date as string)
+    const latest = [...list].sort((a, b) => b.start_date.localeCompare(a.start_date) || String(b.id).localeCompare(String(a.id)))[0]
+    if (first < f.from || first > f.to || !mine(latest.author_id)) continue
+    const theirs = planVisits.filter(v => v.episode_id === episode)
+    tally(latest.author_id, theirs.filter(v => v.status === 'attended').length, Number(latest.per_week) * Number(latest.weeks), theirs.some(v => v.status === 'booked' && Date.parse(v.start_at) > now))
   }
 
   const named = <T extends object>(map: Map<string, T>) => f.practitioners.map(p => ({ practitionerId: p.id, practitioner: p.name, ...map.get(p.id)! }))

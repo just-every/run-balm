@@ -1,5 +1,6 @@
 import { audit, commit, day, DomainError, guard, id, insist, integer, one, optional, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { validNpi } from '../payments/codes'
+import { episodeChoice } from '../episodes'
 import { insuranceClient, policyFor, yes } from './access'
 
 import { policyRecord, policyStatement, postal, stateCode } from './policy'
@@ -63,6 +64,8 @@ export async function saveAuthorization(db: D1Database, who: Actor, input: Data)
   const previous = input.id ? await one(db,'SELECT * FROM bm_authorizations WHERE id=?',key) : null
   insist(!input.id || previous?.policy_id === policy.id,'authorization_not_found',404)
   const staff = optional(input.practitionerId,'practitioner',100)
-  await commit(db,who,[...(staff?[guard(db,"EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)",staff)]:[]),...(previous?[guard(db,'EXISTS(SELECT 1 FROM bm_authorizations WHERE id=? AND version=?)',key,previous.version)]:[]),stmt(db,`INSERT INTO bm_authorizations(id,policy_id,number,starts_on,ends_on,visits,practitioner_id,booking_action) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET number=excluded.number,starts_on=excluded.starts_on,ends_on=excluded.ends_on,visits=excluded.visits,practitioner_id=excluded.practitioner_id,booking_action=excluded.booking_action,version=bm_authorizations.version+1`,key,policy.id,text(input.number,'authorization_number',50),start,end,integer(input.visits,'visits',1,10000),staff,action),stmt(db,'UPDATE bm_policies SET version=version+1 WHERE id=?',policy.id),audit(db,who,'insurance.authorization_saved',policy.client_id,key)])
+  // REF-003: a new authorization joins the chosen or only open episode; an edit keeps its filing.
+  const filing = previous ? [] : await episodeChoice(db,who,policy.client_id as string,'authorization',key,input.episodeId)
+  await commit(db,who,[...filing,...(staff?[guard(db,"EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)",staff)]:[]),...(previous?[guard(db,'EXISTS(SELECT 1 FROM bm_authorizations WHERE id=? AND version=?)',key,previous.version)]:[]),stmt(db,`INSERT INTO bm_authorizations(id,policy_id,number,starts_on,ends_on,visits,practitioner_id,booking_action) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET number=excluded.number,starts_on=excluded.starts_on,ends_on=excluded.ends_on,visits=excluded.visits,practitioner_id=excluded.practitioner_id,booking_action=excluded.booking_action,version=bm_authorizations.version+1`,key,policy.id,text(input.number,'authorization_number',50),start,end,integer(input.visits,'visits',1,10000),staff,action),stmt(db,'UPDATE bm_policies SET version=version+1 WHERE id=?',policy.id),audit(db,who,'insurance.authorization_saved',policy.client_id,key)])
   return { id:key }
 }

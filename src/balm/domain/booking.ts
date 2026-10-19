@@ -1,6 +1,7 @@
 import { checkSelfService, selfServiceSnapshot } from '../scheduling/self-service-policy'
 import { cancellationStatements, feeProposalStatements, getVisitPolicy } from '../scheduling/policy'
 import { allocateIntake } from './intake-requests'
+import { episodeChoice } from '../episodes'
 import { attendanceStatements } from './attendance'
 import { phoneNumber } from './us-clinic'
 import { evaluateSlot, listAvailableSlots, type AvailabilityConstraints } from '../availability/engine'
@@ -172,7 +173,8 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const place = await placeVisit(db, clinic.time_zone, { practitionerId: practitioner.id as string, durationMinutes: service.duration_minutes, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId })
   insist(!place.problem, place.problem!, 409)
   const token = intakeToken(), appointmentId = id()
-  await commit(db, who, appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId }))
+  const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
+  await commit(db, who, [...filing, ...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId })])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 
