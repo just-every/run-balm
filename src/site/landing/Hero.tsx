@@ -8,7 +8,7 @@ import { Painting } from './parts'
 export function Hero() {
   return <section className="hero" aria-labelledby="hero-title">
     <div className="hero-canvas">
-      <Painting className="hero-art" name="hero" widths={[768, 1152, 1536]} sizes="100vw" eager phone={{ name: 'hero-phone', widths: [640, 1000], media: '(max-width: 1099px)' }} />
+      <Painting className="hero-art" name="hero" widths={[768, 1152, 1536, 2304, 3072]} sizes="100vw" eager phone={{ name: 'hero-phone', widths: [640, 1000], media: '(max-width: 1099px)' }} />
       <SiteHeader overArt />
       <div className="hero-copy">
         <h1 id="hero-title">Back to your patients.</h1>

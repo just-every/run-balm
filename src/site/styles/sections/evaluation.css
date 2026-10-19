@@ -1,0 +1,54 @@
+/* 04 The scribe drafts. You sign.: copy left, the evaluation as one long document, Dr. Patel's signature lapping it. */
+.stage-evaluation .stage-body { display: grid; grid-template-columns: calc(var(--u) * 600) calc(var(--u) * 830); column-gap: calc(var(--u) * 6); align-items: center; padding: calc(var(--u) * 72) calc(var(--u) * 20) calc(var(--u) * 26) calc(var(--u) * 60); }
+.stage-evaluation .copy { margin-top: calc(var(--u) * -120); }
+.eval-art { position: relative; padding-bottom: calc(var(--u) * 200); }
+.eval-card { width: calc(var(--u) * 830); padding: calc(var(--u) * 50) calc(var(--u) * 54) calc(var(--u) * 30) calc(var(--u) * 60); border-radius: calc(var(--u) * 26); }
+.eval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(var(--u) * 20); padding-bottom: calc(var(--u) * 26); border-bottom: 1px solid var(--line); }
+.eval-head .card-title { font-size: calc(var(--u) * 58); line-height: 1.05; }
+.eval-head .soft-pill { margin-top: calc(var(--u) * 10); padding: calc(var(--u) * 8) calc(var(--u) * 26); }
+.eval-sub { margin-top: calc(var(--u) * 12); font-size: max(11px, calc(var(--u) * 20)); color: #33454e; }
+.eval-rows > div { display: grid; grid-template-columns: calc(var(--u) * 172) 1fr; align-items: baseline; padding: calc(var(--u) * 24) 0; border-bottom: 1px solid var(--line); }
+.eval-rows dt { font-size: max(11px, calc(var(--u) * 14.5)); letter-spacing: .22em; text-transform: uppercase; color: #46565e; }
+.eval-rows dd { margin: 0; font-size: max(11px, calc(var(--u) * 20.5)); line-height: 1.5; color: #1e3038; }
+.eval-rows .code { margin-right: calc(var(--u) * 12); }
+.eval-goals li { display: flex; align-items: center; gap: calc(var(--u) * 16); }
+.eval-goals li + li { margin-top: calc(var(--u) * 10); }
+.eval-goals li::before { content: ''; flex: none; width: calc(var(--u) * 28); height: calc(var(--u) * 28); border-radius: 50%; border: 1.5px solid #9aa5aa; }
+.eval-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(var(--u) * 12) calc(var(--u) * 24); padding-top: calc(var(--u) * 26); }
+.eval-foot p { display: flex; align-items: center; gap: calc(var(--u) * 18); font-size: max(11px, calc(var(--u) * 18)); color: #33454e; }
+.eval-foot .chip-icon { width: calc(var(--u) * 48); height: calc(var(--u) * 48); color: #c27a17; }
+.eval-foot .chip-icon .icon { fill: currentColor; stroke: none; }
+.eval-foot .check { width: calc(var(--u) * 40); height: calc(var(--u) * 40); }
+.eval-art .check.solid circle, .poc-card .check.solid circle { fill: #5f9e66; }
+
+.poc-card { position: absolute; left: calc(var(--u) * 492); top: calc(var(--u) * 730); display: grid; grid-template-columns: auto 1fr; column-gap: calc(var(--u) * 20); align-items: center; width: calc(var(--u) * 344); padding: calc(var(--u) * 28) calc(var(--u) * 26) calc(var(--u) * 20) calc(var(--u) * 30); border-radius: calc(var(--u) * 18); transform: rotate(-4deg); box-shadow: var(--shadow-float); }
+.poc-card .check { width: calc(var(--u) * 46); height: calc(var(--u) * 46); }
+.poc-card .card-title { font-size: calc(var(--u) * 23); white-space: nowrap; }
+.poc-card p { margin-top: calc(var(--u) * 4); font-size: max(11px, calc(var(--u) * 17)); color: #46565e; }
+.signature { grid-column: 1 / -1; width: calc(var(--u) * 210); height: calc(var(--u) * 62); margin: calc(var(--u) * 6) 0 0 calc(var(--u) * 50); fill: none; stroke: #1d2c3a; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (max-width: 1099px) {
+  .stage-evaluation .stage-body { display: block; }
+  .stage-evaluation .copy { margin-top: 0; }
+  .eval-art { margin-top: 28px; padding-bottom: 0; }
+  .eval-card { width: auto; padding: 22px 18px 18px; border-radius: 18px; }
+  .eval-head .card-title { font-size: clamp(30px, 8vw, 40px); }
+  .eval-sub { font-size: 15.5px; }
+  .eval-rows > div { grid-template-columns: 1fr; row-gap: 6px; padding: 14px 0; }
+  .eval-rows dt { font-size: 12px; }
+  .eval-rows dd { font-size: 16px; }
+  .eval-goals li::before { width: 20px; height: 20px; }
+  .eval-foot { flex-direction: column; align-items: flex-start; padding-top: 16px; }
+  .eval-foot p { font-size: 15px; gap: 12px; }
+  .eval-foot .chip-icon { width: 36px; height: 36px; }
+  .eval-foot .check { width: 32px; height: 32px; }
+  .poc-card { position: relative; left: auto; top: auto; width: min(100%, 330px); margin: -6px 0 14px auto; padding: 20px 18px 14px 20px; transform: rotate(-2.5deg); }
+  .poc-card .card-title { font-size: 19px; }
+  .poc-card p { font-size: 14px; }
+  .poc-card .check { width: 36px; height: 36px; }
+  .signature { width: 170px; height: 50px; margin-left: 40px; }
+}
+@media (min-width: 761px) and (max-width: 1099px) {
+  .eval-rows > div { grid-template-columns: 150px 1fr; }
+  .eval-foot { flex-direction: row; align-items: center; }
+}

@@ -1,0 +1,86 @@
+/* 05 Sixteen visits, all kept.: on the sage ground, the visits on one dated line with the moved visit lifted on a stem,
+   the text thread and the waitlist card lapping it (page-05). Phones read the visits as a two-month list. */
+.stage-visits .stage-body { display: grid; grid-template-columns: calc(var(--u) * 850) 1fr; column-gap: calc(var(--u) * 4); padding: calc(var(--u) * 100) calc(var(--u) * 84) calc(var(--u) * 70) calc(var(--u) * 86); }
+.stage-visits .copy { display: contents; }
+.stage-visits .eyebrow { grid-column: 1; }
+.stage-visits .copy h2 { grid-column: 1; white-space: nowrap; }
+.stage-visits .copy-body { grid-column: 2; grid-row: 1 / span 2; align-self: end; margin: 0 0 calc(var(--u) * 18); max-width: calc(var(--u) * 520); font-size: max(15px, calc(var(--u) * 23)); }
+.visit-track { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; align-items: center; margin: calc(var(--u) * 58) calc(var(--u) * -60) 0 calc(var(--u) * -12); }
+.track-who { font-size: max(11px, calc(var(--u) * 20.5)); color: #23363e; }
+.track-who strong { font-weight: 500; }
+.track-who span { color: var(--soft); }
+.track-kept { display: flex; align-items: center; gap: calc(var(--u) * 14); font-size: max(11px, calc(var(--u) * 18.5)); color: #23363e; }
+.track-kept .check { width: calc(var(--u) * 28); height: calc(var(--u) * 28); }
+.stage-visits .check.solid circle { fill: #6aa56c; }
+.track { grid-column: 1 / -1; position: relative; height: calc(var(--u) * 132); margin: calc(var(--u) * 20) calc(var(--u) * 99) 0 calc(var(--u) * 26); }
+.track::before { content: ''; position: absolute; left: calc(var(--u) * -26); right: calc(var(--u) * -40); top: calc(var(--u) * 37); height: 2px; background: #9fc193; }
+.track-line li { position: absolute; left: calc(var(--at) * 100%); top: calc(var(--u) * 26); display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); font-size: max(11px, calc(var(--u) * 16.5)); color: #2c3e46; white-space: nowrap; }
+.track-line .dot { width: calc(var(--u) * 22); height: calc(var(--u) * 22); margin-bottom: calc(var(--u) * 12); border-radius: 50%; background: #5f9e5f; box-shadow: 0 0 0 calc(var(--u) * 3) rgba(255, 255, 255, .6); }
+.track-line .moved .dot { background: #e2a43a; }
+.moved-flag { position: absolute; z-index: 1; left: calc(var(--at) * 100%); bottom: calc(100% + var(--u) * -8); transform: translateX(-80%); display: flex; align-items: center; gap: calc(var(--u) * 10); padding: calc(var(--u) * 10) calc(var(--u) * 14); border-radius: calc(var(--u) * 10); background: #fff; box-shadow: var(--shadow-card); font-size: max(11px, calc(var(--u) * 15)); color: #23363e; white-space: nowrap; }
+.moved-flag::after { content: ''; position: absolute; left: 80%; top: 100%; width: 2px; height: calc(var(--u) * 28); background: #e2a43a; }
+.moved-flag span { white-space: nowrap; }
+.moved-flag svg { width: calc(var(--u) * 24); height: calc(var(--u) * 16); fill: none; stroke: #e2a43a; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.months { position: absolute; left: calc(var(--u) * -26); right: calc(var(--u) * -40); bottom: 0; height: calc(var(--u) * 20); }
+.months p { position: absolute; top: 0; display: flex; align-items: center; gap: calc(var(--u) * 18); font-size: max(11px, calc(var(--u) * 13.5)); letter-spacing: .26em; text-transform: uppercase; color: #52636b; }
+.months p::after { content: ''; flex: 1; height: 1px; background: #bfd2b9; }
+.months p:first-child { left: 0; right: calc((1 - var(--to)) * (100% - var(--u) * 66) + var(--u) * 40 + var(--u) * 12); }
+.months p:last-child { left: calc(var(--from) * (100% - var(--u) * 66) + var(--u) * 26 + var(--u) * 12); right: 0; }
+.visit-list { display: none; }
+
+.visit-cards { grid-column: 1 / -1; position: relative; height: calc(var(--u) * 486); margin-top: calc(var(--u) * 24); }
+.visit-cards .card { position: absolute; border-radius: calc(var(--u) * 24); }
+.thread-card { left: calc(var(--u) * 184); top: 0; width: calc(var(--u) * 580); padding: calc(var(--u) * 28) calc(var(--u) * 54) calc(var(--u) * 34) calc(var(--u) * 28); }
+.thread-card .card-title { font-size: calc(var(--u) * 29); }
+.thread { display: flex; flex-direction: column; margin-top: calc(var(--u) * 18); }
+.bubble { max-width: calc(var(--u) * 430); padding: calc(var(--u) * 12) calc(var(--u) * 22); border-radius: calc(var(--u) * 18); font-size: max(11px, calc(var(--u) * 18.5)); line-height: 1.45; }
+.bubble.in { align-self: flex-start; background: var(--bubble); border-bottom-left-radius: calc(var(--u) * 5); color: #23343c; }
+.bubble.out { align-self: flex-end; min-width: calc(var(--u) * 80); text-align: center; background: #cfe3c6; border-bottom-right-radius: calc(var(--u) * 5); color: #23343c; }
+.thread .bubble + .bubble { margin-top: calc(var(--u) * 14); }
+.waitlist-card { left: calc(var(--u) * 727); top: calc(var(--u) * 78); width: calc(var(--u) * 533); padding: calc(var(--u) * 36) calc(var(--u) * 40) calc(var(--u) * 30) calc(var(--u) * 38); }
+.waitlist-card .card-title { font-size: calc(var(--u) * 31); }
+.waitlist-steps { position: relative; margin-top: calc(var(--u) * 18); }
+.waitlist-steps::before { content: ''; position: absolute; left: calc(var(--u) * 31); top: calc(var(--u) * 40); bottom: calc(var(--u) * 40); width: 2px; background: #9fc193; }
+.waitlist-steps li { position: relative; display: flex; align-items: center; gap: calc(var(--u) * 34); padding: calc(var(--u) * 19) 0; }
+.waitlist-steps .chip-icon, .waitlist-steps .avatar { width: calc(var(--u) * 64); height: calc(var(--u) * 64); border: calc(var(--u) * 6) solid #fff; box-sizing: content-box; margin: calc(var(--u) * -6); }
+.waitlist-steps .chip-icon .icon { width: 50%; height: 50%; stroke-width: 1.7; }
+.waitlist-steps .avatar { font-size: calc(var(--u) * 20); background: #dfe9dd; color: #23363e; }
+.waitlist-steps p { flex: 1; font-size: max(11px, calc(var(--u) * 19.5)); color: #23363e; }
+.waitlist-steps .check { width: calc(var(--u) * 42); height: calc(var(--u) * 42); }
+
+@media (max-width: 1099px) {
+  .stage-visits .stage-body { display: block; }
+  .stage-visits .copy { display: block; }
+  .stage-visits .copy h2 { white-space: normal; }
+  .stage-visits .copy-body { margin: 14px 0 0; max-width: none; font-size: 17.5px; }
+  .visit-track { margin: 30px 0 0; row-gap: 8px; }
+  .track-who { grid-column: 1 / -1; font-size: 15.5px; }
+  .track-who strong { display: block; }
+  .track-who span { display: none; }
+  .track-kept { grid-column: 1 / -1; font-size: 15px; }
+  .track-kept .check { width: 22px; height: 22px; }
+  .track { display: none; }
+  .visit-list { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+  .list-month { padding-bottom: 8px; border-bottom: 1px solid #bfd2b9; font-size: 12.5px; letter-spacing: .26em; text-transform: uppercase; color: #52636b; }
+  .visit-list ul { position: relative; margin-top: 6px; }
+  .visit-list ul::before { content: ''; position: absolute; left: 6px; top: 16px; bottom: 16px; width: 2px; background: #cfe0c8; }
+  .visit-list li { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 7px 0; }
+  .visit-list .dot { flex: none; width: 14px; height: 14px; margin-top: 4px; border-radius: 50%; background: #5f9e5f; box-shadow: 0 0 0 3px #f1f6ee; }
+  .visit-list p { font-size: 15.5px; color: #23363e; }
+  .visit-list .moved .dot { background: #e2a43a; }
+  .visit-list .moved p { color: #8a5a12; font-weight: 500; }
+  .visit-list .moved span { display: block; font-weight: 400; font-size: 14px; color: #8a5a12; }
+  .visit-cards { height: auto; display: grid; gap: 14px; margin-top: 28px; }
+  .visit-cards .card { position: relative; left: auto; top: auto; width: auto; border-radius: 18px; padding: 20px 18px; }
+  .bubble { max-width: 86%; font-size: 15.5px; padding: 10px 16px; }
+  .bubble.out { min-width: 56px; }
+  .thread .bubble + .bubble { margin-top: 10px; }
+  .waitlist-steps::before { left: 24px; }
+  .waitlist-steps li { gap: 16px; padding: 10px 0; }
+  .waitlist-steps .chip-icon, .waitlist-steps .avatar { width: 48px; height: 48px; border-width: 4px; margin: -4px; font-size: 16px; }
+  .waitlist-steps p { font-size: 15.5px; }
+  .waitlist-steps .check { width: 30px; height: 30px; }
+}
+@media (max-width: 760px) {
+  .visit-list { grid-template-columns: 1fr; }
+}

@@ -16,6 +16,11 @@ import run from './run.json'
 // Code cards get their Copy button only when script runs; without it the command is still there to select.
 const COPY = "document.querySelectorAll('.docs-copy').forEach(b=>{b.hidden=false;b.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(b.closest('.docs-code').querySelector('code').textContent);b.textContent='Copied';setTimeout(()=>{b.textContent='Copy'},1600)}catch{}})})"
 
+/** The homepage's " · " and " → " hold to the words on both sides, so no line starts or ends with one, and a date
+ * ("Mar 9") or a duration ("4 min") never splits across lines. */
+const keepSeparators = (html: string) => html.replaceAll(' · ', '\u00a0·\u00a0').replaceAll(' → ', '\u00a0→\u00a0')
+  .replace(/\b(Mar|Apr) (\d)/g, '$1\u00a0$2').replace(/(\d) min\b/g, '$1\u00a0min')
+
 /** The run site's own tokens (public/site/theme.css), for Base's Run and not-found pages; no floor art there. */
 const siteIdentity: EditionIdentity = { ...identity, theme: '/site/theme.css', band: undefined }
 const SHARE_IMAGE = `${identity.runSite}/site/share.jpg`
@@ -54,7 +59,7 @@ export function sitePages({ styles, contract }: SiteContext): SiteBuild {
   const head = (slug?: string) => { const { title, description } = docsHead(slug); return [title, description] as const }
   return {
     pages: [
-      { path: '/', html: document('Balm — Back to your patients', HOME_DESCRIPTION, <Landing />) },
+      { path: '/', html: keepSeparators(document('Balm — Back to your patients', HOME_DESCRIPTION, <Landing />)) },
       { path: '/run', html: runPageHtml(siteIdentity, data, contract) },
       ...(contract ? [{ path: '/contract', html: contractPageHtml(siteIdentity, data, contract) }] : []),
       { path: '/docs', html: document(...head(), <DocsIndex />) },

@@ -1,0 +1,54 @@
+/* 07 Every visit, paid.: on the sky ground, Aetna's first ERA and the text-to-pay phone lapping it (page-07), copy right.
+   Phones drop the Billed column and stack the phone under the table. */
+.stage-paid .stage-body { display: grid; grid-template-columns: calc(var(--u) * 880) 1fr; column-gap: calc(var(--u) * 37); align-items: center; padding: calc(var(--u) * 130) calc(var(--u) * 70) calc(var(--u) * 60) calc(var(--u) * 79); }
+.paid-art { position: relative; padding-bottom: calc(var(--u) * 290); }
+.era-card { width: calc(var(--u) * 821); padding: calc(var(--u) * 34) calc(var(--u) * 28) calc(var(--u) * 26); border-radius: calc(var(--u) * 26); }
+.era-card .card-title { padding: 0 calc(var(--u) * 18) calc(var(--u) * 26); border-bottom: 1px solid var(--line); font-size: calc(var(--u) * 29); }
+.era-table { width: 100%; border-collapse: collapse; font-size: max(11px, calc(var(--u) * 21.5)); color: #1e3038; font-variant-numeric: tabular-nums; }
+.era-table th, .era-table td { padding: calc(var(--u) * 22) calc(var(--u) * 18); text-align: left; font-weight: 400; white-space: nowrap; }
+.era-table thead th { padding: calc(var(--u) * 20) calc(var(--u) * 18); font-size: max(11px, calc(var(--u) * 19)); font-weight: 500; color: #46565e; border-bottom: 1px solid var(--line); }
+.era-table tbody tr:not(.era-note) + tr:not(.era-note), .era-note + tr { border-top: 1px solid var(--line); }
+.era-table .billed { width: 22%; }
+.era-note td { padding: 0 0 calc(var(--u) * 14); }
+.era-note p { padding: calc(var(--u) * 9) calc(var(--u) * 18); border-radius: calc(var(--u) * 10); background: #fdf2dc; font-size: max(11px, calc(var(--u) * 19.5)); color: #9a5f12; white-space: normal; }
+.era-foot { display: flex; align-items: center; gap: calc(var(--u) * 16); margin-top: calc(var(--u) * 6); padding: calc(var(--u) * 20) calc(var(--u) * 12) 0; border-top: 1px solid var(--line); font-size: max(11px, calc(var(--u) * 19)); color: #33454e; }
+.era-foot .check { width: calc(var(--u) * 36); height: calc(var(--u) * 36); }
+.stage-paid .check.solid circle { fill: #4c9a5a; }
+
+.phone-card { position: absolute; left: calc(var(--u) * 504); top: calc(var(--u) * 458); width: calc(var(--u) * 367); padding: calc(var(--u) * 14) calc(var(--u) * 22) calc(var(--u) * 24); border-radius: calc(var(--u) * 44); background: #fff; border: calc(var(--u) * 7) solid #f3f4f3; box-shadow: 0 2px 4px rgba(23, 50, 58, .06), 0 30px 50px -24px rgba(23, 50, 58, .35); }
+.phone-notch { display: block; width: calc(var(--u) * 80); height: calc(var(--u) * 20); margin: 0 auto; border-radius: 999px; background: #e7e9e8; }
+.phone-card header { display: flex; align-items: center; gap: calc(var(--u) * 14); margin-top: calc(var(--u) * 16); }
+.phone-card .avatar { width: calc(var(--u) * 50); height: calc(var(--u) * 50); font-size: max(11px, calc(var(--u) * 17)); }
+.phone-card header p { font-size: max(11px, calc(var(--u) * 17.5)); color: #23363e; }
+.phone-card .bubble { max-width: none; margin-top: calc(var(--u) * 16); font-size: max(11px, calc(var(--u) * 20.5)); }
+.phone-pay { display: grid; place-items: center; margin-top: calc(var(--u) * 14); height: calc(var(--u) * 58); border-radius: 999px; background: #1e5a58; color: #fff; font-size: max(12px, calc(var(--u) * 20.5)); font-weight: 500; }
+.phone-paid { display: flex; align-items: center; gap: calc(var(--u) * 12); margin-top: calc(var(--u) * 16); font-size: max(11px, calc(var(--u) * 16)); color: #33454e; }
+.phone-paid .check { width: calc(var(--u) * 32); height: calc(var(--u) * 32); }
+.stage-paid .copy { margin-top: calc(var(--u) * -230); }
+.stage-paid .copy h2 { font-size: calc(var(--u) * 96); }
+
+@media (max-width: 1099px) {
+  .stage-paid .stage-body { display: flex; flex-direction: column-reverse; }
+  .stage-paid .copy { margin-top: 0; }
+  .stage-paid .copy h2 { font-size: clamp(38px, 9vw, 60px); }
+  .paid-art { margin-top: 28px; padding-bottom: 0; display: grid; gap: 16px; }
+  .era-card { width: auto; padding: 20px 10px 16px; border-radius: 18px; }
+  .era-card .card-title { padding: 0 8px 14px; font-size: 19px; }
+  .era-table { font-size: 15.5px; }
+  .era-table th, .era-table td { padding: 12px 8px; }
+  .era-table thead th { font-size: 13.5px; padding: 12px 8px; }
+  .era-note p { margin: 0 8px; padding: 7px 10px; font-size: 14.5px; }
+  .era-foot { padding: 14px 8px 0; font-size: 14.5px; }
+  .era-foot .check { width: 26px; height: 26px; }
+  .phone-card { position: relative; left: auto; top: auto; width: min(100%, 340px); margin: 0 auto; padding: 12px 18px 20px; border-radius: 34px; border-width: 6px; }
+  .phone-notch { width: 64px; height: 16px; }
+  .phone-card .avatar { width: 40px; height: 40px; font-size: 14px; }
+  .phone-card header p { font-size: 15px; }
+  .phone-card .bubble { font-size: 16.5px; }
+  .phone-pay { height: 48px; font-size: 17px; }
+  .phone-paid { font-size: 14px; }
+  .phone-paid .check { width: 24px; height: 24px; }
+}
+@media (max-width: 760px) {
+  .era-table .billed { display: none; }
+}

@@ -1,0 +1,8 @@
+/* The ridge band between 05 and 06: hills and spring trees, full-bleed, faded at top and foot into the grounds
+   either side (the sage of 05 shows through its top). */
+.band-ridge { position: relative; z-index: 1; margin: calc(min(100vw, 1536px) / 1536 * -30) 0; }
+.band-art img { display: block; width: 100%; height: auto; aspect-ratio: 3072 / 872; object-fit: cover; -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 22%, #000 80%, transparent); }
+@media (max-width: 760px) {
+  .band-ridge { margin: 24px 0 0; }
+  .band-art img { height: 190px; object-position: 30% 50%; }
+}

@@ -1,0 +1,32 @@
+/* 08 Back on the stairs.: copy left, the sunlit practice staircase in a rounded painted panel, the discharge summary
+   lapping its lower left edge (page-08). */
+.stage-stairs .stage-body { height: calc(var(--u) * 1024); }
+.stage-stairs .copy { position: absolute; left: calc(var(--u) * 64); top: calc(var(--u) * 246); width: calc(var(--u) * 470); }
+.stage-stairs .copy h2 { font-size: calc(var(--u) * 100); line-height: .98; }
+.stage-stairs .copy-body { margin-top: calc(var(--u) * 30); font-size: max(15px, calc(var(--u) * 25)); }
+.stairs-art { position: absolute; left: calc(var(--u) * 548); top: calc(var(--u) * 20); width: calc(var(--u) * 969); height: calc(var(--u) * 985); border-radius: calc(var(--u) * 40); overflow: hidden; box-shadow: 0 30px 60px -40px rgba(60, 50, 20, .45); }
+.stairs-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.discharge-card { position: absolute; left: calc(var(--u) * 275); top: calc(var(--u) * 588); width: calc(var(--u) * 493); padding: calc(var(--u) * 20) calc(var(--u) * 34) calc(var(--u) * 24) calc(var(--u) * 32); border-radius: calc(var(--u) * 20); background: rgba(255, 255, 255, .96); box-shadow: var(--shadow-float); }
+.discharge-card .card-title { padding-bottom: calc(var(--u) * 18); border-bottom: 1px solid var(--line); font-size: calc(var(--u) * 22); }
+.discharge-card .card-title .ds-sep, .discharge-card .card-title .ds-meta { font: 400 max(11px, calc(var(--u) * 18)) var(--font-body); letter-spacing: 0; color: #33454e; }
+.discharge-card dl > div { display: grid; grid-template-columns: 1fr calc(var(--u) * 186); align-items: center; min-height: calc(var(--u) * 53); border-bottom: 1px solid var(--line); font-size: max(11px, calc(var(--u) * 18.5)); color: #1e3038; }
+.discharge-card dd { margin: 0; display: flex; align-items: center; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.discharge-card dd .check { margin-left: auto; width: calc(var(--u) * 34); height: calc(var(--u) * 34); }
+.discharge-foot { margin-top: calc(var(--u) * 16); font-size: max(11px, calc(var(--u) * 16.5)); color: #2f6b45; }
+
+@media (max-width: 1099px) {
+  .stage-stairs .stage-body { height: auto; }
+  .stage-stairs .copy { position: static; width: auto; }
+  .stage-stairs .copy h2 { font-size: clamp(38px, 9vw, 60px); line-height: 1.04; }
+  .stage-stairs .copy-body { font-size: 17.5px; margin-top: 14px; }
+  .stairs-art { position: relative; left: auto; top: auto; display: block; width: 100%; height: auto; aspect-ratio: 969 / 760; margin-top: 28px; border-radius: 22px; }
+  .stairs-art img { object-position: 50% 30%; }
+  .discharge-card { position: relative; left: auto; top: auto; width: auto; max-width: 520px; margin: -64px 14px 0; padding: 16px 18px 18px; border-radius: 16px; }
+  .discharge-card .card-title { font-size: 19px; padding-bottom: 12px; }
+  .discharge-card .card-title .ds-sep { display: none; }
+  .discharge-card .card-title .ds-meta { display: block; margin-top: 4px; font-size: 14.5px; }
+  .discharge-card dl > div { grid-template-columns: 1fr auto; column-gap: 12px; min-height: 46px; font-size: 15.5px; }
+  .discharge-card dd { gap: 10px; }
+  .discharge-card dd .check { width: 26px; height: 26px; }
+  .discharge-foot { font-size: 14.5px; }
+}

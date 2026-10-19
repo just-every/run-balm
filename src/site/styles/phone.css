@@ -1,8 +1,8 @@
-/* The homepage below 1100 px, designed here in the desk's spirit (the desk drew 1440 only): the copy first, the
-   cards stacked at full width, the painted bands cropped. Card internals keep the desk's proportions through --u,
-   one desk pixel, which is 0.75-0.95 px here. No element is wider than the screen. */
+/* The hero and the closing below 1100 px, in the desk's spirit: the copy first, the cards stacked at full width, the
+   painted bands cropped. Card internals keep the desk's proportions through --u, one desk pixel, 0.74-0.95 px here.
+   The episode's screens below 1100 px are in their own sheets (sections/). */
 @media (max-width: 1099px) {
-  .hero, main { --u: clamp(0.74px, calc(100vw / 520), 0.95px); }
+  .hero { --u: clamp(0.74px, calc(100vw / 520), 0.95px); }
   .hero { position: relative; background: linear-gradient(180deg, #e9f1f4 0%, #f6f4ec 46%, var(--paper) 100%); }
   .hero-canvas { display: flex; flex-direction: column; }
   .hero-art { order: 4; display: block; margin-top: -20px; }
@@ -20,58 +20,6 @@
   .hc-schedule { height: auto; padding-bottom: 4px; }
   .hc-row { height: 68px; }
 
-  .feature, .ownership, .details { padding: 56px var(--gutter) 0; }
-  .feature-copy { max-width: 620px; }
-  .eyebrow { font-size: 12.5px; letter-spacing: .28em; }
-  .feature h2, .ownership h2, .details h2 { white-space: normal; text-wrap: balance; margin-top: 16px; font-size: clamp(36px, 8.6vw, 54px); line-height: 1.04; }
-  .feature-body { margin-top: 16px; font-size: 17.5px; }
-  .feature-art { margin-top: 28px; max-width: 620px; }
-  .card { max-width: 100%; }
-  .intake-card { width: auto; }
-  .intake-pair { display: grid; gap: 12px; }
-  .portal-card { position: relative; left: auto; top: auto; width: auto; height: auto; display: grid; grid-template-columns: 1fr auto; align-items: center; }
-  .portal-head { grid-column: 1 / -1; }
-  .portal-card .play { grid-column: 2; grid-row: 2 / 4; margin: 0; width: 64px; height: 64px; }
-  .day-card, .note-card, .claim-card, .case-card, .import-card, .statement-card { padding-left: 18px; padding-right: 18px; }
-  .day-row { flex-wrap: wrap; height: auto; padding: 14px 0; row-gap: 8px; }
-  .day-time { width: calc(var(--u) * 92); padding-left: calc(var(--u) * 18); }
-  .day-row .pill { margin-left: calc(var(--u) * 146); }
-  .note-head p { font-size: calc(var(--u) * 16.5); }
-  .note-head .note-date { white-space: nowrap; }
-  .detail-card h3 { white-space: normal; }
-  .note-chip, .denial-chip { align-items: flex-start; white-space: normal; }
-  .statement-row { grid-template-columns: 1fr auto; height: auto; padding: 8px 0; row-gap: 4px; }
-  .statement-row .paid { grid-column: 1 / -1; }
-  .statement-total { grid-template-columns: 1fr auto; }
-  .ok-chip { margin-left: 0; }
-  .case-row, .import-row { height: auto; padding-top: 12px; padding-bottom: 12px; }
-  .case-send { width: 100%; justify-content: center; padding: 0; }
-  .denial-chip .denial-text { line-height: 1.45; }
-
-  .interlude { position: relative; margin-top: 56px; }
-  .interlude-badge { position: relative; z-index: 1; display: flex; width: fit-content; max-width: calc(100% - 2 * var(--gutter)); margin: 0 auto -18px; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 12px; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-float); font-size: 16px; font-weight: 500; }
-  .interlude-badge .check { width: 32px; height: 32px; }
-  .interlude-badge .check circle { fill: #279a5f; }
-  .interlude-art img { display: block; width: 100%; height: clamp(220px, 60vw, 420px); object-fit: cover; object-position: 62% 50%; -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
-
-  .ownership .feature-body { font-size: 17.5px; }
-  .ownership .feature-body br { display: none; }
-  .own-list { display: grid; gap: 14px; margin-top: 24px; }
-  .own-list li { display: flex; align-items: center; gap: 18px; font-size: 17px; }
-  .own-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 10px; }
-  .own-icon .icon { width: 26px; height: 26px; stroke-width: 1.5; }
-  .terminal-wrap { position: relative; margin-top: 32px; max-width: 680px; }
-  .terminal { padding: 18px 18px 22px; }
-  .terminal { padding-right: 44px; }
-  .terminal pre { margin-top: 18px; font-size: 13.5px; line-height: 2.1; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .band { left: auto; right: -10px; top: -40px; width: 84px; height: 96px; }
-
-  .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; margin-top: 28px; }
-  .detail-card { display: grid; grid-template-columns: auto 1fr; column-gap: 18px; padding: 20px; }
-  .detail-card .chip-icon { grid-row: 1 / 3; width: 56px; height: 56px; }
-  .detail-card h3 { margin-top: 2px; font-size: 22px; }
-  .detail-card p { margin-top: 4px; font-size: 16px; line-height: 1.5; }
-
   .closing { margin-top: 72px; }
   .closing-canvas { display: flex; flex-direction: column; }
   .closing-copy { padding: 0 var(--gutter); text-align: center; display: flex; flex-direction: column; align-items: center; }
@@ -85,5 +33,4 @@
 }
 @media (max-width: 760px) {
   .hero .site-header-row { border-bottom-color: rgba(23, 50, 58, .12); }
-  .details-grid { grid-template-columns: 1fr; }
 }

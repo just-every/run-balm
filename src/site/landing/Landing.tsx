@@ -1,35 +1,48 @@
 import { Hero } from './Hero'
-import { Spread } from './parts'
-import { Billing, Documentation } from './sections/Clinical'
-import { CaseAgent, MovingIn } from './sections/Cases'
+import { Band } from './sections/Band'
+import { CaseAgent } from './sections/CaseAgent'
 import { Closing } from './sections/Closing'
-import { Details } from './sections/Details'
-import { Interlude } from './sections/Interlude'
-import { Ownership } from './sections/Ownership'
-import { Payments, Reminders } from './sections/Payments'
-import { Intake, Scheduling } from './sections/Scheduling'
+import { Evaluation } from './sections/Evaluation'
+import { MoveIn } from './sections/MoveIn'
+import { Paid } from './sections/Paid'
+import { Ready } from './sections/Ready'
+import { Ribbon } from './sections/Ribbon'
+import { Stairs } from './sections/Stairs'
+import { Visits } from './sections/Visits'
 import '../styles/site.css'
 import '../styles/landing.css'
 import '../styles/cards.css'
+import '../styles/stage.css'
+import '../styles/sections/ribbon.css'
+import '../styles/sections/ready.css'
+import '../styles/sections/evaluation.css'
+import '../styles/sections/visits.css'
+import '../styles/sections/band.css'
+import '../styles/sections/agent.css'
+import '../styles/sections/paid.css'
+import '../styles/sections/stairs.css'
+import '../styles/sections/move-in.css'
 import '../styles/phone.css'
 
 /**
- * run-balm.com's homepage, built from the design desk's page (16 Oct 2026) in its order: hero; scheduling and intake;
- * documentation and insurance billing; the interlude; patient payments and reminders; the case agent and moving in;
- * ownership; the quiet details; the closing with the footer. Painted art appears only in the hero, the interlude and
- * the closing; every other drawing is HTML and CSS.
+ * run-balm.com's homepage on the owner-approved page structure s1 (17 Oct 2026): one episode of care, Ana Ramirez's
+ * right knee from referral to paid (episode.ts). The approved hero and closing are unchanged; between them the clinic's
+ * own stages, each drawn as HTML and CSS over a soft painted ground of the hero's window light. Painted art: the hero,
+ * the ridge band, the stairs and the closing.
  */
 export function Landing() {
   return <>
     <Hero />
     <main id="main">
-      <Spread name="2"><Scheduling /><Intake /></Spread>
-      <Spread name="3"><Documentation /><Billing /></Spread>
-      <Interlude />
-      <Spread name="5"><Payments /><Reminders /></Spread>
-      <Spread name="6"><CaseAgent /><MovingIn /></Spread>
-      <Spread name="7"><Ownership /></Spread>
-      <Spread name="8"><Details /></Spread>
+      <Ribbon />
+      <Ready />
+      <Evaluation />
+      <Visits />
+      <Band />
+      <CaseAgent />
+      <Paid />
+      <Stairs />
+      <MoveIn />
       <Closing />
     </main>
   </>

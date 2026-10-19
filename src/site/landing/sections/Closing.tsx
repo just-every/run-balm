@@ -6,7 +6,7 @@ import { Painting } from '../parts'
 export function Closing() {
   return <section className="closing" aria-labelledby="closing-title">
     <div className="closing-canvas">
-      <Painting className="closing-art" name="closing" widths={[768, 1152, 1536]} sizes="100vw" phone={{ name: 'closing-phone', widths: [640, 976], media: '(max-width: 1099px)' }} />
+      <Painting className="closing-art" name="closing" widths={[768, 1152, 1536, 2304, 3072]} sizes="100vw" phone={{ name: 'closing-phone', widths: [640, 976], media: '(max-width: 1099px)' }} />
       <div className="closing-copy">
         <h2 id="closing-title">Leave on time, every note signed.</h2>
         <p className="closing-sub">Open source practice management for US therapy clinics.</p>

@@ -1,0 +1,38 @@
+/* The episode's screens (02-09), shared: the painted ground of window light under each, faded into its neighbours, and
+   the desk's 1536-wide frame. --u is one desk pixel: from 1100 px it scales with the frame (1440 renders the desk at
+   x0.9375) and stops at 1536 while the grounds run full-bleed; below 1100 it is fixed near 0.72-0.92 px and the
+   drawings stack (each section's sheet). Text that would fall under 11 px is held at 11. */
+.stage { position: relative; }
+.stage .ground { position: absolute; z-index: 0; left: 0; right: 0; top: var(--ground-top, -90px); bottom: var(--ground-bottom, -90px); pointer-events: none; }
+.stage .ground img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: var(--ground-at, 50% 50%); -webkit-mask-image: linear-gradient(transparent, #000 180px, #000 calc(100% - 180px), transparent); mask-image: linear-gradient(transparent, #000 180px, #000 calc(100% - 180px), transparent); }
+.stage-frame { position: relative; z-index: 1; max-width: 1536px; margin: 0 auto; container-type: inline-size; }
+.stage-body { --u: calc(100cqw / 1536); position: relative; }
+.keep { white-space: nowrap; }
+.stage p, .stage dd, .stage li { text-wrap: pretty; }
+
+/* Type: tracked caps eyebrows, the hero's serif at section size, Inter paragraphs. */
+.eyebrow { font: 500 max(11px, calc(var(--u) * 15))/1.2 var(--font-body); letter-spacing: .32em; text-transform: uppercase; color: #3d4c55; }
+.copy h2 { margin-top: calc(var(--u) * 24); padding-bottom: .08em; font: 500 calc(var(--u) * 82)/1.02 var(--font-head); letter-spacing: -.03em; word-spacing: .05em; color: #13303a; text-wrap: balance; }
+.copy-body { margin-top: calc(var(--u) * 22); font-size: max(15px, calc(var(--u) * 24.5)); line-height: 1.55; color: var(--body); text-wrap: pretty; }
+.copy.centred { text-align: center; }
+.card-title { font: 500 calc(var(--u) * 30)/1.15 var(--font-head); letter-spacing: -.02em; color: #13303a; }
+
+/* Rows of a drawing are sans; document and record titles are serif (BUILD-NOTES: one rule on every screen). */
+.soft-pill { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: calc(var(--u) * 8) calc(var(--u) * 18); font-size: max(11px, calc(var(--u) * 17.5)); font-weight: 500; white-space: nowrap; }
+.soft-pill.sky { background: var(--sky-tint); color: var(--sky-ink); }
+.soft-pill.green { background: #e2efdd; color: #2f6b45; }
+.soft-pill.caps { letter-spacing: .14em; font-weight: 600; }
+
+@media (max-width: 1099px) {
+  main .stage .stage-body { --u: clamp(0.72px, calc(100vw / 560), 0.92px); padding: 72px var(--gutter) 0; max-width: calc(760px + 2 * var(--gutter)); margin: 0 auto; }
+  .stage .ground { --ground-top: -60px; --ground-bottom: -60px; }
+  .stage .ground img { -webkit-mask-image: linear-gradient(transparent, #000 140px, #000 calc(100% - 140px), transparent); mask-image: linear-gradient(transparent, #000 140px, #000 calc(100% - 140px), transparent); }
+  .eyebrow { font-size: 12.5px; letter-spacing: .28em; }
+  .copy h2 { margin-top: 14px; font-size: clamp(38px, 9vw, 60px); line-height: 1.04; }
+  .copy h2 br { display: none; }
+  .copy-body { margin-top: 14px; font-size: 17.5px; }
+  .card-title { font-size: max(19px, calc(var(--u) * 28)); }
+  .tail-sep { display: none; }
+  .tail { display: block; }
+  .copy.centred .eyebrow { letter-spacing: .2em; }
+}

@@ -1,0 +1,49 @@
+/* 06 The case agent keeps it moving.: copy left, the agent's log on Ana's case right (page-06), three finished entries. */
+.stage-agent .stage-body { display: grid; grid-template-columns: calc(var(--u) * 586) calc(var(--u) * 830); align-items: center; padding: calc(var(--u) * 90) calc(var(--u) * 60) calc(var(--u) * 96) calc(var(--u) * 60); }
+.stage-agent .copy { margin-top: calc(var(--u) * -160); }
+.stage-agent .eyebrow { font-weight: 600; color: #1f5a50; }
+.agent-card { padding: calc(var(--u) * 24) calc(var(--u) * 34) calc(var(--u) * 26); border-radius: calc(var(--u) * 26); background: rgba(255, 255, 255, .9); }
+.agent-head { display: flex; align-items: center; gap: calc(var(--u) * 20); padding-bottom: calc(var(--u) * 18); border-bottom: 1px solid var(--line); }
+.agent-head .chip-icon { width: calc(var(--u) * 58); height: calc(var(--u) * 58); color: #1f4a3a; }
+.agent-head .chip-icon .icon { width: 46%; height: 46%; fill: currentColor; stroke: none; }
+.agent-head .card-title { font-size: calc(var(--u) * 27); }
+.agent-head > p { margin-left: auto; font-size: max(11px, calc(var(--u) * 18)); color: #52636b; white-space: nowrap; }
+.agent-item { padding: calc(var(--u) * 20) 0 calc(var(--u) * 18); }
+.agent-item + .agent-item { border-top: 1px solid var(--line); }
+.agent-item h4 { position: relative; padding-left: calc(var(--u) * 40); font: 600 max(12px, calc(var(--u) * 21))/1.35 var(--font-body); letter-spacing: -.005em; color: #13303a; }
+.agent-item h4 .dot { position: absolute; left: 0; top: .32em; width: calc(var(--u) * 16); height: calc(var(--u) * 16); border-radius: 50%; background: #6aaa6c; }
+.agent-item ul { margin-top: calc(var(--u) * 10); padding-left: calc(var(--u) * 34); }
+.agent-item li { display: flex; align-items: center; gap: calc(var(--u) * 30); padding: calc(var(--u) * 6) 0; }
+.agent-item li .chip-icon { width: calc(var(--u) * 44); height: calc(var(--u) * 44); }
+.agent-item li .chip-icon .icon { width: 52%; height: 52%; stroke-width: 1.8; }
+.agent-item .tone-lilac { background: #ebe6f7; color: #5a4a9a; }
+.agent-item li p { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--u) * 6) calc(var(--u) * 14); font-size: max(11px, calc(var(--u) * 18)); line-height: 1.4; color: #2c3e46; }
+.cite { display: inline-flex; align-items: center; gap: calc(var(--u) * 8); padding: calc(var(--u) * 6) calc(var(--u) * 16) calc(var(--u) * 6) calc(var(--u) * 12); border-radius: calc(var(--u) * 10); background: #e5eef9; font-size: max(11px, calc(var(--u) * 15.5)); color: #1f4f80; white-space: nowrap; }
+.cite .icon { width: calc(var(--u) * 20); height: calc(var(--u) * 20); stroke-width: 1.7; }
+.agent-item .avatar { width: calc(var(--u) * 40); height: calc(var(--u) * 40); font-size: max(11px, calc(var(--u) * 15)); }
+.avatar-lilac { background: #e6e0f6; color: #4a3f86; }
+.tick { flex: none; width: calc(var(--u) * 30); height: calc(var(--u) * 30); }
+.tick circle { fill: #d8e8d3; }
+.tick path { fill: none; stroke: #2c5a3a; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (max-width: 1099px) {
+  .stage-agent .stage-body { display: block; }
+  .stage-agent .copy { margin-top: 0; }
+  .agent-card { margin-top: 28px; padding: 18px 16px 6px; border-radius: 18px; }
+  .agent-head { flex-wrap: wrap; row-gap: 4px; }
+  .agent-head .chip-icon { width: 42px; height: 42px; }
+  .agent-head .card-title { font-size: 20px; }
+  .agent-head > p { margin-left: 62px; flex-basis: 100%; font-size: 14px; }
+  .agent-item h4 { padding-left: 24px; font-size: 16px; }
+  .agent-date { display: block; }
+  .agent-sep { display: none; }
+  .agent-item h4 .dot { width: 12px; height: 12px; }
+  .agent-item ul { padding-left: 0; }
+  .agent-item li { align-items: flex-start; gap: 14px; }
+  .agent-item li .chip-icon { width: 34px; height: 34px; }
+  .agent-item li p { font-size: 15px; padding-top: 6px; }
+  .cite { font-size: 13px; padding: 4px 10px 4px 8px; }
+  .cite .icon { width: 15px; height: 15px; }
+  .agent-item .avatar { width: 30px; height: 30px; font-size: 12px; }
+  .tick { width: 24px; height: 24px; }
+}
