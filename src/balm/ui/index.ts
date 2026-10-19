@@ -6,6 +6,7 @@ import { clinic } from './clinic'
 import { intakeForms } from './intake'
 import { insurancePage } from './insurance'
 import { casesPage } from './cases'
+import { reportsPage } from './reports'
 import { insuranceBookingNotice } from './insurance-shared'
 import { invoices } from './invoices'
 import { movein } from './import'
@@ -47,6 +48,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
       : current === '/app/clients' ? clientList(state)
         : current === '/app/insurance' ? insurancePage(state, notice)
         : current === '/app/cases' ? casesPage(state)
+        : current === '/app/reports' ? reportsPage(state)
         : current === '/app/invoices' ? invoices(state)
           : current === '/app/clinic' ? clinic(state, notice)
             : current === '/app/intake' ? intakeForms(state, notice)

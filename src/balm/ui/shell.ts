@@ -22,7 +22,7 @@ export function tabsFor(s: any): Tab[] {
       { url: '/app/cases', label: 'Cases', icon: 'case' },
     ] : []),
     ...(owner(s) ? [
-      { url: '/app/clinic', label: 'Clinic', icon: 'gear' }, { url: '/app/intake', label: 'Intake form', icon: 'form' },
+      { url: '/app/clinic', label: 'Clinic', icon: 'gear' }, { url: '/app/reports', label: 'Reports', icon: 'bars' }, { url: '/app/intake', label: 'Intake form', icon: 'form' },
       { url: '/app/import', label: 'Move in', icon: 'upload' }, { url: '/app/agent', label: 'Agent access', icon: 'key' },
     ] : []),
   ]
