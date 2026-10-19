@@ -379,7 +379,9 @@ test('INTAKE-001: links stay usable in the waiting room, expire at scheduled end
 
   const following=await h.cmd('appointment.book',fields)
   assert.equal(following.intake,'link_open');assert.equal(following.token,undefined)
-  const ended=wall(new Date(Date.now()-2*3600_000).toISOString())
+  // A finished hour-long visit that does not run past midnight Brisbane.
+  const hoursBack=+wall(new Date(Date.now()-2*3600_000).toISOString()).slice(11,13)===23?3:2
+  const ended=wall(new Date(Date.now()-hoursBack*3600_000).toISOString())
   await h.cmd('appointment.move',{id:visit.appointmentId,date:ended.slice(0,10),time:ended.slice(11,16)})
   assert.equal((await h.send(path)).status,404)
   assert.equal((await h.form(path,{formId:'intake-v1'})).status,404)
