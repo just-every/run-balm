@@ -113,7 +113,7 @@ test('invoices: prepared from an attended visit, approved by a person, numbered 
   const first = await h.send(`/api/balm/invoices/${invoiceId}.html`, undefined, reception.cookie)
   assert.equal(first.status, 200)
   assert.match(first.headers.get('content-disposition'), /balm-INV-000001\.html/)
-  for (const text of ['Riverside Physio', '12 345 678 901', 'Ava Ng', 'Priya', 'Initial consultation', '$95.00']) assert.ok(first.text.includes(text), text)
+  for (const text of ['Riverside Physio', '12-3456789', 'Ava Ng', 'Priya', 'Initial consultation', '$95.00']) assert.ok(first.text.includes(text), text)
   await h.cmd('service.save', { id: service.id, name: 'Initial consultation', durationMinutes: 45, priceCents: 12000 })
   assert.equal((await h.send(`/api/balm/invoices/${invoiceId}.html`, undefined, h.owner)).text, first.text)
   assert.equal((await h.send(`/api/balm/invoices/${invoiceId}.html`, undefined, priya.cookie)).status, 403)
