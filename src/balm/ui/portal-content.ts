@@ -1,3 +1,4 @@
+import { patientPaymentPlans } from './payment-plans'
 import { periodSuperbillForm } from './superbill-period'
 import { localTime } from '../domain/invoices'
 import { attachmentInput } from '../messages/attachments'
@@ -35,5 +36,5 @@ function messages(d: any) {
 }
 
 export function portalHomeContent(d: any) {
-  return `<div class="columns"><div class="left">${card('visits', 'Your next visits', visits(d))}<section class="card program" id="program"><h2>Home exercise program</h2><p class="intro">Follow your clinician’s instructions. Mark each exercise done when you finish.</p>${exercises(d)}</section>${card('intake', 'Intake forms', forms(d))}${card('statements', 'Statements and payments', statements(d))}${d.past.length ? card('past', 'Past visits', d.past.map((a: any) => `<article class="visit-item"><h3>${h(a.service)}</h3><p>${h(localTime(a.start_at, d.clinic.time_zone))} · ${h(a.status)}<br>${h(a.practitioner)}</p></article>`).join('')) : ''}</div>${messages(d)}</div>`
+  return `<div class="columns"><div class="left">${card('visits', 'Your next visits', visits(d))}<section class="card program" id="program"><h2>Home exercise program</h2><p class="intro">Follow your clinician’s instructions. Mark each exercise done when you finish.</p>${exercises(d)}</section>${card('intake', 'Intake forms', forms(d))}${card('statements', 'Statements and payments', statements(d))}${patientPaymentPlans(d.paymentPlans)}${d.past.length ? card('past', 'Past visits', d.past.map((a: any) => `<article class="visit-item"><h3>${h(a.service)}</h3><p>${h(localTime(a.start_at, d.clinic.time_zone))} · ${h(a.status)}<br>${h(a.practitioner)}</p></article>`).join('')) : ''}</div>${messages(d)}</div>`
 }

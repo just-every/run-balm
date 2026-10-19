@@ -12,6 +12,7 @@ import { connectStripe, disconnectStripe, stripeView } from './connect'
 import { superbillFacts } from './documents'
 import { ledger, openInvoices, parseDollars } from './ledger'
 import { createLink } from './links'
+import { balanceReview, clientPlans, planCommand } from './plans'
 
 const deskRole = (who: Actor) => who.role === 'owner' || who.staffRole === 'reception'
 const clinicName = async (db: D1Database) => (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string
@@ -59,6 +60,7 @@ async function chargeInvoice(env: SmsEnv, db: D1Database, who: Actor, input: Dat
 
 export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, name: string, input: Data) {
   insist(who.role !== 'agent', 'agents_can_only_prepare', 403)
+  if (['pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
   switch (name) {
     case 'pay.stripe.connect': return connectStripe(env, db, who, input)
     case 'pay.stripe.disconnect': return disconnectStripe(env, db, who)
@@ -88,7 +90,7 @@ export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
     WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
   const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
-  return { payments: { stripe: desk ? stripe : { block: stripe.block }, smsBlock: smsBlock(env), visits, npis } }
+  return { payments: { stripe: desk ? stripe : { block: stripe.block }, smsBlock: smsBlock(env), visits, npis, ...(desk ? { review: await balanceReview(db) } : {}) } }
 }
 
 /** The billing part of a client file: codes for the visits this actor sees, and for the desk the ledger and card. */
@@ -101,6 +103,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
   return {
     codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,
+    ...await clientPlans(db, clientId),
     payments: await rows(db, 'SELECT id,kind,amount_cents,applied_cents,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
     links: await rows(db, 'SELECT id,purpose,created_by,created_at,expires_at,delivery,delivery_result,opened_at FROM bm_pay_links WHERE client_id=? ORDER BY created_at DESC LIMIT 10', clientId),
     stripe: await stripeView(env, db), smsBlock: smsBlock(env),

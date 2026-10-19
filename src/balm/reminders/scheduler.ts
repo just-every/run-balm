@@ -1,3 +1,4 @@
+import { runPaymentSchedules } from '../payments/plans'
 import { sendDueFollowups } from '../followups/scheduler'
 import type { Bindings } from '../../auth.server'
 import { dispatchPatientMail } from '../mail/dispatch'
@@ -71,5 +72,6 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
     if (state === 'sent') sent++
   }
   await sendDueFollowups(env, scheduledTime)
+  await runPaymentSchedules(env, db, at)
   return { sent }
 }
