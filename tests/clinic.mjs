@@ -29,8 +29,10 @@ export async function bookOnline(h, serviceId, practitionerId, start, client = {
 }
 /** A staff booking that has already started, so it can be marked attended. */
 export async function pastVisit(h, clientId, practitioner, serviceId, cookie = h.owner, hoursAgo = 2) {
-  let t = Math.floor((Date.now() - hoursAgo * 3600_000) / 900_000) * 900_000
-  while (+brisbane(t).slice(11, 13) < 1 || +brisbane(t).slice(11, 13) > 21) t -= 3600_000
+  // Count back only through 01:00-21:59 clinic hours, so distinct hoursAgo stay distinct and in order at any time of day.
+  const late = t => +brisbane(t).slice(11, 13) < 1 || +brisbane(t).slice(11, 13) > 21
+  let t = Math.floor(Date.now() / 900_000) * 900_000, left = hoursAgo
+  while (left > 0 || late(t)) { t -= 3600_000; if (!late(t)) left-- }
   const local = brisbane(t)
   const booked = await h.cmd('appointment.book', { clientId, practitionerId: practitioner.id, serviceId, date: local.slice(0, 10), time: local.slice(11, 16) }, cookie)
   return booked.appointmentId
