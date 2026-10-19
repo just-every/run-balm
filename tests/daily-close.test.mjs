@@ -4,6 +4,7 @@ import {run} from './harness.mjs'
 import {fakeProviders} from './fakes/stripe.mjs'
 const stripe=fakeProviders()
 import {dailyCloseClinic} from './daily-close-clinic.mjs'
+import {pastVisit,visitDate} from './clinic.mjs'
 
 test('REPORT-004: daily close names every category, links its records, audits named patients, and clears only after the work is complete',()=>run(async h=>{
  assert.equal((await h.state()).dailyClose,null,'daily close waits for the clinic time zone')
@@ -47,6 +48,37 @@ test('REPORT-004: daily close names every category, links its records, audits na
  assert.equal((await h.send(cardPath+'?setup='+session)).status,200)
  await h.cmd('pay.invoice.charge',{invoiceId:charge.id})
  assert.equal((await close()).copays.length,0)
+ const updated=await h.cmd('intake.prepare',{title:'Current recovery form',questions:[{id:'reason',label:'Current recovery update',type:'long',required:true}]})
+ await h.cmd('intake.publish',{id:updated.id})
+ assert.equal((await close()).intakes.length,2,'older submitted forms no longer complete current intake')
+ await c.intake(c.patient.id);await c.intake(c.noCharge.id)
+ assert.equal((await close()).intakes.length,0)
  current=await close();assert.ok(Object.values(current).filter(Array.isArray).every(a=>a.length===0))
  assert.match((await h.send('/app',undefined,h.owner)).text,/Daily close is clear/)
 },{auth:{BALM_INSURANCE_ADAPTER_URL:'https://gateway.example/submit',BALM_INSURANCE_ADAPTER_TOKEN:'fixture-gateway-key'},outbound:async request=>{if(request.url==='https://gateway.example/submit')return Response.json({status:'submitted',reference:'fixture-batch-accepted'});return stripe.handler(request)}}))
+
+
+test('REPORT-004: missing and expired plans, an unattached draft and expired authorization coverage stay actionable until their own records are resolved',()=>run(async h=>{
+ const c=await dailyCloseClinic(h),close=async()=>(await h.state()).dailyClose
+ const shift=days=>new Date(Date.parse(c.today+'T00:00:00Z')+days*86400_000).toISOString().slice(0,10)
+ const patient=await h.cmd('client.save',{firstName:'Planless',lastName:'Patient',dateOfBirth:'1988-04-02'})
+ const visit=await pastVisit(h,patient.id,c.priya,c.service.id,h.owner,8)
+ await h.cmd('appointment.attend',{id:visit})
+ assert.ok((await close()).plans.some(i=>i.clientId===patient.id&&i.kind==='missing_plan'))
+ await c.certify(await c.plan(patient.id,await visitDate(h,visit)))
+ assert.ok(!(await close()).plans.some(i=>i.clientId===patient.id))
+ const expired=await c.plan(c.future.id,shift(-100));await c.certify(expired)
+ assert.ok((await close()).plans.some(i=>i.clientId===c.future.id&&i.kind==='expired_plan'))
+ await c.certify(await c.plan(c.future.id,c.today))
+ assert.ok(!(await close()).plans.some(i=>i.clientId===c.future.id))
+ const draft=await h.cmd('note.write',{clientId:c.noCharge.id,body:'Unattached private treatment draft'},c.priya.cookie)
+ assert.ok((await close()).notes.some(i=>i.id===draft.id))
+ assert.ok(!JSON.stringify(await close()).includes('Unattached private treatment draft'))
+ await h.cmd('note.sign',{id:draft.id,revision:1,signature:'Priya Shah',attest:true},c.priya.cookie)
+ assert.ok(!(await close()).notes.some(i=>i.id===draft.id))
+ const policy=await h.cmd('insurance.policy.save',{clientId:c.future.id,payerId:c.payer.id,memberId:'FUTURE123',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...c.coverage})
+ const authorization=await h.cmd('insurance.authorization.save',{policyId:policy.id,number:'EXPIRED',startsOn:shift(-100),endsOn:shift(-1),visits:12})
+ assert.ok((await close()).authorizations.some(i=>i.id===authorization.id&&i.kind==='expired_authorization'))
+ await h.cmd('insurance.authorization.save',{id:authorization.id,policyId:policy.id,number:'RENEWED',...c.coverage,visits:12})
+ assert.ok(!(await close()).authorizations.some(i=>i.id===authorization.id))
+}))

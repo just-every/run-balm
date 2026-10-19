@@ -32,6 +32,13 @@ export async function dailyCloseClinic(h){
  const certify=async p=>{assert.equal((await h.form('/plan/'+p.token,{name:'Anika Patel',credentials:'MD',npi:'1234567893',attest:'on'})).status,303)}
  await certify(await plan(patient.id,await visitDate(h,visit)));await certify(await plan(noCharge.id,await visitDate(h,otherVisit)))
  const latePlan=await plan(late.id,shift(today,-35)),pendingPlan=await plan(pending.id,today)
- const intake=async clientId=>{const booking=await book(clientId);assert.ok(booking.token);const path='/intake/'+booking.token,page=await h.send(path);assert.equal((await h.form(path,{formId:'intake-v1',q_reason:'Recovery update',q_emergency:'Alex +1 312 555 0111',q_consent:'yes',consentVersion:page.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Patient',signerRelationship:'patient',signatureTyped:'Patient'})).status,303)}
- return {service,priya,patient,noCharge,late,pending,future,policy,authorization,visit,otherVisit,invoice,latePlan,pendingPlan,today,coverage,certify,signNote,intake}
+ const intake=async clientId=>{
+  const booking=await book(clientId);assert.ok(booking.token)
+  const path='/intake/'+booking.token,page=await h.send(path)
+  const consents=Object.fromEntries([...page.text.matchAll(/name="(consentVersion[^"]*)" value="([^"]+)"/g)].flatMap(([,name,value])=>[[name,value],[name.replace('Version','Accepted'),'on']]))
+  const formId=page.text.match(/name="formId" value="([^"]+)"/)[1]
+  assert.equal((await h.form(path,{formId,q_reason:'Recovery update',q_emergency:'Alex +1 312 555 0111',q_consent:'yes',...consents,signerName:'Patient',signerRelationship:'patient',signatureTyped:'Patient'})).status,303)
+ }
+
+ return {service,priya,payer,plan,patient,noCharge,late,pending,future,policy,authorization,visit,otherVisit,invoice,latePlan,pendingPlan,today,coverage,certify,signNote,intake}
 }
