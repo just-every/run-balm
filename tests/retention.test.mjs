@@ -41,10 +41,21 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.cmd('retention.save',{...policy,state:'TX',adultYears:10,minorYears:10,reviewedRule:'Practice counsel reviewed all disciplines and payer contracts; retain ten years after treatment and majority.'})
   assert.equal((await file(h,patient.id)).retention.eligible,true)
   const state=await h.state()
-  assert.ok(state.retention.states.every(r=>r.status==='unverified'||r.source.startsWith('https://')))
+  const states=state.retention.states
+  assert.equal(new Set(states.map(r=>r.state)).size,51,'all 50 states and DC')
+  for(const r of states) {
+    assert.ok(['verified','ambiguous'].includes(r.status),`${r.state} reviewed against a primary source`)
+    assert.ok(r.source.startsWith('https://')&&r.sourceTitle&&/^\d{4}-\d{2}-\d{2}$/.test(r.reviewedOn),`${r.state} cites its source and retrieval date`)
+    if(r.status==='verified') assert.ok(Number.isInteger(r.adultYears)&&Number.isInteger(r.minorYears)&&r.majorityAge,`${r.state} verified rows carry adult and minor periods`)
+  }
+  for(const s of states.filter(r=>r.status==='ambiguous').map(r=>r.state)) {
+    await h.cmd('retention.save',{state:s,adultYears:'',minorYears:'',payerYears:0,majorityAge:''})
+    assert.deepEqual((await file(h,patient.id)).retention.reasons,['state_rule_requires_review'],`${s} ambiguous rule fails closed without the owner's documented rule`)
+  }
   const page=await h.send('/app/clinic',undefined,h.owner)
   assert.equal(page.status,200)
   assert.match(page.text,/name=retention.save/)
+  assert.match(page.text,/Indiana Code §16-39-7-1[^<]*<\/a> · retrieved/)
 }))
 
 test('HIPAA-002: only the owner approves an unchanged eligible inventory; holds, mutations and expired previews refuse destruction',()=>run(async h=>{
