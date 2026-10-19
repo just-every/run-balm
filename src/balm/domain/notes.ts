@@ -1,3 +1,4 @@
+import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // Notes keep immutable revisions, as Willow keeps document versions
 // (src/willow/documents.ts, just-every/run-willow @ 5b116db): every save of a
 // draft adds a revision and never rewrites the earlier text. A note written from
@@ -54,7 +55,7 @@ export async function ownAppointment(db: D1Database, who: Actor, clientId: strin
 }
 
 /** Starts a note from the visit's template (or the one chosen), as a draft. */
-export async function createNote(db: D1Database, who: Actor, input: Data, draftedBy: 'author' | 'scribe' = 'author', scribeNote = '') {
+export async function createNote(db: D1Database, who: Actor, input: Data, draftedBy: 'author' | 'scribe' = 'author', scribeNote = '', request: DraftRequest | null = null) {
   human(who)
   const author = practitionerId(who)
   insist(author, 'only_practitioners_write_notes', 403)
@@ -76,27 +77,40 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
     stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by,documentation) VALUES(?,1,?,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
       content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy, JSON.stringify(content.documentation)),
     audit(db, who, draftedBy === 'scribe' ? 'note.scribe_drafted' : 'note.written', client.id as string, noteId, t?.key ?? 'free text'),
+    ...(request?.statements({ id: noteId, revision: 1, template: t?.key ?? '' }) ?? []),
   ])
   return { id: noteId, revision: 1, template: t?.key ?? '' }
 }
 
-export const writeNote = (db: D1Database, who: Actor, input: Data) => createNote(db, who, input)
+export async function writeNote(db: D1Database, who: Actor, input: Data) {
+  human(who)
+  insist(practitionerId(who), 'only_practitioners_write_notes', 403)
+  const request = await beginDraftRequest(db, who, 'note.write', input)
+  if (request?.replay) return request.replay
+  try { return await createNote(db, who, input, 'author', '', request) }
+  catch (error) { if (request) return request.afterConflict(error); throw error }
+}
 
 /** Saves a new revision of the author's unsigned note. */
 export async function amendNote(db: D1Database, who: Actor, input: Data) {
   human(who)
   const note = await one(db, 'SELECT * FROM bm_notes WHERE id=?', text(input.id, 'id', 100))
   insist(note && note.author_id === practitionerId(who), 'note_not_found', 404)
-  insist(!note.signed_at, 'note_signed_add_an_addendum', 409)
-  const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
-  insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
-  const content = written(input, template(note.template))
-  await commit(db, who, [
-    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
-      optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation)),
-    audit(db, who, 'note.amended', note.client_id as string, note.id as string, `revision ${latest + 1}`),
-  ])
-  return { id: note.id, revision: latest + 1 }
+  const request = await beginDraftRequest(db, who, 'note.amend', input)
+  if (request?.replay) return request.replay
+  try {
+    insist(!note.signed_at, 'note_signed_add_an_addendum', 409)
+    const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
+    insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
+    const content = written(input, template(note.template))
+    await commit(db, who, [
+      stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
+        optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation)),
+      audit(db, who, 'note.amended', note.client_id as string, note.id as string, `revision ${latest + 1}`),
+      ...(request?.statements({ id: note.id as string, revision: latest + 1 }) ?? []),
+    ])
+    return { id: note.id, revision: latest + 1 }
+  } catch (error) { if (request) return request.afterConflict(error); throw error }
 }
 
 const parse = (value: unknown) => typeof value === 'string' ? JSON.parse(value) : null

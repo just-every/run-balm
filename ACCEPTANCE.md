@@ -1,6 +1,6 @@
 # Acceptance
 
-Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause mirrors the builder-owned Status table in CONTRACT.md, including its subsequent row updates through 19 October 2026; the table began at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026). Its current counts are: 26 done, 48 partial and 35 missing of 109 clauses.
+Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause mirrors the builder-owned Status table in CONTRACT.md, including its subsequent row updates through 19 October 2026; the table began at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026). Its current counts are: 27 done, 47 partial and 35 missing of 109 clauses.
 
 ## First release
 
@@ -159,7 +159,7 @@ Each clause below is listed with its status and the journey that accepts it.
 
 ## Mobile and integrations
 
-- **MOBILE-001 — Tablet-first clinician web app** (partial). Complete a visit end to end on a tablet viewport, drop the network mid-note and see the draft kept and saved on reconnect.
+- **MOBILE-001 — Tablet-first clinician web app** (done). As a clinician-owner under BALM-001, complete schedule → check-in/attendance → note/sign → home exercise → payment on a tablet. Drop the network mid-note, queue Save and see text retained and saved on reconnect. A missing session requires sign-in and explicit Save; a lost success response creates no duplicate revision; an intervening edit refuses overwrite and retains the local text. Inspect the note editor at 1440 and 390. `tests/mobile.test.mjs` names MOBILE-001 and runs this real-browser public-door journey in the existing browser CI shard; `tests/charting.test.mjs` covers immutable request replay and actor scoping.
 - **MOBILE-002 — Native clinician and patient apps** (missing). Install both apps from TestFlight and an Android test track, record a scribe visit, sign the note and see a push alert with no clinical text.
 - **INTEG-001 — API, webhooks, agent keys and FHIR export** (partial). Create a scoped key, read appointments and prepare an invoice through the documented commands, receive a webhook for a booking, and export a patient as FHIR that validates against US Core.
 - **INTEG-002 — Opt-in marketing contact sync** (missing). Opt one patient in and one out, sync, and see only the opted-in contact with no clinical fields.

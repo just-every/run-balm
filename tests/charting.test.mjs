@@ -236,3 +236,25 @@ test('documentation warnings follow imported treatment days and payer requiremen
   const reception = await h.staff('Robin', 'reception')
   assert.deepEqual((await h.state(reception.cookie)).documentationClose, [])
 }))
+
+
+test('MOBILE-001: replay a disconnected draft save once, refuse changed payloads and intervening edits, and keep clinical authority', () => run(async h => {
+  const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
+  const client = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1980-03-07' })
+  const visit = await pastVisit(h, client.id, priya, service.id)
+  const input = { clientId: client.id, appointmentId: visit, body: 'Walking tolerance improved to 15 minutes.', expectedActorId: (await h.state(priya.cookie)).actor.id, requestId: crypto.randomUUID() }
+  const saved = await h.cmd('note.write', input, priya.cookie)
+  assert.deepEqual(await h.cmd('note.write', input, priya.cookie), saved)
+  assert.equal((await view(h, client.id, priya.cookie)).notes.length, 1, 'a lost success response cannot create a second note')
+  await h.cmd('note.write', { ...input, body: 'Different content' }, priya.cookie, 409)
+  await h.cmd('note.write', input, sam.cookie, 403)
+  await h.cmd('note.write', { ...input, expectedActorId: undefined }, sam.cookie, 404)
+  const amendment = { id: saved.id, revision: 1, body: 'Tolerated step-ups without increased pain.', requestId: crypto.randomUUID() }
+  const answers = await Promise.all([h.cmd('note.amend', amendment, priya.cookie), h.cmd('note.amend', amendment, priya.cookie)])
+  assert.deepEqual(answers[0], answers[1])
+  assert.equal(answers[0].revision, 2)
+  await h.cmd('note.amend', { ...amendment, requestId: crypto.randomUUID(), body: 'Stale text must not overwrite the saved note.' }, priya.cookie, 409)
+  const final = (await view(h, client.id, priya.cookie)).notes[0]
+  assert.deepEqual(final.revisions.map(r => r.number), [2, 1])
+  assert.equal(final.revisions[0].body, amendment.body)
+}))
