@@ -1,3 +1,4 @@
+import { anonymousFinancialFacts } from '../retention/accounting'
 // Owner-only financial reports (REPORT-002), read from the same records as each
 // patient's ledger (src/balm/payments/ledger.ts): approved invoices are charges,
 // posted payments and ERA adjustments reduce them, and an invoice with a claim
@@ -33,6 +34,9 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     db.prepare(`SELECT m.id,m.payer_id,m.trace,m.amount_cents,m.imported_at,y.name AS payer FROM bm_insurance_imports m JOIN bm_payers y ON y.id=m.payer_id WHERE m.kind='835' ORDER BY m.imported_at,m.id`),
     db.prepare("SELECT start_at FROM bm_appointments WHERE status='attended'"),
   ])).map(x => x.results)
+  const anonymous = await anonymousFinancialFacts(db)
+  invoices.push(...anonymous[0])
+  payments.push(...anonymous[1]); adjustments.push(...anonymous[2]); cards.push(...anonymous[3]); visits.push(...anonymous[4])
   const kindOf = (p: Data) => String(p.reference).startsWith('era:') ? 'insurance' : p.card_payment_id ? 'card' : 'desk'
 
   // Charges by date of service; payments and adjustments by the date they were posted.
@@ -68,7 +72,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   // Stripe took them (before Stripe's fees and payout timing), desk payments by day.
   const deposits: { date: string; source: string; reference: string; receivedCents: number; postedCents: number; creditCents: number; unpostedCents: number }[] = []
   for (const m of remittances.filter(m => inRange(m.imported_at))) {
-    const postedCents = sum(payments, p => String(p.reference).startsWith(`era:${m.payer_id}:${m.trace}:`))
+    const postedCents = sum(payments, p => p.remittance_id === m.id || String(p.reference).startsWith(`era:${m.payer_id}:${m.trace}:`))
     deposits.push({ date: local(m.imported_at), source: `ERA · ${m.payer}`, reference: String(m.trace), receivedCents: Number(m.amount_cents ?? 0), postedCents, creditCents: 0, unpostedCents: Number(m.amount_cents ?? 0) - postedCents })
   }
   const days = <T>(list: Data[], at: string) => { const map = new Map<string, Data[]>(); for (const x of list) if (inRange(x[at])) { const d = local(x[at]); map.set(d, [...(map.get(d) ?? []), x]) } return [...map].sort(([a], [b]) => a.localeCompare(b)) }
