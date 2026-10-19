@@ -63,18 +63,56 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
 export async function saveService(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const serviceId = input.id ? text(input.id, 'id', 100) : id()
-  const previous = input.id ? await one(db, 'SELECT note_template FROM bm_services WHERE id=?', serviceId) : null
+  const previous = input.id ? await one(db, 'SELECT * FROM bm_services WHERE id=?', serviceId) : null
   if (input.id) insist(previous, 'service_not_found', 404)
   // The note template a visit of this service starts from (for example pt.evaluation).
   const noteTemplate = input.noteTemplate === undefined ? previous?.note_template ?? '' : String(input.noteTemplate)
   insist(!noteTemplate || template(noteTemplate), 'unknown_template')
+  const enabled = serviceBoolean(input.selfBookEnabled, 'self_book_enabled', previous?.self_book_enabled ?? 1)
+  const notice = integer(input.selfBookNoticeMinutes === undefined ? previous?.self_book_notice_minutes ?? 120 : input.selfBookNoticeMinutes, 'self_book_notice_minutes', 120, 86400)
+  const plan = serviceBoolean(input.selfBookPlanRequired, 'self_book_plan_required', previous?.self_book_plan_required ?? 0)
+  const authorization = serviceBoolean(input.selfBookAuthRequired, 'self_book_auth_required', previous?.self_book_auth_required ?? 0)
   await commit(db, who, [
-    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template) VALUES(?,?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_minutes=excluded.duration_minutes,price_cents=excluded.price_cents,active=excluded.active,note_template=excluded.note_template,version=bm_services.version+1`,
-    serviceId, text(input.name, 'name', 120), integer(input.durationMinutes, 'duration_minutes', 5, 480), integer(input.priceCents, 'price_cents', 0, 10_000_000), input.active === false || input.active === 'false' ? 0 : 1, noteTemplate),
+    ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=?)', serviceId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
+    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template,self_book_enabled,self_book_notice_minutes,self_book_plan_required,self_book_auth_required) VALUES(?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_minutes=excluded.duration_minutes,price_cents=excluded.price_cents,active=excluded.active,note_template=excluded.note_template,
+      self_book_enabled=excluded.self_book_enabled,self_book_notice_minutes=excluded.self_book_notice_minutes,self_book_plan_required=excluded.self_book_plan_required,self_book_auth_required=excluded.self_book_auth_required,version=bm_services.version+1`,
+    serviceId, text(input.name === undefined ? previous?.name : input.name, 'name', 120), integer(input.durationMinutes === undefined ? previous?.duration_minutes : input.durationMinutes, 'duration_minutes', 5, 480),
+    integer(input.priceCents === undefined ? previous?.price_cents : input.priceCents, 'price_cents', 0, 10_000_000), serviceBoolean(input.active, 'active', previous?.active ?? 1), noteTemplate, enabled, notice, plan, authorization),
     audit(db, who, 'service.saved', null, serviceId),
   ])
   return { id: serviceId }
+}
+
+function serviceBoolean(value: unknown, field: string, previous: number): number {
+  if (value === undefined) return previous
+  insist([true, false, 1, 0, 'true', 'false', '1', '0'].includes(value as any), `invalid_${field}`)
+  return value === true || value === 1 || value === 'true' || value === '1' ? 1 : 0
+}
+
+/** Local HTTP origins are allowed only when the trusted runtime opts in. */
+export async function saveBookingEmbed(db: D1Database, who: Actor, input: Data, allowLocal = false) {
+  need(who, 'owner'); human(who)
+  insist(typeof input.origins === 'string' || Array.isArray(input.origins), 'invalid_booking_embed_origins')
+  if (typeof input.origins === 'string') insist(input.origins.length <= 40960, 'invalid_booking_embed_origins')
+  const entries = typeof input.origins === 'string' ? input.origins.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : input.origins
+  insist(entries.length <= 20, 'at_most_20_booking_embed_origins')
+  const origins = [...new Set<string>(entries.map((entry: unknown) => {
+    const value = text(entry, 'booking_embed_origin', 2048)
+    insist(/^https?:\/\/[^/?#\\\s]+$/i.test(value), 'provide_a_booking_embed_origin_without_a_path')
+    let parsed: URL | undefined
+    try { parsed = new URL(value) } catch { insist(false, 'invalid_booking_embed_origin') }
+    insist(parsed && !value.includes('@') && !parsed.username && !parsed.password && /^(?:[a-z0-9.-]+|\[[0-9a-f:.]+\])$/i.test(parsed.hostname) && parsed.pathname === '/' && !parsed.search && !parsed.hash, 'invalid_booking_embed_origin')
+    insist(parsed.protocol === 'https:' || (allowLocal && parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname)), 'booking_embed_requires_https')
+    return parsed.origin
+  }))]
+  const version = integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER)
+  await commit(db, who, [
+    guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)', version),
+    stmt(db, 'UPDATE bm_settings SET booking_embed_origins=?,version=version+1 WHERE id=1', JSON.stringify(origins)),
+    audit(db, who, 'booking.embed.saved', null, null, `${origins.length} allowed website origins`),
+  ])
+  return { saved: true, origins }
 }
 
 const clock = (value: unknown, field: string) => {

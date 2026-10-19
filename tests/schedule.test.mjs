@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run } from './harness.mjs'
+import { run, harness } from './harness.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
@@ -410,4 +410,10 @@ test('SCHED-004: staff and patient moves keep one visit, intake and authorizatio
   assert.equal(report.visits.total.noShows, 1)
   assert.equal(schedStripe.calls.filter(c => c.path === '/payment_intents').length, 1, 'no-show marking only proposes its fee')
 }, { outbound: request => schedStripe.handler(request) })
+})
+
+test('SCHED-006: returning patients book, move and cancel under live clinic rules through portal, reminder and public booking doors', {timeout:120_000}, async()=>{
+  const h=await harness()
+  try { await (await import('./self-service-journey.mjs')).selfServiceJourney(h) }
+  finally { await h.close() }
 })

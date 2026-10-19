@@ -1,3 +1,4 @@
+import { checkSelfService, selfServiceSnapshot } from '../scheduling/self-service-policy'
 import { cancellationStatements, feeProposalStatements, getVisitPolicy } from '../scheduling/policy'
 import { allocateIntake } from './intake-requests'
 import { attendanceStatements } from './attendance'
@@ -32,14 +33,14 @@ export async function roomFor(db: D1Database, key: unknown) {
 }
 /** Dial's engine input for one practitioner; `exclude` leaves out visits being moved. Online booking offers quarter-hour
  * starts; staff may place a visit at any start time inside the practitioner's hours. */
-async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = []) {
+async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = [], minimumNoticeMinutes = 120) {
   const [hours, claims] = await Promise.all([
     rows(db, 'SELECT weekday,start_minute AS startMinute,end_minute AS endMinute FROM bm_hours WHERE practitioner_id=?', practitioner),
     rows(db, `SELECT id,start_at AS startAt,end_at AS endAt FROM bm_appointments WHERE practitioner_id=? AND ${live} AND end_at>?`, practitioner, new Date(Date.now() - 86400_000).toISOString()),
   ])
   return {
     hostTimeZone: zone, recurringWindows: hours as any[], overrides: JSON.parse(String((await settings(db)).holidays)).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] })),
-    constraints: { ...onlineRules, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
+    constraints: { ...onlineRules, minimumNoticeMinutes, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     internalClaims: claims.filter(c => !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) })), calendarBusy: [],
   }
 }
@@ -49,8 +50,8 @@ export async function openSlots(db: D1Database, input: Data, exclude: string[] =
   const clinic = await settings(db)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   const from = input.from ? day(input.from, 'from') : hostDateAt(new Date(), clinic.time_zone)
-  const slots = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, exclude), fromHostDate: from, days: 7 })
-  return { from, next: datePlus(from, 7), timeZone: clinic.time_zone, practitioner, service, slots }
+  const slots = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, exclude, Math.max(120, Number(service.self_book_notice_minutes))), fromHostDate: from, days: 7 })
+  return { from, next: datePlus(from, 7), timeZone: clinic.time_zone, practitioner, service, slots: clinic.booking_open === 1 && service.self_book_enabled === 1 ? slots : [] }
 }
 
 function checkSlot(input: Awaited<ReturnType<typeof engineInput>>, start: Date, end: Date, zone: string) {
@@ -65,8 +66,9 @@ function instant(value: unknown) {
 /** Patient moves use the online slot engine, excluding only their existing appointment. */
 export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   const clinic = await settings(db), start = instant(input.start)
+  const service = (await bookable(db, row.practitioner_id, row.service_id)).service
   const end = new Date(start.getTime() + Date.parse(row.end_at) - Date.parse(row.start_at))
-  const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), clinic.time_zone, false, [row.id])
+  const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), clinic.time_zone, false, [row.id], Math.max(120, Number(service.self_book_notice_minutes)))
   insist(checkSlot(engine, start, end, clinic.time_zone).valid, 'slot_unavailable', 409)
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
@@ -128,22 +130,27 @@ export function intakeToken() {
 
 /** Public online booking for a new client. Returns the one-time intake link token. */
 export async function bookOnline(db: D1Database, input: Data) {
+  const unchanged = await selfServiceSnapshot(db)
   const clinic = await settings(db)
   insist(clinic.booking_open === 1, 'online_booking_closed', 409)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   const start = instant(input.start), end = new Date(start.getTime() + service.duration_minutes * 60_000)
   const holiday = JSON.parse(String((await settings(db)).holidays)).find((h: { startAt: string; endAt: string }) => h.startAt < end.toISOString() && h.endAt > start.toISOString())
   insist(!holiday, 'clinic_holiday', 409)
-  const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false), start, end, clinic.time_zone)
+  const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, [], Math.max(120, Number(service.self_book_notice_minutes))), start, end, clinic.time_zone)
   insist(verdict.valid, 'slot_unavailable', 409)
   const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }
   insist(input.privacy === true || input.privacy === 'on' || input.privacy === 'yes', 'privacy_acknowledgement_required')
   const pending = await one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?`, client.email, now())
   insist((pending?.n ?? 0) < 3, 'too_many_online_bookings', 429)
   // An exact match on name, birth date and email continues that client's file.
-  const existing = await one(db, 'SELECT id FROM bm_clients WHERE erased_at IS NULL AND lower(first_name)=lower(?) AND lower(last_name)=lower(?) AND date_of_birth=? AND lower(email)=?', client.firstName, client.lastName, client.dateOfBirth, client.email)
+  const matches = await rows(db, 'SELECT id FROM bm_clients WHERE erased_at IS NULL AND lower(first_name)=lower(?) AND lower(last_name)=lower(?) AND date_of_birth=? AND lower(email)=? LIMIT 2', client.firstName, client.lastName, client.dateOfBirth, client.email)
+  insist(matches.length <= 1, 'contact_clinic_about_matching_patient_files', 409)
+  const existing = matches[0]
+  const eligibility = await checkSelfService(db, { clientId: existing?.id as string | undefined, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString() })
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
   await commit(db, null, [
+    unchanged, ...eligibility.guards,
     ...(existing ? [] : [
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),

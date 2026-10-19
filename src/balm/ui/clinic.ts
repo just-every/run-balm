@@ -13,7 +13,7 @@ import { reminderSettingsPanel } from './reminders'
 import { hoursFor } from './hours'
 import { timeZoneField } from './time-zone'
 import { fullName } from '../domain/model'
-import { dollarsField, empty, entry, field, form, h, hidden, money, panel, rows, select, status } from './shared'
+import { dollarsField, empty, entry, field, form, h, hidden, money, panel, rows, select, status, textarea } from './shared'
 
 const staffFields = (p?: any) => field('name', 'Full name', p?.name, 'text', 'required maxlength="160"') + field('email', 'Email', p?.email, 'email', 'required')
   + select('role', 'Role', [['practitioner', 'Practitioner'], ['reception', 'Reception']], p?.role ?? 'practitioner')
@@ -35,6 +35,9 @@ function you(s: any) {
 export function clinic(s: any, notice: any = {}) {
   const st = s.settings
   const settings = panel('Clinic details', form('settings.save', '/app/clinic', field('clinicName', 'Clinic name', st.clinic_name, 'text', 'required maxlength="120"') + timeZoneField(st) + clinicIdentityFields(st) + select('bookingOpen', 'Online booking', [['true', 'Open'], ['false', 'Closed']], String(!!st.booking_open)), 'Save clinic details'))
+  const embed = panel('Booking on your website', '<p>Allow these websites to embed your public booking page. Leave the list empty to keep embedding off. Patient portal and private links cannot be embedded.</p>'
+    + form('booking.embed.save', '/app/clinic', hidden('version', st.version) + textarea('origins', 'Allowed website origins (one per line)', JSON.parse(st.booking_embed_origins).join('\n'), 'rows="4" maxlength="40960" placeholder="https://www.yourclinic.com"')
+      + `<p class="help">Enter up to 20 HTTPS origins with no path, query, fragment or sign-in details.${s.local ? ' On this computer, HTTP localhost and 127.0.0.1 origins are also allowed for development.' : ''}</p>`, 'Save allowed websites'))
   const serviceList = rows(s, 'services').map(x => entry(x.name, `<p>${x.duration_minutes} min · ${money(x.price_cents)} ${x.active ? '' : status('Inactive')}<br><span class="help">Notes start from: ${h(template(x.note_template)?.title ?? 'free text')}</span></p><details><summary>Edit service</summary>${form('service.save', '/app/clinic', hidden('id', x.id) + serviceFields(x), 'Save service')}</details>`)).join('')
   const staff = rows(s, 'staff').map(p => entry(p.name, `<p>${status(p.active ? 'Active' : 'Inactive')} ${status(p.role)}<br>${h(p.email)}${p.profession ? `<br>${h(p.profession)}` : ''}${p.provider_number ? ` · provider ${h(p.provider_number)}` : ''}${p.credentials ? ` · signs as ${h(p.credentials)}` : ''}</p>${p.role === 'practitioner' ? hoursFor(s, p) : ''}`
     + `<details><summary>Edit staff member</summary>${form('staff.save', '/app/clinic', hidden('id', p.id) + hidden('version', p.version) + staffFields(p), 'Save staff member')}</details>`
@@ -46,12 +49,16 @@ export function clinic(s: any, notice: any = {}) {
   const sent = invited ? `<div class="notice" role="status"><strong>Invitation sent to ${h(invited.name)}.</strong> ${s.local
     ? `Balm is running on this computer, so no email leaves it. To work as ${h(invited.name)}, run <code>rer dev --as ${h(invited.email)}</code> in the Balm folder and open the RER_OPEN link it prints.`
     : `Balm emailed a sign-in link to ${h(invited.email)}. They select it to join; it works once. Select <strong>Invite to sign in</strong> again to send a new link.`}</div>` : ''
-  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${retentionPreview(s, notice)}${retentionPanel(s)}${you(s)}${settings}${holidaysPanel(s)}${visitPolicyPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${followupSettingsPanel(s)}${clinicPayments(s)}${paymentReviewPanel(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
+  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${retentionPreview(s, notice)}${retentionPanel(s)}${you(s)}${settings}${embed}${holidaysPanel(s)}${visitPolicyPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${followupSettingsPanel(s)}${clinicPayments(s)}${paymentReviewPanel(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
 }
 
 function serviceFields(x?: any) {
-  return field('name', 'Service name', x?.name, 'text', 'required maxlength="120" placeholder="Initial evaluation"') + `<div class="pair">${field('durationMinutes', 'Length (minutes)', x?.duration_minutes ?? 60, 'number', 'required min="5" max="480" step="5"')}${field('price', 'Price ($)', x ? dollarsField(x.price_cents) : '', 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"')}</div>` + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], x ? String(!!x.active) : 'true')
+  return (x ? hidden('version', x.version) : '') + field('name', 'Service name', x?.name, 'text', 'required maxlength="120" placeholder="Initial evaluation"') + `<div class="pair">${field('durationMinutes', 'Length (minutes)', x?.duration_minutes ?? 60, 'number', 'required min="5" max="480" step="5"')}${field('price', 'Price ($)', x ? dollarsField(x.price_cents) : '', 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"')}</div>` + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], x ? String(!!x.active) : 'true')
     + templateSelect('noteTemplate', 'Notes for this service start from', x?.note_template ?? '')
+    + select('selfBookEnabled', 'Patient self-booking', [['true', 'Enabled'], ['false', 'Disabled']], String(!!(x?.self_book_enabled ?? 1)))
+    + field('selfBookNoticeMinutes', 'Minimum booking notice (minutes)', x?.self_book_notice_minutes ?? 120, 'number', 'required min="120" max="86400" step="1"')
+    + select('selfBookPlanRequired', 'Plan of care for self-booking', [['false', 'Not required'], ['true', 'Active certified plan required']], String(!!(x?.self_book_plan_required ?? 0)))
+    + select('selfBookAuthRequired', 'Authorization for self-booking', [['false', 'Not required'], ['true', 'Active authorization with visits available required']], String(!!(x?.self_book_auth_required ?? 0)))
 }
 
 const roomFields = (r?: any) => field('name', 'Room name', r?.name, 'text', 'required maxlength="80" placeholder="Treatment room 1"') + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], r ? String(!!r.active) : 'true')

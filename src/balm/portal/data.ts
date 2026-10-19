@@ -1,3 +1,5 @@
+import { getVisitPolicy } from '../scheduling/policy'
+import { portalAppointmentAction } from './scheduling'
 import { externalReceipts } from '../payments/account-documents'
 import { statementsFor, statementOriginal } from '../payments/statements'
 import { patientPlans } from '../payments/plans'
@@ -16,9 +18,10 @@ import { exerciseProgress, patientExercises } from './programs'
 /** The session's client id is the only patient selector accepted by portal reads. */
 export async function portalHome(env: Bindings, patient: Patient) {
   const db = env.DB, at = now()
+  const policy = await getVisitPolicy(db)
   const [clinic, appointments, exercises, messages, balance, block, receipts, superbills, messageRecipients] = await Promise.all([
     one<{ clinic_name: string; time_zone: string }>(db, 'SELECT clinic_name,time_zone FROM bm_settings WHERE id=1'),
-    rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,p.name AS practitioner,s.name AS service,
+    rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,p.name AS practitioner,s.name AS service,s.self_book_enabled,
       CASE WHEN a.status='booked' AND a.end_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) THEN 1 ELSE 0 END AS intake_open
       FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id
       WHERE a.client_id=? ORDER BY a.start_at`, at, patient.clientId),
@@ -33,7 +36,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
   ])
   return {
     clinic: clinic!, patient: { firstName: patient.firstName, lastName: patient.lastName },
-    upcoming: appointments.filter(a => a.end_at >= at && a.status === 'booked'),
+    upcoming: appointments.filter(a => a.end_at >= at && a.status === 'booked').map(a => ({ ...a, canCancel: Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000, canMove: a.self_book_enabled === 1 && Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000 })),
     past: appointments.filter(a => a.end_at < at || a.status !== 'booked').reverse(),
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
@@ -74,6 +77,7 @@ async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
 
 export async function portalAction(env: Bindings, patient: Patient, name: string, input: Data) {
   switch (name) {
+    case 'appointment.book': case 'appointment.move': case 'appointment.cancel': return portalAppointmentAction(env, patient, name, input)
     case 'exercise.seen': return exerciseProgress(env.DB, patient, input, false)
     case 'exercise.done': return exerciseProgress(env.DB, patient, input, true)
     case 'message.send': return messageSend(env, patient, input)

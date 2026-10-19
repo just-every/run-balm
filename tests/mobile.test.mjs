@@ -151,3 +151,7 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     assert.ok(await page.getByRole('heading',{name:'Treatment notes',exact:true}).count())
   } finally { if(browser) await browser.close();await h.close() }
 })
+
+test('SCHED-006: clinic settings, portal follow-up and a cross-origin embedded booking work in the browser', {timeout:120_000}, async()=>{
+  await (await import('./self-service-browser.mjs')).selfServiceBrowser()
+})

@@ -4,7 +4,7 @@ import { breakGlassNotices } from './care-team'
 import { alertsForClients } from './alerts'
 import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
-import { eraseStaff, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
+import { eraseStaff, saveBookingEmbed, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
 import { eraseClient, listClients, saveClient } from './clients'
 import { prepareForm, publishForm } from './intake'
 import { currentPolicies, publishPolicy } from '../intake/policies'
@@ -23,6 +23,7 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
+  'booking.embed.save': saveBookingEmbed,
   'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
   'holiday.save': saveHoliday, 'settings.save': saveSettings, 'staff.save': saveStaff, 'staff.erase': eraseStaff, 'service.save': saveService, 'hours.save': saveHours, 'room.save': saveRoom,
   'client.save': saveClient, 'client.erase': eraseClient,
@@ -50,7 +51,7 @@ export async function command(db: D1Database, who: Actor, name: string, input: D
 /** Role-scoped working state. It never carries intake answers or note text. */
 export async function snapshot(db: D1Database, who: Actor) {
   const owner = who.role === 'owner', desk = owner || who.role === 'agent' || who.staffRole === 'reception', own = practitionerId(who)
-  const settings = await one(db, "SELECT cancellation_notice_hours,late_cancel_fee_cents,no_show_fee_cents,holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
+  const settings = await one(db, "SELECT version,booking_embed_origins,cancellation_notice_hours,late_cancel_fee_cents,no_show_fee_cents,holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
   const staff = await rows(db, owner ? "SELECT s.*,EXISTS(SELECT 1 FROM oa_operators o WHERE lower(o.email)=lower(s.email) AND o.status IN ('active','invited')) AS can_sign_in FROM bm_staff s WHERE s.erased_at IS NULL ORDER BY s.name" : 'SELECT id,name,role,profession,credentials FROM bm_staff WHERE active=1 AND erased_at IS NULL ORDER BY name')
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')

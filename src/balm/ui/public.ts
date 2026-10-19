@@ -35,14 +35,14 @@ export function bookPage(d: any) {
   const heading = retime ? `<p>Booking <strong>${h(d.slots.service.name)}</strong> with <strong>${h(d.slots.practitioner.name)}</strong>.</p>`
     : `<p>Booking <strong>${h(d.slots?.service.name)}</strong> with <strong>${h(d.slots?.practitioner.name)}</strong> on <strong>${h(p.start ? localTime(p.start, zone) : '')}</strong>.</p>`
   const details = (p.start || retime) && d.slots ? `<section class="panel" id="details"><h2>3. Your details</h2>${heading}
-    <form method="post" action="/book#details"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
+    <form method="post" action="/book#details" target="_top"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
     <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" value="${value('firstName')}"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name" value="${value('lastName')}"></label></div>
     <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" type="tel" placeholder="+1 (312) 555-0100" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
     <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email" value="${value('email')}"></label>
     <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
     <label class="check"><input type="checkbox" name="privacy" value="on" required${typed.privacy === 'on' ? ' checked' : ''}><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>
     <button type="submit">Book this appointment</button></form><p class="help">Next you will get a private link to your intake form.</p></section>` : ''
-  return `<h1>Book an appointment</h1><p>New clients can book online. You will complete a short intake form before your first visit.</p>${chooser}${times}${details}`
+  return `<h1>Book an appointment</h1><p>New and returning clients can book online. Use the same name, date of birth and email to continue your existing patient file. New clients complete intake before their first visit.</p>${chooser}${times}${details}`
 }
 
 function question(q: any) {

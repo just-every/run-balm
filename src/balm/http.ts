@@ -1,5 +1,7 @@
+import { saveBookingEmbed } from './domain/clinic'
+import { freedVisitOffers, patientChangedNotice } from './scheduling/patient-effects'
 import { retentionClient, retentionState, saveRetention, holdRecords, previewDestruction, destroyRecords } from './retention'
-import { patientVisitSlots, movePatientAppointment } from './scheduling/patient'
+import { patientVisitSlots, movePatientAppointment, cancelPatientAppointment } from './scheduling/patient'
 import { confirmVisitFee, visitFees } from './scheduling/fees'
 import { saveVisitPolicy } from './scheduling/policy'
 import { followupCommand, followupSettings, followupsFor } from './followups/settings'
@@ -30,9 +32,9 @@ import { mailEventResponse } from './mail/events'
 import { mailHistory } from './mail/history'
 import { sendVisitChange } from './mail/changes'
 import { reminderDownload } from './domain/reminders'
-import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices } from './domain/waitlist'
+import { acceptOffer, offerView, recordDelivery, takenNotices } from './domain/waitlist'
 import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
-import { sendBooked, sendCanceled, sendIntake, sendOffer, sendPlanLink, sendTaken } from './mail-out'
+import { sendBooked, sendCanceled, sendIntake, sendPlanLink, sendTaken } from './mail-out'
 import { scribeCommand, scribeStatus } from './scribe'
 import { importCommand, importOriginal, undoCounts } from './movein'
 import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
@@ -112,17 +114,12 @@ function returnTarget(requested: string) {
   return query && /^[\w=&%.:-]{1,300}$/.test(query) ? `${path}?${query}` : path
 }
 
-/** A canceled visit's freed time goes to the waitlist by email; delivery is recorded per person. */
-async function offerFreed(env: Bindings, appointmentIds: string[]) {
-  const offers = await offerFreedSlots(env.DB, appointmentIds)
-  for (const offer of offers) await recordDelivery(env.DB, offer.offerId, offer.entryId, 'delivery', await sendOffer(env, offer))
-  return { offered: new Set(offers.map(o => o.offerId)).size, people: offers.length }
-}
 async function noticeOthers(env: Bindings, offerId: string) {
   for (const row of await takenNotices(env.DB, offerId)) await recordDelivery(env.DB, offerId, row.entry_id as string, 'taken_notice', await sendTaken(env, row as any))
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name === 'booking.embed.save') return saveBookingEmbed(env.DB, who, input, env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1')
   if (name === 'retention.save') return saveRetention(env.DB, who, input)
   if (name === 'retention.hold') return holdRecords(env.DB, who, input)
   if (name === 'retention.preview') return previewDestruction(env.DB, who, input)
@@ -197,7 +194,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'appointment.cancel' || name === 'series.cancel_rest') {
     const canceled: string[] = name === 'appointment.cancel' ? [result.id] : result.cancelled
     result.mail = await sendCanceled(env, canceled)
-    result.waitlist = await offerFreed(env, canceled)
+    result.waitlist = await freedVisitOffers(env, canceled)
   }
   return result
 }
@@ -254,13 +251,13 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
   }
   if (path === '/book') {
     const params = Object.fromEntries(url.searchParams)
-    const clinic = await env.DB.prepare('SELECT clinic_name,time_zone,booking_open FROM bm_settings WHERE id=1').first<any>()
-    const options = { clinic, services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 ORDER BY name').all()).results,
+    const clinic = await env.DB.prepare('SELECT clinic_name,time_zone,booking_open,booking_embed_origins FROM bm_settings WHERE id=1').first<any>()
+    const options = { clinic, embedOrigins: JSON.parse(clinic?.booking_embed_origins ?? '[]'), services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 AND self_book_enabled=1 ORDER BY name').all()).results,
       practitioners: (await env.DB.prepare("SELECT id,name,profession FROM bm_staff WHERE role='practitioner' AND active=1 AND erased_at IS NULL ORDER BY name").all()).results }
     if (request.method === 'POST') {
       let input: Record<string, unknown> = {}
       try {
-        if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
+        if (request.headers.get('origin') !== env.AUTH_ORIGIN) fail('cross_site_request_refused', 403)
         input = await inputBody(request)
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
@@ -355,6 +352,11 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
         const input = kind === 'messages' ? await parseMessageInput(request) : await inputBody(request)
+        if (kind === 'visit' && input.action === 'cancel') {
+          const cancelled = await cancelPatientAppointment(env, token, input)
+          await patientChangedNotice(env, cancelled.id, 'cancelled')
+          return redirect('/portal?cancelled=1')
+        }
         if (kind === 'visit' && input.action === 'move') {
           const moved = await movePatientAppointment(env, token, input)
           await sendVisitChange(env, [moved.id], 'moved')

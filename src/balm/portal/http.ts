@@ -1,3 +1,4 @@
+import { portalSchedule } from './scheduling'
 import type { Bindings } from '../../auth.server'
 import { portalAttachment } from './messages'
 import { parseMessageInput } from '../messages/input'
@@ -23,7 +24,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
     if (path === '/portal') {
       if (request.method === 'POST') return renderPortal('signin', await requestPortalLink(env, request, input.email))
       const patient = await portalPatient(env.DB, request).catch(() => null)
-      return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : '')) : renderPortal('signin', { notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : '' })
+      return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : url.searchParams.has('cancelled') ? '?cancelled=1' : '')) : renderPortal('signin', { notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : url.searchParams.has('cancelled') ? 'Your appointment was cancelled. Sign in to see your visits.' : '' })
     }
     const patient = await portalPatient(env.DB, request)
     const attachment = path.match(/^\/portal\/messages\/attachments\/([\w-]+)$/)
@@ -42,12 +43,14 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       const doc = await portalDocument(env.DB, patient, documentPath[1] === 'receipts' ? 'receipt' : documentPath[1] === 'statements' ? 'statement' : 'superbill', documentPath[2])
       return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
     }
+    const movePath = path.match(/^\/portal\/appointments\/([\w-]+)\/move$/)
+    if (request.method === 'GET' && (path === '/portal/schedule' || movePath)) return renderPortal('schedule', await portalSchedule(env, patient, Object.fromEntries(url.searchParams), movePath?.[1]))
     if (path === '/portal/action' && request.method === 'POST') {
       const result = await portalAction(env, patient, String(input.name ?? ''), input)
       if (result && 'redirect' in result) return redirect(result.redirect)
       return redirect('/portal/home?saved=1' + (input.name === 'message.send' ? '#messages' : '#program'))
     }
-    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient), notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Your updated visit is listed below.' : url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
+    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient), notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Your updated visit is listed below.' : url.searchParams.has('scheduled') ? 'Your follow-up is booked.' : url.searchParams.has('cancelled') ? 'Your visit was cancelled.' : url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
     return renderPortal('signin', { error: 'This page is not available.' }, 404)
   } catch (error) {
     const status = Number((error as any)?.status) || 500

@@ -14,7 +14,11 @@ function exercises(d: any) {
 }
 
 function visits(d: any) {
-  return d.upcoming.map((a: any) => `<article class="visit-item"><p class="eyebrow">Upcoming visit</p><h3>${h(localTime(a.start_at, d.clinic.time_zone))}</h3><p>${h(a.service)} with ${h(a.practitioner)}</p></article>`).join('') || '<p>No upcoming visits. Contact the clinic to arrange your next appointment.</p>'
+  const upcoming = d.upcoming.map((a: any) => `<article class="visit-item"><p class="eyebrow">Upcoming visit</p><h3>${h(localTime(a.start_at, d.clinic.time_zone))}</h3><p>${h(a.service)} with ${h(a.practitioner)}</p>`
+    + (a.canMove ? `<p><a href="/portal/appointments/${h(encodeURIComponent(a.id))}/move">Move this visit</a></p>` : '')
+    + (a.canCancel ? `<details class="confirm"><summary>Cancel this visit</summary>${patientForm('appointment.cancel', hidden('id', a.id) + '<label>Reason for cancellation<input name="reason" required maxlength="500"></label><label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel this appointment.</span></label>', 'Cancel my appointment')}</details>` : '')
+    + (!a.canMove || !a.canCancel ? '<p class="help">If you cannot change or cancel this visit online, contact the clinic.</p>' : '') + '</article>').join('')
+  return (upcoming || '<p>No upcoming visits.</p>') + '<p><a href="/portal/schedule">Book a follow-up</a></p>'
 }
 
 function forms(d: any) {
