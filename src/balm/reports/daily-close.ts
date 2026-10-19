@@ -22,6 +22,8 @@ export type DailyCloseFacts = {
   authorizations: DailyCloseItem[]
 }
 
+const displayDate = (date: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', dateStyle: 'medium' }).format(new Date(date + 'T00:00:00Z'))
+
 const file = (clientId: string, anchor: string) => `/app/clients/${encodeURIComponent(clientId)}#${encodeURIComponent(anchor)}`
 const item = (row: Data, kind: string, label: string, anchor: string): DailyCloseItem => ({
   kind, id: row.id, clientId: row.client_id, client: row.client, label, href: file(row.client_id, anchor),
@@ -94,7 +96,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
     if (!latestPlans.has(key)) latestPlans.set(key, plan)
   }
 
-  for (const note of unsigned) result.notes.push(item(note, 'unsigned_note', `Unsigned treatment note · ${note.practitioner} · started ${hostDateAt(new Date(note.created_at), zone)}`, `note-${note.id}`))
+  for (const note of unsigned) result.notes.push(item(note, 'unsigned_note', `Unsigned treatment note · ${note.practitioner} · started ${displayDate(hostDateAt(new Date(note.created_at), zone))}`, `note-${note.id}`))
   const unsignedVisits = new Set(unsigned.map(n => n.appointment_id).filter(Boolean))
   const attendedByPair = new Map<string, Data[]>()
   for (const visit of throughToday) {
@@ -103,16 +105,16 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       const pair = JSON.stringify([visit.client_id, visit.practitioner_id]), treatments = attendedByPair.get(pair) ?? []
       treatments.push(visit); attendedByPair.set(pair, treatments)
       // A separate unsigned draft remains listed even when this visit has a signed note.
-      if (!visit.signed_note && !unsignedVisits.has(visit.id)) result.notes.push(item(visit, 'missing_signed_note', `Attended visit has no signed treatment note · ${visit.local_date} · ${visit.practitioner}`, `visit-${visit.id}`))
+      if (!visit.signed_note && !unsignedVisits.has(visit.id)) result.notes.push(item(visit, 'missing_signed_note', `Attended visit has no signed treatment note · ${displayDate(visit.local_date)} · ${visit.practitioner}`, `visit-${visit.id}`))
       // Attendance-created draft invoices are real charges awaiting review.
-      if (!visitInvoices.length) result.charges.push(item(visit, 'missing_charge', `Attended visit has no charge · ${visit.local_date}`, `visit-${visit.id}`))
+      if (!visitInvoices.length) result.charges.push(item(visit, 'missing_charge', `Attended visit has no charge · ${displayDate(visit.local_date)}`, `visit-${visit.id}`))
     }
     if ((visit.status === 'attended' || visit.checked_in_at) && Number(visit.copay_cents) > 0) {
       // Count visit copays once, plus patient payments actually posted to its
       // invoices (card or desk). Payer remittances and unallocated credits do not count.
       const paid = (copayByVisit.get(visit.id) ?? 0) + visitInvoices.reduce((sum, invoice) => sum + Number(invoice.patient_paid_cents), 0)
       const left = Number(visit.copay_cents) - paid
-      if (left > 0) result.copays.push(item(visit, 'outstanding_copay', `${dollars(left)} copay outstanding · ${visit.local_date}`, 'billing'))
+      if (left > 0) result.copays.push(item(visit, 'outstanding_copay', `${dollars(left)} copay outstanding · ${displayDate(visit.local_date)}`, 'billing'))
     }
     if (!visit.current_intake && !intakeClients.has(visit.client_id)) {
       intakeClients.add(visit.client_id)
@@ -127,18 +129,18 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       const elapsed = Math.floor((Date.parse(date) - Date.parse(first)) / 86400_000)
       const late = elapsed >= Number(settings.late_days)
       result.plans.push(item(plan, late ? 'late_plan' : 'pending_plan', `${late ? `Plan certification is late (${elapsed} days; clinic deadline ${settings.late_days} days)` : 'Plan awaits physician certification'} · ${plan.practitioner}`, 'plans'))
-    } else if (plan.certified_through < date) result.plans.push(item(plan, 'expired_plan', `Plan expired ${plan.certified_through}; recertification needed · ${plan.practitioner}`, 'plans'))
+    } else if (plan.certified_through < date) result.plans.push(item(plan, 'expired_plan', `Plan expired ${displayDate(plan.certified_through)}; recertification needed · ${plan.practitioner}`, 'plans'))
   }
   for (const [pair, treatments] of attendedByPair) if (!latestPlans.has(pair)) {
     const visit = treatments[0]
     result.plans.push(item(visit, 'missing_plan', `No plan of care for attended treatment · ${visit.practitioner}`, 'plans'))
   }
 
-  for (const claim of unsent) result.claims.push(item(claim, 'unsent_claim', `Claim ${claim.status === 'exported' ? 'exported; not sent by Balm' : claim.status === 'draft' ? 'needs fixes before sending' : claim.status === 'batched' ? 'batched; not sent' : 'ready; not sent'} · ${claim.service_date}`, `claim-${claim.id}`))
+  for (const claim of unsent) result.claims.push(item(claim, 'unsent_claim', `Claim ${claim.status === 'exported' ? 'exported; not sent by Balm' : claim.status === 'draft' ? 'needs fixes before sending' : claim.status === 'batched' ? 'batched; not sent' : 'ready; not sent'} · ${displayDate(claim.service_date)}`, `claim-${claim.id}`))
   for (const invoice of invoices) if (invoice.status === 'approved' && !invoice.has_claim) {
     const serviceDate = hostDateAt(new Date(invoice.start_at), zone)
     if ((policiesByClient.get(invoice.client_id) ?? []).some(p => p.starts_on <= serviceDate && (!p.ends_on || p.ends_on >= serviceDate))) {
-      result.claims.push(item(invoice, 'missing_claim', `Insured approved charge has no claim · ${serviceDate}`, `invoice-${invoice.id}`))
+      result.claims.push(item(invoice, 'missing_claim', `Insured approved charge has no claim · ${displayDate(serviceDate)}`, `invoice-${invoice.id}`))
     }
   }
 
@@ -165,8 +167,8 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   }
   for (const auth of authorizations) {
     const counts = counters.get(auth.id)!, left = Math.max(0, Number(auth.visits) - counts.used - counts.reserved)
-    if (auth.starts_on <= date && auth.ends_on >= date && left <= 2) result.authorizations.push(item(auth, 'low_authorization', `${left} unreserved authorized visits remain · expires ${auth.ends_on}`, 'insurance'))
-    else if (expiredWithBookings.has(auth.id)) result.authorizations.push(item(auth, 'expired_authorization', `Authorization expired ${auth.ends_on}; future booked visits need coverage`, 'insurance'))
+    if (auth.starts_on <= date && auth.ends_on >= date && left <= 2) result.authorizations.push(item(auth, 'low_authorization', `${left} unreserved authorized visits remain · expires ${displayDate(auth.ends_on)}`, 'insurance'))
+    else if (expiredWithBookings.has(auth.id)) result.authorizations.push(item(auth, 'expired_authorization', `Authorization expired ${displayDate(auth.ends_on)}; future booked visits need coverage`, 'insurance'))
   }
   return result
 }
