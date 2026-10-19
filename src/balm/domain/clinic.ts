@@ -162,6 +162,19 @@ export async function eraseStaff(db: D1Database, who: Actor, input: Data) {
   return { id: staff.id, erased: true }
 }
 
+/** Shared equipment (a pool, an AlterG); like a room, an item holds one visit at a time (SCHED-002). */
+export async function saveEquipment(db: D1Database, who: Actor, input: Data) {
+  need(who, 'owner'); human(who)
+  const itemId = input.id ? text(input.id, 'id', 100) : id()
+  if (input.id) insist(await one(db, 'SELECT 1 FROM bm_equipment WHERE id=?', itemId), 'equipment_not_found', 404)
+  await commit(db, who, [
+    stmt(db, `INSERT INTO bm_equipment(id,name,active) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active,version=bm_equipment.version+1`,
+      itemId, text(input.name, 'name', 80), input.active === false || input.active === 'false' ? 0 : 1),
+    audit(db, who, 'equipment.saved', null, itemId),
+  ])
+  return { id: itemId }
+}
+
 /** Treatment rooms; a room holds one visit at a time. */
 export async function saveRoom(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)

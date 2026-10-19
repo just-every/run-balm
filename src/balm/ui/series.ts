@@ -16,6 +16,7 @@ export function problemText(o: any, zone: string) {
     case 'clinic_holiday': return `Clinic closed: ${o.clash?.name ?? 'holiday'}`
     case 'practitioner_already_booked': return `Overlaps another visit${clash}`
     case 'room_in_use': return `The room is booked${clash}`
+    case 'equipment_in_use': return `The equipment is booked${clash}`
     case 'outside_practitioner_hours': return 'Outside the practitioner’s hours'
     case 'overlaps_another_visit_in_this_series': return 'Overlaps another visit in this series'
     case 'start_too_far_in_past': return 'In the past'

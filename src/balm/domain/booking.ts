@@ -33,6 +33,13 @@ export async function roomFor(db: D1Database, key: unknown) {
   insist(room, 'room_not_found', 404)
   return room.id as string
 }
+/** Active equipment (SCHED-002), or null when the visit needs none. */
+export async function equipmentFor(db: D1Database, key: unknown) {
+  if (key === undefined || key === null || key === '') return null
+  const item = await one(db, 'SELECT id FROM bm_equipment WHERE id=? AND active=1', text(key, 'equipment', 100))
+  insist(item, 'equipment_not_found', 404)
+  return item.id as string
+}
 /** Dial's engine input for one practitioner; `exclude` leaves out visits being moved. Online booking offers quarter-hour
  * starts; staff may place a visit at any start time inside the practitioner's hours. */
 async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = [], minimumNoticeMinutes = 120, overlapAllowed = staff) {
@@ -81,6 +88,12 @@ function instant(value: unknown) {
   insist(/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,3})?)?Z$/.test(v) && Number.isFinite(Date.parse(v)), 'invalid_start')
   return new Date(v)
 }
+/** Live visits holding a moved visit's room or equipment (SCHED-002); patient doors never offer or take those times. */
+export async function resourceBusy(db: D1Database, row: Data, from: string, to: string) {
+  if (!row.room_id && !row.equipment_id) return []
+  return rows(db, `SELECT start_at,end_at FROM bm_appointments WHERE id<>? AND ${live} AND start_at<? AND end_at>? AND ((room_id IS NOT NULL AND room_id=?) OR (equipment_id IS NOT NULL AND equipment_id=?))`,
+    row.id, to, from, row.room_id ?? null, row.equipment_id ?? null)
+}
 /** Patient moves use the online slot engine, excluding only their existing appointment. */
 export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   const clinic = await settings(db), start = instant(input.start)
@@ -90,10 +103,11 @@ export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), clinic.time_zone, false, [row.id], Math.max(120, Number(service.self_book_notice_minutes)), double)
   insist(checkSlot(engine, start, end, clinic.time_zone).valid, 'slot_unavailable', 409)
   if (double) insist(await patientFits(db, row.client_id, row.practitioner_id, row.service_id, start.toISOString(), end.toISOString(), [row.id]), 'slot_unavailable', 409)
+  insist(!(await resourceBusy(db, row, start.toISOString(), end.toISOString())).length, 'slot_unavailable', 409)
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
-/** Same-batch fences: neither the practitioner nor the room holds another live visit then. */
-export function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; startAt: string; endAt: string; except?: string }) {
+/** Same-batch fences: neither the practitioner, the room nor the equipment holds another live visit then. */
+export function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string }) {
   return [
     guard(db, "NOT EXISTS(SELECT 1 FROM bm_settings,json_each(bm_settings.holidays) h WHERE json_extract(h.value,'$.startAt')<? AND json_extract(h.value,'$.endAt')>?)", v.endAt, v.startAt),
     capacityGuard(db, v),
@@ -102,15 +116,19 @@ export function placementGuards(db: D1Database, v: { practitionerId: unknown; se
       guard(db, `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE room_id=? AND ${live} AND start_at<? AND end_at>? AND id<>?)`, v.roomId, v.endAt, v.startAt, v.except ?? ''),
       guard(db, 'EXISTS(SELECT 1 FROM bm_rooms WHERE id=? AND active=1)', v.roomId),
     ] : []),
+    ...(v.equipmentId ? [
+      guard(db, `NOT EXISTS(SELECT 1 FROM bm_appointments WHERE equipment_id=? AND ${live} AND start_at<? AND end_at>? AND id<>?)`, v.equipmentId, v.endAt, v.startAt, v.except ?? ''),
+      guard(db, 'EXISTS(SELECT 1 FROM bm_equipment WHERE id=? AND active=1)', v.equipmentId),
+    ] : []),
   ]
 }
 export function appointmentStatements(db: D1Database, who: Actor | { email: string; role: string }, appointment: Data) {
   return [
     // Rechecked in the batch: no other live appointment for this practitioner or room overlaps.
     ...placementGuards(db, appointment as any),
-    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id)
-      VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
-    appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null),
+    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id,equipment_id)
+      VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
+    appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null, appointment.equipmentId ?? null),
     ...(appointment.tokenHash ? [allocateIntake(db, appointment.id, appointment.clientId, appointment.startAt, appointment.tokenHash)] : []),
     audit(db, who, 'appointment.booked', appointment.clientId, appointment.id, `${appointment.bookedVia}${appointment.seriesId ? ' series' : ''}${appointment.offerId ? ' waitlist offer' : ''} ${appointment.startAt}`),
   ]
@@ -124,7 +142,7 @@ export function clockMinute(value: unknown) {
 }
 export type Placement = { start?: Date; end?: Date; problem?: string; clash?: Data }
 /** Where a staff-placed visit would land and, if it cannot, why: the same checks booking and moving refuse on. */
-export async function placeVisit(db: D1Database, zone: string, v: { practitionerId: string; serviceId: string; durationMinutes: number; date: string; minute: number; roomId: string | null; exclude?: string[] }): Promise<Placement> {
+export async function placeVisit(db: D1Database, zone: string, v: { practitionerId: string; serviceId: string; durationMinutes: number; date: string; minute: number; roomId: string | null; equipmentId?: string | null; exclude?: string[] }): Promise<Placement> {
   const candidates = wallClockInstants(v.date, v.minute, zone)
   if (candidates.length !== 1) return { problem: 'ambiguous_or_missing_local_time' }
   const start = candidates[0], end = new Date(start.getTime() + v.durationMinutes * 60_000)
@@ -143,6 +161,10 @@ export async function placeVisit(db: D1Database, zone: string, v: { practitioner
   if (v.roomId) {
     const clash = await overlapping('room_id', v.roomId)
     if (clash) return { start, end, problem: 'room_in_use', clash }
+  }
+  if (v.equipmentId) {
+    const clash = await overlapping('equipment_id', v.equipmentId)
+    if (clash) return { start, end, problem: 'equipment_in_use', clash }
   }
   return { start, end }
 }
@@ -193,13 +215,13 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   insist(who.role === 'owner' || who.staffRole === 'reception' || practitionerId(who) === practitioner.id, 'practitioners_book_their_own_diary', 403)
   const client = await one(db, 'SELECT id FROM bm_clients WHERE id=? AND erased_at IS NULL', text(input.clientId, 'client', 100))
   insist(client, 'client_not_found', 404)
-  const roomId = await roomFor(db, input.roomId)
-  const place = await placeVisit(db, clinic.time_zone, { practitionerId: practitioner.id as string, serviceId: service.id as string, durationMinutes: service.duration_minutes, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId })
+  const roomId = await roomFor(db, input.roomId), equipmentId = await equipmentFor(db, input.equipmentId)
+  const place = await placeVisit(db, clinic.time_zone, { practitionerId: practitioner.id as string, serviceId: service.id as string, durationMinutes: service.duration_minutes, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, equipmentId })
   insist(!place.problem, place.problem!, 409)
   const token = intakeToken(), appointmentId = id()
   const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
   filing.push(...await medicareStatements(db, who, { clientId: client.id as string, practitionerId: practitioner.id as string, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId }, input.acknowledgeMedicareOverlap))
-  await commit(db, who, [...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId }), ...filing])
+  await commit(db, who, [...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId }), ...filing])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 
@@ -212,20 +234,21 @@ export async function moveAppointment(db: D1Database, who: Actor, input: Data) {
   const target = input.practitionerId ? text(input.practitionerId, 'practitioner', 100) : row.practitioner_id as string
   insist(who.role === 'owner' || who.staffRole === 'reception' || target === row.practitioner_id, 'practitioners_book_their_own_diary', 403)
   const roomId = 'roomId' in input ? await roomFor(db, input.roomId) : row.room_id as string | null
+  const equipmentId = 'equipmentId' in input ? await equipmentFor(db, input.equipmentId) : row.equipment_id as string | null
   const duration = Math.round((Date.parse(row.end_at) - Date.parse(row.start_at)) / 60_000)
-  const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: row.service_id, durationMinutes: duration, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, exclude: [row.id] })
+  const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: row.service_id, durationMinutes: duration, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, equipmentId, exclude: [row.id] })
   insist(!place.problem, place.problem!, 409)
   const medicare = await medicareStatements(db, who, { clientId: row.client_id, practitionerId: target, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId: row.id, except: [row.id] }, input.acknowledgeMedicareOverlap)
   const version = input.version === undefined ? row.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER)
   const startAt = place.start!.toISOString(), endAt = place.end!.toISOString()
   await commit(db, who, [
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, version),
-    ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, startAt, endAt, except: row.id }),
-    stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, startAt, endAt, row.id),
+    ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId, startAt, endAt, except: row.id }),
+    stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,equipment_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, equipmentId, startAt, endAt, row.id),
     ...medicare,
-    audit(db, who, 'appointment.moved', row.client_id, row.id, `${row.start_at} -> ${startAt}${target !== row.practitioner_id ? ' new practitioner' : ''}${roomId !== row.room_id ? ' new room' : ''}`),
+    audit(db, who, 'appointment.moved', row.client_id, row.id, `${row.start_at} -> ${startAt}${target !== row.practitioner_id ? ' new practitioner' : ''}${roomId !== row.room_id ? ' new room' : ''}${equipmentId !== row.equipment_id ? ' new equipment' : ''}`),
   ])
-  return { id: row.id, startAt, practitionerId: target, roomId }
+  return { id: row.id, startAt, practitionerId: target, roomId, equipmentId }
 }
 
 /** The appointment row the actor may act on, or a 404 for anyone else. */

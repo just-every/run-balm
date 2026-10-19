@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run, harness } from './harness.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
-import { clinic, pastVisit, visitDate, slots } from './clinic.mjs'
+import { bookOnline, clinic, pastVisit, visitDate, slots } from './clinic.mjs'
 import { portalLogin } from './portal-billing.mjs'
 import { readFile } from 'node:fs/promises'
 
@@ -500,3 +500,82 @@ test('SCHED-010: a PT with capacity 2 takes two patients side by side and refuse
     assert.equal(charts.flatMap(c=>c.value.appointments).filter(a=>a.status==='booked').length,2,'both overlapping visits landed')
   })
 })
+
+test('SCHED-002: rooms and equipment refuse a second booking, drag moves keep history under diary authority, the week shows each visit’s intake, authorization and balance flags, capacity visits sit side by side, and the day sheet prints and exports', {timeout:120_000}, () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam, lee] } = await clinic(h, ['Priya', 'Sam', 'Lee'])
+  const reception = await h.staff('Rosa', 'reception')
+  const room = await h.cmd('room.save', { name: 'Treatment room 1' }), alterG = await h.cmd('equipment.save', { name: 'AlterG' })
+  await h.cmd('equipment.save', { name: 'Pool' }, reception.cookie, 403)
+  const [ava, ben, cara, dan, eve] = await Promise.all(['Ava', 'Ben', 'Cara', 'Dan', 'Eve'].map(first => h.cmd('client.save', { firstName: first, lastName: 'Sched', dateOfBirth: '1985-05-05' })))
+  const day = brisbane(Date.now() + 3 * 86400_000).slice(0, 10)
+  const book = (client, p, time, extra = {}) => h.send('/api/balm/command', { name: 'appointment.book', input: { clientId: client.id, practitionerId: p.id, serviceId: service.id, date: day, time, ...extra } }, reception.cookie)
+  // One room, one visit at a time: Sam cannot take the room Priya holds at 9:00.
+  const avaVisit = (await book(ava, priya, '09:00', { roomId: room.id })).value.result.appointmentId
+  assert.equal((await book(ben, sam, '09:00', { roomId: room.id })).value.code, 'room_in_use')
+  // Equipment too: the AlterG is Ben's from 9:00 to 9:45, so Cara's 9:30 is refused and her 10:00 is not.
+  const benVisit = (await book(ben, sam, '09:00', { equipmentId: alterG.id })).value.result.appointmentId
+  assert.equal((await book(cara, lee, '09:30', { equipmentId: alterG.id })).value.code, 'equipment_in_use')
+  const caraVisit = (await book(cara, lee, '10:00', { equipmentId: alterG.id })).value.result.appointmentId
+  // The equipment column shows both AlterG visits; the move form the drag script submits names the equipment.
+  const machine = (await h.send(`/app?view=day&by=equipment&date=${day}&id=${alterG.id}`, undefined, reception.cookie)).text
+  assert.ok(machine.includes(`data-id="${benVisit}"`) && machine.includes(`data-id="${caraVisit}"`) && !machine.includes(`data-id="${avaVisit}"`))
+  assert.match(machine, /<form id="move-form"[^>]*>.*<input name="equipmentId">/)
+  // A drag onto a taken AlterG time is refused; onto 11:00 it moves, and the visit's history shows who moved it from when.
+  const drag = (cookie, fields) => h.form(`/app/action?name=appointment.move&returnTo=${encodeURIComponent(`/app?view=day&by=equipment&date=${day}`)}`, fields, cookie)
+  const version = async id => (await h.send(`/app?view=day&date=${day}`, undefined, reception.cookie)).text.match(new RegExp(`data-id="${id}" data-version="(\\d+)"`))[1]
+  assert.notEqual((await drag(reception.cookie, { id: caraVisit, version: await version(caraVisit), date: day, time: '09:15', equipmentId: alterG.id })).status, 303)
+  assert.equal((await drag(reception.cookie, { id: caraVisit, version: await version(caraVisit), date: day, time: '11:00', equipmentId: alterG.id })).status, 303)
+  const moved = (await h.send(`/app?view=day&date=${day}&appt=${caraVisit}`, undefined, reception.cookie)).text
+  assert.match(moved, /Visit history[\s\S]*moved · rosa@clinic\.example \(reception\)[\s\S]*T00:00:00\.000Z -&gt; \S*T01:00:00\.000Z/)
+  // Drag authority: Lee drags only Lee's own visits, cannot see Priya's, and cannot drop a visit into Priya's diary.
+  const leePage = (await h.send(`/app?view=day&date=${day}`, undefined, lee.cookie)).text
+  assert.ok(leePage.includes(`draggable="true" data-id="${caraVisit}"`) && !leePage.includes(avaVisit))
+  await h.cmd('appointment.move', { id: avaVisit, date: day, time: '12:00' }, lee.cookie, 404)
+  await h.cmd('appointment.move', { id: caraVisit, date: day, time: '12:00', practitionerId: priya.id }, lee.cookie, 403)
+  // Flags: Ava's authorization counts her attended and booked visits; Ben owes an approved invoice; Dan's intake is in.
+  await h.cmd('insurance.settings.save', { billingNpi: '1234567893', taxId: '123456789', address: '100 Main St', city: 'Austin', state: 'TX', postalCode: '78701', senderId: 'BALMTEST', contactName: 'Jordan Clinic', contactPhone: '5125550100' })
+  const payer = await h.cmd('insurance.payer.save', { name: 'Aetna', payerId: '60054', receiverId: 'AETNA' })
+  const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
+  const policy = await h.cmd('insurance.policy.save', { clientId: ava.id, payerId: payer.id, memberId: 'AVA123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+  await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'AUTH12', ...coverage, visits: 12 })
+  await h.cmd('appointment.attend', { id: await pastVisit(h, ava.id, priya, service.id) })
+  const owed = await pastVisit(h, ben.id, sam, service.id)
+  await h.cmd('appointment.attend', { id: owed })
+  await h.cmd('invoice.approve', { id: (await h.cmd('invoice.prepare', { appointmentId: owed })).id })
+  const online = await bookOnline(h, service.id, lee.id, (await slots(h, service.id, lee.id))[0], { firstName: 'Dan', lastName: 'Sched', dateOfBirth: '1985-05-05', email: 'dan@client.example' })
+  const intake = await h.send(online.location)
+  assert.equal((await h.form(online.location, { formId: 'intake-v1', q_reason: 'Hip pain', q_emergency: 'Kim 0400', q_consent: 'yes', consentVersion: intake.text.match(/name="consentVersion" value="([^"]+)"/)[1], consentAccepted: 'on', signerName: 'Dan Sched', signerRelationship: 'patient', signatureTyped: 'Dan Sched' })).status, 303)
+  const danVisit = (await h.state(reception.cookie)).appointments.find(a => a.booked_via === 'online').id
+  const danDay = brisbane(Date.parse((await h.state(reception.cookie)).appointments.find(a => a.id === danVisit).start_at)).slice(0, 10)
+  const card = (page, id) => page.match(new RegExp(`<a class="appt[^"]*"[^>]*appt=${id}[\\s\\S]*?</a>`))?.[0] ?? ''
+  // The week view for each of the three practitioners carries every visit's flags.
+  const week = async (p, date = day) => (await h.send(`/app?view=week&date=${date}&id=${p.id}`, undefined, reception.cookie)).text
+  const [priyaWeek, samWeek, leeWeek] = [await week(priya), await week(sam), await week(lee, danDay)]
+  assert.match(card(priyaWeek, avaVisit), /10 of 12 visits left/)
+  assert.match(card(priyaWeek, avaVisit), /Intake due/)
+  assert.match(card(samWeek, benVisit), /\$95\.00 owed/)
+  assert.match(card(samWeek, benVisit), /AlterG/)
+  assert.match(card(leeWeek, danVisit), /Intake in/)
+  assert.doesNotMatch((await h.send(`/app?view=week&date=${day}`, undefined, sam.cookie)).text, /\d owed/, 'balances stay with the desk')
+  // Capacity 2: two patients at 13:00 sit side by side in Priya's column.
+  await h.cmd('capacity.save', { practitionerId: priya.id, capacity: 2 }); await h.cmd('capacity.save', { serviceId: service.id, capacity: 2 })
+  const pair = [(await book(dan, priya, '13:00')).value.result.appointmentId, (await book(eve, priya, '13:00')).value.result.appointmentId]
+  const column = (await h.send(`/app?view=day&date=${day}&id=${priya.id}`, undefined, reception.cookie)).text.match(/<div class="overlap [^"]*">([\s\S]*?)<\/div><\/div>/)?.[0] ?? ''
+  assert.equal((column.match(/class="overlap-lane"/g) ?? []).length, 2)
+  for (const id of pair) assert.ok(column.includes(`appt=${id}`))
+  // The day sheet prints and exports the same day; a practitioner's lists only their own visits; an agent key is refused.
+  const printed = await h.send(`/api/balm/day-sheet.html?date=${day}`, undefined, reception.cookie)
+  assert.equal(printed.status, 200); assert.match(printed.headers.get('content-type'), /text\/html/)
+  assert.ok(['Ava Sched', 'Ben Sched', 'Cara Sched', 'AlterG', 'Treatment room 1', '10 of 12 visits left (AUTH12'].every(text => printed.text.includes(text)))
+  const csv = await h.send(`/api/balm/day-sheet.csv?date=${day}&by=equipment&id=${alterG.id}`, undefined, reception.cookie)
+  assert.match(csv.headers.get('content-disposition'), new RegExp(`balm-day-sheet-${day}\\.csv`))
+  const lines = csv.text.trim().split('\r\n')
+  assert.equal(lines[0], '"Time","Patient","Practitioner","Service","Room","Equipment","Status","Intake","Authorization","Payer","Balance owed"')
+  assert.deepEqual(lines.slice(1).map(l => l.split(',')[1]), ['"Ben Sched"', '"Cara Sched"'])
+  assert.match(lines[1], /"\$95\.00"$/)
+  const own = await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, lee.cookie)
+  assert.ok(own.text.includes('Cara Sched') && !own.text.includes('Ava Sched') && !own.text.includes('Balance owed'))
+  const key = await h.cmd('agent.create', { label: 'Desk agent' })
+  assert.equal((await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, '', { authorization: 'Bearer ' + key.token })).status, 401, 'an agent key is not a staff sign-in')
+}))

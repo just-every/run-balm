@@ -40,7 +40,7 @@ export function calendarAgenda(s: any, c: any) {
   const chosen = Math.max(0, c.columns.findIndex((column: any) => c.selected && inColumn(c, column, c.selected)))
   const built = c.columns.map((column: any) => ({ column, ...items(s, c, column, live) }))
   const label = (column: any) => c.by === 'practitioner' ? practitionerName(column) : h(column.label)
-  const picker = built.length > 1 ? `<div class="ag-pick" role="radiogroup" aria-label="${c.by === 'room' ? 'Room' : 'Practitioner'}">${built.map((b: any, i: number) => `<input type="radio" class="ag-radio" name="agenda-col" id="ag-${i}"${i === chosen ? ' checked' : ''}><label for="ag-${i}">${h(b.column.label)}<small>${b.count}</small></label>`).join('')}</div>` : ''
+  const picker = built.length > 1 ? `<div class="ag-pick" role="radiogroup" aria-label="${c.by === 'room' ? 'Room' : c.by === 'equipment' ? 'Equipment' : 'Practitioner'}">${built.map((b: any, i: number) => `<input type="radio" class="ag-radio" name="agenda-col" id="ag-${i}"${i === chosen ? ' checked' : ''}><label for="ag-${i}">${h(b.column.label)}<small>${b.count}</small></label>`).join('')}</div>` : ''
   const columns = built.map((b: any, i: number) => `<section class="ag-col ag-${i}${built.length > 1 ? '' : ' only'}"><h3>${c.by === 'practitioner' ? avatar(b.column.label) : ''}<span>${label(b.column)}<small>${tally(b.count)}</small></span></h3>${b.html}</section>`).join('')
   return `<div class="agenda day">${picker}${columns}</div>`
 }

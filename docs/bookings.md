@@ -15,7 +15,9 @@ A client whose name, date of birth and email exactly match an existing file cont
 **Schedule** is the clinic's calendar, in the clinic's time zone: everyone's for the owner and reception, and their own for a practitioner.
 
 - **Day** shows one column per practitioner; **Week** shows the seven days, Sunday to Saturday, for the practitioner you choose under **Practitioner**. **Previous**, **Today** and **Next** move by a day or a week.
-- With rooms set up (see [Set up your clinic](/docs/set-up-your-clinic)), the owner and reception can switch to **Rooms**: one column per room, plus **No room** for visits without one.
+- With rooms set up (see [Set up your clinic](/docs/set-up-your-clinic)), the owner and reception can switch to **Rooms**: one column per room, plus **No room** for visits without one. With equipment set up, **Equipment** shows one column per item (a pool, an AlterG).
+- Each card also carries its flags: **Intake due** or **Intake in**, the authorization that covers it ("10 of 12 visits left", counting attended and booked visits), and for the owner and reception the patient's balance owed.
+- Under **Day view**, **Print day sheet** opens the shown day as a page to print and **Export day sheet (CSV)** downloads it, with the same practitioner, room or equipment filter.
 - Each visit shows its time, the client, the service, the room or practitioner, and its status: **Booked**, **Attended** or **Did not attend**, with **Series** for a recurring visit and **Waitlist** for one booked from an offer. Canceled visits leave the calendar and stay in the list under it. Shaded times are outside the practitioner's hours.
 - Under the calendar, the same day or week as a list.
 

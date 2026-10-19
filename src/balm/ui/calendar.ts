@@ -29,10 +29,11 @@ export const statusLabel: Record<string, string> = { booked: 'Booked', attended:
 export function inColumn(c: any, column: any, a: any) {
   if (local(a.start_at, c.zone).date !== column.date) return false
   if (c.by === 'room') return column.subject === 'none' ? !a.room_id : a.room_id === column.subject
+  if (c.by === 'equipment') return a.equipment_id === column.subject
   return a.practitioner_id === column.subject
 }
 function openWindows(c: any, column: any) {
-  if (c.by === 'room') return null
+  if (c.by !== 'practitioner') return null
   const weekday = weekdayForDate(column.date)
   return c.hours.filter((w: any) => w.practitioner_id === column.subject && w.weekday === weekday)
 }
@@ -59,6 +60,11 @@ export function visitChips(s: any, a: any) {
   if (a.note_status === 'signed') chips.push(['Signed', 'sage'])
   else if (a.status === 'attended') chips.push(['Note to sign', 'honey'])
   chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
+  // SCHED-002 flags: intake, the covering authorization and, for the desk, the patient's open balance.
+  if (a.status === 'booked') chips.push(a.intake_received || a.intake_on_file ? ['Intake in', ''] : ['Intake due', 'honey'])
+  if (a.authorization) chips.push([`${a.authorization.left} of ${a.authorization.visits} visits left`, a.authorization.left <= 2 ? 'honey' : ''])
+  if (Number(a.balance_cents) > 0) chips.push([`${money(Number(a.balance_cents))} owed`, 'honey'])
+  if (a.equipment) chips.push([a.equipment, ''])
   if (pay?.copayCents > 0 && a.status === 'booked') chips.push([`${money(pay.copayCents)} copay`, ''])
   if (pay?.card) chips.push(['Card on file', ''])
   if (a.series_id) chips.push(['Series', ''])
@@ -127,7 +133,8 @@ function visitGroups(visits: any[], zone: string, lo: number, hi: number) {
 }
 
 export function calendarGrid(s: any, c: any) {
-  if (!c.columns.length) return `<div class="empty-state">${icon('people')}<h2>${c.by === 'room' ? 'No rooms yet' : 'No practitioners yet'}</h2><p>${c.by === 'room' ? 'No rooms yet. The owner adds rooms on the Clinic page.' : 'No practitioners yet. The owner adds them on the Clinic page.'}</p>${s.actor.role === 'owner' ? '<a class="button secondary" href="/app/clinic">Open Clinic</a>' : ''}</div>`
+  const none = c.by === 'room' ? 'rooms' : c.by === 'equipment' ? 'equipment' : 'practitioners'
+  if (!c.columns.length) return `<div class="empty-state">${icon('people')}<h2>No ${none} yet</h2><p>No ${none} yet. The owner adds ${c.by === 'equipment' ? 'it' : 'them'} on the Clinic page.</p>${s.actor.role === 'owner' ? '<a class="button secondary" href="/app/clinic">Open Clinic</a>' : ''}</div>`
   const live = c.appointments.filter((a: any) => a.status !== 'cancelled')
   // The visible hours: every open window and visit shown, at least 8 AM to 6 PM.
   let lo = 8 * 60, hi = 18 * 60
@@ -176,4 +183,4 @@ export function calendarGrid(s: any, c: any) {
 
 /** The hidden form a drag fills in; the edit panel's form does the same without JavaScript. */
 export const moveForm = (c: any) => `<form id="move-form" hidden method="post" action="/app/action?name=appointment.move&amp;returnTo=${encodeURIComponent(calendarLink(c))}" aria-hidden="true">`
-  + `<input name="id"><input name="version"><input name="date"><input name="time"><input name="${c.by === 'room' ? 'roomId' : 'practitionerId'}"></form>`
+  + `<input name="id"><input name="version"><input name="date"><input name="time"><input name="${c.by === 'room' ? 'roomId' : c.by === 'equipment' ? 'equipmentId' : 'practitionerId'}"></form>`

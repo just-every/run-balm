@@ -30,7 +30,7 @@ export const dragScript = `(() => {
     fields.version.value = dragged.dataset.version
     fields.date.value = cell.dataset.date
     fields.time.value = cell.dataset.time
-    const column = fields.roomId || fields.practitionerId
+    const column = fields.roomId || fields.equipmentId || fields.practitionerId
     column.value = cell.dataset.col === 'none' ? '' : cell.dataset.col
     form.submit()
   })

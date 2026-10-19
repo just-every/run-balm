@@ -51,7 +51,8 @@ import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
 import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
-import { DomainError, human, insist, need } from './domain/model'
+import { DomainError, human, insist, need, one } from './domain/model'
+import { daySheetCsv, daySheetHtml } from './ui/day-sheet'
 import { clinicAttachment, linkAttachment } from './messages/attachments'
 import { parseMessageInput } from './messages/input'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
@@ -469,6 +470,15 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       }
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
       if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined, Object.fromEntries(url.searchParams)))
+      const sheet = path.match(/^\/api\/balm\/day-sheet\.(html|csv)$/)
+      if (sheet) {
+        // SCHED-002: print or export one day of the calendar the actor may see.
+        need(who, 'owner', 'reception', 'practitioner'); human(who)
+        const view = await calendarView(env.DB, who, { ...Object.fromEntries(url.searchParams), view: 'day' })
+        if (sheet[1] === 'csv') return new Response(daySheetCsv(view), { headers: { ...headers, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="balm-day-sheet-${view.date}.csv"`, 'content-security-policy': "default-src 'none'" } })
+        const clinic = (await one(env.DB, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string
+        return new Response(daySheetHtml(view, clinic), { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
+      }
       const invoice = path.match(/^\/api\/balm\/invoices\/([\w-]+)\.html$/)
       if (invoice) {
         const download = await invoiceDownload(env.DB, who, invoice[1])

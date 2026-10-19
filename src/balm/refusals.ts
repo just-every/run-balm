@@ -71,6 +71,7 @@ const sentences: Record<string, string> = {
   outside_practitioner_hours: 'That time is outside the practitioner’s weekly hours.',
   practitioner_already_booked: 'The practitioner already has a visit at that time.',
   room_in_use: 'That room is booked at that time.',
+  equipment_in_use: 'That equipment is booked at that time.',
   start_too_far_in_past: 'That time has already passed.',
   series_has_conflicts: 'Some dates in this series need a new time or to be skipped first.',
   review_fingerprint_mismatch: 'The file or your clinic changed since the preview. Preview the file again before importing.',

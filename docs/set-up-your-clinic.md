@@ -21,6 +21,10 @@ Add each service a client can book with its **Length (minutes)** and **Price ($)
 
 Rooms are optional. Add each treatment room or gym under **Rooms** on the **Clinic** page. A room holds one visit at a time: Balm refuses a booking, a move or a recurring visit that would put two visits in one room at once. The schedule can then show each room's day or week.
 
+## Equipment
+
+Equipment is optional too. Add shared equipment such as a pool or an AlterG under **Equipment** on the **Clinic** page, then choose it when booking or moving a visit. Like a room, an item holds one visit at a time, and the schedule can show each item's day or week.
+
 ## Staff
 
 Add each person under **Add a staff member**:

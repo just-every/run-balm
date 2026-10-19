@@ -32,6 +32,8 @@ function setupChecklist(s: any) {
 }
 
 const longDate = (date: string, options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(date + 'T00:00:00Z'))
+const equipmentChoices = (s: any) => [['', 'No equipment'], ...rows(s, 'equipment').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][]
+const subjectWord = (c: any) => c.by === 'room' ? 'Room' : c.by === 'equipment' ? 'Equipment' : 'Practitioner'
 const roomChoices = (s: any) => [['', 'No room'], ...rows(s, 'rooms').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][]
 const canBook = (s: any) => desk(s) || !!s.actor.staffId
 
@@ -48,10 +50,15 @@ function viewControls(s: any, c: any) {
   const tab = (label: string, extra: any, current: boolean) => `<a class="seg${current ? ' on' : ''}" href="${h(calendarLink({ ...c, ...extra }))}"${current ? ' aria-current="true"' : ''}>${h(label)}</a>`
   const subjects = c.subjects.map((x: any) => [x.id, x.name]) as [unknown, unknown][]
   const filter = subjects.length > 1 || c.view === 'week' ? `<form class="cal-filter" method="get" action="/app">${hidden('view', c.view)}${hidden('date', c.date)}${hidden('by', c.by)}`
-    + select('id', c.by === 'room' ? 'Room' : 'Practitioner', c.view === 'week' ? subjects : [['', c.by === 'room' ? 'All rooms' : 'All practitioners'], ...subjects], c.subject ?? '', '') + '<button type="submit" class="secondary">Show</button></form>' : ''
+    + select('id', subjectWord(c), c.view === 'week' ? subjects : [['', c.by === 'room' ? 'All rooms' : c.by === 'equipment' ? 'All equipment' : 'All practitioners'], ...subjects], c.subject ?? '', '') + '<button type="submit" class="secondary">Show</button></form>' : ''
   return `<div class="cal-controls"><div class="cal-nav" aria-label="View">${tab('Day', { view: 'day' }, c.view === 'day')}${tab('Week', { view: 'week' }, c.view === 'week')}</div>`
-    + (desk(s) && rows(s, 'rooms').length ? `<div class="cal-nav" aria-label="Columns">${tab('Practitioners', { by: 'practitioner', subject: null }, c.by === 'practitioner')}${tab('Rooms', { by: 'room', subject: null }, c.by === 'room')}</div>` : '')
-    + filter + '</div>'
+    + (desk(s) && (rows(s, 'rooms').length || rows(s, 'equipment').length) ? `<div class="cal-nav" aria-label="Columns">${tab('Practitioners', { by: 'practitioner', subject: null }, c.by === 'practitioner')}${rows(s, 'rooms').length ? tab('Rooms', { by: 'room', subject: null }, c.by === 'room') : ''}${rows(s, 'equipment').length ? tab('Equipment', { by: 'equipment', subject: null }, c.by === 'equipment') : ''}</div>` : '')
+    + filter + daySheetLinks(c) + '</div>'
+}
+/** SCHED-002: print or export the shown day with the same column filter. */
+function daySheetLinks(c: any) {
+  const query = new URLSearchParams({ date: c.date, by: c.by, ...(c.subject ? { id: c.subject } : {}) })
+  return `<p class="day-sheet"><a href="/api/balm/day-sheet.html?${h(query)}" target="_blank" rel="noopener">Print day sheet</a> · <a href="/api/balm/day-sheet.csv?${h(query)}">Export day sheet (CSV)</a></p>`
 }
 
 /** Today, or the day's name: the columns, the appointment count and the open slots between visits. */
@@ -60,10 +67,10 @@ function heading(s: any, c: any) {
   const open = canBook(s) && c.view === 'day' ? c.columns.reduce((n: number, column: any) => n + openSlots(c, column, live).length, 0) : 0
   // The week shows one practitioner's (or room's) visits: the heading names whose, and the switcher beside it changes it.
   const subject = c.subjects.find((x: any) => x.id === c.subject)
-  const who = c.view === 'week' ? (subject ? `For ${subject.name}${subject.credentials ? `, ${subject.credentials}` : ''}` : 'Week view') : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
+  const who = c.view === 'week' ? (subject ? `For ${subject.name}${subject.credentials ? `, ${subject.credentials}` : ''}` : 'Week view') : c.by === 'room' ? `${c.columns.length} ${c.columns.length === 1 ? 'room' : 'rooms'}` : c.by === 'equipment' ? `${c.columns.length} equipment ${c.columns.length === 1 ? 'item' : 'items'}` : `${c.columns.length} ${c.columns.length === 1 ? 'practitioner' : 'practitioners'}`
   const title = c.view === 'week' ? (c.dates.includes(c.today) ? 'This week' : `Week of ${longDate(c.dates[0], { month: 'short', day: 'numeric' })}`) : c.date === c.today ? 'Today' : longDate(c.date, { weekday: 'long' })
   const parts = [who, `${live.length} ${live.length === 1 ? 'appointment' : 'appointments'}`, ...(open ? [`${open} open ${open === 1 ? 'slot' : 'slots'}`] : [])]
-  const switcher = c.view === 'week' && c.subjects.length > 1 ? `<nav class="cal-nav week-who" aria-label="${c.by === 'room' ? 'Room' : 'Practitioner'}">${c.subjects.map((x: any) => `<a class="seg${x.id === c.subject ? ' on' : ''}" href="${h(calendarLink({ ...c, subject: x.id }))}"${x.id === c.subject ? ' aria-current="true"' : ''}>${h(x.name)}</a>`).join('')}</nav>` : ''
+  const switcher = c.view === 'week' && c.subjects.length > 1 ? `<nav class="cal-nav week-who" aria-label="${subjectWord(c)}">${c.subjects.map((x: any) => `<a class="seg${x.id === c.subject ? ' on' : ''}" href="${h(calendarLink({ ...c, subject: x.id }))}"${x.id === c.subject ? ' aria-current="true"' : ''}>${h(x.name)}</a>`).join('')}</nav>` : ''
   return `<div class="today-head"><div><h1>${h(title)}</h1><p class="sub">${parts.map(h).join(' <span aria-hidden="true">·</span> ')}</p></div>${switcher}<details class="view-options"><summary>${c.view === 'week' ? 'Week view' : 'Day view'}${icon('chevron')}</summary>${viewControls(s, c)}</details></div>`
 }
 
@@ -74,6 +81,7 @@ function moveFields(s: any, c: any, a: any, prefix = '') {
   return `<div class="pair">${prefix ? '' : field('date', 'Date', local, 'date', 'required')}${field('time', prefix ? 'New start time for each' : 'Start time', time, 'time', 'required step="300"')}</div>`
     + (desk(s) && choices.length > 1 ? select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), a.practitioner_id) : '')
     + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), a.room_id ?? '', '') : '')
+    + (rows(s, 'equipment').length && !prefix ? select('equipmentId', 'Equipment', equipmentChoices(s), a.equipment_id ?? '', '') : '')
 }
 
 function conflicts(c: any, notice: any) {
@@ -88,7 +96,7 @@ function selectedPanel(s: any, c: any, notice: any) {
   const back = calendarLink(c, { appt: a.id }), mine = desk(s) || a.practitioner_id === s.actor.staffId
   const started = Date.parse(a.start_at) <= Date.now() + 3600_000
   const series = a.series ? `<p>${status(`Visit ${a.series.position} of ${a.series.total} in a series`)}${a.series.skipped.length ? ` <span class="help">Skipped when booked: ${h(a.series.skipped.map((d: string) => longDate(d, { month: 'short', day: 'numeric' })).join(', '))}</span>` : ''}</p>` : ''
-  const visit = `<div class="visit-line">${conflicts(c, notice)}<p><strong>${h(span(a.start_at, a.end_at, c.zone))}</strong> · ${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}</p><p class="chips">${status(statusLabel[a.status] ?? a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${a.booked_via === 'online' ? status(a.offer_id ? 'From the waitlist' : 'Booked online') : ''} ${noteChip(a)} ${planChip(s, a)}</p>${series}</div>`
+  const visit = `<div class="visit-line">${conflicts(c, notice)}<p><strong>${h(span(a.start_at, a.end_at, c.zone))}</strong> · ${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}${a.equipment ? ` · ${h(a.equipment)}` : ''}</p><p class="chips">${status(statusLabel[a.status] ?? a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${a.booked_via === 'online' ? status(a.offer_id ? 'From the waitlist' : 'Booked online') : ''} ${noteChip(a)} ${planChip(s, a)}</p>${series}</div>`
   // The visit's next action: check in at the desk, mark it, or start its note for the treating practitioner.
   let primary = checkInActions(s, a, back)
   if (a.status === 'booked' && mine && started) primary += `<div class="actions">${form('appointment.attend', back, hidden('id', a.id), 'Mark attended')}${form('appointment.no_show', back, hidden('id', a.id), 'Did not attend', true)}</div>`
@@ -110,10 +118,10 @@ function bookPanel(s: any, c: any, notice: any) {
   const [date, time] = (c.newSlot ?? '').split('T')
   const clients = rows(s, 'clients'), choices = practitioners(s).filter(p => desk(s) || p.id === s.actor.staffId)
   if (!services(s).length || !choices.length) return ''
-  const practitioner = c.by === 'practitioner' ? (c.col ?? c.subject) : undefined, room = c.by === 'room' && c.col !== 'none' ? c.col : undefined
+  const practitioner = c.by === 'practitioner' ? (c.col ?? c.subject) : undefined, room = c.by === 'room' && c.col !== 'none' ? c.col : undefined, item = c.by === 'equipment' ? c.col : undefined
   const back = calendarLink(c), clientSelect = clients.length ? select('clientId', 'Client', clients.map(x => [x.id, clientName(x)])) : ''
   const one = clients.length ? form('appointment.book', back, clientSelect + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), practitioner)
-    + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`])) + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : '')
+    + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`])) + (rows(s, 'rooms').length ? select('roomId', 'Room', roomChoices(s), room ?? '', '') : '') + (rows(s, 'equipment').length ? select('equipmentId', 'Equipment', equipmentChoices(s), item ?? '', '') : '')
     + `<div class="pair">${field('date', 'Date', date || c.date, 'date', 'required')}${field('time', 'Start time', time ?? '', 'time', 'required step="300"')}</div><p class="help">Any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>` + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Book visit') : empty('Add a client first on the Clients page.')
   return `<div id="book">` + panel(c.newSlot ? `Book ${clockLabel(+time.slice(0, 2) * 60 + +time.slice(3))}, ${longDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Book a visit',
     `${bookingResult(s, notice)}${seriesResult(s, notice, back)}${one}${clients.length ? `<details${notice.result?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, back, { clientSelect, practitionerId: practitioner, roomId: room, firstDate: date || c.date, time })}</details>` : ''}`) + '</div>'
@@ -124,7 +132,7 @@ function listPanel(s: any, c: any) {
   const block = s.payments?.stripe?.block, once = (html: string) => block ? html.replace(`<p class="help">${h(block)}</p>`, '') : html
   const shown = c.appointments.filter((a: any) => c.columns.some((column: any) => inColumn(c, column, a)))
   const items = shown.map((a: any) => `<li><span class="when">${h(new Intl.DateTimeFormat('en-US', { timeZone: c.zone, weekday: c.view === 'week' ? 'short' : undefined, hour: 'numeric', minute: '2-digit' }).format(new Date(a.start_at)))}</span>`
-    + `<div class="what"><strong>${h(a.client)}</strong> <span class="help">${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}${a.payer ? ` · ${h(a.payer)}` : ''}</span><p class="chips">${status(statusLabel[a.status] ?? a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${intakeChip(a)} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p></div>`
+    + `<div class="what"><strong>${h(a.client)}</strong> <span class="help">${h(a.service)} with ${h(a.practitioner)}${a.room ? ` · ${h(a.room)}` : ''}${a.equipment ? ` · ${h(a.equipment)}` : ''}${a.payer ? ` · ${h(a.payer)}` : ''}</span><p class="chips">${status(statusLabel[a.status] ?? a.status)} ${a.patient_response && a.patient_response !== 'awaiting' ? status(a.patient_response) : ''} ${intakeChip(a)} ${a.series_id ? status('Series') : ''} ${noteChip(a)} ${planChip(s, a)}</p></div>`
     + `<div class="row-links"><a href="${h(calendarLink(c, { appt: a.id }))}#visit">${a.status === 'booked' ? 'Change' : 'Details'}</a> · <a href="/app/clients/${h(a.client_id)}">Client file</a>${once(checkInActions(s, a, calendarLink(c)))}</div></li>`).join('')
   const title = c.view === 'week' ? 'This week as a list' : 'This day as a list'
   return `<details class="panel day-list full"><summary><h2>${title}</h2><span class="help">${shown.length} ${shown.length === 1 ? 'visit' : 'visits'}, every status</span></summary>${notesTally(c.appointments)}${block && items.includes('pay.checkin') ? `<p class="help">${h(block)}</p>` : ''}${items ? `<ul class="visit-rows">${items}</ul>` : empty('No visits.')}</details>`

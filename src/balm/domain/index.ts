@@ -4,7 +4,7 @@ import { breakGlassNotices } from './care-team'
 import { alertsForClients } from './alerts'
 import { documentationClose, documentationSettings, saveDocumentationSettings, savePayerDocumentation } from '../charting/compliance'
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
-import { eraseStaff, saveBookingEmbed, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
+import { eraseStaff, saveBookingEmbed, saveEquipment, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
 import { eraseClient, listClients, saveClient } from './clients'
 import { prepareForm, publishForm } from './intake'
 import { currentPolicies, publishPolicy } from '../intake/policies'
@@ -25,7 +25,7 @@ export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
   'booking.embed.save': saveBookingEmbed,
   'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
-  'holiday.save': saveHoliday, 'settings.save': saveSettings, 'staff.save': saveStaff, 'staff.erase': eraseStaff, 'service.save': saveService, 'hours.save': saveHours, 'room.save': saveRoom,
+  'holiday.save': saveHoliday, 'settings.save': saveSettings, 'staff.save': saveStaff, 'staff.erase': eraseStaff, 'service.save': saveService, 'hours.save': saveHours, 'room.save': saveRoom, 'equipment.save': saveEquipment,
   'client.save': saveClient, 'client.erase': eraseClient,
   'appointment.book': bookForClient, 'appointment.move': moveAppointment,
   'series.preview': previewSeries, 'series.book': bookSeries, 'series.cancel_rest': cancelRest, 'series.move_rest': moveRest,
@@ -56,7 +56,8 @@ export async function snapshot(db: D1Database, who: Actor) {
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')
   const rooms = await rows(db, owner ? 'SELECT * FROM bm_rooms ORDER BY name' : 'SELECT id,name FROM bm_rooms WHERE active=1 ORDER BY name')
-  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.series_id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,c.first_name||' '||c.last_name AS client,
+  const equipment = await rows(db, owner ? 'SELECT * FROM bm_equipment ORDER BY name' : 'SELECT id,name FROM bm_equipment WHERE active=1 ORDER BY name')
+  const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.equipment_id,a.series_id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,c.first_name||' '||c.last_name AS client,
     p.name AS practitioner,s.name AS service,(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     (SELECT CASE WHEN MIN(n.signed_at IS NOT NULL)=1 THEN 'signed' WHEN COUNT(*)>0 THEN 'unsigned' END FROM bm_notes n WHERE n.appointment_id=a.id) AS note_status,
     (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care
@@ -75,5 +76,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, services, hours, rooms, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

@@ -141,11 +141,11 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
   const target = input.practitionerId ? text(input.practitionerId, 'practitioner', 100) : row.practitioner_id as string
   insist(who.role === 'owner' || who.staffRole === 'reception' || target === row.practitioner_id, 'practitioners_book_their_own_diary', 403)
   const roomId = 'roomId' in input ? await roomFor(db, input.roomId) : row.room_id as string | null
-  const exclude = later.map(a => a.id as string), occurrences: (Occurrence & { id: string; version: number })[] = []
+  const exclude = later.map(a => a.id as string), occurrences: (Occurrence & { id: string; version: number; equipmentId: string | null })[] = []
   for (const a of later) {
     const date = hostDateAt(new Date(a.start_at), clinic.time_zone)
-    const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: a.service_id, durationMinutes: Math.round((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000), date, minute, roomId, exclude })
-    occurrences.push({ id: a.id, version: a.version, date, time: clock(minute), skip: false, startAt: place.start?.toISOString(), endAt: place.end?.toISOString(), ...(place.problem ? { problem: place.problem, clash: place.clash } : {}) })
+    const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: a.service_id, durationMinutes: Math.round((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000), date, minute, roomId, equipmentId: a.equipment_id, exclude })
+    occurrences.push({ id: a.id, version: a.version, equipmentId: a.equipment_id, date, time: clock(minute), skip: false, startAt: place.start?.toISOString(), endAt: place.end?.toISOString(), ...(place.problem ? { problem: place.problem, clash: place.clash } : {}) })
   }
   const conflicts = occurrences.filter(o => o.problem)
   if (conflicts.length) throw new DomainError('series_has_conflicts', 409, { moveRest: true, occurrences, conflicts: conflicts.length })
@@ -155,7 +155,7 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
   await commit(db, who, [
     ...occurrences.flatMap(o => [
       guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", o.id, o.version),
-      ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
+      ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId: o.equipmentId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
       ...medicare.get(o.id)!,
       stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, o.startAt, o.endAt, o.id),
       audit(db, who, 'appointment.moved', row.client_id, o.id, `rest of series; ${o.startAt}`),
