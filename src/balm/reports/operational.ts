@@ -1,3 +1,4 @@
+import { anonymousOperationalFacts } from '../retention/operations'
 // Owner-only operational reports (REPORT-001). Every figure is an aggregate per
 // practitioner; no patient names, note text or plan narratives leave this module.
 // A day is a whole clinic-local date in the clinic's time zone; a visit belongs
@@ -39,6 +40,11 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   const planVisits = plans.length ? await rows(db, `SELECT client_id,practitioner_id,start_at,status FROM bm_appointments WHERE status IN ('attended','booked')
     AND client_id IN (SELECT client_id FROM bm_plans_of_care WHERE json_extract(content,'$.startDate') BETWEEN ? AND ?)`, f.from, f.to) : []
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours')
+  const anonymous = await anonymousOperationalFacts(db, f)
+  visits.push(...anonymous.visits.filter(v => mine(v.practitioner_id)))
+  evaluations.push(...anonymous.evaluations.filter(n => mine(n.author_id)))
+  plans.push(...anonymous.plans.filter(p => mine(p.author_id)))
+  planVisits.push(...anonymous.planVisits)
 
   const byPractitioner = <T>(make: () => T) => new Map(f.practitioners.map(p => [p.id, make()]))
   const visitRows = byPractitioner(() => ({ scheduled: 0, booked: 0, arrived: 0, cancelled: 0, noShows: 0 }))

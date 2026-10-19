@@ -32,7 +32,7 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
@@ -71,9 +71,12 @@ test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI arc
     await h.cmd('agent.create',{label:'Excluded secret'})
     const feed=await h.cmd('calendar.feed.create',{},priya.cookie)
     const feedToken=feed.calendarFeedPath.split('/')[2].split('.')[0]
+    const retentionPatient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
+    const retentionVisit=await pastVisit(h,retentionPatient.id,priya,service.id,h.owner,12)
+    await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',retentionVisit).run()
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    const old=join(temporary,'before.rer'),later=join(temporary,'later.rer'),again=join(temporary,'again.rer')
+    const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
     const bytes=await readFile(old,'utf8');for(const kept of ['Thanksgiving clinic closure','Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
     const rows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
@@ -92,6 +95,15 @@ test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI arc
       command(restored,['export','--output',again,'--no-queue']),
       (async()=>{
         h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
+        await command(source,['export','--output',beforeDestruction,'--no-queue'])
+        h=await harness({root:source,...identity})
+        const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
+        await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
+        await h.cmd('retention.save',{state:'AZ'},ownerCookie)
+        const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
+        await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
+        await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
+        await h.close();h=null
         await command(source,['export','--output',later,'--no-queue'])
       })(),
     ])
@@ -100,6 +112,9 @@ test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI arc
       command(refused,['import','--input',old,'--journal',later,'--yes','--no-queue'],4),
       command(erased,['import','--input',later,'--yes','--no-queue']),
     ])
+    // This archive was made after ordinary erasure, so only HIPAA-002's later
+    // destruction can cause this refusal; the empty store remains unchanged.
+    await command(refused,['import','--input',beforeDestruction,'--journal',later,'--yes','--no-queue'],4)
     const restoredClinic=await harness({root:restored,...identity})
     try {
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
@@ -121,7 +136,7 @@ test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI arc
       assert.deepEqual(Buffer.from(await original.arrayBuffer()),mriReport())
     }finally{await restoredClinic.close()}
     const proxy=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
-    try { assert.equal((await proxy.env.DB.prepare('SELECT first_name FROM bm_clients WHERE id=?').bind(p.id).first()).first_name,'Erased') }
+    try { assert.equal((await proxy.env.DB.prepare('SELECT first_name FROM bm_clients WHERE id=?').bind(p.id).first()).first_name,'Erased');assert.equal((await proxy.env.DB.prepare('SELECT COUNT(*) n FROM bm_clients WHERE id=?').bind(retentionPatient.id).first()).n,0,'HIPAA-002 destroyed patient cannot return in a later restored archive') }
     finally { await proxy.dispose() }
   // macOS can add .DS_Store during removal; only filesystem cleanup is retried.
   } finally { if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100}) }
