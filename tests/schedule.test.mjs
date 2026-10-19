@@ -80,17 +80,50 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
   const wholeBooked = await h.cmd('series.book', { ...whole, occurrences: skipped })
   assert.equal(wholeBooked.skipped.length, 1)
   const wholeVisits = () => h.state().then(s => s.appointments.filter(a => a.series_id === wholeBooked.seriesId).sort((a,b) => a.start_at.localeCompare(b.start_at)))
+  const bookedBeforeClosure = await wholeVisits(), closedVisit = bookedBeforeClosure[0]
+  const closedDate = brisbane(Date.parse(closedVisit.start_at)).slice(0,10)
+  await h.cmd('holiday.save', { date: closedDate, name: 'Newly recorded closure' })
+  assert.deepEqual((await wholeVisits()).map(a => [a.id,a.status]), bookedBeforeClosure.map(a => [a.id,a.status]), 'SCHED-003 recording a holiday retains already-booked visits for staff to resolve')
+  const closedPreview = await h.cmd('series.preview', { ...whole, occurrences: [{ date:closedDate,time:'09:00' }] })
+  assert.equal(closedPreview.occurrences[0].problem, 'clinic_holiday')
+  await h.cmd('holiday.save', { date: closedDate, remove: true })
   const tail = (await wholeVisits()).at(-1)
   assert.equal((await h.cmd('series.move_rest', { appointmentId: tail.id, scope: 'all', time: '13:00' }, priya.cookie)).moved, 3)
   assert.ok((await wholeVisits()).every(a => brisbane(Date.parse(a.start_at)).slice(11,16) === '13:00'))
   const detail = (await h.send(`/app?date=${brisbane(Date.parse(tail.start_at)).slice(0,10)}&appt=${tail.id}`, undefined, priya.cookie)).text
   assert.ok(detail.includes('Move the whole series') && detail.includes('Cancel the whole series'))
+  assert.ok(detail.includes('Skipped when booked'), 'SCHED-003 skipped dates remain readable on the saved series')
   assert.equal((await h.cmd('series.cancel_rest', { appointmentId: tail.id, scope: 'all' }, priya.cookie)).cancelled.length, 3)
   assert.ok((await wholeVisits()).every(a => a.status === 'cancelled'))
   const clinicPage = (await h.send('/app/clinic', undefined, h.owner)).text
   assert.ok(clinicPage.includes('Clinic spring holiday'))
   await h.cmd('holiday.save', { date: '2099-03-09', remove: true })
   await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-03-09', time: '10:00' })
+
+  // Completed visits belong to the series history; whole-series operations act only on its booked visits.
+  const source = await pastVisit(h, client.id, priya, service.id)
+  const past = (await h.state()).appointments.find(a => a.id === source)
+  await h.cmd('appointment.cancel', { id: source })
+  const localPast = brisbane(Date.parse(past.start_at)), futureDate = brisbane(Date.parse(past.start_at) + 7 * 86400_000).slice(0,10)
+  const historicalPattern = { clientId:client.id,practitionerId:priya.id,serviceId:service.id,firstDate:localPast.slice(0,10),weeks:2,weekdays:[weekday(localPast.slice(0,10))],time:localPast.slice(11,16),occurrences:[{date:localPast.slice(0,10),time:localPast.slice(11,16)},{date:futureDate,time:localPast.slice(11,16)}] }
+  const history = await h.cmd('series.book', historicalPattern)
+  await h.cmd('appointment.attend', { id:history.appointmentIds[0] })
+  const completedBefore = (await h.state()).appointments.find(a => a.id === history.appointmentIds[0])
+  assert.equal((await h.cmd('series.move_rest', { appointmentId:history.appointmentIds[1],scope:'all',time:'16:00' })).moved,1)
+  assert.equal((await h.cmd('series.cancel_rest', { appointmentId:history.appointmentIds[1],scope:'all' })).cancelled.length,1)
+  const completedAfter = (await h.state()).appointments.find(a => a.id === completedBefore.id)
+  assert.deepEqual([completedAfter.status,completedAfter.start_at,completedAfter.end_at], [completedBefore.status,completedBefore.start_at,completedBefore.end_at], 'SCHED-003 whole-series moves and cancellations retain completed visits unchanged')
+
+  // A closure follows the clinic's local date across a zone change, including a 25-hour DST day.
+  await h.cmd('holiday.save', { date:'2026-11-01',name:'Fall closure' })
+  const beforeZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2026-11-01')
+  assert.equal(Date.parse(beforeZone.endAt)-Date.parse(beforeZone.startAt),24*3600_000)
+  await h.cmd('settings.save', { clinicName:'Riverside Physical Therapy',timeZone:'America/New_York',confirmTimeZone:true })
+  const afterZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2026-11-01')
+  assert.equal(Date.parse(afterZone.endAt)-Date.parse(afterZone.startAt),25*3600_000, 'SCHED-003 holidays use full clinic-local dates, recalculated when the clinic zone changes')
+  assert.notEqual(afterZone.startAt,beforeZone.startAt)
+  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2026-11-01',time:'10:00' }, h.owner,409)
+  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2026-11-02',time:'10:00' })
 
 }))
 
