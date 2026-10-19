@@ -1,3 +1,4 @@
+import { sendDueFollowups } from '../followups/scheduler'
 import type { Bindings } from '../../auth.server'
 import { dispatchPatientMail } from '../mail/dispatch'
 import { intakeToken } from '../domain/booking'
@@ -69,5 +70,6 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
     ])
     if (state === 'sent') sent++
   }
+  await sendDueFollowups(env, scheduledTime)
   return { sent }
 }

@@ -1,3 +1,4 @@
+import { followupCommand, followupSettings, followupsFor } from './followups/settings'
 import { clinicalActor, downloadDocument, uploadDocument } from './chart-history/documents'
 import { fileHistory } from './chart-history/search'
 import { bookedIntake } from './domain/intake-requests'
@@ -62,7 +63,7 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -71,7 +72,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   const zone = (await env.DB.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{time_zone:string}>())!.time_zone
   // CHART-013 care-team access alone opens the notes (and documents under break glass), not the rest of the file.
   if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
-  const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -116,6 +117,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name.startsWith('followups.')) return followupCommand(env.DB, who, name, input)
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
