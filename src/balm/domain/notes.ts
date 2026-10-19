@@ -10,6 +10,7 @@ import { template, type Template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, integer, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
 import { clientVisible } from './clients'
 import { noteAccess } from './care-team'
+import { measuresOf } from './measures'
 
 export type Written = { documentation: Documentation; sections: { id: string; label: string; text: string }[] | null; charges: Charge[]; body: string }
 
@@ -122,18 +123,19 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const author = practitionerId(who)
   if (who.role !== 'owner' && !author) return null
   const access = await noteAccess(db, who, clientId)
-  const notes = await rows(db, `SELECT n.*,s.name AS author_name FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id WHERE n.client_id=? AND (?=1 OR n.author_id=?) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '')
+  const notes = await rows(db, `SELECT n.*,s.name AS author_name,COALESCE(v.start_at,n.created_at) AS visit_at FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id LEFT JOIN bm_appointments v ON v.id=n.appointment_id WHERE n.client_id=? AND (?=1 OR n.author_id=?) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '')
   if (!notes.length) return []
   const marks = notes.map(() => '?').join(',')
   const revisions = await rows(db, `SELECT * FROM bm_note_revisions WHERE note_id IN (${marks}) ORDER BY number DESC`, ...notes.map(n => n.id))
   const addenda = await rows(db, `SELECT * FROM bm_note_addenda WHERE note_id IN (${marks}) ORDER BY written_at`, ...notes.map(n => n.id))
+  const measures = await measuresOf(db, notes.map(n => n.id as string))
   return Promise.all(notes.map(async n => {
     const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
-    return { id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, mine: n.author_id === author,
+    return { id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
-      billing: bill(own[0]?.charges ?? []), revisions: own,
+      billing: bill(own[0]?.charges ?? []), revisions: own, measures: measures.filter(m => m.note_id === n.id),
       addenda: addenda.filter(a => a.note_id === n.id).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
   }))
 }

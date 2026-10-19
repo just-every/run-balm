@@ -1,15 +1,19 @@
-/** Reviewed source coverage, 19 October 2026. Unknown is never a zero-year legal rule.
- * PT-only rules do not establish OT/SLP applicability. Those rows require the owner
- * to record the longer rule governing the whole practice before destruction. */
-export const TABLE_REVIEW_DATE = '2026-10-19'
-export type StateRule = { state:string; name:string; status:'verified'|'ambiguous'|'unverified'; adultYears:number|null; minorYears:number|null;
+/** Every jurisdiction is reviewed against its primary statute or regulation; reviewedOn is the retrieval date.
+ * Unknown is never a zero-year legal rule. PT-only rules do not establish OT/SLP applicability; a source
+ * without a complete practice-wide adult and minor period is ambiguous and needs the owner's documented longer rule. */
+export const TABLE_REVIEW_DATE = '2026-10-20'
+export type StateRule = { state:string; name:string; status:'verified'|'ambiguous'; adultYears:number|null; minorYears:number|null;
   majorityAge:number|null; minimumAge?:number; source:string; sourceTitle:string; explanation:string; reviewedOn:string }
 const names = 'AL:Alabama|AK:Alaska|AZ:Arizona|AR:Arkansas|CA:California|CO:Colorado|CT:Connecticut|DE:Delaware|DC:District of Columbia|FL:Florida|GA:Georgia|HI:Hawaii|ID:Idaho|IL:Illinois|IN:Indiana|IA:Iowa|KS:Kansas|KY:Kentucky|LA:Louisiana|ME:Maine|MD:Maryland|MA:Massachusetts|MI:Michigan|MN:Minnesota|MS:Mississippi|MO:Missouri|MT:Montana|NE:Nebraska|NV:Nevada|NH:New Hampshire|NJ:New Jersey|NM:New Mexico|NY:New York|NC:North Carolina|ND:North Dakota|OH:Ohio|OK:Oklahoma|OR:Oregon|PA:Pennsylvania|RI:Rhode Island|SC:South Carolina|SD:South Dakota|TN:Tennessee|TX:Texas|UT:Utah|VT:Vermont|VA:Virginia|WA:Washington|WV:West Virginia|WI:Wisconsin|WY:Wyoming'
-type Rule = Omit<StateRule,'state'|'name'|'reviewedOn'>
+type Rule = Omit<StateRule,'state'|'name'|'reviewedOn'> & { reviewedOn?:string }
 const verified = (adultYears:number,minorYears:number,source:string,sourceTitle:string,explanation:string,minimumAge?:number):Rule =>
   ({status:'verified',adultYears,minorYears,majorityAge:18,source,sourceTitle,explanation,...(minimumAge?{minimumAge}:{})})
-const scoped = (adultYears:number|null,minorYears:number|null,source:string,sourceTitle:string,explanation:string):Rule =>
-  ({status:'ambiguous',adultYears,minorYears,majorityAge:null,source,sourceTitle,explanation})
+const scoped = (adultYears:number|null,minorYears:number|null,source:string,sourceTitle:string,explanation:string,reviewedOn='2026-10-19'):Rule =>
+  ({status:'ambiguous',adultYears,minorYears,majorityAge:null,source,sourceTitle,explanation,reviewedOn})
+const R9 = '2026-10-20'
+/** Primary text that requires records but sets no adult or minor duration. */
+const silent = (source:string,sourceTitle:string,finding:string) => scoped(null,null,source,sourceTitle,
+  `${finding} No adult or minor retention period is stated; the owner must record the applicable longer practice rule before destruction.`,R9)
 const known:Record<string,Rule> = {
   IL:scoped(null,null,'https://www.ilga.gov/agencies/JCAR/EntirePart?titlepart=06801340','Illinois 68 Ill. Admin. Code 1340.65(a)(10)','The PT rule requires a record accurately reflecting each patient evaluation and treatment, without an adult or minor duration. Hospital and physician periods are not substituted for an independent therapy practice; its applicable rule must be established.'),
   ND:scoped(null,null,'https://www.legis.nd.gov/information/acdata/pdf/61.5-02-02.pdf','North Dakota Administrative Code 61.5-02-02-07(19)','The PT disciplinary rule requires adequate patient records, including evaluation, diagnosis, care, treatment and discharge, without an adult or minor retention duration. The applicable practice and payer retention rule must be established.'),
@@ -46,32 +50,29 @@ const known:Record<string,Rule> = {
   WA:scoped(null,null,'https://apps.leg.wa.gov/wac/default.aspx?cite=246-915-200','Washington WAC 246-915-200','The PT recordkeeping rule requires maintained treatment records but supplies no adult or minor retention period. Hospital periods are not applied to independent clinics.'),
   NE:scoped(null,null,'https://www.nebraskalegislature.gov/laws/statutes.php?statute=71-8403','Nebraska Revised Statutes §71-8403','The patient-access law expressly does not establish record retention. The owner must establish the practice-specific retention rule.'),
   KS:scoped(null,null,'https://www.ksbha.ks.gov/departments/general-counsel/general-counsel-faqs/patient-records','Kansas Board of Healing Arts — Patient Records','The board states its ten-year requirement covers MD, DO and DC professions. It does not establish a PT/OT/SLP period.'),
+
+  IN:scoped(7,0,'https://iga.in.gov/ic/2025/Title_16.pdf','Indiana Code §16-39-7-1 (Indiana Code 2025)','Physical therapists and speech-language pathologists keep original health records at least seven years; Balm counts them from the last treatment. Occupational therapists are not listed and the section has no minor-specific period, so practice-wide applicability needs the owner\'s longer rule.',R9),
+  AL:silent('https://admincode.legislature.state.al.us/api/chapter/700-X-3','Alabama Admin. Code r. 700-X-3-.02(m), effective June 14, 2024','Failing to maintain appropriate records reflecting each patient\'s evaluation and treatment is unbecoming conduct.'),
+  AK:silent('https://www.commerce.alaska.gov/web/portals/5/pub/pt-otstatutes.pdf','Alaska Statutes ch. 08.84 and 12 AAC 54 (PT/OT compilation, September 2026)','The PT and OT statutes and regulations govern licensure, practice and conduct; their record provisions concern telehealth record transfer and continuing-education documentation.'),
+  AR:silent('https://healthy.arkansas.gov/wp-content/uploads/APTB_Board_Rule_.pdf','Arkansas Physical Therapy Act, Ark. Code Ann. §17-93-101 et seq., and Arkansas State Board of Physical Therapy Rules','The Act and the board rules (unprofessional conduct under §17-93-308(a)(3)) contain no patient-record retention provision; board-record custody is the board\'s own files.'),
+  CO:silent('https://colorado.public.law/statutes/crs_12-285-121','Colorado Revised Statutes §12-285-121','Each physical therapist responsible for patient records must keep a written plan for storage, proper disposal and disposition on death, retirement or closure, and tell patients how to obtain records.'),
+  DE:silent('https://delcode.delaware.gov/title24/c026/index.html','Delaware Code Title 24, chapter 26 (Physical Therapists and Athletic Trainers)','The practice act covers licensure, board records and discipline; it contains no patient-record retention provision.'),
+  FL:silent('https://www.flrules.org/gateway/ruleNo.asp?id=64B17-6.0042','Florida Admin. Code r. 64B17-6.0042, effective February 18, 2016 (implementing §456.057(12), F.S.)','Licensees keep records as long as needed to serve and protect patients and themselves; on termination, relocation or death records stay available at least two years. No fixed period applies to an operating practice.'),
+  ID:silent('https://www.law.cornell.edu/regulations/idaho/IDAPA-24.13.01.200','IDAPA 24.13.01.200 and .300, effective July 1, 2024','The practice standards require supervision assessments, discharge summaries and co-signatures in the patient record.'),
+  MS:silent('https://www.sos.ms.gov/adminsearch/ACCode/00000098c.pdf','Mississippi Admin. Code Title 30, Parts 3101–3103 (Board of Physical Therapy)','The telehealth rule requires records to show telehealth services and cross-refers to Part 3103 Rule 8.2, which governs assistant supervision.'),
+  NM:silent('https://www.srca.nm.gov/parts/title16/16.020.0001.html','16.20.1 and 16.20.6 NMAC (Physical Therapy Board)','The general provisions govern board public records and the assistant rule requires daily treatment notes in the patient\'s permanent record.'),
+  OH:silent('https://www.law.cornell.edu/regulations/ohio/Ohio-Admin-Code-4755-2-2-01','Ohio Admin. Code 4755:2-2-01(C)(9), effective October 17, 2024','License holders maintain accurate patient and billing records and may not destroy them without authorization.'),
+  RI:silent('https://rules.sos.ri.gov/regulations/part/216-40-05-13','216-RICR-40-05-13 (Physical Therapists), effective November 28, 2023','The regulation\'s retention terms cover continuing-education documents (four years), not patient records.'),
+  SD:silent('https://sdlegislature.gov/Statutes/36-10','South Dakota Codified Laws ch. 36-10 (Physical Therapists)','The chapter, including the licensure compact, refers to investigative and board records but not patient-record retention.'),
+  TN:silent('https://publications.tnsosfiles.com/rules/1150/1150-01.20250505.pdf','Tenn. Comp. R. & Regs. 1150-01-.02 and -.18 (May 2025 revision)','The rules require documentation in patient records and release of client records on request.'),
+  UT:silent('https://le.utah.gov/xcode/Title58/Chapter24B/C58-24b_1800010118000101.pdf','Utah Code §§58-24b-402 and 58-24b-502 (amended 2026 General Session)','The Physical Therapy Practice Act requires evaluation, reevaluation, discharge and billing documentation.'),
+  WV:silent('https://code.wvlegislature.gov/30-20/','West Virginia Code §30-20-1 et seq. and §16-29-1','The practice act contains no patient-record retention provision; article 16-29 governs patient copies of records.'),
+  WI:silent('https://www.law.cornell.edu/regulations/wisconsin/Wis-Admin-Code-SS-PT-7-025','Wis. Admin. Code PT 7.025(21)–(22), effective July 1, 2021; Wis. Stat. §146.819','Records must be accurate, completed within 60 days and released within 30 days of a lawful request; §146.819 governs preservation or destruction notices only when a practice closes.'),
+  WY:silent('https://wyoleg.gov/statutes/compress/title33.pdf','Wyoming Statutes Title 33, chapter 25 (Physical Therapists)','The practice act lets the board inspect patient medical records and disciplines record misconduct.'),
 }
 known.NV.minimumAge=23
-/** These sources were located but do not yet establish a complete applicable PT/OT/SLP rule.
- * Kept distinct from legally ambiguous rules; they cannot authorize destruction. */
-const research:Record<string,[string,string]> = {
- AL:['https://admincode.legislature.state.al.us/administrative-code/420-5-11-.02','Alabama rehabilitation-center rule; independent-clinic scope unresolved'],
- AK:['https://www.commerce.alaska.gov/web/portals/5/pub/pt-otstatutes.pdf','Alaska PT and OT statutes and regulations'],
- AR:['https://codeofarrules.arkansas.gov/Rules/Rule?chapterID=32&levelType=section&partID=1314&sectionID=55216&subChapterID=44&subPartID=8433&titleID=20','Arkansas hospital record rule; independent-clinic scope unresolved'],
- CO:['https://sos.state.co.us/CCR/GenerateRulePdf.do?fileName=4+CCR+732-1&ruleVersionId=5959','Colorado PT licensure rules'],
- DE:['https://www.delcode.delaware.gov/title10/c039/index.html','Delaware §3926 patient-access law; retention unresolved'],
- FL:['https://floridasphysicaltherapy.gov/forms/pt-study.pdf','Florida PT laws and rules; profession-specific destruction provisions'],
- ID:['https://dopl.idaho.gov/pht/pht-statutes-rules-and-guidance/','Idaho PT licensure statutes and rules'],
- IN:['https://www.in.gov/pla/files/IBHHSLB_2012_Edition.pdf','Indiana agency compilation: IC 16-39-7-1 seven-year PT/SLP rule; current law and OT scope require verification'],
- MS:['https://www.sos.ms.gov/adminsearch/ACCode/00000098c.pdf','Mississippi PT rules: cross-reference and practice-wide retention unresolved'],
- NM:['https://www.rld.nm.gov/uploads/files/16%20020%200001%20General%20Provisions.pdf','New Mexico PT general provisions'],
- OH:['https://otptat.ohio.gov/about-us/policies','Ohio OT/PT/AT board policies'],
- RI:['https://rules.sos.ri.gov/regulations/part/216-40-05-13','Rhode Island PT regulations'],
- SD:['https://sdlegislature.gov/Statutes/36-10','South Dakota PT statutes'],
- TN:['https://publications.tnsosfiles.com/rules_all/2018/1150-01.20250505.pdf','Tennessee PT board rules'],
- UT:['https://commerce.utah.gov/dopl/physical-therapy/laws-and-rules/','Utah PT laws and rules'],
- WV:['https://code.wvlegislature.gov/16-29-1/','West Virginia patient-access law; retention unresolved'],
- WI:['https://dsps.wi.gov/a-z-boards-and-councils-list/physical-therapy/statutes/','Wisconsin PT board statutes and codes'],
- WY:['https://wyoleg.gov/statutes/compress/title33.pdf','Wyoming Title 33 professional-practice statutes'],
-}
 export const stateRules:StateRule[] = names.split('|').map(pair=>{
- const [state,name]=pair.split(':'); const [source,sourceTitle]=research[state]??['','Primary-source research incomplete']
- return {state,name,reviewedOn:TABLE_REVIEW_DATE,...(known[state]??{status:'unverified' as const,adultYears:null,minorYears:null,majorityAge:null,source,sourceTitle,
-   explanation:'Applicable adult and minor PT/OT/SLP periods have not been established from this source. Destruction is blocked; this is incomplete research, not a finding that state law has no period.'})}
+ const [state,name]=pair.split(':'), rule=known[state]
+ if (!rule) throw new Error(`retention_state_unreviewed:${state}`)
+ return {state,name,...rule,reviewedOn:rule.reviewedOn??'2026-10-19'}
 })

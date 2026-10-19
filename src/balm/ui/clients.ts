@@ -13,6 +13,7 @@ import { localTime } from '../domain/invoices'
 import { seriesForm, seriesResult } from './series'
 import { waitlistForm } from './waitlist'
 import { notesPanel } from './notes'
+import { measuresPanel } from './measures'
 import { planResult, plansPanel } from './plans'
 import { messagePanel } from './messages'
 import { reminderPanel } from './reminders'
@@ -82,7 +83,7 @@ export function invoiceEntry(s: any, i: any, path: string) {
 
 /** Audit actions in words; the stored code stays in the archive and the JSON door. */
 const auditWords: Record<string, string> = {
-  'file.viewed': 'Opened the file', 'intake.read': 'Read intake answers', 'note.read': 'Read a treatment note', 'plan.read': 'Read a plan of care',
+  'file.viewed': 'Opened the file', 'intake.read': 'Read intake answers', 'note.read': 'Read a treatment note', 'note.measured': 'Recorded an objective measure', 'note.measure_removed': 'Removed an objective measure', 'plan.read': 'Read a plan of care',
   'message.thread_read': 'Read secure messages', 'message.read': 'Patient read secure messages', 'agent.context': 'Agent read clinic context',
   'paylink.opened_at_desk': 'Opened a pay page at the desk', 'paylink.sent': 'Sent a pay link', 'sms.consent_recorded': 'Text consent recorded', 'sms.consent_removed': 'Text consent removed',
 }
@@ -116,8 +117,8 @@ export function clientFilePage(s: any, f: any, notice: any) {
   const age = c.date_of_birth ? Math.floor((Date.now() - Date.parse(c.date_of_birth + 'T12:00:00Z')) / (365.2425 * 86400_000)) : null
   const payer = f.insurance?.policies?.[0]?.payer_name ?? (f.insurance ? 'Self-pay' : '')
   // CHART-013 care-team access alone: the notes, chart history and how this chart was opened.
-  if (f.careAccess?.teamOnly) return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1></div></header><div class="grid">${careTeamPanel(s, f)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}</div>`
-  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${retentionPreview(s, notice)}${clientRetentionPanel(s, f)}${panel('Details', details)}${careTeamPanel(s, f)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${clientPaymentPlans(s, f)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${followupPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
+  if (f.careAccess?.teamOnly) return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1></div></header><div class="grid">${careTeamPanel(s, f)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask) + measuresPanel(s, f)}</div>`
+  return `<header class="file-head">${avatar(clientName(c), 'lg')}<div><h1>${h(c.first_name)} ${h(c.last_name)}</h1><p class="help">${[age !== null ? `${age} · born ${usDate(c.date_of_birth, zoneOf(s))}` : '', payer].filter(Boolean).map(h).join(' · ')}</p></div></header>${alertBadges(f.alerts)}${bookingResult(s, notice)}${planResult(s, notice)}<div class="grid">${retentionPreview(s, notice)}${clientRetentionPanel(s, f)}${panel('Details', details)}${careTeamPanel(s, f)}${appointments(s, f, notice)}${clientAlertsPanel(s, f, path)}${insurancePanels(s, f, notice)}${plansPanel(s, f)}${intake(s, f)}${intakeChartPanel({ ...s, file: f }, f.intakeDocuments)}${chartHistoryPanel(s, f)}${notesPanel(s, f, notice.ask) + measuresPanel(s, f)}${f.invoices ? panel('Invoices', f.invoices.map((i: any) => invoiceEntry(s, i, path)).join('') || empty('No invoices yet. Mark an appointment attended, then prepare its invoice.')) : ''}${importedPanel(f)}${billingPanels(s, f, notice)}${clientPaymentPlans(s, f)}${portalChartPanel(s, f)}${reminderPanel(s, f)}${followupPanel(s, f)}${messagePanel(s, f, notice)}${disclosuresPanel(s, f, path)}${auditPanel(s, f)}</div>`
 }
 import { portalChartPanel } from './portal-chart'
 import { intakeChartPanel } from './intake-chart'

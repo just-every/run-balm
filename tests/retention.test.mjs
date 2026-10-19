@@ -41,10 +41,21 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.cmd('retention.save',{...policy,state:'TX',adultYears:10,minorYears:10,reviewedRule:'Practice counsel reviewed all disciplines and payer contracts; retain ten years after treatment and majority.'})
   assert.equal((await file(h,patient.id)).retention.eligible,true)
   const state=await h.state()
-  assert.ok(state.retention.states.every(r=>r.status==='unverified'||r.source.startsWith('https://')))
+  const states=state.retention.states
+  assert.equal(new Set(states.map(r=>r.state)).size,51,'all 50 states and DC')
+  for(const r of states) {
+    assert.ok(['verified','ambiguous'].includes(r.status),`${r.state} reviewed against a primary source`)
+    assert.ok(r.source.startsWith('https://')&&r.sourceTitle&&/^\d{4}-\d{2}-\d{2}$/.test(r.reviewedOn),`${r.state} cites its source and retrieval date`)
+    if(r.status==='verified') assert.ok(Number.isInteger(r.adultYears)&&Number.isInteger(r.minorYears)&&r.majorityAge,`${r.state} verified rows carry adult and minor periods`)
+  }
+  for(const s of states.filter(r=>r.status==='ambiguous').map(r=>r.state)) {
+    await h.cmd('retention.save',{state:s,adultYears:'',minorYears:'',payerYears:0,majorityAge:''})
+    assert.deepEqual((await file(h,patient.id)).retention.reasons,['state_rule_requires_review'],`${s} ambiguous rule fails closed without the owner's documented rule`)
+  }
   const page=await h.send('/app/clinic',undefined,h.owner)
   assert.equal(page.status,200)
   assert.match(page.text,/name=retention.save/)
+  assert.match(page.text,/Indiana Code §16-39-7-1[^<]*<\/a> · retrieved/)
 }))
 
 test('HIPAA-002: only the owner approves an unchanged eligible inventory; holds, mutations and expired previews refuse destruction',()=>run(async h=>{
@@ -89,6 +100,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const noteId=crypto.randomUUID()
   await h.db.prepare("INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,'pt.evaluation')").bind(noteId,patient.id,visit,priya.id,'1990-01-02T02:45:00.000Z').run()
   await h.db.prepare('INSERT INTO bm_note_revisions(note_id,number,body,written_at) VALUES(?,?,?,?)').bind(noteId,1,'Sensitive historical treatment narrative','1990-01-02T02:45:00.000Z').run()
+  await h.db.prepare("INSERT INTO bm_measures(id,note_id,client_id,kind,name,side,value,unit,recorded_by,recorded_at) VALUES(?,?,?,'rom','Knee flexion','right',95,'degrees',?,?)").bind(crypto.randomUUID(),noteId,patient.id,priya.id,'1990-01-02T02:50:00.000Z').run()
   await h.db.prepare('UPDATE bm_notes SET signed_at=?,signed_revision=1,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=?').bind('1990-01-02T03:00:00.000Z','Historical Clinician','PT','historical-signature',noteId).run()
   await h.db.prepare("INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)").bind('1990-01-02T03:00:00.000Z','clinician@clinic.example','practitioner','note.break_glass_read',patient.id,noteId,'Patient-specific emergency narrative').run()
   await assert.rejects(h.db.prepare('DELETE FROM bm_note_revisions WHERE note_id=?').bind(noteId).run())
@@ -128,6 +140,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
   assert.ok(preview.records.bm_note_revisions>0)
   assert.ok(preview.records.bm_portal_links>0)
+  assert.equal(preview.records.bm_measures,1)
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
   const destroyed=await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   assert.equal(destroyed.destroyed,true)
@@ -139,6 +152,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   for(const row of before.results) assert.ok(remaining.results.some(r=>Object.keys(row).every(k=>row[k]===r[k])))
   assert.ok(remaining.results.every(r=>r.detail===''))
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_note_revisions WHERE note_id=?').bind(noteId).first()).n,0)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_measures WHERE client_id=?').bind(patient.id).first()).n,0)
   const ledger=await h.db.prepare('SELECT (SELECT SUM(amount_cents) FROM bm_destroyed_invoices) invoiced,(SELECT SUM(amount_cents) FROM bm_destroyed_payments) paid').first()
   assert.equal(ledger.invoiced,9500)
   assert.equal(ledger.paid,9500)

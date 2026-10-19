@@ -1,4 +1,5 @@
 import { alertBadges } from './alerts'
+import { noteMeasures, progressChanges } from './measures'
 // Treatment notes on a client file: start from the visit's template, draft with
 // the scribe, edit the draft, review and sign, then add signed addenda.
 import { documentationFields, documentationSummary, documentationWarnings } from './documentation'
@@ -56,7 +57,7 @@ function noteEntry(s: any, f: any, n: any) {
       + '<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed this note and attest that it is accurate and complete.</span></label>', 'Sign note')}</details>`
   }
   if (n.mine && n.status === 'signed') actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
-  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + signature + addenda + history + actions, `note-${n.id}`)
+  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + signature + addenda + history + actions, `note-${n.id}`)
 }
 
 /** Goals carried forward from the practitioner's latest signed note on this file. */

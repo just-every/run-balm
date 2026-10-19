@@ -53,6 +53,7 @@ export const custody = [
   {"table":"bm_notes","client":true,"links":[["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
   {"table":"bm_note_addenda","client":false,"links":[["note_id","bm_notes","id"]]},
   {"table":"bm_note_revisions","client":false,"links":[["note_id","bm_notes","id"]]},
+  {"table":"bm_measures","client":true,"links":[["note_id","bm_notes","id"],["client_id","bm_clients","id"]]},
   {"table":"bm_waitlist","client":true,"links":[["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
   {"table":"bm_offers","client":false,"links":[["appointment_id","bm_appointments","id"],["source_appointment_id","bm_appointments","id"]]},
   {"table":"bm_offer_recipients","client":false,"links":[["entry_id","bm_waitlist","id"],["offer_id","bm_offers","id"]]},
