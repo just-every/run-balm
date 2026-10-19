@@ -100,6 +100,8 @@ test('CHART-004: sign and lock a note, keep its original beside addenda, close o
   // The plan of care goes to the referring physician, who signs from the link without an account.
   const plan = await h.cmd('plan.send', { clientId: client.id, diagnoses: 'M22.2X1 Patellofemoral disorders, right knee', shortTermGoals: 'Stairs reciprocally in 3 weeks', longTermGoals: 'Return to running 5 km pain-free',
     frequencyPerWeek: 2, durationWeeks: 6, interventions: '97110, 97140, home program', startDate: '2026-10-19', physicianName: 'Dr. Anika Patel', physicianEmail: 'apatel@referrer.example', signature: 'Priya', attest: true }, priya.cookie)
+  const historyPlan=await h.send('/api/balm/clients/'+client.id+'/history?historyType=plan&historyText=Stairs',undefined,priya.cookie)
+  assert.equal(historyPlan.status,200,historyPlan.text);assert.deepEqual(historyPlan.value.entries.map(r=>r.id),[plan.id])
   assert.equal(plan.mail, 'sent')
   const mail = h.mail.find(m => m.to.includes('apatel@referrer.example'))
   assert.ok(mail.text.includes('/plan/' + plan.token)); assert.ok(!mail.text.includes('Noah'))
@@ -257,4 +259,88 @@ test('MOBILE-001: replay a disconnected draft save once, refuse changed payloads
   const final = (await view(h, client.id, priya.cookie)).notes[0]
   assert.deepEqual(final.revisions.map(r => r.number), [2, 1])
   assert.equal(final.revisions[0].body, amendment.body)
+}))
+
+test('CHART-009: immutable MRI scan and photos, chart text/date/type search, shared treating access and administrative refusal', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, evan, unrelated] } = await clinic(h, ['Priya','Evan','Sam'])
+  const reception = await h.staff('Rosa','reception')
+  const patient = await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-03-07'})
+  const unvisited = await h.cmd('client.save',{firstName:'New',lastName:'Referral'})
+  await pastVisit(h,patient.id,priya,service.id,h.owner,2)
+  await pastVisit(h,patient.id,evan,service.id,h.owner,5)
+  const {mriUpload,mriReport,chartPhoto} = await import('./chart-document-fixtures.mjs')
+  const mri = await h.cmd('chart.document.upload',mriUpload(patient.id,'2026-10-01'))
+  const photos=[]
+  for(const [index,description]of ['Knee flexion baseline','Knee flexion follow-up'].entries()) photos.push(await h.cmd('chart.document.upload',{
+    clientId:patient.id,title:description,documentType:'photo',documentDate:index?'2026-10-15':'2026-10-01',searchText:description,
+    attachment:chartPhoto,attachmentName:'knee-'+index+'.png',createdBy:h.auth.OWNER_EMAIL},priya.cookie))
+  const uploadPath='/app/action?name=chart.document.upload&returnTo='+encodeURIComponent('/app/clients/'+patient.id)
+  const multipart = async(fields,bytes=mriReport(),mime='application/pdf')=>{
+    const body=new FormData();for(const [key,value]of Object.entries(fields))body.set(key,value)
+    body.set('attachment',new File([bytes],'hand-filed-MRI.pdf',{type:mime}))
+    const encoded=new Request(h.origin+uploadPath,{method:'POST',body})
+    return h.mf.dispatchFetch(h.origin+uploadPath,{method:'POST',headers:{origin:h.origin,cookie:priya.cookie,'content-type':encoded.headers.get('content-type')},body:new Uint8Array(await encoded.arrayBuffer()),redirect:'manual'})
+  }
+  const referral=await multipart({clientId:patient.id,title:'Referring physician order',documentType:'order',documentDate:'2026-09-30',searchText:'Physical therapy ordered after MRI'})
+  assert.equal(referral.status,303,await referral.text())
+  const note=await h.cmd('note.write',{clientId:patient.id,body:'MRI reviewed. Baseline knee flexion 100 degrees.'},priya.cookie)
+  const search=async(filters={},cookie=priya.cookie)=>h.send('/api/balm/clients/'+patient.id+'/history?'+new URLSearchParams(filters),undefined,cookie)
+  let found=await search({historyText:'mRi',historyType:'imaging',historyFrom:'2026-10-01',historyTo:'2026-10-01'})
+  assert.equal(found.status,200,found.text)
+  assert.deepEqual(found.value.entries.map(r=>r.id),[mri.id])
+  assert.equal(found.value.entries[0].filedBy,h.auth.OWNER_EMAIL)
+  const download=await h.mf.dispatchFetch(h.origin+found.value.entries[0].url,{headers:{cookie:evan.cookie}})
+  assert.equal(download.status,200)
+  assert.equal(download.headers.get('cache-control'),'no-store')
+  assert.match(download.headers.get('content-disposition'),/^attachment;/)
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()),mriReport(),'a second treating clinician reads the owner-filed original')
+  found=await search({historyType:'photo',historyText:'KNEE',historyFrom:'2026-10-01',historyTo:'2026-10-15'},evan.cookie)
+  assert.deepEqual(found.value.entries.map(r=>r.id).sort(),photos.map(p=>p.id).sort(),'both inclusive dates and another author’s photos')
+  assert.ok(found.value.entries.every(r=>r.filedBy===priya.email),'uploads retain the authenticated author, ignoring a posted author')
+  for(const photo of photos){const response=await h.mf.dispatchFetch(h.origin+'/api/balm/chart-documents/'+photo.id,{headers:{cookie:evan.cookie}});assert.deepEqual(Buffer.from(await response.arrayBuffer()),Buffer.from(chartPhoto.split(',')[1],'base64'))}
+  assert.equal((await search({historyFrom:'2026-10-02',historyTo:'2026-10-14',historyType:'photo'})).value.total,0)
+  assert.equal((await search({historyText:'no such phrase'})).value.total,0)
+  found=await search({historyText:'MRI',historyType:'note'})
+  assert.deepEqual(found.value.entries.map(r=>r.id),[note.id])
+  assert.equal((await search({historyText:'MRI',historyType:'note'},evan.cookie)).value.total,0,'shared documents do not widen author-only note access')
+  assert.equal((await search({historyType:'order'})).value.total,1)
+  assert.equal((await search({historyType:'referral'})).value.total,0)
+  for(const [kind,title] of [['referral','Referral from Dr Patel'],['signed_plan','Returned signed plan scan']]) {
+    const file=await h.cmd('chart.document.upload',{...mriUpload(patient.id,'2026-10-01'),documentType:kind,title,attachmentName:kind+'.pdf',attachment:'data:application/pdf;base64,'+mriReport(title,'Therapy records for Marisol Diaz. Filed original scan.').toString('base64')},evan.cookie)
+    assert.deepEqual((await search({historyType:kind},priya.cookie)).value.entries.map(r=>r.id),[file.id])
+  }
+  assert.deepEqual((await search({historyText:'ligament',historyType:'imaging'})).value.entries.map(r=>r.id),[mri.id])
+  assert.equal((await search({historyFrom:'2026-10-15',historyTo:'2026-10-01'})).status,400)
+  const page=await h.send('/app/clients/'+patient.id+'?historyText=MRI&historyType=imaging',undefined,evan.cookie)
+  assert.ok(page.text.includes('Faxed right knee MRI report')&&page.text.includes('/api/balm/chart-documents/'+mri.id))
+  for(const cookie of [reception.cookie,unrelated.cookie]){
+    assert.equal((await search({},cookie)).status,cookie===reception.cookie?403:404)
+    assert.equal((await h.send('/api/balm/chart-documents/'+mri.id,undefined,cookie)).status,cookie===reception.cookie?403:404)
+    await h.cmd('chart.document.upload',mriUpload(patient.id,'2026-10-01'),cookie,cookie===reception.cookie?403:404)
+  }
+  const deskFile=await view(h,patient.id,reception.cookie)
+  assert.equal(deskFile.chartHistory,null)
+  assert.ok(!JSON.stringify(deskFile).includes('knee-MRI-report.pdf'))
+  assert.ok(!(await h.send('/app/clients/'+patient.id,undefined,reception.cookie)).text.includes('Chart history'))
+  const key=await h.cmd('agent.create',{label:'Chart access refused'})
+  assert.equal((await h.send('/api/balm/agent/command',{name:'chart.document.upload',input:mriUpload(patient.id,'2026-10-01')},'',{authorization:'Bearer '+key.token})).status,403)
+  assert.equal((await h.send('/api/balm/chart-documents/'+mri.id,undefined,'',{authorization:'Bearer '+key.token})).status,401)
+  assert.equal((await h.send('/api/balm/clients/'+patient.id+'/history',undefined,'',{authorization:'Bearer '+key.token})).status,401)
+  assert.equal((await h.send('/api/balm/chart-documents/'+mri.id)).status,401)
+  const count=(await search()).value.total
+  assert.equal((await multipart({clientId:patient.id,title:'Invalid file',documentType:'imaging',documentDate:'2026-10-01'},Buffer.from('This is not a PDF document.'))).status,400)
+  assert.equal((await multipart({clientId:patient.id,title:'Too large',documentType:'imaging',documentDate:'2026-10-01'},Buffer.alloc(1_000_001))).status,413)
+  assert.equal((await search()).value.total,count)
+  await assert.rejects(h.db.prepare('UPDATE bm_chart_documents SET title=? WHERE id=?').bind('Changed',mri.id).run())
+  await assert.rejects(h.db.prepare('DELETE FROM bm_chart_documents WHERE id=?').bind(mri.id).run())
+  await h.cmd('chart.document.upload',mriUpload(unvisited.id,'2026-10-01'))
+  await h.cmd('client.erase',{id:unvisited.id},h.owner,409)
+  const audit=[];let before=''
+  do {
+    const file=(await h.send('/api/balm/clients/'+patient.id+(before?'?auditBefore='+before:''),undefined,h.owner)).value
+    audit.push(...file.audit);before=file.auditPage.older
+  } while(before)
+  for(const action of ['chart.document_uploaded','chart.history_searched','chart.document_read','chart.document_downloaded'])assert.ok(audit.some(r=>r.action===action),action)
+  assert.ok(!JSON.stringify(audit).includes('ligament')&&!JSON.stringify(audit).includes('knee-MRI-report'))
 }))

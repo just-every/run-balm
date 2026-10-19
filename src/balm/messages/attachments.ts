@@ -47,7 +47,7 @@ export async function attachmentRecord(db: D1Database, key: string) {
   insist(file, 'attachment_not_found', 404)
   return file
 }
-export async function attachmentResponse(file: Awaited<ReturnType<typeof attachmentRecord>>) {
+export async function attachmentResponse(file: Pick<Upload, 'filename' | 'mime' | 'content' | 'digest'>) {
   insist(await sha256(file.content) === file.digest, 'attachment_integrity_error', 409)
   return new Response(Uint8Array.from(atob(file.content), c => c.charCodeAt(0)), { headers: {
     'content-type': file.mime, 'content-disposition': `attachment; filename="attachment.${file.mime === 'application/pdf' ? 'pdf' : file.mime.split('/')[1]}"; filename*=UTF-8''${encodeURIComponent(file.filename).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16))}`,

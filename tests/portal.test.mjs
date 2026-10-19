@@ -5,7 +5,7 @@ import { clinic, pastVisit } from './clinic.mjs'
 
 // One clinical journey through the actual staff and patient doors. The harness
 // fakes only the external mail provider, never patient authentication or D1.
-test('a clinician assigns an illustrated home exercise, the signed-in patient opens and completes it, and the chart shows adherence', { timeout: 120_000 }, async () => {
+test('PORTAL-003 CHART-009: a clinician assigns an illustrated home exercise, the signed-in patient opens and completes it, and the chart shows adherence', { timeout: 120_000 }, async () => {
   const h = await harness()
   try {
     await h.finishSetup()
@@ -79,10 +79,14 @@ test('a clinician assigns an illustrated home exercise, the signed-in patient op
     const clinicNotice = h.mail.filter(m => m.subject === 'A secure message needs your attention')
     assert.ok(clinicNotice.some(m => m.to.includes('priya@clinic.example')))
     assert.ok(clinicNotice.every(m => !m.to.includes('rosa@clinic.example') && !m.text.includes(patientText) && !m.html.includes('shoulder-photo')))
+    const history=await h.send('/api/balm/clients/'+client.id+'/history?historyType=message_attachment&historyText=shoulder-photo',undefined,priya.cookie)
+    assert.equal(history.status,200,history.text)
+    assert.deepEqual(history.value.entries.map(r=>r.id),[original.id])
     const downloadPath = '/api/balm/messages/attachments/' + original.id
     assert.equal((await h.send(downloadPath)).status, 401)
     assert.equal((await h.send(downloadPath, undefined, reception.cookie)).status, 404)
     assert.equal((await h.send(downloadPath, undefined, other.cookie)).status, 404)
+    assert.equal((await h.send('/api/balm/clients/'+client.id+'/history?historyType=message_attachment&historyText=shoulder-photo',undefined,other.cookie)).status,404)
     const download = await h.mf.dispatchFetch(h.origin + downloadPath, { headers: { cookie: priya.cookie } })
     assert.equal(download.status, 200)
     assert.equal(download.headers.get('cache-control'), 'no-store')
@@ -138,6 +142,8 @@ test('a clinician assigns an illustrated home exercise, the signed-in patient op
     assert.ok(secondThread.messages.some(m => m.body === 'A private question for my second practitioner.'))
     assert.ok(!JSON.stringify(secondThread).includes(patientText))
     assert.equal((await h.send(downloadPath, undefined, other.cookie)).status, 404)
+    const otherHistory=await h.send('/api/balm/clients/'+client.id+'/history?historyType=message_attachment&historyText=shoulder-photo',undefined,other.cookie)
+    assert.equal(otherHistory.status,200,otherHistory.text);assert.equal(otherHistory.value.total,0)
     const unrelated = await h.staff('Morgan')
     assert.equal((await h.form('/portal/action', { name: 'message.send', recipient: unrelated.id, body: 'Not assigned to this patient.' }, patientCookie)).status, 404)
     const countBefore = (await h.send('/api/balm/clients/' + client.id, undefined, h.owner)).value.messages.messages.length

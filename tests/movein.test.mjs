@@ -9,7 +9,7 @@ const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance']
 const month = ahead => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + ahead); return d.toISOString().slice(0, 7) }
 const dated = csv => csv.replaceAll('{{MONTH1}}', month(2)).replaceAll('{{MONTH2}}', month(3))
 for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
-  test(`${provider}: preview, reconcile, atomic apply, duplicate-free repeat and whole-bundle undo`, () => run(async h => {
+  test(`CHART-009 ${provider}: preview, reconcile, atomic apply, duplicate-free repeat and whole-bundle undo`, () => run(async h => {
     await h.finishSetup()
     const { service, practitioners: [therapist] } = await clinic(h)
     const reception = await h.staff('Rosa', 'reception')
@@ -49,6 +49,11 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     assert.equal(ownerFile.imported.notes.length, 1)
     assert.match(ownerFile.imported.notes[0].body, /Synthetic historical/)
     assert.equal(ownerFile.imported.notes[0].read_only, 1)
+    const historical=await h.send('/api/balm/clients/'+clientId+'/history?historyType=historical_note&historyText=Synthetic%20historical',undefined,h.owner)
+    assert.equal(historical.status,200,historical.text)
+    assert.deepEqual(historical.value.entries.map(r=>r.id),[ownerFile.imported.notes[0].id])
+    const sourceDate=ownerFile.imported.notes[0].source_date
+    assert.equal((await h.send('/api/balm/clients/'+clientId+'/history?historyType=historical_note&historyFrom='+sourceDate+'&historyTo='+sourceDate,undefined,h.owner)).value.total,1)
     assert.equal(ownerFile.imported.balances[0].amount_cents, 12550)
     assert.equal(ownerFile.imported.insurance.length, 1)
     const desk = await h.send('/api/balm/clients/' + clientId, undefined, reception.cookie)

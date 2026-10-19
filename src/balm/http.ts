@@ -1,3 +1,5 @@
+import { clinicalActor, downloadDocument, uploadDocument } from './chart-history/documents'
+import { fileHistory } from './chart-history/search'
 import { bookedIntake } from './domain/intake-requests'
 import { saveClientAlert, alertsFor } from './domain/alerts'
 import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
@@ -58,9 +60,11 @@ async function state(env: Bindings, who: Actor) {
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
-async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string) {
+async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string, historyInput: Record<string, unknown> = {}) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
-  return { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const zone = (await env.DB.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{time_zone:string}>())!.time_zone
+  const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
@@ -74,7 +78,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   }
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
-  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore).catch(error => { if (status === 200) throw error }) : undefined, status)
+  return renderApp(s, target, notice, file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => { if (status === 200) throw error }) : undefined, status)
 }
 /** A same-app page to return to, keeping only a plain calendar query. */
 function returnTarget(requested: string) {
@@ -94,6 +98,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name === 'client.alert.save') return saveClientAlert(env.DB, who, input)
   if (name === 'disclosure.record') return recordDisclosure(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
@@ -362,6 +367,14 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
+      const chartDocument = path.match(/^\/api\/balm\/chart-documents\/([\w-]+)$/)
+      if (chartDocument) return await downloadDocument(env.DB, who, chartDocument[1])
+      const chartSearch = path.match(/^\/api\/balm\/clients\/([\w-]+)\/history$/)
+      if (chartSearch) {
+        clinicalActor(who)
+        const file = await fileFor(env, who, chartSearch[1], undefined, Object.fromEntries(url.searchParams))
+        return json(file.chartHistory)
+      }
       const messageAttachment = path.match(/^\/api\/balm\/messages\/attachments\/([\w-]+)$/)
       if (messageAttachment) return await clinicAttachment(env.DB, who, messageAttachment[1])
       if (intakeDocumentPath) {
@@ -385,7 +398,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         return json(report)
       }
       const file = path.match(/^\/api\/balm\/clients\/([\w-]+)$/)
-      if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined))
+      if (file) return json(await fileFor(env, who, file[1], url.searchParams.get('auditBefore') ?? undefined, Object.fromEntries(url.searchParams)))
       const invoice = path.match(/^\/api\/balm\/invoices\/([\w-]+)\.html$/)
       if (invoice) {
         const download = await invoiceDownload(env.DB, who, invoice[1])
@@ -408,7 +421,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
       if (path === '/app/action') {
-        const name = url.searchParams.get('name') ?? ''; let input = name.startsWith('message.') ? await parseMessageInput(request) : await inputBody(request)
+        const name = url.searchParams.get('name') ?? ''; let input = (name.startsWith('message.') || name === 'chart.document.upload') ? await parseMessageInput(request) : await inputBody(request)
         if (name === 'session.signout') {
           const response = await operatorAuth(env).signOut(request)
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })
@@ -435,6 +448,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           const preview = await bundleCommand(env.DB, who, 'movein.preview', input)
           return await page(env, who, back, { error: failure.text, result: { ...preview, reviewInput: input } }, failure.status)
         }
+        if (name === 'chart.document.upload') return redirect('/app/clients/' + encodeURIComponent(String((result as any).clientId)) + '#chart-history')
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.

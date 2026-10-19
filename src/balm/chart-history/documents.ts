@@ -1,0 +1,47 @@
+import { clinicalClient } from '../intake/records'
+import { attachment, attachmentResponse } from '../messages/attachments'
+import { audit, commit, day, guard, human, insist, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
+
+export const documentTypes = [['referral','Referral'],['imaging','Imaging report'],['order','Physician order'],['signed_plan','Signed plan of care'],['photo','Photo'],['other','Other document']] as const
+export const clinicalActor = (who: Actor) => {
+  human(who)
+  insist(who.role === 'owner' || !!practitionerId(who), 'clinical_access_required', 403)
+}
+/** Ct 19 Oct: every treating practitioner sees all uploaded chart documents. */
+export function documentScope(db: D1Database, who: Actor, clientId: string) {
+  return guard(db, `EXISTS(SELECT 1 FROM bm_clients c WHERE c.id=? AND c.erased_at IS NULL AND
+    (?='owner' OR EXISTS(SELECT 1 FROM bm_appointments a WHERE a.client_id=c.id AND a.practitioner_id=?)))`, clientId, who.role, practitionerId(who) ?? '')
+}
+
+export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
+  clinicalActor(who)
+  const clientId = text(input.clientId, 'client', 100)
+  await clinicalClient(db, who, clientId)
+  const upload = await attachment(input)
+  insist(upload, 'choose_a_chart_document')
+  const title = text(input.title, 'document_title', 160), kind = text(input.documentType, 'document_type', 30)
+  insist(documentTypes.some(([key]) => key === kind), 'invalid_document_type')
+  const date = day(input.documentDate, 'document_date'), search = optional(input.searchText, 'document_search_text', 8000) ?? ''
+  await commit(db, who, [documentScope(db, who, clientId),
+    stmt(db, `INSERT INTO bm_chart_documents(id,client_id,title,document_type,document_date,search_text,filename,mime,byte_length,content_base64,sha256,created_at,created_by)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, upload.id, clientId, title, kind, date, search, upload.filename, upload.mime, upload.byteLength, upload.content, upload.digest, now(), who.email),
+    audit(db, who, 'chart.document_uploaded', clientId, upload.id),
+  ])
+  return { id: upload.id, clientId }
+}
+
+/** Search reads metadata and entered text, never the original file's bytes. */
+export async function documentsFor(db: D1Database, who: Actor, clientId: string) {
+  clinicalActor(who); await clinicalClient(db, who, clientId)
+  return rows(db, `SELECT id,title,document_type,document_date,search_text,filename,mime,byte_length,sha256,created_at,created_by
+    FROM bm_chart_documents WHERE client_id=? ORDER BY document_date DESC,id`, clientId)
+}
+
+export async function downloadDocument(db: D1Database, who: Actor, key: string) {
+  clinicalActor(who)
+  const file = await one(db, 'SELECT * FROM bm_chart_documents WHERE id=?', text(key, 'document', 100))
+  insist(file, 'document_not_found', 404)
+  await clinicalClient(db, who, file.client_id)
+  await commit(db, who, [documentScope(db, who, file.client_id), audit(db, who, 'chart.document_downloaded', file.client_id, file.id)])
+  return attachmentResponse({ filename: file.filename, mime: file.mime, content: file.content_base64, digest: file.sha256 })
+}

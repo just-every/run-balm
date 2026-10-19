@@ -23,7 +23,7 @@ function planEntry(s: any, f: any, p: any) {
   const path = `/app/clients/${f.client.id}`, zone = zoneOf(s)
   const sent = p.status === 'sent' ? `<p class="help">Sent to ${h(p.physicianName)} (${h(p.physicianEmail)}) ${h(usDate(p.sentAt, zone))}; the link expires ${h(usDate(p.linkExpiresAt, zone))}.</p>` : `<p class="help">Certified ${p.certifierNpi ? `· NPI ${h(p.certifierNpi)} ` : ''}· ${when(s, p.certifiedAt)}</p>`
   return entry(p.content ? `Plan of care from ${usDate(p.content.startDate, zone)}` : 'Plan of care', `<p>${planLine(p, zone)}</p>${sent}${p.content ? planContent(p.content, zone) : ''}`
-    + (p.mine && p.status === 'sent' ? form('plan.resend', path, hidden('id', p.id) + '<p class="help">A new link replaces the one sent before.</p>', 'Send a new link to the physician', true) : ''))
+    + (p.mine && p.status === 'sent' ? form('plan.resend', path, hidden('id', p.id) + '<p class="help">A new link replaces the one sent before.</p>', 'Send a new link to the physician', true) : ''), `plan-${p.id}`)
 }
 
 /** What a send returned: the link went by email, or is shown once to pass on. */
