@@ -31,7 +31,7 @@ test('online booking for a new client delivers the intake link, refuses a taken 
   assert.ok(file.value.audit.some(a => a.action === 'appointment.booked' && a.actor_role === 'online booking'))
 }))
 
-test('intake answers reach only the treating practitioner and the owner, once, and every read is audited', () => run(async h => {
+test('INTAKE-001: intake answers reach only the treating practitioner and the owner, once, and every read is audited', () => run(async h => {
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const reception = await h.staff('Rosa', 'reception')
   const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
@@ -57,6 +57,52 @@ test('intake answers reach only the treating practitioner and the owner, once, a
   assert.ok(audit.some(a => a.action === 'file.viewed' && a.actor_email === reception.email))
   assert.ok(!JSON.stringify(audit).includes('Left knee'))
   assert.equal((await h.db.prepare('DELETE FROM bm_audit').run().catch(e => e)).message?.includes('audit_append_only'), true)
+  // Every returning booking door suppresses a second request for the current form.
+  const remaining = () => slots(h, service.id, priya.id)
+  const repeat = await bookOnline(h, service.id, priya.id, (await remaining())[0])
+  assert.equal(repeat.status, 303); assert.match(repeat.location, /intake=on_file/)
+  assert.match((await h.send(repeat.location)).text, /current intake form is already on file/)
+  const local = instant => new Date(Date.parse(instant) + 10 * 3600_000).toISOString()
+  const staffBook = async () => {
+    const start = local((await remaining())[0])
+    return h.cmd('appointment.book', { clientId, practitionerId: priya.id, serviceId: service.id, date: start.slice(0,10), time: start.slice(11,16) })
+  }
+  const seriesBook = async () => {
+    const start = local((await remaining())[0]), date = start.slice(0,10), time = start.slice(11,16)
+    return h.cmd('series.book', { clientId, practitionerId: priya.id, serviceId: service.id, firstDate:date, time, weeks:1, weekdays:[new Date(date).getUTCDay()], occurrences:[{date,time}] })
+  }
+  const before = h.mail.length
+  for (const saved of [await staffBook(), await seriesBook()]) { assert.equal(saved.intake,'on_file'); assert.equal(saved.token,undefined) }
+  assert.ok(!h.mail.slice(before).some(m => /\/intake\//.test(m.text)))
+  for (const visit of (await h.state()).appointments.filter(a=>a.client_id===clientId && a.status==='booked')) await h.cmd('appointment.cancel',{id:visit.id})
+  // Publishing does not rewrite old answers; the next booking requests the new form.
+  const draft = await h.cmd('intake.prepare', {title:'Updated intake',questions:[{id:'reason',label:'What changed?',type:'long',required:true}]})
+  const published = await h.cmd('intake.publish',{id:draft.id})
+  const renewed = await bookOnline(h,service.id,priya.id,(await remaining())[0])
+  assert.equal(renewed.status,303); assert.match(renewed.location,/^\/intake\//)
+  const renewedPath = renewed.location.split('?')[0], current = await h.send(renewedPath)
+  assert.match(current.text,/What changed/)
+  assert.ok(h.mail.findLast(m => m.to.includes('maya@client.example') && m.text.includes(renewedPath)))
+  const renewal = {formId:published.id,q_reason:'Now able to climb stairs'}
+  assert.equal((await h.form(renewedPath,{...renewal,formId:'intake-v1'})).status,409)
+  assert.equal((await h.form(renewedPath,renewal)).status,303)
+  assert.equal((await h.form(renewedPath,renewal)).status,409)
+  const versions = (await read(h.owner)).value.intake
+  assert.equal(versions.length,2)
+  assert.equal(versions.find(i => i.formNumber === 1).answers.reason,'Left knee pain when running')
+  assert.equal(versions.find(i => i.formNumber === published.number).answers.reason,'Now able to climb stairs')
+  assert.ok(!(await h.send(renewedPath)).text.includes('Now able to climb stairs'))
+  for (const book of [staffBook,seriesBook]) {
+    const prepared=await h.cmd('intake.prepare',{title:'Updated history',questions:[{id:'update',label:'Current recovery update',type:'short',required:true}]})
+    const version=await h.cmd('intake.publish',{id:prepared.id})
+    const booking=await book()
+    assert.equal(booking.intake,'ask');assert.ok(booking.token)
+    assert.ok(h.mail.findLast(m=>m.text.includes('/intake/'+booking.token)))
+    assert.equal((await h.form('/intake/'+booking.token,{formId:version.id,q_update:'Steady improvement'})).status,303)
+  }
+  assert.equal((await read(h.owner)).value.intake.length,4)
+
+
 }))
 
 test('a treatment note is readable only by its practitioner and the owner, and amendments keep history', () => run(async h => {
@@ -266,4 +312,84 @@ test('the signed-in screens render each role’s working pages', () => run(async
   assert.equal(booking.status, 303)
   assert.equal((await h.send('/book')).status, 200)
   assert.equal((await h.send('/intake/not-a-real-token-at-all-000')).status, 404)
+}))
+
+
+test('INTAKE-001: all booking doors retain one open request, racing bookings cannot duplicate it, and past visits send nothing', () => run(async h => {
+  const {service,practitioners:[priya]} = await clinic(h)
+  const available = await slots(h,service.id,priya.id)
+  const first = await bookOnline(h,service.id,priya.id,available[0])
+  const path = first.location.split('?')[0], clientId = (await h.state()).clients[0].id
+  const next = await bookOnline(h,service.id,priya.id,available[4])
+  assert.equal(next.status,303);assert.match(next.location,/intake=link_open/)
+  assert.match((await h.send(next.location)).text,/existing private intake link/)
+  const local = start => new Date(Date.parse(start)+10*3600_000).toISOString()
+  const fields = start => ({clientId,practitionerId:priya.id,serviceId:service.id,date:local(start).slice(0,10),time:local(start).slice(11,16)})
+  const staff = await h.cmd('appointment.book',fields(available[8]))
+  assert.equal(staff.intake,'link_open');assert.equal(staff.token,undefined)
+  const seriesFields = fields(available[12])
+  const series = await h.cmd('series.book',{...seriesFields,firstDate:seriesFields.date,weeks:1,weekdays:[new Date(seriesFields.date).getUTCDay()],occurrences:[{date:seriesFields.date,time:seriesFields.time}]})
+  assert.equal(series.intake,'link_open');assert.equal(series.token,undefined)
+  assert.equal(h.mail.filter(m=>m.to.includes('maya@client.example') && /\/intake\//.test(m.text)).length,1)
+  const hashes = () => h.db.prepare('SELECT intake_token_hash FROM bm_appointments WHERE client_id=? AND intake_token_hash IS NOT NULL').bind(clientId).all()
+  assert.equal((await hashes()).results.length,1)
+  const draft=await h.cmd('intake.prepare',{title:'Updated open form',questions:[{id:'update',label:'Tell us what changed',type:'short',required:true}]})
+  await h.cmd('intake.publish',{id:draft.id})
+  assert.match((await h.send(path)).text,/Tell us what changed/)
+  const existing=await h.cmd('appointment.book',fields(available[24]))
+  assert.equal(existing.intake,'link_open');assert.equal(existing.token,undefined)
+  assert.equal((await hashes()).results.length,1)
+  const beforePast = h.mail.length
+  const past = await pastVisit(h,clientId,priya,service.id)
+  assert.equal(h.mail.length,beforePast)
+  assert.equal((await h.db.prepare('SELECT intake_token_hash FROM bm_appointments WHERE id=?').bind(past).first()).intake_token_hash,null)
+  // With the prior request canceled, simultaneous staff bookings allocate one link.
+  const original = (await h.state()).appointments.find(a=>a.start_at===available[0])
+  await h.cmd('appointment.cancel',{id:original.id})
+  const beforeRace = h.mail.length
+  const raced = await Promise.all([available[16],available[20]].map(start=>h.cmd('appointment.book',fields(start))))
+  assert.deepEqual(raced.map(r=>r.intake).sort(),['ask','link_open'])
+  assert.equal(h.mail.slice(beforeRace).filter(m=>/\/intake\//.test(m.text)).length,1)
+  assert.equal((await hashes()).results.filter(r=>r.intake_token_hash).length,2,'canceled original plus one live request')
+  assert.equal((await h.send(path)).status,404)
+}))
+
+
+test('INTAKE-001: links stay usable in the waiting room, expire at scheduled end or completion, and expired requests do not suppress renewal', () => run(async h => {
+  const {service,practitioners:[priya]}=await clinic(h)
+  await h.cmd('service.save',{id:service.id,name:'Initial consultation',durationMinutes:60,priceCents:9500})
+  const client=await h.cmd('client.save',{firstName:'Elena',lastName:'Martinez',dateOfBirth:'1971-09-22',email:'elena@client.example'})
+  const start=(await slots(h,service.id,priya.id))[0]
+  const wall=iso=>new Date(Date.parse(iso)+10*3600_000).toISOString()
+  const at=wall(start), fields={clientId:client.id,practitionerId:priya.id,serviceId:service.id,date:at.slice(0,10),time:at.slice(11,16)}
+  const visit=await h.cmd('appointment.book',fields)
+  let path='/intake/'+visit.token
+  // Move the real appointment to a quarter hour before now, inside today's hours.
+  const waiting=wall(new Date(Math.floor(Date.now()/3600_000)*3600_000).toISOString())
+  await h.cmd('appointment.move',{id:visit.appointmentId,date:waiting.slice(0,10),time:waiting.slice(11,16)})
+  assert.equal((await h.send(path)).status,200,'intake remains open after start')
+  await h.form('/portal',{email:'elena@client.example'})
+  const message=h.mail.findLast(m=>m.text.includes('/portal/confirm?token='))
+  const token=new URL(message.text.match(/https?:\/\/[^\s]+\/portal\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
+  const signedIn=await h.send('/portal/confirm',{token})
+  assert.equal(signedIn.status,303)
+  const opened=await h.form('/portal/action',{name:'intake.open',appointmentId:visit.appointmentId},signedIn.cookie)
+  assert.equal(opened.status,303);path=opened.location
+  assert.equal((await h.send(path)).status,200,'portal reopens the same waiting-room request')
+
+  const following=await h.cmd('appointment.book',fields)
+  assert.equal(following.intake,'link_open');assert.equal(following.token,undefined)
+  const ended=wall(new Date(Date.now()-2*3600_000).toISOString())
+  await h.cmd('appointment.move',{id:visit.appointmentId,date:ended.slice(0,10),time:ended.slice(11,16)})
+  assert.equal((await h.send(path)).status,404)
+  assert.equal((await h.form(path,{formId:'intake-v1'})).status,404)
+  await h.cmd('appointment.cancel',{id:following.appointmentId})
+  const renewed=await h.cmd('appointment.book',fields)
+  assert.equal(renewed.intake,'ask');assert.ok(renewed.token)
+  const nextPath='/intake/'+renewed.token
+  await h.cmd('appointment.move',{id:renewed.appointmentId,date:waiting.slice(0,10),time:waiting.slice(11,16)})
+  assert.equal((await h.send(nextPath)).status,200)
+  await h.cmd('appointment.attend',{id:renewed.appointmentId})
+  assert.equal((await h.send(nextPath)).status,404,'completion closes the link before its end')
+  assert.equal((await h.form(nextPath,{formId:'intake-v1'})).status,404)
 }))

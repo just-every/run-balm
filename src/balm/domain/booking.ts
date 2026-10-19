@@ -1,3 +1,4 @@
+import { allocateIntake } from './intake-requests'
 import { attendanceStatements } from './attendance'
 import { phoneNumber } from './us-clinic'
 import { evaluateSlot, listAvailableSlots, type AvailabilityConstraints } from '../availability/engine'
@@ -77,7 +78,8 @@ export function appointmentStatements(db: D1Database, who: Actor | { email: stri
     ...placementGuards(db, appointment as any),
     stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id)
       VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
-    appointment.startAt, appointment.endAt, appointment.bookedVia, appointment.tokenHash ?? null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null),
+    appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null),
+    ...(appointment.tokenHash ? [allocateIntake(db, appointment.id, appointment.clientId, appointment.startAt, appointment.tokenHash)] : []),
     audit(db, who, 'appointment.booked', appointment.clientId, appointment.id, `${appointment.bookedVia}${appointment.seriesId ? ' series' : ''}${appointment.offerId ? ' waitlist offer' : ''} ${appointment.startAt}`),
   ]
 }

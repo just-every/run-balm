@@ -61,7 +61,7 @@ test('a recurring series shows its overlapping date before saving, books in one 
   assert.deepEqual((await visits()).map(a => a.status), [...Array(3).fill('booked'), 'cancelled', 'booked', 'booked', ...Array(6).fill('cancelled')])
 }))
 
-test('a canceled visit is offered to the waitlist by email; the first to accept is booked and the others are told it is taken', () => run(async h => {
+test('INTAKE-001: a canceled visit is offered to the waitlist by email; the first to accept is booked and the others are told it is taken', () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const add = (firstName, email) => h.cmd('client.save', { firstName, lastName: 'Example', dateOfBirth: '1990-01-01', email })
@@ -126,6 +126,19 @@ test('a canceled visit is offered to the waitlist by email; the first to accept 
   assert.match((await acceptAgain('12:00')).text, /intake form is already on file/)
   const file = await h.send('/api/balm/clients/' + winnerId, undefined, h.owner)
   assert.equal(file.value.intake.length, 1, 'all three waitlist visits continue the same intake record')
+  const draft=await h.cmd('intake.prepare',{title:'Waitlist renewal',questions:[{id:'update',label:'What has changed?',type:'short',required:true}]})
+  const published=await h.cmd('intake.publish',{id:draft.id})
+  const source=await h.cmd('appointment.book',{clientId:ava.id,practitionerId:priya.id,serviceId:service.id,date,time:'13:00'})
+  await h.cmd('waitlist.add',{clientId:winnerId,practitionerId:priya.id,serviceId:service.id,latestDate:until})
+  await h.cmd('appointment.cancel',{id:source.appointmentId})
+  const offered=new URL(h.mail.findLast(m=>m.to.includes(winner)&&m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
+  const renewal=await h.form(offered,{})
+  assert.equal(renewal.status,303);assert.match(renewal.location,/^\/intake\//)
+  assert.match((await h.send(renewal.location)).text,/What has changed/)
+  assert.equal((await h.form(renewal.location.split('?')[0],{formId:published.id,q_update:'Improved'})).status,303)
+  const versions=(await h.send('/api/balm/clients/'+winnerId,undefined,h.owner)).value.intake
+  assert.equal(versions.length,2);assert.equal(versions.find(i=>i.formNumber===1).answers.reason,'Follow-up')
+
 }))
 
 

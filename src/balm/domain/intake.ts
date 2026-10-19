@@ -21,14 +21,6 @@ export function questions(value: unknown): Question[] {
     return { id: key, label: text(q.label, 'question_label', 300), type: q.type, required: q.required === true }
   })
 }
-/** Whether a staff booking asks for intake: only for a visit still ahead, and only once a client has neither answered nor holds an open link. */
-export async function intakeAsk(db: D1Database, clientId: string, startAt: string, booked: string[]): Promise<'ask' | 'past' | 'on_file' | 'link_open'> {
-  if (Date.parse(startAt) <= Date.now()) return 'past'
-  if (await one(db, 'SELECT 1 FROM bm_intake_responses WHERE client_id=?', clientId)) return 'on_file'
-  const open = await one(db, `SELECT 1 FROM bm_appointments a WHERE a.client_id=? AND a.status='booked' AND a.start_at>? AND a.intake_token_hash IS NOT NULL
-    AND a.id NOT IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id)`, clientId, now(), JSON.stringify(booked))
-  return open ? 'link_open' : 'ask'
-}
 export async function currentForm(db: D1Database) {
   const form = (await one(db, 'SELECT * FROM bm_intake_forms ORDER BY number DESC LIMIT 1'))!
   return { ...form, questions: JSON.parse(form.questions as string) as Question[] } as Data & { questions: Question[] }
@@ -39,7 +31,7 @@ async function byToken(db: D1Database, token: unknown) {
   const row = await one(db, `SELECT a.*,c.first_name,s.name AS service_name,p.name AS practitioner_name,st.time_zone,st.clinic_name
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_services s ON s.id=a.service_id JOIN bm_staff p ON p.id=a.practitioner_id, bm_settings st
     WHERE a.intake_token_hash=?`, await sha256(token))
-  insist(row && row.status !== 'cancelled', 'intake_link_not_found', 404)
+  insist(row && row.status === 'booked' && Date.parse(row.end_at as string) > Date.now(), 'intake_link_not_found', 404)
   return row
 }
 /** Public: what the link holder sees. Clinical answers are never echoed back. */
@@ -72,7 +64,7 @@ export async function submitIntake(db: D1Database, token: unknown, input: Data, 
   const responseId = id(), at = now()
   const records = await intakeRecordStatements(db, appointment, form, answers, responseId, input, metadata, at)
   await commit(db, null, [
-    guard(db, "NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE appointment_id=?) AND EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status<>'cancelled')", appointment.id, appointment.id),
+    guard(db, "NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE appointment_id=?) AND EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND end_at>?)", appointment.id, appointment.id, at),
     guard(db, '(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1)=?', form.id),
     stmt(db, 'INSERT INTO bm_intake_responses(id,appointment_id,client_id,form_id,answers,submitted_at) VALUES(?,?,?,?,?,?)', responseId, appointment.id, appointment.client_id, form.id, JSON.stringify(answers), at),
     ...records,

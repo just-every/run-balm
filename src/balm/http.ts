@@ -1,3 +1,4 @@
+import { bookedIntake } from './domain/intake-requests'
 import { saveClientAlert, alertsFor } from './domain/alerts'
 import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
 import { calendarFeed, feedCommand, feedState } from './domain/calendar-feed'
@@ -13,7 +14,7 @@ import { approvals, command, preparations, snapshot, type Actor } from './domain
 import { bookOnline, openSlots } from './domain/booking'
 import { calendarView } from './domain/calendar'
 import { clientFile } from './domain/clients'
-import { intakeAsk, intakeView, submitIntake } from './domain/intake'
+import { intakeView, submitIntake } from './domain/intake'
 import { invoiceDownload } from './domain/invoices'
 import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices } from './domain/waitlist'
@@ -142,7 +143,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'appointment.book' || name === 'series.book') {
     // A past visit emails nothing; a client with intake on file, or an open link already, is not asked again.
     const booked = name === 'series.book' ? result.appointmentIds : [result.appointmentId], clientId = String(input.clientId)
-    result.intake = await intakeAsk(env.DB, clientId, result.startAt, booked)
+    result.intake = await bookedIntake(env.DB, clientId, result.appointmentId, result.startAt, booked)
     result.mail = result.intake === 'ask' ? await sendIntake(env, clientId, result.token, result.startAt)
       : result.intake === 'past' ? 'not_sent' : await sendBooked(env, clientId, result.startAt, booked.length)
     if (result.intake !== 'ask') delete result.token
@@ -217,7 +218,10 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         input = await inputBody(request)
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
-        const mail = await sendIntake(env, booked.clientId, booked.token, booked.startAt)
+        const intake = await bookedIntake(env.DB, booked.clientId, booked.appointmentId, booked.startAt, [booked.appointmentId])
+        const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt)
+          : await sendBooked(env, booked.clientId, booked.startAt)
+        if (intake !== 'ask') return redirect('/book?booked=1&intake=' + intake)
         // Balm on this computer sends no email: the patient keeps this page's address instead.
         return redirect(`/intake/${booked.token}?booked=1&mail=${mail === 'sent' && env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' ? 'local' : mail}`)
       } catch (error) {

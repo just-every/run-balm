@@ -16,7 +16,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
   const [clinic, appointments, exercises, messages, balance, block, receipts, superbills, messageRecipients] = await Promise.all([
     one<{ clinic_name: string; time_zone: string }>(db, 'SELECT clinic_name,time_zone FROM bm_settings WHERE id=1'),
     rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,p.name AS practitioner,s.name AS service,
-      CASE WHEN a.status='booked' AND a.start_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) THEN 1 ELSE 0 END AS intake_open
+      CASE WHEN a.status='booked' AND a.end_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) THEN 1 ELSE 0 END AS intake_open
       FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id
       WHERE a.client_id=? ORDER BY a.start_at`, at, patient.clientId),
     patientExercises(db, patient), thread(db, patient.clientId), ledger(db, patient.clientId), paymentBlock(env, db),
@@ -41,7 +41,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
 async function intakeOpen(db: D1Database, patient: Patient, input: Data) {
   const appointmentId = text(input.appointmentId ?? input.id, 'appointment', 100), token = portalToken()
   const available = `EXISTS(SELECT 1 FROM bm_appointments a WHERE a.id=? AND a.client_id=? AND a.status='booked'
-    AND a.start_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id))`
+    AND a.end_at>? AND a.intake_token_hash IS NOT NULL AND NOT EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id))`
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${available}) THEN 1 ELSE 0 END AS ok`, appointmentId, patient.clientId, now()))?.ok, 'open_intake_not_found', 404)
   await commit(db, null, [portalGuard(db, patient), guard(db, available, appointmentId, patient.clientId, now()),
     stmt(db, 'UPDATE bm_appointments SET intake_token_hash=? WHERE id=?', await sha256(token), appointmentId),

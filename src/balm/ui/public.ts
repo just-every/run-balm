@@ -12,6 +12,7 @@ export function bookPage(d: any) {
   if (!d.clinic?.booking_open) return '<h1>Online booking is closed</h1><p>Please contact the clinic to make an appointment.</p>'
   if (!d.services.length || !d.practitioners.length) return '<h1>Online booking is not set up yet</h1><p>The clinic has not published services and practitioners for online booking. Please contact the clinic.</p>'
   const p = d.params ?? {}, zone = d.clinic.time_zone
+  if (p.booked === '1') return `<h1>You're booked.</h1><p>${p.intake === 'link_open' ? 'Please use your existing private intake link before your visit.' : 'Your current intake form is already on file. No new intake form is needed.'}</p><p><a href="/book">Book another appointment</a></p>`
   const chooser = `<section class="panel"><h2>1. Choose a service and practitioner</h2><form method="get" action="/book">
     <label>Service<select name="serviceId" required><option value="">Choose a service</option>${d.services.map((s: any) => option(s.id, `${s.name} · ${s.duration_minutes} min · ${money(s.price_cents)}`, p.serviceId)).join('')}</select></label>
     <label>Practitioner<select name="practitionerId" required><option value="">Choose a practitioner</option>${d.practitioners.map((s: any) => option(s.id, s.profession ? `${s.name} (${s.profession})` : s.name, p.practitionerId)).join('')}</select></label>
