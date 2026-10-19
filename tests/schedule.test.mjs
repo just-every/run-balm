@@ -115,15 +115,15 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
   assert.deepEqual([completedAfter.status,completedAfter.start_at,completedAfter.end_at], [completedBefore.status,completedBefore.start_at,completedBefore.end_at], 'SCHED-003 whole-series moves and cancellations retain completed visits unchanged')
 
   // A closure follows the clinic's local date across a zone change, including a 25-hour DST day.
-  await h.cmd('holiday.save', { date:'2026-11-01',name:'Fall closure' })
-  const beforeZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2026-11-01')
+  await h.cmd('holiday.save', { date:'2099-11-01',name:'Fall closure' })
+  const beforeZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2099-11-01')
   assert.equal(Date.parse(beforeZone.endAt)-Date.parse(beforeZone.startAt),24*3600_000)
   await h.cmd('settings.save', { clinicName:'Riverside Physical Therapy',timeZone:'America/New_York',confirmTimeZone:true })
-  const afterZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2026-11-01')
+  const afterZone = JSON.parse((await h.state()).settings.holidays).find(x => x.date === '2099-11-01')
   assert.equal(Date.parse(afterZone.endAt)-Date.parse(afterZone.startAt),25*3600_000, 'SCHED-003 holidays use full clinic-local dates, recalculated when the clinic zone changes')
   assert.notEqual(afterZone.startAt,beforeZone.startAt)
-  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2026-11-01',time:'10:00' }, h.owner,409)
-  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2026-11-02',time:'10:00' })
+  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2099-11-01',time:'10:00' }, h.owner,409)
+  await h.cmd('appointment.book', { clientId:client.id,practitionerId:sam.id,serviceId:service.id,date:'2099-11-02',time:'10:00' })
 
 }))
 
