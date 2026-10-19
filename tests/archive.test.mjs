@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from 'node:crypto'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
@@ -31,13 +32,14 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
     for (const path of [source,restored,erased,refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:2e6 })
-    h=await harness({root:source})
+    const webhookKey='whsec_'+randomBytes(32).toString('base64')
+    h=await harness({root:source,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
     await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
@@ -45,6 +47,11 @@ test('SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive roun
     const card='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII='
     const insurance={insurancePayerId:payer.id,insuranceMemberId:'ARCHIVE-MEMBER',insuranceRelationship:'self',insurancePatientSex:'F',insuranceStartsOn:'2026-01-01',insuranceAddress:'200 Oak St',insuranceCity:'Austin',insuranceState:'TX',insurancePostalCode:'78701',insuranceFront:card,insuranceBack:card,identityPhoto:card}
     const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0])
+    const mail=h.mail.at(-1),messageId='mail_test_'+h.mail.length,eventId='archive-booking-delivered',timestamp=String(Math.floor(Date.now()/1000))
+    const event=JSON.stringify({type:'email.delivered',created_at:new Date().toISOString(),data:{email_id:messageId,to:mail.to}})
+    const signature=createHmac('sha256',Buffer.from(webhookKey.slice(6),'base64')).update(`${eventId}.${timestamp}.${event}`).digest('base64')
+    const delivery=await h.mf.dispatchFetch(h.origin+'/api/balm/mail/events/resend',{method:'POST',body:event,headers:{'svix-id':eventId,'svix-timestamp':timestamp,'svix-signature':'v1,'+signature}})
+    assert.equal(delivery.status,200)
     const token=booked.location.match(/\/intake\/([\w-]+)/)[1]
     const intakePage=await h.send('/intake/'+token)
     assert.equal((await h.form('/intake/'+token,{formId:'intake-v1',q_reason:'Restored ankle sprain',q_emergency:'Kim 0400',q_consent:'yes',consentVersion:intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee',...insurance})).status,303)
@@ -98,6 +105,8 @@ test('SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive roun
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const setup=await restoredClinic.form('/setup',{confirm:'yes'},cookie)
       assert.equal(setup.status,303);assert.equal(setup.location,'/app')
+      const restoredMail=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.mailHistory
+      assert.ok(restoredMail.some(m=>m.kind==='intake'&&m.state==='delivered'),'COMM-001 verified delivery survives the public CLI archive round trip')
       const restoredState=await restoredClinic.state(cookie)
       assert.equal(JSON.parse(restoredState.settings.holidays)[0].name,'Thanksgiving clinic closure')
       await restoredClinic.cmd('appointment.book',{clientId:maya.id,practitionerId:priya.id,serviceId:service.id,date:'2099-11-26',time:'10:00'},cookie,409)

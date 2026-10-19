@@ -4,8 +4,8 @@
 // migration-seeded rows, which a restore replaces.
 export default {
   product: 'clinic/balm',
-  includeTables: ['oa_operators', 'oa_bootstrap', 'oa_invitation_cancellations'],
-  excludeTables: ['bm_calendar_feeds', 'bm_agent_keys', 'bm_pay_links', 'bm_stripe', 'bm_scribe', 'bm_message_links', 'bm_visit_reply_links', 'bm_portal_links', 'bm_portal_sessions', 'bm_portal_rates', 'bm_consent_links'],
+  includeTables: ['rer_mail_event_receipts', 'rer_mail_event_states', 'oa_operators', 'oa_bootstrap', 'oa_invitation_cancellations'],
+  excludeTables: ['bm_mail_reply_links', 'bm_calendar_feeds', 'bm_agent_keys', 'bm_pay_links', 'bm_stripe', 'bm_scribe', 'bm_message_links', 'bm_visit_reply_links', 'bm_portal_links', 'bm_portal_sessions', 'bm_portal_rates', 'bm_consent_links'],
   replaceableTables: ['bm_settings', 'bm_intake_forms', 'bm_consent_policies', 'bm_medicare_settings', 'bm_documentation_settings'],
   requiredConfiguration: ['OWNER_EMAIL', 'SESSION_SECRET', 'SETUP_TOKEN', 'AUTH_ORIGIN', 'MAIL_PROVIDER', 'MAIL_FROM'],
 }

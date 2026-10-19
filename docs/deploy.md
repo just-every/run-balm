@@ -65,3 +65,36 @@ This deletes the Worker and the D1 database that `rer deploy` created for this e
 - **The dry run lists missing settings**: add each one it names and run it again.
 - **Sign-in emails do not arrive**: check `MAIL_FROM` is verified with your provider and `MAIL_API_KEY` belongs to the same provider as `MAIL_PROVIDER`. Until mail works, `rer signin` prints an owner sign-in link.
 - Keep the names in `wrangler.jsonc` and `deploy.json` unchanged: rer finds your Worker and database by them.
+
+## Appointment email delivery states
+
+Booking confirmations, intake links, appointment changes and automatic reminders
+record each attempt on the patient file. “Accepted” means the provider accepted
+the submission. “Delivered” means the receiving mail server accepted it, not that
+the patient read it. A bounce, rejection, failure, delay or complaint is shown
+separately. Unknown submissions are kept for follow-up and never sent again
+automatically. Local and demo installs suppress email.
+
+To receive delivery events, configure the callback in the same provider account
+that sends the mail, and supply these optional settings through your private
+`--env-file` or secret manager before deploying again:
+
+| Provider | Callback URL on your Balm origin | Settings |
+| --- | --- | --- |
+| Resend | `/api/balm/mail/events/resend` | `BALM_RESEND_WEBHOOK_KEY`: the endpoint's `whsec_` signing secret. `BALM_RESEND_EVENT_NAMESPACE`: a stable name for this provider account and endpoint. |
+| SendGrid | `/api/balm/mail/events/sendgrid` | `BALM_SENDGRID_WEBHOOK_KEY`: the signed Event Webhook's base64 P-256 public verification key. `BALM_SENDGRID_EVENT_NAMESPACE`: a stable name for this provider account and endpoint. |
+
+Subscribe to delivery events (sent/processed, delayed/deferred, delivered,
+bounced, failed/dropped, complained/spamreport; Resend also suppressed).
+Keep each namespace unchanged when rotating its key. Choose a new namespace when
+switching to a different provider account; keep the previous endpoint settings
+while its outstanding deliveries still need events. Each endpoint is disabled
+without both its key and namespace. Missing delivery-event configuration leaves
+accepted submissions labelled “delivery not yet reported”.
+
+Callbacks require a fresh provider signature over the original bytes and are
+limited to 1 MiB. The callback checks the exact stored attempt and every
+recipient before storing any event. Unknown or racing attempts return a
+retryable refusal. Duplicate retries are harmless, and older events cannot
+regress terminal delivery states. No clinical message content is sent in these
+appointment emails or returned by the callback.

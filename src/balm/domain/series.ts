@@ -152,5 +152,5 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
     ]),
     audit(db, who, 'series.moved_rest', row.client_id, row.series_id, `${occurrences.length} visits to ${clock(minute)}`),
   ])
-  return { seriesId: row.series_id, moved: occurrences.length }
+  return { seriesId: row.series_id, moved: occurrences.length, appointmentIds: occurrences.map(o => o.id) }
 }

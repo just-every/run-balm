@@ -71,6 +71,26 @@
       "binding": "BALM_INSURANCE_ADAPTER_TOKEN",
       "environment": "BALM_INSURANCE_ADAPTER_TOKEN",
       "optional": true
+    },
+    {
+      "binding": "BALM_RESEND_WEBHOOK_KEY",
+      "environment": "BALM_RESEND_WEBHOOK_KEY",
+      "optional": true
+    },
+    {
+      "binding": "BALM_RESEND_EVENT_NAMESPACE",
+      "environment": "BALM_RESEND_EVENT_NAMESPACE",
+      "optional": true
+    },
+    {
+      "binding": "BALM_SENDGRID_WEBHOOK_KEY",
+      "environment": "BALM_SENDGRID_WEBHOOK_KEY",
+      "optional": true
+    },
+    {
+      "binding": "BALM_SENDGRID_EVENT_NAMESPACE",
+      "environment": "BALM_SENDGRID_EVENT_NAMESPACE",
+      "optional": true
     }
   ]
 }

@@ -11,12 +11,17 @@ export function reminderSettingsPanel(s: any) {
       + `<p class="help">${r.smsBlocked === smsNotSetUp ? `${h(r.smsBlocked)} <a href="https://run-balm.com/docs/deploy#the-settings">Texting settings in the deploy guide</a>.` : r.smsBlocked ? h(r.smsBlocked) : 'Texts use the clinic’s registered SMS provider. Record patient consent on their file.'}</p>`, 'Save reminder schedule'))
 }
 
+const deliveryLabels: Record<string, string> = { accepted: 'Accepted by mail provider; delivery not yet reported', delivered: 'Delivered to the receiving mail server', deferred: 'Delivery delayed', bounced: 'Delivery bounced', failed: 'Delivery failed', rejected: 'Delivery rejected', complained: 'Recipient reported spam', uncertain: 'Provider outcome unknown; contact the patient before resending', suppressed: 'Not sent: email is suppressed on this install', no_email: 'Not sent: no email address', unavailable: 'Not sent: mail provider is not configured' }
+const mailKinds: Record<string, string> = { booking: 'Booking confirmation', intake: 'Booking confirmation and intake link', moved: 'Appointment changed', cancelled: 'Appointment canceled', reminder: 'Appointment reminder' }
+
 export function reminderPanel(s: any, f: any) {
-  const history = f.reminderHistory ?? [], path = `/app/clients/${f.client.id}`
-  const list = history.map((r: any) => entry(`${r.channel === 'email' ? 'Email' : 'Text'} reminder · ${r.lead_minutes} minutes before`, `<p>${when(s, r.start_at)}<br>${status(r.state === 'failed' && r.outcome?.startsWith('Not sent:') ? 'Not sent' : r.state)} · Due ${stamp(s, r.due_at)}${r.sent_at ? `<br>Sent ${stamp(s, r.sent_at)}` : ''}</p><p class="help">${h(r.outcome)}</p>`)).join('')
+  const history = f.reminderHistory ?? [], mail = f.mailHistory ?? [], path = `/app/clients/${f.client.id}`
+  const deliveries = mail.map((r: any) => entry(`${mailKinds[r.kind] ?? 'Appointment email'} · Email${r.lead_minutes ? ` · ${r.lead_minutes} minutes before` : ''}`, `<p>${stamp(s, r.created_at)}<br>${status(r.state)}</p><p class="help">${h(deliveryLabels[r.state] ?? r.state)}${r.delivery_at ? `<br>Provider event ${stamp(s, new Date(r.delivery_at).toISOString())}` : ''}</p>`)).join('')
+  // Legacy email rows and SMS stay readable; current email attempts have the full provider history above.
+  const list = history.filter((r: any) => r.channel !== 'email' || !mail.some((m: any) => m.id === r.id)).map((r: any) => entry(`${r.channel === 'email' ? 'Email' : 'Text'} reminder · ${r.lead_minutes} minutes before`, `<p>${when(s, r.start_at)}<br>${status(r.state === 'failed' && r.outcome?.startsWith('Not sent:') ? 'Not sent' : r.state)} · Due ${stamp(s, r.due_at)}${r.sent_at ? `<br>Submitted ${stamp(s, r.sent_at)}` : ''}</p><p class="help">${h(r.outcome)}</p>`)).join('')
   const consent = s.actor.role === 'owner' || s.actor.staffRole === 'reception' ? form('reminders.consent', path, hidden('clientId', f.client.id)
     + `<label class="check"><input type="checkbox" name="consent"${f.client.sms_reminder_consent ? ' checked' : ''}><span>The patient agreed to receive visit reminders by text</span></label>`, 'Save text consent', true) : ''
-  return panel('Reminder deliveries', (s.local ? '<p>Balm on this computer sends no email. Reminder attempts are kept below as not sent.</p>' : '<p>Automatic email reminders and their send outcomes. A sent record means the provider accepted the message.</p>') + (list || empty('No scheduled reminder deliveries yet. Balm checks upcoming visits every minute.')) + consent)
+  return panel('Appointment email and reminder deliveries', (s.local ? '<p>Balm on this computer sends no email. Attempts are kept below as not sent.</p>' : '<p>Provider acceptance is separate from delivery. Delivered means the receiving mail server accepted the message; it does not prove the patient read it. Unknown submissions are never sent again automatically.</p>') + (deliveries + list || empty('No appointment email or reminder deliveries yet. Balm checks upcoming visits every minute.')) + consent)
 }
 
 export function visitReplyPage(data: any) {

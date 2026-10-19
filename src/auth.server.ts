@@ -43,6 +43,10 @@ export interface Bindings {
  MAIL_FROM?: string
  MAIL_API_KEY?: string
  MAIL_ACCOUNT_ID?: string
+ BALM_RESEND_WEBHOOK_KEY?: string
+ BALM_RESEND_EVENT_NAMESPACE?: string
+ BALM_SENDGRID_WEBHOOK_KEY?: string
+ BALM_SENDGRID_EVENT_NAMESPACE?: string
 }
 
 export const runtimeBindings = (env: Bindings): Bindings => env.RER_DEV_ORIGIN && env.AUTH_LOCAL === 'true' ? { ...env, AUTH_ORIGIN: env.RER_DEV_ORIGIN } : env

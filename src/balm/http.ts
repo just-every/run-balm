@@ -18,6 +18,9 @@ import { calendarView } from './domain/calendar'
 import { clientFile } from './domain/clients'
 import { intakeView, submitIntake } from './domain/intake'
 import { invoiceDownload } from './domain/invoices'
+import { mailEventResponse } from './mail/events'
+import { mailHistory } from './mail/history'
+import { sendVisitChange } from './mail/changes'
 import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerFreedSlots, offerView, recordDelivery, takenNotices } from './domain/waitlist'
 import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
@@ -63,7 +66,7 @@ async function state(env: Bindings, who: Actor) {
 async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?: string, historyInput: Record<string, unknown> = {}) {
   const file = await clientFile(env.DB, who, clientId, auditBefore)
   const zone = (await env.DB.prepare('SELECT time_zone FROM bm_settings WHERE id=1').first<{time_zone:string}>())!.time_zone
-  const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -149,9 +152,13 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     // A past visit emails nothing; a client with intake on file, or an open link already, is not asked again.
     const booked = name === 'series.book' ? result.appointmentIds : [result.appointmentId], clientId = String(input.clientId)
     result.intake = await bookedIntake(env.DB, clientId, result.appointmentId, result.startAt, booked)
-    result.mail = result.intake === 'ask' ? await sendIntake(env, clientId, result.token, result.startAt)
-      : result.intake === 'past' ? 'not_sent' : await sendBooked(env, clientId, result.startAt, booked.length)
+    result.mail = result.intake === 'ask' ? await sendIntake(env, clientId, result.token, result.startAt, undefined, booked)
+      : result.intake === 'past' ? 'not_sent' : await sendBooked(env, clientId, result.startAt, booked.length, booked)
     if (result.intake !== 'ask') delete result.token
+  }
+  if (name === 'appointment.move' || name === 'series.move_rest') {
+    const changed = name === 'appointment.move' ? [result.id] : result.appointmentIds
+    result.mail = await sendVisitChange(env, changed, 'moved')
   }
   if (name === 'appointment.cancel' || name === 'series.cancel_rest') {
     const canceled: string[] = name === 'appointment.cancel' ? [result.id] : result.cancelled
@@ -224,8 +231,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
         const intake = await bookedIntake(env.DB, booked.clientId, booked.appointmentId, booked.startAt, [booked.appointmentId])
-        const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt)
-          : await sendBooked(env, booked.clientId, booked.startAt)
+        const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt, undefined, [booked.appointmentId])
+          : await sendBooked(env, booked.clientId, booked.startAt, 1, [booked.appointmentId])
         if (intake !== 'ask') return redirect('/book?booked=1&intake=' + intake)
         // Balm on this computer sends no email: the patient keeps this page's address instead.
         return redirect(`/intake/${booked.token}?booked=1&mail=${mail === 'sent' && env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' ? 'local' : mail}`)
@@ -254,8 +261,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         try {
           const accepted = await acceptOffer(env.DB, offer[1])
           const mail = accepted.intakeToken
-            ? await sendIntake(env, accepted.clientId, accepted.intakeToken, accepted.startAt, 'You accepted a time from the waitlist, and your appointment is booked')
-            : await sendBooked(env, accepted.clientId, accepted.startAt)
+            ? await sendIntake(env, accepted.clientId, accepted.intakeToken, accepted.startAt, 'You accepted a time from the waitlist, and your appointment is booked', [accepted.appointmentId])
+            : await sendBooked(env, accepted.clientId, accepted.startAt, 1, [accepted.appointmentId])
           await noticeOthers(env, accepted.offerId)
           return redirect(accepted.intakeToken ? `/intake/${accepted.intakeToken}?booked=1&mail=${mail}` : `/offer/${offer[1]}`)
         } catch (error) {
@@ -362,6 +369,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (isPublic) return await publicResponse(request, env, path)
     // The agent door's schema, for assistants that import one; it holds no clinic data.
     if (path === '/api/balm/agent/openapi.json' && request.method === 'GET') return json(agentOpenApi(env.AUTH_ORIGIN))
+    const mailEvent = await mailEventResponse(request, env)
+    if (mailEvent) return mailEvent
     // Stripe signs its webhook; it carries no session.
     if (path === WEBHOOK_PATH) return await paymentsPublicResponse(request, env, path, false) ?? json({ error: 'Not found' }, 404)
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)

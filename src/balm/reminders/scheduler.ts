@@ -1,5 +1,5 @@
 import type { Bindings } from '../../auth.server'
-import { operatorMail } from '../../mail.server.mjs'
+import { dispatchPatientMail } from '../mail/dispatch'
 import { intakeToken } from '../domain/booking'
 import { localTime } from '../domain/invoices'
 import { audit, commit, guard, now, one, rows, sha256, stmt } from '../domain/model'
@@ -46,15 +46,13 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
     const text = `Your appointment at ${visit.clinic_name} is on ${localTime(visit.start_at, visit.time_zone)}.\n\nConfirm or ask for a new time in one reply here:\n${link}\n\nThis private link expires when the visit starts. Please do not forward it.`
     try {
       if (claim.channel === 'email') {
-        const sender = operatorMail(env)
-        if (env.AUTH_LOCAL === 'true') outcome = 'Not sent: Balm on this computer sends no email'
-        else if (!sender || !env.MAIL_FROM) outcome = 'Mail provider is not configured'
-        else if (visit.email) {
-          const result: any = await sender.send({ deliveryId: claim.id, from: env.MAIL_FROM, to: [visit.email], subject: `Appointment reminder from ${visit.clinic_name}`, text, html: `<p>${text.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!)).replace(/\n/g, '<br>')}</p>`, headers: { 'Auto-Submitted': 'auto-generated' } })
-          state = result?.status === 'accepted' ? 'sent' : result?.status === 'uncertain' ? 'uncertain' : 'failed'
-          outcome = result?.status === 'development' ? 'Not sent: email is suppressed on this install' : state === 'sent' ? 'Accepted by mail provider' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
-          receipt = result?.providerMessageId ?? null
-        }
+        const result = await dispatchPatientMail(env, visit.email, `Appointment reminder from ${visit.clinic_name}`, text,
+          { deliveryId: claim.id, clientId: visit.client_id, appointmentIds: [visit.id], kind: 'reminder' })
+        state = result.state === 'accepted' ? 'sent' : result.state === 'uncertain' || result.state === 'sending' ? 'uncertain' : 'failed'
+        outcome = result.state === 'suppressed' ? (env.AUTH_LOCAL === 'true' ? 'Not sent: Balm on this computer sends no email' : 'Not sent: email is suppressed on this install')
+          : result.state === 'no_email' ? 'No email address' : result.state === 'unavailable' ? 'Mail provider is not configured'
+          : state === 'sent' ? 'Accepted by mail provider; delivery not yet reported' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
+        receipt = result.providerMessageId
       } else {
         const sender = smsSender(env), to = usMobile(visit.phone)
         outcome = 'Text provider unavailable or patient has no consent or mobile number'

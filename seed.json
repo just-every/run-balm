@@ -89,11 +89,12 @@
     {
       "id": "mail-provider",
       "required": false,
-      "why": "A hosted Balm emails sign-in links, invitations, intake links, waitlist offers, plan-of-care links, reminders, pay links and message notices through the owner's own SendGrid or Resend account; Balm on your own computer sends no email.",
+      "why": "A hosted Balm emails sign-in links, invitations, intake links, waitlist offers, plan-of-care links, reminders, pay links and message notices through the owner's own SendGrid or Resend account; Balm on your own computer sends no email. Optional signed provider callbacks reconcile appointment email delivery states on the patient file.",
       "data": [
         "Recipient email address",
         "Private patient, physician and sign-in links",
-        "Appointment time, service and practitioner"
+        "Appointment time, service and practitioner",
+        "Signed delivery events: provider message ID, recipient and delivery state"
       ],
       "adapters": []
     },
