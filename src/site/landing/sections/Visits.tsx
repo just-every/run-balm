@@ -18,9 +18,9 @@ export function Visits() {
       <p className="track-who"><strong>{patient.name}</strong><span> · </span>Tue 9:00 and Thu 10:30 with Sarah Lee</p>
       <p className="track-kept">16 of 16 kept<Check className="check solid" /></p>
       <div className="track">
-        <ol className="track-line">
+        <ol className="track-line" aria-label={`Sixteen visits: ${visits.map(v => `${v.weekday} ${v.month} ${v.day}, ${v.time}`).join('; ')}`}>
           {visits.map((v, i) => <li key={i} className={v.moved ? 'moved' : undefined} style={at(dayOf(v.month, v.day))}>
-            <span className="dot" aria-hidden="true" /><span className="sr-only">{v.weekday} {v.month} {v.day}, {v.time}</span><span aria-hidden="true">{label(v, i)}</span>
+            <span className="dot" aria-hidden="true" /><span aria-hidden="true">{label(v, i)}</span>
           </li>)}
         </ol>
         <p className="moved-flag" style={at(dayOf('Apr', 24))}><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M3 13c3-7 9-10 17-8M15 2l5 3-4 4" /></svg><span>Moved Thu → Fri · Apr 24, 9:15</span></p>

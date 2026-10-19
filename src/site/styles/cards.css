@@ -45,6 +45,8 @@
 .hc-row { left: calc(var(--u) * 358); width: calc(var(--u) * 311); height: calc(var(--u) * 78); display: flex; align-items: center; gap: calc(var(--u) * 16); padding: 0 calc(var(--u) * 16) 0 calc(var(--u) * 19); }
 .hc-row > div { flex: 1; min-width: 0; }
 .hc-row .hc-title { font-size: max(11px, calc(var(--u) * 15.2)); white-space: nowrap; letter-spacing: -.005em; }
+.hc-5 .hc-title { font-size: max(11px, calc(var(--u) * 14)); letter-spacing: -.012em; }
+.hc-5 { gap: calc(var(--u) * 12); padding-right: calc(var(--u) * 10); }
 .hc-row .hc-sub { margin-top: calc(var(--u) * 3); font-size: max(11px, calc(var(--u) * 14)); }
 .hc-row .check { width: calc(var(--u) * 31); height: calc(var(--u) * 31); }
 .hc-1 { top: 0; } .hc-2 { top: calc(var(--u) * 89); } .hc-3 { top: calc(var(--u) * 180); height: calc(var(--u) * 79); } .hc-4 { top: calc(var(--u) * 271); height: calc(var(--u) * 80); } .hc-5 { top: calc(var(--u) * 363); height: calc(var(--u) * 80); }
