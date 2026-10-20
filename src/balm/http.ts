@@ -39,6 +39,7 @@ import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerView, recordDelivery, takenNotices } from './domain/waitlist'
 import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
 import { sendBooked, sendCanceled, sendIntake, sendPlanLink, sendTaken } from './mail-out'
+import { checkDefensibility } from './charting/defensibility'
 import { scribeCommand, scribeStatus } from './scribe'
 import { importCommand, importOriginal, undoCounts } from './movein'
 import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
@@ -181,6 +182,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     if (who.role !== 'owner') fail('only_the_owner_imports', 403)
     return importCommand(env.DB, who, name, input)
   }
+  if (name === 'note.check') return checkDefensibility(env, who, input)
   if (name.startsWith('scribe.') || name === 'note.scribe') return scribeCommand(env, who, name, input)
   if (name === 'plan.send' || name === 'plan.resend') {
     const plan = await (name === 'plan.send' ? sendPlan : resendPlan)(env.DB, who, input)

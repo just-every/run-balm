@@ -611,3 +611,74 @@ test('REF-003: two episodes of one patient keep visits, authorization use, outco
   assert.ok(audit.some(a => a.action === 'episode.assigned' && a.subject_id === legacyDoc.id && a.detail === `document: not assigned -> ${back.id}`))
   for (const action of ['episode.opened', 'episode.closed']) assert.ok(audit.some(a => a.action === action), action)
 }))
+
+test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and payer rules; clinician edits clear them without agent access', async () => {
+  const { modelEdge, defensibilityClinic, weakNote, strongNote } = await import('./defensibility-clinic.mjs')
+  const edge=modelEdge()
+  await run(async h=>{
+    const c=await defensibilityClinic(h), input={id:c.note.id,revision:1}
+    const check=(cookie=c.priya.cookie,status=200)=>h.cmd('note.check',input,cookie,status)
+    await check(c.priya.cookie,409)
+    assert.equal(edge.seen.length,0,'no model request without a configured key')
+    await h.cmd('scribe.save',{provider:'anthropic',key:'sk-ant-test-only'})
+    for(const [cookie,status] of [[c.reception.cookie,403],[c.sam.cookie,404]]) await check(cookie,status)
+    const agent=await h.cmd('agent.create',{label:'Desk agent'})
+    assert.equal((await h.send('/api/balm/agent/command',{name:'note.check',input},'',{authorization:'Bearer '+agent.token})).status,403)
+    assert.equal((await h.send('/api/balm/command',{name:'note.check',input},c.priya.cookie,{origin:'https://elsewhere.example'})).status,403)
+    const first=await check()
+    assert.deepEqual(first.findings.map(f=>f.kind),['units','skilled_need'])
+    assert.ok(first.findings.find(f=>f.kind==='units').question.includes('fourth unit'))
+    assert.ok(first.findings.every(f=>f.ruleIds.every(id=>first.rules.some(r=>r.id===id&&r.source.startsWith('https://www.cms.gov/')))))
+    const sent=JSON.parse(edge.seen.at(-1).messages[0].content)
+    assert.equal(sent.facts.billed.reduce((n,c)=>n+c.units,0),4)
+    assert.equal(sent.facts.plan.content.shortTermGoals,'Walk 30 minutes')
+    assert.ok(sent.rules.some(r=>r.id==='payer.configuration'&&r.rule.includes('Total treatment minutes')))
+    assert.ok(!JSON.stringify(sent).includes('Elena')&&!JSON.stringify(sent).includes('1971-09-22')&&!JSON.stringify(sent).includes('BENEFICIARY'))
+    let note=(await c.file()).notes.find(n=>n.id===c.note.id)
+    assert.equal(note.status,'draft');assert.deepEqual(note.revisions[0].sections.map(s=>s.text),Object.values(weakNote))
+    assert.equal(note.defensibility.revision,1)
+    const page=(await h.send(c.path,undefined,c.priya.cookie)).text
+    assert.ok(page.includes(first.findings[0].question)&&page.includes('bp102c15.pdf'))
+    assert.equal((await c.file(c.reception.cookie)).notes,null)
+    for(const mode of ['unreachable','ungrounded','invented-evidence']) {
+      edge.control.mode=mode;await check(c.priya.cookie,424)
+      assert.equal((await c.file()).notes.find(n=>n.id===c.note.id).defensibility.checkedAt,first.checkedAt)
+    }
+    edge.control.mode='normal'
+    await h.cmd('note.amend',{id:c.note.id,revision:1,sections:strongNote,charges:[{code:'97110',minutes:40}],totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
+    await check(c.priya.cookie,409)
+    assert.ok((await h.send(c.path,undefined,c.priya.cookie)).text.includes('The draft has changed'))
+    input.revision=2
+    const cleared=await check()
+    assert.deepEqual(cleared.findings,[])
+    note=(await c.file()).notes.find(n=>n.id===c.note.id)
+    assert.equal(note.billing.units,3);assert.equal(note.status,'draft');assert.equal(note.revisions.length,2)
+    assert.ok((await h.send(c.path,undefined,c.priya.cookie)).text.includes('No documentation questions returned'))
+    // Ten distinct treatment days trigger the source-backed progress question.
+    for(let day=1;day<=10;day++) {
+      const date=new Date(Date.now()+10*3600000-day*86400000).toISOString().slice(0,10)
+      const visit=await pastVisit(h,c.patient.id,c.priya,c.service.id,h.owner,day+4)
+      // Arrange elapsed treatment days after public booking, without changing clinical records.
+      await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind(date+'T00:00:00.000Z',date+'T00:45:00.000Z',visit).run()
+      await h.cmd('appointment.attend',{id:visit},c.priya.cookie)
+    }
+    const overdue=await check()
+    assert.ok(overdue.findings.some(f=>f.kind==='progress'&&f.ruleIds.includes('cms.progress')))
+    const progress=await h.cmd('note.write',{clientId:c.patient.id,appointmentId:c.visit,template:'pt.progress',sections:{...strongNote,period:'Last ten treatment days'},totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
+    await h.cmd('note.sign',{id:progress.id,revision:1,signature:'Priya',attest:true},c.priya.cookie)
+    const current=await check()
+    assert.deepEqual(current.findings,[])
+    // A payer-rule change while the model is working cannot attach obsolete findings.
+    edge.control.during=async()=>{edge.control.during=null;await h.cmd('documentation.payer.save',{payerId:c.payer.id,required:['totalTreatmentMinutes','assessment','goals']})}
+    await check(c.priya.cookie,409)
+    assert.equal((await c.file()).notes.find(n=>n.id===c.note.id).defensibility.checkedAt,current.checkedAt)
+    const audit=(await c.file(h.owner)).audit
+    for(const action of ['note.read','plan.read','note.defensibility_checked']) assert.ok(audit.some(a=>a.action===action&&a.actor_email===c.priya.email))
+    assert.ok(!JSON.stringify(audit).includes(weakNote.objective),'clinical text stays out of audit detail')
+    await h.cmd('scribe.save',{provider:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'test-configured-model',key:'sk-test-only'})
+    assert.deepEqual((await check()).findings,[],'the configured OpenAI-compatible provider uses the same grounded result schema')
+    await h.cmd('note.sign',{id:c.note.id,revision:2,signature:'Priya',attest:true},c.priya.cookie)
+    await check(c.priya.cookie,409)
+    assert.equal((await c.file()).notes.find(n=>n.id===c.note.id).status,'signed')
+  },{outbound:edge.outbound})
+})

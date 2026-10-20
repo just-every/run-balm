@@ -135,6 +135,7 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
+      defensibility: parse((await one(db, 'SELECT result FROM bm_note_checks WHERE note_id=? ORDER BY checked_at DESC,id DESC LIMIT 1', n.id))?.result),
       billing: bill(own[0]?.charges ?? []), revisions: own, measures: measures.filter(m => m.note_id === n.id),
       addenda: addenda.filter(a => a.note_id === n.id).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
   }))

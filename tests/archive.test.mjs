@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { getPlatformProxy } from 'wrangler'
 import { harness } from './harness.mjs'
 import { mriUpload, mriReport } from './chart-document-fixtures.mjs'
+import { modelEdge } from './defensibility-clinic.mjs'
 import { clinic, pastVisit, slots, bookOnline } from './clinic.mjs'
 const exec = promisify(execFile)
 const cli = resolve('node_modules/@runeditrun/rer/global/rer.mjs')
@@ -32,14 +33,14 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
     for (const path of [source,restored,erased,refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:2e6 })
     const webhookKey='whsec_'+randomBytes(32).toString('base64')
-    h=await harness({root:source,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
+    h=await harness({root:source,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
     await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
@@ -58,7 +59,9 @@ test('PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-0
     const maya=(await h.state()).clients.find(c=>c.first_name==='Maya')
     const visit=await pastVisit(h,maya.id,priya,service.id)
     await h.cmd('appointment.attend',{id:visit})
-    await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
+    const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
+    await h.cmd('scribe.save',{provider:'anthropic',key:'sk-ant-archive-test'})
+    const noteCheck=await h.cmd('note.check',{id:checkedNote.id,revision:1},priya.cookie)
     const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
     await h.cmd('invoice.approve',{id:invoice.id})
     await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Backup-EFTPOS-1'})
@@ -121,6 +124,8 @@ test('PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-0
     const restoredClinic=await harness({root:restored,...identity})
     try {
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
+      const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
+      assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
       const setup=await restoredClinic.form('/setup',{confirm:'yes'},cookie)
       assert.equal(setup.status,303);assert.equal(setup.location,'/app')
       const restoredEntry=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.billing.account.entries.find(e=>e.id===external.id)
