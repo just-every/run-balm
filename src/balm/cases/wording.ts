@@ -36,7 +36,7 @@ async function facts(db: D1Database, f: CaseFacts) {
   const body = note ? (await one(db, 'SELECT body FROM bm_note_revisions WHERE note_id=? AND number=?', note.id, note.signed_revision))?.body as string : ''
   return [`Payer: ${f.policy!.payer_name}`, `Diagnosis: ${f.referral.diagnosis || 'not stated'}`, `Referral reason: ${f.referral.reason || 'not stated'}`,
     `Visits attended under this referral: ${attended(f).length}`,
-    a ? `Current authorization: ${a.allowance_total} ${a.allowance_kind}, ${a.used_allowance} used, ${a.reserved_allowance} booked, ${a.left} left, ends ${usDay(a.ends_on, f.zone)}. Request ${a.allowance_total} further ${a.allowance_kind}.` : 'No authorization covers the denied visit. Request authorization for the visits under the plan of care.',
+    a ? `Current authorization: ${a.allowance_total} ${a.allowance_kind}, ${a.used_allowance} used, ${a.reserved_allowance} ${a.allowance_kind === 'units' ? 'reserved' : 'booked'}, ${a.left} left, ends ${usDay(a.ends_on, f.zone)}. Request ${a.allowance_total} further ${a.allowance_kind}.` : 'No authorization covers the denied visit. Request authorization for the visits under the plan of care.',
     note ? `Signed note (${template(note.template)?.title ?? 'treatment note'}, ${usDay(note.signed_at, f.zone)}):\n<note>\n${body.slice(0, 6000)}\n</note>` : 'No signed note.'].join('\n')
 }
 
