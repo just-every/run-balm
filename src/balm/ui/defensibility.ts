@@ -9,5 +9,5 @@ export function defensibility(s: any, note: any, path: string) {
   if (!note.mine || note.status === 'signed') return checked
   return `<details${check ? ' open' : ''} data-defensibility><summary>Check documentation defensibility</summary>
     <p class="help">Send this draft, its plan of care, minutes and applicable payer documentation rules to the clinic’s configured AI model for questions with sources. Save your edits first. The check never changes or signs your note.</p>${checked}
-    ${s.scribe?.ready ? form('note.check', path + '#note-' + note.id, hidden('id', note.id) + hidden('revision', revision), check ? 'Recheck documentation' : 'Check documentation') : '<p class="help">Configure and test the clinic’s AI model in Clinic → Scribe to use this check.</p>'}</details>`
+    ${s.scribe?.ready ? form('note.check', path, hidden('id', note.id) + hidden('revision', revision), check ? 'Recheck documentation' : 'Check documentation') : '<p class="help">Configure and test the clinic’s AI model in Clinic → Scribe to use this check.</p>'}</details>`
 }
