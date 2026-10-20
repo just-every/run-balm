@@ -37,7 +37,7 @@ export function letterFoot(f: CaseFacts, note: any) {
 export function standardRequest(f: CaseFacts, a: any, denied?: any) {
   const seen = attended(f).length
   if (!a) return `We request authorization for outpatient therapy under the plan of care, including the visit on ${usDay(denied.service_date, f.zone)} that was denied for a missing authorization. The patient has attended ${plural(seen, 'visit')} under this referral, and the attached signed note records the patient's progress and the goals that remain.`
-  return `We request ${a.allowance_total} further visits to continue the plan of care. The patient has attended ${plural(seen, 'visit')} under this referral and has ${plural(a.left, a.allowance_kind === 'units' ? 'authorized unit' : 'authorized visit')} left${a.ends_on >= f.today ? ` before the authorization ends on ${usDay(a.ends_on, f.zone)}` : ''}. The attached signed note records the patient's progress and the goals that remain.`
+  return `We request ${a.allowance_total} further ${a.allowance_kind} to continue the plan of care. The patient has attended ${plural(seen, 'visit')} under this referral and has ${plural(a.left, a.allowance_kind === 'units' ? 'authorized unit' : 'authorized visit')} left${a.ends_on >= f.today ? ` before the authorization ends on ${usDay(a.ends_on, f.zone)}` : ''}. The attached signed note records the patient's progress and the goals that remain.`
 }
 
 async function digestOf(step: Omit<Step, 'digest'>) {
@@ -70,7 +70,7 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
     const draft = f.drafts.find(d => d.step_key === key)
     out.push({
       key, kind: 'authorization.request', button: 'Send to payer', draftable: true,
-      title: `Request more authorized visits from ${p.payer_name}`, why,
+      title: `Request more authorized ${a?.allowance_kind ?? 'visits'} from ${p.payer_name}`, why,
       blocked: f.referral.authorization_email ? undefined : 'Add where this payer takes authorization requests (the case’s authorization contact) before Balm can send it.',
       sends: f.referral.authorization_email ? { to: f.referral.authorization_email, subject: `Authorization request: ${p.payer_name} member ${p.member_id}`, fixed: letterHead(f, base), ...(note ? { attachment: { noteId: note.id, label: `${template(note.template)?.title ?? 'Treatment note'} signed ${usDay(note.signed_at, f.zone)} (PDF)` } } : {}) } : undefined,
       wording: draft?.wording ?? standardRequest(f, base, denial),
