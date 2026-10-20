@@ -22,7 +22,9 @@ test('SEC-002: booking origin and atomic pending cap refuse without writes; inta
     }
     assert.ok(accepted.length > 0 && accepted.length < 20, 'pending online bookings are bounded')
     const capped = await effects(h)
-    assert.equal((await publicRequest(h, '/book', booking(starts[20]))).status, 429)
+    const capRefusal = await publicRequest(h, '/book', booking(starts[20]))
+    assert.equal(capRefusal.status, 429)
+    assert.ok(!capRefusal.text.includes('Maya') && !capRefusal.text.includes('maya@patient.example'), 'cap refusals echo no patient details')
     assert.deepEqual(await effects(h), capped, 'cap refusal creates no patient, appointment, intake, audit or email')
 
     const appointments = (await h.db.prepare('SELECT * FROM bm_appointments ORDER BY start_at').all()).results

@@ -16,7 +16,7 @@ const sentences: Record<string, string> = {
   npi_not_found_in_nppes: 'The NPPES NPI registry has no provider with that NPI. Check the number.',
   time_taken: 'That time is already booked. Choose another time.',
   online_booking_closed: 'Online booking is closed. Please contact the clinic.',
-  too_many_online_bookings: 'Too many bookings were made from here recently. Please contact the clinic.',
+  too_many_online_bookings: 'Too many pending online bookings. Please contact the clinic.',
   booking_refused: 'This booking could not be made. Please contact the clinic.',
   privacy_acknowledgement_required: 'Check the box to agree to how the clinic keeps your details.',
   invalid_start: 'Choose a time from the list.',

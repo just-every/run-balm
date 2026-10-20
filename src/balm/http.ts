@@ -281,6 +281,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         return redirect(`/intake/${booked.token}?booked=1&mail=${mail === 'sent' && env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' ? 'local' : mail}`)
       } catch (error) {
         const failure = message(error), code = (error as any)?.code ?? (error as Error)?.message
+        if (failure.status === 429) return renderPublic('missing', { error: failure.text }, 429)
         // The patient's details come back filled in; a taken or missing time offers the open times instead.
         const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
         const chosen = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
