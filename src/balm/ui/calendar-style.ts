@@ -58,6 +58,7 @@ export const calendarStyle = placement + `
 /* A narrow half-hour card keeps its start time and the whole name: time and the first chip on one line, the name under them.
    Its flag chip takes its short form so the note state still fits beside it. */
 @container (max-width:215px){.appt.size2 .appt-copy{grid-template-areas:'time tags' 'name name'}.appt.size2 .appt-tags{margin:0;align-self:center}.appt.size2 .tag .full{display:none}.appt.size2 .tag .brief{display:inline}}
+.appt:not(.ag):is(:hover,:focus-visible){height:max-content;min-height:100%;z-index:5;overflow:visible}.appt:not(.ag):is(:hover,:focus-visible) .appt-tags{height:auto;overflow:visible}.appt:not(.ag):is(:hover,:focus-visible) .tag.k3{display:inline-block}
 .appt.tone-sage{--card:var(--sage-wash);--edge:var(--sage-tint);--glyph:var(--check);--chip:var(--sage-tint)}
 .appt.tone-honey{--card:var(--rer-surface);--edge:var(--line-strong);--glyph:var(--honey-ink);--chip:var(--row);border-left-color:var(--honey)}
 .appt.tone-coral{--card:var(--coral-wash);--edge:var(--coral-tint);--glyph:var(--coral);--chip:var(--coral-tint)}
