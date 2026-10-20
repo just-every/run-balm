@@ -10,7 +10,7 @@ const benefit = 'https://www.cms.gov/Regulations-and-Guidance/Guidance/Manuals/D
 const claims = 'https://www.cms.gov/Regulations-and-Guidance/Guidance/Manuals/downloads/clm104c05.pdf'
 // Summaries, not copies. CMS manuals retrieved 20 October 2026; sources remain visible with each result.
 const cmsRules: ReviewRule[] = [
-  { id: 'cms.time', title: 'CMS Claims Processing Manual ch. 5 §20.2', source: claims, rule: 'Pool timed treatment minutes: 38–52 minutes support 3 units; 53–67 support 4. Exclude unskilled and independent activity from billable skilled time.' },
+  { id: 'cms.time', title: 'CMS Claims Processing Manual ch. 5 §20.2', source: claims, rule: 'Pool skilled timed treatment minutes: fewer than 8 minutes support no unit; otherwise total units are floor((minutes + 7) / 15). Exclude unskilled and independent activity from billable skilled time.' },
   { id: 'cms.skilled', title: 'CMS Benefit Policy Manual ch. 15 §220.2 and §220.3(E)', source: benefit, rule: 'The record must support a need for therapist skills, including skilled maintenance where appropriate. Independent unskilled activity is not billable. Supporting rationale may appear in the plan or progress report rather than each daily note.' },
   { id: 'cms.progress', title: 'CMS Benefit Policy Manual ch. 15 §220.3(D)', source: benefit, rule: 'A clinician progress report is required at least every 10 treatment days.' },
   { id: 'cms.plan', title: 'CMS Benefit Policy Manual ch. 15 §220.1.2–220.1.3', source: benefit, rule: 'Therapy must follow a plan of care meeting applicable certification requirements.' },
