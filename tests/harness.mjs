@@ -28,7 +28,7 @@ export async function harness(options = {}) {
     if (options.outbound) return options.outbound(request)
     throw new Error(`Unexpected outbound request: ${request.method} ${request.url}`)
   }
-  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, https: !!options.browserHttps, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, outboundService: outbound }), resourcePersistencePath: dir })
+  const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, https: !!options.browserHttps, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, outboundService: outbound, ...(options.direct ? { unsafeDirectSockets: [{ entrypoint: 'default', proxy: true, host: '127.0.0.1' }] } : {}) }), resourcePersistencePath: dir })
   try {
     const db = await mf.getD1Database('DB')
     if (!options.root) for (const file of (await readdir('migrations/core')).filter(f => f.endsWith('.sql')).sort()) await db.batch(unstable_splitSqlQuery(await readFile('migrations/core/' + file, 'utf8')).map(sql => db.prepare(sql)))

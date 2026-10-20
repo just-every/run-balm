@@ -2,6 +2,7 @@ import { runtimeBindings, type Bindings } from '../../auth.server'
 import { audit, commit, DomainError, guard, id, insist, now, one, rows, sha256, stmt } from '../domain/model'
 import { send } from '../mail-out'
 import { managedInstall } from '../payments/stripe-api'
+import { takeEmailRate } from '../public-rates'
 
 const LINK_MS = 15 * 60_000
 const SESSION_MS = 8 * 3600_000
@@ -17,27 +18,13 @@ function origin(env: Bindings, request: Request) {
   insist(request.method === 'POST' && request.headers.get('origin') === new URL(runtimeBindings(env).AUTH_ORIGIN).origin, 'cross_site_request_refused', 403)
 }
 
-/** The rate key contains no raw address or patient email. Limits apply even to unknown addresses. */
-async function rate(env: Bindings, request: Request, kind: string, address?: string) {
-  const window = Math.floor(Date.now() / (15 * 60_000))
-  const keys: [string, number][] = [[`ip:${kind}:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, kind === 'signin' ? 20 : 30]]
-  if (address !== undefined) keys.push([`email:${address}`, 5])
-  const statements: D1PreparedStatement[] = [stmt(env.DB, 'DELETE FROM bm_portal_rates WHERE window<?', window - 1)]
-  for (const [key, limit] of keys) statements.push(
-    stmt(env.DB, `INSERT INTO bm_portal_rates(key_hash,window,attempts) VALUES(?,?,1)
-      ON CONFLICT(key_hash,window) DO UPDATE SET attempts=attempts+1 WHERE attempts<?`, await sha256(`${env.SESSION_SECRET}:portal-rate:${key}`), window, limit),
-    guard(env.DB, 'changes()=1'),
-  )
-  try { await commit(env.DB, null, statements); return true }
-  catch (error) { if (error instanceof DomainError && error.status === 409) return false; throw error }
-}
-
 /** Generic response for absent, shared, invalid or rate-limited email; no patient is enrolled here. */
 export async function requestPortalLink(env: Bindings, request: Request, emailInput: unknown) {
   origin(env, request)
   if (managedInstall(env)) return { notice: portalManagedNotice }
   const email = typeof emailInput === 'string' ? emailInput.trim().toLowerCase().slice(0, 255) : ''
-  const allowed = await rate(env, request, 'signin', email)
+  // portalResponse has already taken the address allowance before reading the body.
+  const allowed = await takeEmailRate(env, 'portal', email, 'signin')
   if (!allowed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return { notice: portalNotice }
   const clients = await rows<{ id: string; version: number }>(env.DB, 'SELECT id,version FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL LIMIT 2', email)
   if (clients.length !== 1) return { notice: portalNotice }
@@ -81,12 +68,13 @@ export const portalGuard = (db: D1Database, patient: Patient) => guard(db, `EXIS
 export async function consumePortalLink(env: Bindings, request: Request, token: unknown) {
   origin(env, request)
   insist(!managedInstall(env), portalManagedNotice, 409)
-  insist(await rate(env, request, 'confirm'), 'too_many_sign_in_attempts_try_later', 429)
   insist(validToken(token), 'portal_link_not_available', 410)
   const link = await one<{ id: string; client_id: string; client_version: number; email: string }>(env.DB, `SELECT l.id,l.client_id,l.client_version,l.email FROM bm_portal_links l JOIN bm_clients c ON c.id=l.client_id
     WHERE l.token_hash=? AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>? AND c.erased_at IS NULL
     AND c.version=l.client_version AND lower(c.email)=l.email AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=l.email AND erased_at IS NULL)=1`, await sha256(token), now())
   insist(link, 'portal_link_not_available', 410)
+  // Resolve the live token without effects, then refuse before consuming it or creating a session.
+  insist(await takeEmailRate(env, 'portal', link.email, 'confirm'), portalNotice, 429)
   const session = portalToken(), sessionId = id(), at = now()
   await commit(env.DB, null, [
     guard(env.DB, `EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND lower(email)=? AND erased_at IS NULL)

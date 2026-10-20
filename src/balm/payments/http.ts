@@ -1,3 +1,4 @@
+import { takeAddressRate, takePatientRate } from '../public-rates'
 import { externalReceipts } from './account-documents'
 import { statementsFor, statementOriginal } from './statements'
 import { periodSuperbillPdf } from './superbill-period'
@@ -69,10 +70,14 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
   const match = path.match(/^\/pay\/([A-Za-z0-9_-]{24,64})(?:\/(statement\.pdf|superbill\.pdf|superbills\/([\w-]+)\.pdf|receipts\/([\w-]+)\.pdf|statements\/([\w-]+)\.pdf))?$/)
   if (!match) return null
   const [, token, file, superbill, receipt, issuedStatement] = match, db = env.DB, url = new URL(request.url)
+  if (request.method === 'POST' && !sameOrigin) return renderPublic('missing', { error: 'Cross-site request refused.' }, 403)
+  if (!await takeAddressRate(env, request, 'payment')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
   let link: any
   try { link = await linkFor(db, token) } catch (error) {
     return renderPublic('missing', { error: (error as DomainError).status === 410 ? 'This link has expired. Ask the clinic to send you a new one.' : undefined }, (error as DomainError).status ?? 404)
   }
+  const ratePatient = await one(db, 'SELECT id,email FROM bm_clients WHERE id=? AND erased_at IS NULL', link.client_id)
+  if (ratePatient && !await takePatientRate(env, 'payment', ratePatient as { id: string; email: string | null })) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
   try {
     if (file) {
       const period = file === 'superbill.pdf'

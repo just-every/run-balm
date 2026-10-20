@@ -10,6 +10,7 @@
   },
   "description": "Practice software for a US outpatient physical, occupational or speech therapy clinic: online booking from real open times, one-use intake links, PT, OT and speech notes signed and locked by their author with addenda and 8-minute-rule CPT units, plans of care certified by the referring physician by link, approved and numbered invoices, cards, copays, pay links and superbills through your own Stripe, automatic email reminders, secure patient messages, a waitlist, an audited client file and Cliniko patient move-in.",
   "capabilities": [
+    { "id": "public-door-abuse-limits", "clauses": ["SEC-002"] },
     {
       "id": "authorization-allowances",
       "clauses": [

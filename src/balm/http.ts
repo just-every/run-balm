@@ -1,3 +1,4 @@
+import { takeAddressRate, takeEmailRate, takePatientRate } from './public-rates'
 import { saveBookingEmbed } from './domain/clinic'
 import { freedVisitOffers, patientChangedNotice } from './scheduling/patient-effects'
 import { retentionClient, retentionState, saveRetention, holdRecords, previewDestruction, destroyRecords } from './retention'
@@ -51,7 +52,7 @@ import { paymentDocument, paymentsPublicResponse } from './payments/http'
 import { renderApp, renderPublic } from './ui'
 import { agentOpenApi } from './agent-openapi'
 import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
-import { DomainError, human, insist, need, one } from './domain/model'
+import { DomainError, human, insist, need, one, sha256 } from './domain/model'
 import { daySheetCsv, daySheetHtml } from './ui/day-sheet'
 import { clinicAttachment, linkAttachment } from './messages/attachments'
 import { parseMessageInput } from './messages/input'
@@ -258,6 +259,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     return calendarFeed(env.DB, feed[1])
   }
   if (path === '/book') {
+    if (request.method === 'POST' && request.headers.get('origin') !== env.AUTH_ORIGIN) fail('cross_site_request_refused', 403)
+    if (!await takeAddressRate(env, request, 'booking')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
     const params = Object.fromEntries(url.searchParams)
     const clinic = await env.DB.prepare('SELECT clinic_name,time_zone,booking_open,booking_embed_origins FROM bm_settings WHERE id=1').first<any>()
     const options = { clinic, embedOrigins: JSON.parse(clinic?.booking_embed_origins ?? '[]'), services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 AND self_book_enabled=1 ORDER BY name').all()).results,
@@ -267,6 +270,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
       try {
         if (request.headers.get('origin') !== env.AUTH_ORIGIN) fail('cross_site_request_refused', 403)
         input = await inputBody(request)
+        if (!await takeEmailRate(env, 'booking', typeof input.email === 'string' ? input.email : '')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
         const intake = await bookedIntake(env.DB, booked.clientId, booked.appointmentId, booked.startAt, [booked.appointmentId])
@@ -334,6 +338,11 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
   }
   const intake = path.match(/^\/intake\/([A-Za-z0-9_-]{20,64})$/)
   if (intake) {
+    if (request.method === 'POST' && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
+    if (!await takeAddressRate(env, request, 'intake')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
+    const ratePatient = await env.DB.prepare(`SELECT c.id,c.email FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id
+      WHERE a.intake_token_hash=? AND a.status='booked' AND a.end_at>? AND c.erased_at IS NULL`).bind(await sha256(intake[1]), new Date().toISOString()).first<{ id: string; email: string | null }>()
+    if (ratePatient && !await takePatientRate(env, 'intake', ratePatient)) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
     try {
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)

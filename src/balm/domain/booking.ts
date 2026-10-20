@@ -198,6 +198,7 @@ export async function bookOnline(db: D1Database, input: Data) {
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
   await commit(db, null, [
     unchanged, ...eligibility.guards,
+    guard(db, `((SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?)<3)`, client.email, now()),
     ...(existing ? [] : [
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),

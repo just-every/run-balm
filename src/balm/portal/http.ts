@@ -1,3 +1,5 @@
+import { takeAddressRate } from '../public-rates'
+import { portalNotice } from './auth'
 import { portalSchedule } from './scheduling'
 import type { Bindings } from '../../auth.server'
 import { portalAttachment } from './messages'
@@ -14,6 +16,10 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
   const url = new URL(request.url), path = url.pathname
   try {
     if (request.method === 'POST' && (request.headers.get('origin') !== env.AUTH_ORIGIN || request.headers.get('sec-fetch-site') === 'cross-site')) return renderPortal('signin', { error: 'Open this page again before submitting.' }, 403)
+    if (request.method === 'POST' && (path === '/portal' || path === '/portal/confirm')) {
+      const kind = path === '/portal/confirm' ? 'confirm' : 'signin'
+      if (!await takeAddressRate(env, request, 'portal', kind)) return renderPortal('signin', { notice: portalNotice }, kind === 'signin' ? 200 : 429)
+    }
     const input = request.method === 'POST' ? await parseMessageInput(request) : {}
     if (path === '/portal/confirm') {
       const token = String(input.token ?? url.searchParams.get('token') ?? '')
