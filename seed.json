@@ -166,6 +166,15 @@
         "Reminder or pay-link text"
       ],
       "adapters": []
+    },
+    {
+      "id": "nppes",
+      "required": false,
+      "why": "Owner-enabled referring-provider lookup at the NPPES NPI Registry API v2.1; off by default. With it off or unreachable, a manually entered NPI is labelled as not checked with NPPES.",
+      "data": [
+        "The typed provider NPI"
+      ],
+      "adapters": []
     }
   ],
   "env": [],

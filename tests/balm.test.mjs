@@ -4,9 +4,17 @@ import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
 import { bookOnline, clinic, pastVisit, slots } from './clinic.mjs'
 
+// OWN-001 evidence for the existing clinic loop, not HIPAA-005 deployment gating.
+// Assert every attempted request, including failures that handlers might catch.
+const ownedRun = fn => run(async h => {
+  await fn(h)
+  assert.ok(h.outboundRequests.length > 0, 'OWN-001 positive control: enabled invitation/intake mail traversed the observed network edge')
+  assert.deepEqual(h.outboundRequests, h.mail.map(() => ({ method: 'POST', origin: 'https://api.resend.com', pathname: '/emails' })), 'OWN-001: the mail provider is the only outbound destination in this clinic journey; no license, telemetry or disabled integration request')
+})
+
 const intakeToken = location => location.match(/\/intake\/([\w-]+)/)[1]
 
-test('online booking for a new client delivers the intake link, refuses a taken slot and records the visit', () => run(async h => {
+test('OWN-001: online booking for a new client delivers the intake link, refuses a taken slot and records the visit', () => ownedRun(async h => {
   const { service, practitioners: [priya] } = await clinic(h)
   const open = await slots(h, service.id, priya.id)
   assert.ok(open.length > 10)
@@ -31,7 +39,7 @@ test('online booking for a new client delivers the intake link, refuses a taken 
   assert.ok(file.value.audit.some(a => a.action === 'appointment.booked' && a.actor_role === 'online booking'))
 }))
 
-test('INTAKE-001: intake answers reach only the treating practitioner and the owner, once, and every read is audited', () => run(async h => {
+test('OWN-001: INTAKE-001: intake answers reach only the treating practitioner and the owner, once, and every read is audited', () => ownedRun(async h => {
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const reception = await h.staff('Rosa', 'reception')
   const booked = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
@@ -105,7 +113,7 @@ test('INTAKE-001: intake answers reach only the treating practitioner and the ow
 
 }))
 
-test('a treatment note is readable only by its practitioner and the owner, and amendments keep history', () => run(async h => {
+test('OWN-001: a treatment note is readable only by its practitioner and the owner, and amendments keep history', () => ownedRun(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const reception = await h.staff('Rosa', 'reception')
@@ -135,7 +143,7 @@ test('a treatment note is readable only by its practitioner and the owner, and a
   assert.ok(!audit.some(a => a.actor_email === sam.email && a.action === 'note.read'))
 }))
 
-test('invoices: prepared from an attended visit, approved by a person, numbered once, exported as exact bytes and paid once', () => run(async h => {
+test('OWN-001: invoices: prepared from an attended visit, approved by a person, numbered once, exported as exact bytes and paid once', () => ownedRun(async h => {
   const { service, practitioners: [priya] } = await clinic(h)
   const reception = await h.staff('Rosa', 'reception')
   const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', dateOfBirth: '1992-06-15' })

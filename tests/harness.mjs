@@ -18,8 +18,11 @@ export async function harness(options = {}) {
   const auth = { AUTH_LOCAL: 'false', OWNER_EMAIL: 'owner@clinic.example', SESSION_SECRET: randomBytes(32).toString('hex'), SETUP_TOKEN: setup, MAIL_PROVIDER: 'resend', MAIL_API_KEY: 're_test_only', MAIL_FROM: 'auth@clinic.example', ...options.auth, AUTH_ORIGIN: origin }
   // Exercise the production mail adapter; only the provider's HTTP edge is fake.
   // h.mail contains Resend request bodies in send order, in this test's memory only.
-  const mail = []
+  const mail = [], outboundRequests = []
   const outbound = async request => {
+    // Record before dispatch: a provider error caught by product code must not hide egress.
+    const url = new URL(request.url)
+    outboundRequests.push({ method: request.method, origin: url.origin, pathname: url.pathname })
     if (request.url === 'https://api.resend.com/emails' && request.method === 'POST') {
       assert.equal(request.headers.get('authorization'), `Bearer ${auth.MAIL_API_KEY}`)
       mail.push(await request.json())
@@ -70,7 +73,7 @@ export async function harness(options = {}) {
       return { status: response.status, text: await response.text(), location: response.headers.get('location') }
     }
     const signIn = async email => { const response = await send('/auth/magic-link', {email}); assert.equal(response.status,202,response.text); return confirmMail(email) }
-    return { db, mf, origin, owner, auth, mail, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    return { db, mf, origin, owner, auth, mail, outboundRequests, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
   } catch (error) { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }); throw error }
 }
 
