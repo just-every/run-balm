@@ -326,7 +326,7 @@ Every agent here works through `BALM-001`: an owner-bound key with a declared sc
 - **Not a card processor or lender.** Card data stays with Stripe; funds settle to the practice's Stripe account; patient financing goes through a partner such as Cherry or CareCredit.
 - **Not HIPAA compliance by hosting.** No host makes a practice compliant on its own. Balm names deployments whose hosting BAA a small practice can obtain and refuses real patient data until that BAA is recorded (`HIPAA-005`), records the practice's other BAAs, risk analysis and officers, and keeps BAA-dependent integrations off until they exist (`HIPAA-001`); the practice signs its own BAAs and remains the covered entity.
 - **Not clinical judgment.** Clinicians decide diagnosis, medical necessity, plan of care and every statement in a signed note; agents and the scribe draft and check.
-- **Not a phone system, payroll or HR system.** Calls run on the practice's phone provider; payroll and 1099/W-2 filing run in Gusto or ADP; staff HR records live in Willow or BambooHR.
+- **Not a phone system, payroll or HR system.** Calls run on the practice's phone provider; payroll and 1099/W-2 filing run in Gusto or ADP ([Envelope](https://github.com/just-every/run-envelope) is the RunEditRun payroll sibling); staff HR records live in Willow or BambooHR.
 - **Not DME supplier billing, e-prescribing or lab and imaging orders.** Products sell for cash under `PAY-008`; insurance billing for durable medical equipment goes through a DME billing partner.
 - **US first.** USD, US payers, US time zones and US privacy law first; other countries' claiming systems (Medicare Australia, NHS) are not part of this target.
 
