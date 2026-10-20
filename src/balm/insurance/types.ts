@@ -11,6 +11,7 @@ export type ClaimSnapshot = {
   billing: { name: string; npi: string; taxId: string; address: string; city: string; state: string; postal: string; sender: string; contact: string; phone: string; production: boolean }
   rendering: { first: string; last: string; npi: string; taxonomy: string; enrolled: boolean }
   referring: { first: string; last: string; npi: string } | null
+  authorizationExhausted?: boolean; authorizationNotCovered?: boolean
   authorization: string | null; serviceDate: string; diagnoses: string[]; lines: ClaimLine[]
   signedNotes: { id: string; digest: string; revision: number }[]
   invoiceId: string; invoiceCents: number; attended: boolean; requiresReferral: boolean
@@ -18,4 +19,4 @@ export type ClaimSnapshot = {
   medicareServices?:Record<string,MedicareService>
   basis?: Record<string, any>; medicalNecessity: string; frequency: '1' | '7'; originalControl: string
 }
-export type BookingWarning = { code: string; message: string; policyId: string; authorizationId?: string; remainingVisits?: number; expiresOn?: string; blocking: boolean }
+export type BookingWarning = { code: string; message: string; policyId: string; authorizationId?: string; remainingVisits?: number; remainingAllowance?: number; allowanceKind?: 'visits' | 'units'; expiresOn?: string; blocking: boolean }

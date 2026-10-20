@@ -1,3 +1,4 @@
+import { accountAuthorizations, authorizationCoversVisit, selectAuthorization, signedAuthorizationChargeSql } from '../insurance/authorization-accounting'
 import { datePlus, firstInstantOfHostDate, hostDateAt } from '../availability/timezone'
 import { dollars } from '../domain/invoices'
 import { insist, one, stmt, type Data } from '../domain/model'
@@ -50,7 +51,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   insist(tomorrow, 'clinic_next_day_missing', 409)
   const cutoff = tomorrow.toISOString()
   const results = await db.batch<Data>([
-    stmt(db, `SELECT a.id,a.client_id,a.practitioner_id,a.start_at,a.status,a.checked_in_at,
+    stmt(db, `SELECT a.id,a.client_id,a.practitioner_id,a.start_at,a.status,a.checked_in_at,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='visit' AND record_id=a.id),'') AS episodeId,
       c.first_name||' '||c.last_name AS client,c.copay_cents,p.name AS practitioner,
       EXISTS(SELECT 1 FROM bm_notes n WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND julianday(n.signed_at)<julianday(?)) AS signed_note,
       EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.client_id=a.client_id AND r.form_id=(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1) AND julianday(r.submitted_at)<julianday(?)) AS current_intake
@@ -80,11 +81,12 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       WHERE q.status IN ('draft','ready','batched','exported') AND i.status<>'void' AND q.service_date<=?
       AND julianday(a.start_at)<julianday(?) AND julianday(q.created_at)<julianday(?) ORDER BY q.service_date,q.id`, date, cutoff, cutoff),
     stmt(db, `SELECT id,client_id,starts_on,ends_on FROM bm_policies ORDER BY priority,starts_on DESC,id`),
-    stmt(db, `SELECT z.id,z.policy_id,z.starts_on,z.ends_on,z.visits,z.practitioner_id,p.client_id,
-      c.first_name||' '||c.last_name AS client FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_clients c ON c.id=p.client_id
+    stmt(db, `SELECT z.*,p.client_id,y.unit_method,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='authorization' AND record_id=z.id),'') AS episodeId,
+      c.first_name||' '||c.last_name AS client FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=p.client_id
       ORDER BY z.starts_on DESC,z.id DESC`),
+    stmt(db, signedAuthorizationChargeSql),
   ])
-  const [visits, unsigned, plans, invoices, copayPayments, unsent, policies, authorizations] = results.map(r => r.results)
+  const [visits, unsigned, plans, invoices, copayPayments, unsent, policies, authorizations, chargeRows] = results.map(r => r.results)
   const result: DailyCloseFacts = { date, zone, notes: [], plans: [], charges: [], copays: [], claims: [], intakes: [], authorizations: [] }
   const localVisits: (Data & { local_date: string })[] = visits.map(v => ({ ...v, local_date: hostDateAt(new Date(v.start_at), zone) }))
   const throughToday = localVisits.filter(v => v.local_date <= date)
@@ -144,31 +146,31 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
     }
   }
 
-  // Bulk equivalent of authorizationsFor: each visit uses the latest matching
-  // authorization per policy, and booked visits reserve capacity, including future ones.
-  const authByClient = groupBy(authorizations, 'client_id')
-  const counters = new Map(authorizations.map(a => [a.id, { used: 0, reserved: 0 }]))
+  // INS-003 uses the same pure allocation as patient files and booking. The
+  // report's end-of-day cutoff excludes later signatures but keeps future reservations.
+  const accounted = accountAuthorizations(authorizations, visits, zone, chargeRows, cutoff)
+  const authByClient = groupBy(accounted, 'client_id')
   const expiredWithBookings = new Set<string>()
   for (const visit of localVisits) {
-    const choices = (authByClient.get(visit.client_id) ?? []).filter(a => !a.practitioner_id || a.practitioner_id === visit.practitioner_id)
-    const allocated = new Set<string>()
-    for (const auth of choices) if (!allocated.has(auth.policy_id) && auth.starts_on <= visit.local_date && auth.ends_on >= visit.local_date) {
-      allocated.add(auth.policy_id)
-      const counter = counters.get(auth.id)!
-      visit.status === 'attended' ? counter.used++ : counter.reserved++
-    }
-    if (visit.status === 'booked' && visit.local_date > date) {
-      const considered = new Set<string>()
-      for (const auth of choices) if (!allocated.has(auth.policy_id) && !considered.has(auth.policy_id) && auth.starts_on <= date) {
-        considered.add(auth.policy_id)
-        if (auth.ends_on < date) expiredWithBookings.add(auth.id)
+    const choices = authByClient.get(visit.client_id) ?? []
+    for (const policyId of new Set(choices.map(a => a.policy_id))) {
+      const auth = selectAuthorization(choices, policyId, visit.local_date, visit.practitioner_id, visit.episodeId, visit.client_id)
+      if (auth && !authorizationCoversVisit(auth, visit, chargeRows, cutoff, zone)) {
+        result.authorizations.push(item(visit, 'authorization_scope', `Not covered by the current authorization (${auth.number}) · ${displayDate(visit.local_date)}`, 'insurance'))
+      }
+      if (!auth && visit.status === 'booked' && visit.local_date > date) {
+        const latest = choices.find(a => a.policy_id === policyId && a.episodeId === visit.episodeId && a.starts_on <= date && (!a.practitioner_id || a.practitioner_id === visit.practitioner_id))
+        if (latest && latest.ends_on < date) expiredWithBookings.add(latest.id)
       }
     }
   }
-  for (const auth of authorizations) {
-    const counts = counters.get(auth.id)!, left = Math.max(0, Number(auth.visits) - counts.used - counts.reserved)
-    if (auth.starts_on <= date && auth.ends_on >= date && left <= 2) result.authorizations.push(item(auth, 'low_authorization', `${left} unreserved authorized visits remain · expires ${displayDate(auth.ends_on)}`, 'insurance'))
-    else if (expiredWithBookings.has(auth.id)) result.authorizations.push(item(auth, 'expired_authorization', `Authorization expired ${displayDate(auth.ends_on)}; future booked visits need coverage`, 'insurance'))
+  for (const auth of accounted) {
+    const current = selectAuthorization(accounted, auth.policy_id, date, auth.practitioner_id ?? '', auth.episodeId, auth.client_id)
+    if (current?.id === auth.id && auth.remaining_allowance <= auth.low_remainder) {
+      result.authorizations.push(item(auth, 'low_authorization', `${auth.remaining_allowance} unreserved authorized ${auth.allowance_kind} remain · expires ${displayDate(auth.ends_on)}`, 'insurance'))
+    } else if (expiredWithBookings.has(auth.id)) {
+      result.authorizations.push(item(auth, 'expired_authorization', `Authorization expired ${displayDate(auth.ends_on)}; future booked visits need coverage`, 'insurance'))
+    }
   }
   return result
 }

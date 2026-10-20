@@ -37,7 +37,7 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
       e.benefits = JSON.stringify(benefits)
     }
   }
-  return {policies,authorizations:auths.map(a=>({...a,remaining_visits:Math.max(0,a.visits-a.used_visits-(a.reserved_visits??0))})),eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
+  return {policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
 }
 export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   const who=await insuranceActor(env.DB,initial),db=env.DB,desk=who.role==='owner'||who.staffRole==='reception'

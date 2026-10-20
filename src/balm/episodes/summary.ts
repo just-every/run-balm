@@ -21,7 +21,7 @@ export function episodeSummaries(index: { episodes: any[] }, f: { appointments: 
     return { ...e,
       visits: { total: visits.length, booked: count('booked'), attended: count('attended'), cancelled: count('cancelled'), noShows: count('no_show') },
       plans: f.plans.filter(p => p.episodeId === e.id).length,
-      authorizations: f.authorizations?.filter(a => a.episodeId === e.id).map(a => ({ id: a.id, number: a.number, visits: a.visits, used: a.used_visits, reserved: a.reserved_visits, remaining: Math.max(0, a.visits - a.used_visits - a.reserved_visits) })) ?? null,
+      authorizations: f.authorizations?.filter(a => a.episodeId === e.id).map(a => ({ id: a.id, number: a.number, visits: a.allowance_total, kind: a.allowance_kind, used: a.used_allowance, reserved: a.reserved_allowance, remaining: a.remaining_allowance })) ?? null,
       measures: f.measures?.filter(s => s.episodeId === e.id).map(s => ({ key: s.key, kind: s.kind, name: s.name, side: s.side, unit: s.unit, baseline: s.baseline.value, latest: s.latest.value, change: s.change, points: s.points.length })) ?? null }
   })
 }

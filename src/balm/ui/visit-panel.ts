@@ -24,8 +24,8 @@ function facts(s: any, a: any, sum: any, today: string) {
   if (i) {
     if (!policy) out.push(fact('shield', 'muted', 'Coverage', 'Self-pay: no insurance policy on file'))
     else {
-      const auths = i.authorizations.filter((x: any) => x.policy_id === policy.id), auth = auths.find((x: any) => x.starts_on <= today && x.ends_on >= today) ?? auths[0]
-      out.push(fact('shield', auth ? 'sky' : 'muted', 'Authorization', auth ? `${h(auth.remaining_visits)} of ${h(auth.visits)} visits left · ${auth.ends_on < today ? 'Expired' : 'Expires'} ${h(usDate(auth.ends_on, zoneOf(s)))}` : 'No authorization on file'))
+      const auth = a.authorization
+      out.push(fact('shield', auth ? 'sky' : 'muted', 'Authorization', auth ? `${h(auth.left)} of ${h(auth.total)} ${h(auth.kind)} left · Expires ${h(usDate(auth.endsOn, zoneOf(s)))}${auth.covered === false ? ' · Not covered by the current authorization' : ''}` : 'No authorization on file'))
       const active = policy.eligibility_status === 'active'
       out.push(fact('checked', active ? 'sage' : 'honey', 'Eligibility', policy.eligibility_checked_at ? `${h(String(policy.eligibility_status).replace(/^./, (x: string) => x.toUpperCase()))} · Verified ${h(clock(s, policy.eligibility_checked_at))}` : 'Coverage has not been checked'))
     }

@@ -13,7 +13,12 @@ export function policyForm(s: any, clientId: string, path: string, p?: any) {
 }
 export function authorizationForm(s: any, policyId: string, path: string, a?: any, episode = '') {
   return form('insurance.authorization.save', path, hidden('policyId', policyId) + (a ? hidden('id', a.id) : '') + episode + field('number', 'Authorization number', a?.number, 'text', 'required')
-    + `<div class="pair">${field('startsOn', 'Authorized from', a?.starts_on, 'date', 'required')}${field('endsOn', 'Expires on', a?.ends_on, 'date', 'required')}</div>` + field('visits', 'Authorized visits', a?.visits, 'number', 'required min="1" max="10000"')
+    + `<div class="pair">${field('startsOn', 'Authorized from', a?.starts_on, 'date', 'required')}${field('endsOn', 'Expires on', a?.ends_on, 'date', 'required')}</div>` + select('allowanceKind', 'Allowance is counted in', [['visits', 'Visits'], ['units', 'CPT units']], a?.allowance_kind ?? 'visits')
+    + field('visits', 'Authorized visits (visit allowance only)', a?.allowance_kind === 'units' ? '' : a?.visits, 'number', 'min="1" max="10000"')
+    + `<div class="pair">${field('units', 'Authorized units (unit allowance only)', a?.units, 'number', 'min="1" max="1000000"')}${field('unitsPerVisit', 'Units to reserve per unsigned or booked visit', a?.units_per_visit, 'number', 'min="1" max="10000"')}</div>`
+    + '<p class="help">A signed attended visit uses its billed CPT units by this payer’s unit method. Until then, a unit authorization reserves the units per visit you enter here.</p>'
+    + field('cptCodes', 'CPT codes (blank for all)', a ? JSON.parse(a.cpt_scope).join(', ') : '', 'text', 'maxlength="1000" placeholder="97110, 97140"')
+    + field('lowRemainder', 'Warn when the unreserved allowance is at or below', a?.low_remainder ?? 2, 'number', 'required min="0" max="1000000"')
     + select('practitionerId', 'Practitioner', [['', 'Any treating practitioner'], ...(s.insurance.practitioners ?? []).map((p: any) => [p.id, p.name])], a?.practitioner_id ?? '', '')
     + select('bookingAction', 'When expired or exhausted', [['warn', 'Warn and ask staff to review'], ['block', 'Block booking until updated']], a?.booking_action ?? 'warn'), 'Save authorization')
 }

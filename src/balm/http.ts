@@ -148,6 +148,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
   if (name === 'insurance.read') return readInsurance(env, who, input)
   if (name.startsWith('insurance.')) {
+    if (name === 'insurance.authorization.save' && typeof input.cptCodes === 'string') input.cptScope = input.cptCodes.trim() ? input.cptCodes.trim().split(/[,\s]+/) : []
     if (name === 'insurance.batch.prepare' && !Array.isArray(input.claimIds)) input.claimIds = Object.keys(input).filter(k => k.startsWith('claim_') && input[k] === 'on').map(k => k.slice(6))
     if (name === 'insurance.payer.save' && typeof input.feeSchedule === 'string') input.fees = input.feeSchedule.split(/\r?\n/).filter(line => line.trim()).map(line => {
       const [code, amount] = line.trim().split(/\s+/)

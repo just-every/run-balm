@@ -6,7 +6,7 @@ import { dollars, invoiceNumber } from '../domain/invoices'
 import { sha256 } from '../domain/model'
 import { template } from '../charting/templates'
 import { authorizationCorrection, claimAuthorization } from '../insurance/claim-authorization'
-import { attended, cite, currentAuthorization, EXPIRY_DAYS, FIX, LOW_VISITS, signedNote, STALE_DAYS, unclaimed, usDay } from './stages'
+import { attended, cite, currentAuthorization, EXPIRY_DAYS, FIX, signedNote, STALE_DAYS, unclaimed, usDay } from './stages'
 import type { CaseFacts, Step } from './types'
 
 export const STATEMENT_DAYS = 14
@@ -25,7 +25,7 @@ export function letterHead(f: CaseFacts, a: any) {
   return [`To: ${p.payer_name}, utilization management`, 'Re: Request for continued authorization of outpatient therapy visits', '',
     `Patient: ${f.client.first_name} ${f.client.last_name}${f.client.date_of_birth ? `, born ${usDay(f.client.date_of_birth, f.zone)}` : ''}`,
     `Member ID: ${p.member_id}${p.group_number ? ` · Group ${p.group_number}` : ''}`,
-    a ? `Current authorization: ${a.number}, ${a.visits} visits from ${usDay(a.starts_on, f.zone)} to ${usDay(a.ends_on, f.zone)}; ${a.used_visits} used, ${a.reserved_visits} booked, ${a.left} left` : 'New authorization for the denied visit: not yet recorded',
+    a ? `Current authorization: ${a.number}, ${a.allowance_total} ${a.allowance_kind} from ${usDay(a.starts_on, f.zone)} to ${usDay(a.ends_on, f.zone)}; ${a.used_allowance} used, ${a.reserved_allowance} booked, ${a.left} left` : 'New authorization for the denied visit: not yet recorded',
     `Referring provider: ${r.referring_first} ${r.referring_last}${r.referring_npi ? `, NPI ${r.referring_npi}` : ''}`,
     ...(r.diagnosis ? [`Diagnosis: ${r.diagnosis}`] : []),
     `Treating clinic: ${f.clinic.clinic_name}${f.clinic.billing_npi ? `, billing NPI ${f.clinic.billing_npi}` : ''}`].join('\n')
@@ -37,7 +37,7 @@ export function letterFoot(f: CaseFacts, note: any) {
 export function standardRequest(f: CaseFacts, a: any, denied?: any) {
   const seen = attended(f).length
   if (!a) return `We request authorization for outpatient therapy under the plan of care, including the visit on ${usDay(denied.service_date, f.zone)} that was denied for a missing authorization. The patient has attended ${plural(seen, 'visit')} under this referral, and the attached signed note records the patient's progress and the goals that remain.`
-  return `We request ${a.visits} further visits to continue the plan of care. The patient has attended ${plural(seen, 'visit')} under this referral and has ${plural(a.left, 'authorized visit')} left${a.ends_on >= f.today ? ` before the authorization ends on ${usDay(a.ends_on, f.zone)}` : ''}. The attached signed note records the patient's progress and the goals that remain.`
+  return `We request ${a.allowance_total} further visits to continue the plan of care. The patient has attended ${plural(seen, 'visit')} under this referral and has ${plural(a.left, a.allowance_kind === 'units' ? 'authorized unit' : 'authorized visit')} left${a.ends_on >= f.today ? ` before the authorization ends on ${usDay(a.ends_on, f.zone)}` : ''}. The attached signed note records the patient's progress and the goals that remain.`
 }
 
 async function digestOf(step: Omit<Step, 'digest'>) {
@@ -61,11 +61,11 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
     })
   }
 
-  const low = a && (a.left <= LOW_VISITS || days(f.today, a.ends_on) <= EXPIRY_DAYS)
+  const low = a && (a.left <= a.low_remainder || days(f.today, a.ends_on) <= EXPIRY_DAYS)
   if (p && (low || missingAuthorization.length)) {
     const note = supportingNote(f), base = low ? a : null, denial = missingAuthorization[0]
-    const key = low ? `authorization.request:${a.id}:${a.visits}:${a.ends_on}` : `authorization.request:claim:${denial.id}`
-    const why = low ? `Only ${plural(a.left, 'authorized visit')} of ${a.visits} ${a.left === 1 ? 'is' : 'are'} left (${a.used_visits} used, ${a.reserved_visits} booked), and the authorization ${a.ends_on < f.today ? 'ended' : 'ends'} ${usDay(a.ends_on, f.zone)}.`
+    const key = low ? `authorization.request:${a.id}:${a.allowance_total}:${a.ends_on}` : `authorization.request:claim:${denial.id}`
+    const why = low ? `Only ${plural(a.left, a.allowance_kind === 'units' ? 'authorized unit' : 'authorized visit')} of ${a.allowance_total} ${a.left === 1 ? 'is' : 'are'} left (${a.used_allowance} used, ${a.reserved_allowance} booked), and the authorization ${a.ends_on < f.today ? 'ended' : 'ends'} ${usDay(a.ends_on, f.zone)}.`
       : `The payer denied the claim for ${usDay(denial.service_date, f.zone)} for a missing authorization (CARC 197). Record a new payer authorization after the denial, with a different number covering that visit and its treating practitioner.`
     const draft = f.drafts.find(d => d.step_key === key)
     out.push({

@@ -1,4 +1,3 @@
-import { bill, cpt, type Charge } from '../charting/cpt'
 import { audit, commit, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
 import { policyFor } from './access'
@@ -7,24 +6,13 @@ import { medicareSpending } from './medicare'
 import { applyMedicareServices } from './medicare-claim'
 import type { ClaimSnapshot } from './types'
 
-/** Billed lines by the payer's timed-unit method: AMA per-code midpoint, else the CMS 8-minute rule. */
-export function billedLines(charges:Charge[],unitMethod:string|null) {
-  return unitMethod==='ama'?charges.map(c=>({...cpt(c.code)!,minutes:c.minutes,units:cpt(c.code)!.timed?Math.floor((c.minutes+7)/15):1})):bill(charges).lines
-}
-/** CPT minutes summed across a visit's signed notes. */
-export async function signedCharges(db:D1Database,appointmentId:string) {
-  const signed=await rows(db,`SELECT n.id,n.signed_sha256,n.signed_revision,r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`,appointmentId)
-  const minutes=new Map<string,number>()
-  for(const r of signed) for(const charge of JSON.parse(r.charges??'[]') as Charge[]) {
-    insist(cpt(charge.code)&&Number.isInteger(charge.minutes)&&charge.minutes>=0,'invalid_signed_charge')
-    minutes.set(charge.code,(minutes.get(charge.code)??0)+charge.minutes)
-  }
-  return {signed,charges:[...minutes].map(([code,minutes])=>({code,minutes}))}
-}
+export { billedLines, signedCharges } from './authorization-accounting'
+import { billedLines, signedCharges, authorizationCoversCodes } from './authorization-accounting'
+
 const nameParts=(name:string)=>{const parts=name.trim().split(/\s+/);return {first:parts.slice(0,-1).join(' '),last:parts.at(-1)??''}}
 export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<ClaimSnapshot> {
   const policy=await policyFor(db,who,input.policyId)
-  const visit=await one(db,`SELECT a.*,p.name AS practitioner_name,p.npi,p.profession,p.version AS staff_version,c.version AS client_version,c.first_name,c.last_name,c.date_of_birth,s.time_zone,s.clinic_name
+  const visit=await one(db,`SELECT a.*,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='visit' AND record_id=a.id),'') AS episodeId,p.name AS practitioner_name,p.npi,p.profession,p.version AS staff_version,c.version AS client_version,c.first_name,c.last_name,c.date_of_birth,s.time_zone,s.clinic_name
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_clients c ON c.id=a.client_id JOIN bm_settings s ON s.id=1 WHERE a.id=? AND a.client_id=?`,input.appointmentId,policy.client_id)
   insist(visit,'appointment_not_found',404)
   insist(who.role==='owner'||who.staffRole==='reception'||who.staffId===visit.practitioner_id,'appointment_not_found',404)
@@ -56,7 +44,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const estimatedAllowed=lines.reduce((sum,l)=>sum+(fees.find(f=>f.code===l.code)?.cents??0)*l.units,0)
   const threshold=annual?.threshold_cents??null,used=spending.usedCents
   const required=!!policy.medicare&&threshold!==null&&used+estimatedAllowed>threshold
-  const auth=claimAuthorization(auths,policy.id,serviceDate,visit.practitioner_id,input.authorizationCorrection)
+  const auth=claimAuthorization(auths,policy.id,serviceDate,visit.practitioner_id,input.authorizationCorrection,visit.episodeId)
   const rendering=nameParts(visit.practitioner_name)
   const value:ClaimSnapshot & {estimatedAllowedCents:number;policyCovers:boolean;authorizationExhausted:boolean;basis:Data}={
     patient:{first:visit.first_name,last:visit.last_name,dob:visit.date_of_birth??'',sex:policy.patient_sex},
@@ -70,7 +58,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
     kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
     basis:{...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
-    policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_visits>auth.visits
+    policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_allowance>auth.allowance_total,authorizationNotCovered:!!auth&&!authorizationCoversCodes(auth,billed.filter(l=>l.units>0).map(l=>l.code))
   }
   return applyMedicareServices(value)
 }

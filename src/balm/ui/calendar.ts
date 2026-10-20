@@ -62,7 +62,8 @@ export function visitChips(s: any, a: any) {
   // SCHED-002 flags, ahead of the service and payer the patient panel also carries: intake, the covering authorization
   // and, for the desk, the patient's open balance.
   if (a.status === 'booked') chips.push(a.intake_received || a.intake_on_file ? ['Intake in', ''] : ['Intake due', 'honey'])
-  if (a.authorization) chips.push([`${a.authorization.left} of ${a.authorization.visits} visits left`, a.authorization.left <= 2 ? 'honey' : '', `${a.authorization.left} left`])
+  if (a.authorization?.covered === false) chips.push(['Not covered by the current authorization', 'coral', 'Not covered'])
+  if (a.authorization) chips.push([`${a.authorization.left} of ${a.authorization.total} ${a.authorization.kind} left`, a.authorization.left <= a.authorization.threshold ? 'honey' : '', `${a.authorization.left} left`])
   if (Number(a.balance_cents) > 0) chips.push([`${money(Number(a.balance_cents))} owed`, 'honey'])
   chips.push([a.service, ''], [a.payer ?? 'Self-pay', ''])
   if (a.equipment) chips.push([a.equipment, ''])
@@ -101,7 +102,7 @@ const timeSpans = (time: string) => { const [from, to] = time.split(' – '); re
 /** A visit card's link attributes and content: status glyph, time, name and chips. The grid places it; the phone agenda lists it. */
 export function visitCard(s: any, c: any, a: any, classes: string, extra = '') {
   const time = span(a.start_at, a.end_at, c.zone), tone = visitTone(a), chips = visitChips(s, a)
-  return `<a class="appt st-${h(a.status)} tone-${tone} ${classes}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${extra} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}, ${chips.map(([label]) => label).join(', ')}`)}">`
+  return `<a class="appt st-${h(a.status)} tone-${tone} ${classes}${c.selected?.id === a.id ? ' chosen' : ''}" href="${h(calendarLink(c, { appt: a.id }))}#visit"${a.authorization ? ` data-authorization-covered="${a.authorization.covered}"` : ''}${extra} aria-label="${h(`${time} ${a.client}, ${a.service}, ${statusLabel[a.status] ?? a.status}, ${chips.map(([label]) => label).join(', ')}`)}">`
     + `${icon(toneIcon[tone], 'mark')}<span class="appt-copy">${timeSpans(time)}<strong>${h(a.client)}</strong>`
     + `<span class="appt-tags">${chips.map(([text, t, brief], k) => `<span class="tag${t ? ' ' + t : ''} k${Math.min(k, 3)}">${brief ? `<span class="full">${h(text)}</span><span class="brief">${h(brief)}</span>` : h(text)}</span>`).join('')}</span></span>${icon('chevron', 'go')}</a>`
 }

@@ -6,7 +6,7 @@ import { local, span, statusLabel } from './calendar'
 import { h, money } from './shared'
 
 const intake = (a: any) => a.intake_received ? 'Received' : a.intake_on_file ? 'On file' : 'Due'
-const authorization = (a: any) => a.authorization ? `${a.authorization.left} of ${a.authorization.visits} visits left (${a.authorization.number}, ends ${a.authorization.endsOn})` : ''
+const authorization = (a: any) => a.authorization ? `${a.authorization.left} of ${a.authorization.total} ${a.authorization.kind} left (${a.authorization.number}, ends ${a.authorization.endsOn})${a.authorization.covered === false ? ' · not covered by the current authorization' : ''}` : ''
 
 /** The day's visits in time order, each once, limited to the calendar's chosen column when one is chosen. */
 function sheetRows(c: any) {

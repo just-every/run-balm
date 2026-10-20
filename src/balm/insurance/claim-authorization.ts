@@ -1,11 +1,12 @@
 import { rows, type Data } from '../domain/model'
 import { authorizationsFor } from './authorization'
+import type { AccountedAuthorization } from './authorization-accounting'
 
 export type AuthorizationCorrection = { deniedNumber: string | null; afterSequence: number }
 
 /** The append-only save sequence distinguishes a new payer decision from an
  * authorization already on file when the payer denied the claim. */
-export async function claimAuthorizations(db: D1Database, clientId: string): Promise<(Data & { saved_sequence: number; used_visits: number; reserved_visits: number })[]> {
+export async function claimAuthorizations(db: D1Database, clientId: string): Promise<(AccountedAuthorization & { saved_sequence: number })[]> {
   const [auths, saves] = await Promise.all([
     authorizationsFor(db, clientId),
     rows(db, `SELECT subject_id,MAX(sequence) AS sequence FROM bm_audit
@@ -17,8 +18,9 @@ export async function claimAuthorizations(db: D1Database, clientId: string): Pro
 
 /** A correction must use a different authorization recorded after CO-197;
  * ordinary claims use the latest starting authorization for this provider. */
-export function claimAuthorization(auths: Data[], policyId: string, date: string, practitionerId: string, correction?: AuthorizationCorrection | null) {
+export function claimAuthorization(auths: Data[], policyId: string, date: string, practitionerId: string, correction?: AuthorizationCorrection | null, episodeId?: string) {
   return auths.filter(a => a.policy_id === policyId && a.starts_on <= date && a.ends_on >= date
+    && (episodeId === undefined || (a.episodeId ?? '') === episodeId)
     && (!a.practitioner_id || a.practitioner_id === practitionerId)
     && (!correction || a.number !== correction.deniedNumber && a.saved_sequence > correction.afterSequence))
     .sort((a, b) => correction

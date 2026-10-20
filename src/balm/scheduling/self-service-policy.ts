@@ -2,6 +2,8 @@ import { hostDateAt } from '../availability/timezone'
 import { bookable, settings } from '../domain/booking'
 import { guard, insist, one, text } from '../domain/model'
 import { authorizationsFor, bookingWarnings } from '../insurance/authorization'
+import { reservationAllowance, selectAuthorization } from '../insurance/authorization-accounting'
+import { bookingEpisode } from '../episodes'
 
 /** Read before the facts it protects, and execute before any domain write. */
 export async function selfServiceSnapshot(db: D1Database) {
@@ -46,28 +48,17 @@ export async function checkSelfService(db: D1Database, input: SelfServiceInput) 
   }
   if (input.clientId) {
     const warnings = await bookingWarnings(db, input.clientId, localDate, input.practitionerId, input.excludeAppointmentId)
-    insist(!warnings.some(w => w.code === 'authorization_exhausted' || w.code === 'authorization_outside_dates'), 'contact_clinic_about_visit_authorization', 409)
+    insist(!warnings.some(w => w.code === 'authorization_exhausted' || w.code === 'authorization_outside_dates' || w.code === 'authorization_not_covered'), 'contact_clinic_about_visit_authorization', 409)
   }
   if (rules.requireAuthorization) {
     insist(input.clientId, 'contact_clinic_about_visit_authorization', 409)
-    const [auths, excluded] = await Promise.all([
-      authorizationsFor(db, input.clientId),
-      input.excludeAppointmentId ? one(db, "SELECT start_at,practitioner_id FROM bm_appointments WHERE id=? AND client_id=? AND status='booked'", input.excludeAppointmentId, input.clientId) : Promise.resolve(null),
+    const [auths, episode] = await Promise.all([
+      authorizationsFor(db, input.clientId, input.excludeAppointmentId),
+      input.excludeAppointmentId ? one(db, "SELECT episode_id FROM bm_episode_records WHERE record_kind='visit' AND record_id=?", input.excludeAppointmentId).then(r => r?.episode_id ?? '') : bookingEpisode(db, input.clientId),
     ])
-    // Release the old reservation from exactly the authorizations which own it.
-    if (excluded) {
-      const oldDate = hostDateAt(new Date(excluded.start_at), clinic.time_zone), seen = new Set<string>()
-      for (const a of auths) if (!seen.has(a.policy_id) && a.starts_on <= oldDate && a.ends_on >= oldDate && (!a.practitioner_id || a.practitioner_id === excluded.practitioner_id)) {
-        seen.add(a.policy_id); a.reserved_visits = Math.max(0, a.reserved_visits - 1)
-      }
-    }
-    const seen = new Set<string>()
-    const covering = auths.filter(a => {
-      if (seen.has(a.policy_id) || a.starts_on > localDate || a.ends_on < localDate || (a.practitioner_id && a.practitioner_id !== input.practitionerId)) return false
-      seen.add(a.policy_id)
-      return true
-    })
-    insist(covering.some(a => a.visits - a.used_visits - a.reserved_visits >= 1), 'contact_clinic_about_visit_authorization', 409)
+    const policies = new Set(auths.map(a => a.policy_id as string))
+    const covering = [...policies].map(policy => selectAuthorization(auths, policy, localDate, input.practitionerId, episode)).filter(a => a !== undefined)
+    insist(covering.some(a => a.remaining_allowance >= reservationAllowance(a)), 'contact_clinic_about_visit_authorization', 409)
   }
   return {
     startAt: new Date(start).toISOString(), rules, clinic, practitioner: target.practitioner, service: rules.service, localDate,
