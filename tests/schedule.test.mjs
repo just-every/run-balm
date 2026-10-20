@@ -560,7 +560,13 @@ test('BALM-001 / SCHED-002: rooms and equipment refuse a second booking, drag mo
   assert.doesNotMatch((await h.send(`/app?view=week&date=${day}`, undefined, sam.cookie)).text, /\d owed/, 'balances stay with the desk')
   // BALM-001: only the owner grants/revokes a named practitioner's scoped balance access.
   await h.cmd('pay.copay.save', { clientId: ben.id, copay: '30.00' })
+  await h.cmd('insurance.eligibility.record', { policyId: policy.id, serviceDate: day, status: 'active', copayCents: 3000, source: 'Payer provider portal reference 24' })
+  const clinicalInsurance = (await h.send('/api/balm/clients/' + ava.id, undefined, priya.cookie)).value.insurance
+  assert.ok(!('copay_cents' in clinicalInsurance.policies[0]))
+  assert.equal(clinicalInsurance.eligibility[0].benefits.manual.copayCents, null)
   const financialFile = async cookie => (await h.send('/api/balm/clients/' + ben.id, undefined, cookie)).value
+  assert.equal((await financialFile(h.owner)).client.copay_cents, 3000)
+  assert.equal((await financialFile(reception.cookie)).billing.copayCents, 3000)
   assert.ok(!('copay_cents' in (await financialFile(sam.cookie)).client))
   for (const cookie of [sam.cookie, reception.cookie]) await h.cmd('staff.balance_access', { id: sam.id, enabled: true }, cookie, 403)
   const grant = () => h.form('/app/action?name=staff.balance_access&returnTo=%2Fapp%2Fclinic', { id: sam.id, enabled: 'true' }, h.owner)
