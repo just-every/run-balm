@@ -658,8 +658,13 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     for(let day=1;day<=10;day++) {
       const date=new Date(Date.now()+10*3600000-day*86400000).toISOString().slice(0,10)
       const visit=await pastVisit(h,c.patient.id,c.priya,c.service.id,h.owner,day+4)
-      // Arrange elapsed treatment days after public booking, without changing clinical records.
-      await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind(date+'T00:00:00.000Z',date+'T00:45:00.000Z',visit).run()
+      // Move the booked slot to its treatment day, retaining its distinct clinic time.
+      // A fixed 10:00 slot can collide with a later pastVisit booking near midnight.
+      const booked=await h.db.prepare('SELECT start_at,end_at FROM bm_appointments WHERE id=?').bind(visit).first()
+      const localTime=new Date(Date.parse(booked.start_at)+10*3600000).toISOString().slice(11,23)
+      const start=new Date(date+'T'+localTime+'+10:00')
+      const end=new Date(+start+Date.parse(booked.end_at)-Date.parse(booked.start_at))
+      await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind(start.toISOString(),end.toISOString(),visit).run()
       await h.cmd('appointment.attend',{id:visit},c.priya.cookie)
     }
     const overdue=await check()

@@ -4,7 +4,7 @@ Source: current main bdb5069dce8a476b7ffb5e21c84d4718db797e3a CONTRACT.md, ACCEP
 Counts: 50 done / 31 partial / 28 missing. Remaining: 25 account-blocked / 34 hard / 0 cheap.
 No open clause is a one-round evidence-only finish. Retain all statuses; do not narrow requirements or set new privacy, consent or authentication policy without a supplied ruling.
 Priority after owner/lane scheduling: CHART-006 and INS-001 together (dated payer methods and thresholds); SCHED-007 (locations and service rules); CHART-002 (structured templates and carry-forward). These are multi-round work, not partial-to-done proof edits.
-This round: shorten seed.json description without changing claims, separate small commit; add the required Envelope sibling link in the honest payroll boundary; run typecheck, first-party check and exact-tree publication scan; push only cloud/sx-balm-r15 and require exact-SHA CI. No screen changes, so browser proof is not applicable. Base copies/pin remain 0.2.63; import-door adoption is not triggered.
+This round: shorten seed.json description without changing claims, separate small commit; add the required Envelope sibling link in the honest payroll boundary; run typecheck, first-party check and exact-tree publication scan; push only cloud/sx-balm-r15 and require exact-SHA CI. Repair the CI-proven AGENT-003 elapsed-day fixture collision in its own commit, retaining every assertion and public command. No screen changes, so browser proof is not applicable. Base copies/pin remain 0.2.63; import-door adoption is not triggered.
 
 Clause | Bucket | What is left | Files to touch
 --- | --- | --- | ---
