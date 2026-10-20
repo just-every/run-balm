@@ -32,9 +32,9 @@ export function daySheetCsv(c: any) {
 export function daySheetHtml(c: any, clinic: string) {
   const cols = columns(c), list = sheetRows(c)
   const title = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(c.date + 'T00:00:00Z'))
-  return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><title>Day sheet · ${h(c.date)}</title>`
-    + '<style>body{font:13px/1.4 system-ui,sans-serif;margin:24px;color:#1d2a26}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ccd;padding:6px;text-align:left;vertical-align:top}@media print{body{margin:0}}</style></head><body>'
+  return `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Day sheet · ${h(c.date)}</title>`
+    + '<style>body{font:13px/1.4 system-ui,sans-serif;margin:24px;color:#1d2a26}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ccd;padding:6px;text-align:left;vertical-align:top}@media screen and (max-width:600px){body{margin:16px}thead{display:none}table,tbody,tr{display:block}tr{border:1px solid #ccd;border-radius:8px;padding:8px;margin-bottom:12px}td{display:grid;grid-template-columns:7rem 1fr;gap:8px;border:0;overflow-wrap:anywhere}td:before{content:attr(data-label);font-weight:600}}@media print{body{margin:0}}</style></head><body>'
     + `<h1>Day sheet · ${h(title)}</h1><p>${h(clinic)} · ${h(c.zone)} · ${list.length} ${list.length === 1 ? 'visit' : 'visits'}</p>`
-    + (list.length ? `<table><thead><tr>${cols.map(([label]) => `<th>${h(label)}</th>`).join('')}</tr></thead><tbody>${list.map((a: any) => `<tr>${cols.map(([, value]) => `<td>${h(value(a))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p>No visits this day.</p>')
+    + (list.length ? `<table><thead><tr>${cols.map(([label]) => `<th>${h(label)}</th>`).join('')}</tr></thead><tbody>${list.map((a: any) => `<tr>${cols.map(([label, value]) => `<td data-label="${h(label)}">${h(value(a))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p>No visits this day.</p>')
     + '</body></html>'
 }
