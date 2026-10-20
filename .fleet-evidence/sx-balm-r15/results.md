@@ -9,3 +9,5 @@ No main push or deployment authorized in this cloud run; Mac lands after exact-S
 The environment default pnpm 11 rejected the pre-existing SheetJS tarball lock entry; use repository/CI pnpm 10.12.4 without changing the lockfile.
 
 Local validation: pinned pnpm 10.12.4 frozen install, typecheck and rer check --profile first-party passed. All 379 Status Evidence paths resolve. Manifest JSON parses and description length is 496 <= 500. No tests changed; no full local suite run per round-speed rule.
+
+Publication preflight at 903c93c7ccad30af23aa9cadf8e7630ca6201edd: PASS, complete, 146 commits/trees and 2,398 blobs; zero findings, zero pre-existing findings, zero warnings. Initial missing-Gitleaks prerequisite resolved by installing checksum-verified Gitleaks 8.30.1. Final evidence commit will be rescanned before push; CI receipts for its exact SHA are returned in the final report.
