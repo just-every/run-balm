@@ -70,7 +70,7 @@ function codesPanel(s: any, f: any, path: string) {
 export function billingPanels(s: any, f: any, notice: any) {
   const b = f.billing, path = `/app/clients/${f.client.id}`
   if (!b) return ''
-  if (!desk(s)) return codesPanel(s, f, path)
+  if (!desk(s)) return (b.balanceCents === undefined ? '' : panel('Patient balance', `<p>${money(b.balanceCents)} owed</p>`)) + codesPanel(s, f, path)
   const blocked = b.stripe.block, l = b.ledger
   const lines = l.lines.length ? `<div class="table"><table class="ledger"><thead><tr><th>Date</th><th>Description</th><th>Charges</th><th>Payments / adjustments</th><th>Balance</th></tr></thead><tbody>${l.lines.map((x: any) => `<tr><td>${stamp(s, x.at).replace(/ \d\d:\d\d:\d\d UTC/, '')}</td><td>${h(x.description)}</td><td data-label="Charge">${x.chargeCents ? money(x.chargeCents) : ''}</td><td data-label="Payment / adjustment">${x.paymentCents ? money(x.paymentCents) : ''}</td><td data-label="Balance">${money(x.balanceCents)}</td></tr>`).join('')}</tbody></table></div>` : empty('No charges or payments yet.')
   const balance = `<p><strong>${l.patientBalanceCents < 0 ? `Credit ${money(-l.patientBalanceCents)}` : `Patient balance ${money(l.patientBalanceCents)}`}</strong>${l.insurancePendingCents ? ` · ${money(l.insurancePendingCents)} pending insurance` : ''}${l.creditCents > 0 ? ` <span class="help">(${money(l.creditCents)} paid ahead, applied when the next invoice is approved)</span>` : ''} · <a href="/api/balm/statements/${h(f.client.id)}.pdf">Statement (PDF)</a></p>`

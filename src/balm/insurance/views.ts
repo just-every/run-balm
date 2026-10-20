@@ -28,6 +28,15 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
   const existing = await existingVisitWarnings(db,client.id)
   const warnings = Object.fromEntries(visits.map(v => [v.id, existing[v.id] ?? []]))
   const positions=await Promise.all(medicare.map(async m=>({...m,...await medicarePosition(db,who,{clientId:client.id,year:m.year,therapyGroup:m.therapy_group}),source:m.source})))
+  if (who.role !== 'owner' && who.staffRole !== 'reception') {
+    for (const p of policies) delete p.copay_cents
+    for (const e of eligibility) if (e.benefits) {
+      const benefits = JSON.parse(e.benefits)
+      benefits.benefits = (benefits.benefits ?? []).filter((b: Data) => b.information !== 'B')
+      if (benefits.manual) benefits.manual.copayCents = null
+      e.benefits = JSON.stringify(benefits)
+    }
+  }
   return {policies,authorizations:auths.map(a=>({...a,remaining_visits:Math.max(0,a.visits-a.used_visits-(a.reserved_visits??0))})),eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
 }
 export async function insuranceState(env:InsuranceEnv,initial:Actor) {

@@ -1,3 +1,4 @@
+import { saveBalanceAccess } from './balance-access'
 import { saveHoliday } from './holidays'
 import { dailyClose } from '../reports/access'
 import { breakGlassNotices } from './care-team'
@@ -23,6 +24,7 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
+  'staff.balance_access': saveBalanceAccess,
   'booking.embed.save': saveBookingEmbed,
   'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
   'holiday.save': saveHoliday, 'settings.save': saveSettings, 'staff.save': saveStaff, 'staff.erase': eraseStaff, 'service.save': saveService, 'hours.save': saveHours, 'room.save': saveRoom, 'equipment.save': saveEquipment,

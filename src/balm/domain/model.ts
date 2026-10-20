@@ -7,7 +7,7 @@ export interface Actor {
   id: string; email: string; role: Role
   /** The linked staff row, when this person is on the clinic's staff list. */
   staffId?: string; staffRole?: 'practitioner' | 'reception'
-  operatorVersion: number; staffVersion?: number
+  operatorVersion: number; staffVersion?: number; balanceVisibility?: boolean
 }
 export type Data = Record<string, any>
 
@@ -87,17 +87,20 @@ export async function commit(db: D1Database, who: Actor | null, statements: D1Pr
 }
 
 type OperatorRow = { id: string; email: string; role: string; status: string; version: number }
-type StaffRow = { id: string; role: 'practitioner' | 'reception'; version: number }
+type StaffRow = { id: string; role: 'practitioner' | 'reception'; version: number; balance_visibility: number }
 /** Resolves the current person from the native operator and the staff list. */
 export async function actor(db: D1Database, operatorId: string, agent = false): Promise<Actor> {
   const operator = await one<OperatorRow>(db, 'SELECT id,email,role,status,version FROM oa_operators WHERE id=?', operatorId)
   insist(operator?.status === 'active', 'sign_in_required', 401)
-  const staff = await one<StaffRow>(db, 'SELECT id,role,version FROM bm_staff WHERE lower(email)=lower(?) AND active=1 AND erased_at IS NULL', operator.email)
+  const staff = await one<StaffRow>(db, 'SELECT id,role,version,balance_visibility FROM bm_staff WHERE lower(email)=lower(?) AND active=1 AND erased_at IS NULL', operator.email)
   const base = { id: operator.id, email: operator.email, operatorVersion: operator.version }
   if (operator.role === 'owner') {
     if (agent) return { ...base, role: 'agent' }
-    return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, staffVersion: staff.version } : {}) }
+    return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility } : {}) }
   }
   insist(!agent && staff, 'active_staff_required', 403)
-  return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, staffVersion: staff.version }
+  return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility }
 }
+
+/** BALM-001: a balance grant adds no client scope, copay/card access or payment powers. */
+export const seesBalances = (who: Actor) => who.role === 'owner' || who.staffRole === 'reception' || (who.role === 'practitioner' && who.balanceVisibility === true)

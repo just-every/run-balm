@@ -501,7 +501,7 @@ test('SCHED-010: a PT with capacity 2 takes two patients side by side and refuse
   })
 })
 
-test('SCHED-002: rooms and equipment refuse a second booking, drag moves keep history under diary authority, the week shows each visit’s intake, authorization and balance flags, capacity visits sit side by side, and the day sheet prints and exports', {timeout:120_000}, () => run(async h => {
+test('BALM-001 / SCHED-002: rooms and equipment refuse a second booking, drag moves keep history under diary authority, the week shows each visit’s intake, authorization and balance flags, capacity visits sit side by side, and the day sheet prints and exports', {timeout:120_000}, () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam, lee] } = await clinic(h, ['Priya', 'Sam', 'Lee'])
   const reception = await h.staff('Rosa', 'reception')
@@ -558,6 +558,28 @@ test('SCHED-002: rooms and equipment refuse a second booking, drag moves keep hi
   assert.match(card(samWeek, benVisit), /AlterG/)
   assert.match(card(leeWeek, danVisit), /Intake in/)
   assert.doesNotMatch((await h.send(`/app?view=week&date=${day}`, undefined, sam.cookie)).text, /\d owed/, 'balances stay with the desk')
+  // BALM-001: only the owner grants/revokes a named practitioner's scoped balance access.
+  await h.cmd('pay.copay.save', { clientId: ben.id, copay: '30.00' })
+  const financialFile = async cookie => (await h.send('/api/balm/clients/' + ben.id, undefined, cookie)).value
+  assert.ok(!('copay_cents' in (await financialFile(sam.cookie)).client))
+  for (const cookie of [sam.cookie, reception.cookie]) await h.cmd('staff.balance_access', { id: sam.id, enabled: true }, cookie, 403)
+  const grant = () => h.form('/app/action?name=staff.balance_access&returnTo=%2Fapp%2Fclinic', { id: sam.id, enabled: 'true' }, h.owner)
+  assert.equal((await grant()).status, 303)
+  assert.match((await h.send(`/app?view=week&date=${day}`, undefined, sam.cookie)).text, /\$95\.00 owed/)
+  const grantedFile = await financialFile(sam.cookie)
+  assert.equal(grantedFile.billing.balanceCents, 9500)
+  assert.ok(!('copay_cents' in grantedFile.client) && !('copayCents' in grantedFile.billing) && !('card' in grantedFile.billing))
+  await h.cmd('pay.invoice.charge', { invoiceId: 'no-invoice' }, sam.cookie, 403)
+  const samSheet = await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, sam.cookie)
+  assert.ok(samSheet.text.includes('Ben Sched') && samSheet.text.includes('Balance owed') && samSheet.text.includes('$95.00') && !samSheet.text.includes('Ava Sched'))
+  assert.match((await h.send(`/api/balm/day-sheet.html?date=${day}`, undefined, sam.cookie)).text, /Balance owed[\s\S]*\$95\.00/)
+  assert.doesNotMatch((await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, lee.cookie)).text, /Balance owed/)
+  await h.cmd('staff.balance_access', { id: sam.id, enabled: false })
+  assert.doesNotMatch((await h.send(`/app?view=week&date=${day}`, undefined, sam.cookie)).text, /\d owed/)
+  assert.doesNotMatch((await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, sam.cookie)).text, /Balance owed/)
+  assert.ok(!('balanceCents' in (await financialFile(sam.cookie)).billing))
+  const accessAudit = await h.db.prepare("SELECT action,actor_email,subject_id FROM bm_audit WHERE action LIKE 'staff.balance_visibility_%' ORDER BY sequence").all()
+  assert.deepEqual(accessAudit.results.map(a => [a.action, a.actor_email, a.subject_id]), [['staff.balance_visibility_granted', 'owner@clinic.example', sam.id], ['staff.balance_visibility_revoked', 'owner@clinic.example', sam.id]])
   // Capacity 2: two patients at 13:00 sit side by side in Priya's column.
   await h.cmd('capacity.save', { practitionerId: priya.id, capacity: 2 }); await h.cmd('capacity.save', { serviceId: service.id, capacity: 2 })
   const pair = [(await book(dan, priya, '13:00')).value.result.appointmentId, (await book(eve, priya, '13:00')).value.result.appointmentId]
@@ -577,5 +599,6 @@ test('SCHED-002: rooms and equipment refuse a second booking, drag moves keep hi
   const own = await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, lee.cookie)
   assert.ok(own.text.includes('Cara Sched') && !own.text.includes('Ava Sched') && !own.text.includes('Balance owed'))
   const key = await h.cmd('agent.create', { label: 'Desk agent' })
+  await h.cmd('staff.balance_access', { id: sam.id, enabled: true }, '', 401, { authorization: 'Bearer ' + key.token })
   assert.equal((await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, '', { authorization: 'Bearer ' + key.token })).status, 401, 'an agent key is not a staff sign-in')
 }))

@@ -127,7 +127,9 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesInEpisode(measures, n)])) : null
   const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
   const referrals = teamOnly || who.role === 'agent' ? null : await referralsFor(db, client.id as string, (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string)
-  return { client, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  const visibleClient = { ...client }
+  if (!all) delete visibleClient.copay_cents
+  return { client: visibleClient, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 

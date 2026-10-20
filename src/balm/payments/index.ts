@@ -1,3 +1,4 @@
+import { seesBalances } from '../domain/model'
 // Patient payment commands and the state the pages read. Every command resolves
 // the live actor and enforces its role here; writes re-check authority in their
 // own D1 batch (domain/model commit). Stripe calls use the clinic's sealed key.
@@ -102,7 +103,7 @@ export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
 /** The billing part of a client file: codes for the visits this actor sees, and for the desk the ledger and card. */
 export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, clientId: string) {
   const codes = await visitCodes(db, { clientId })
-  if (!deskRole(who)) return { codes }
+  if (!deskRole(who)) return { codes, ...(seesBalances(who) ? { balanceCents: (await openInvoices(db, clientId)).reduce((sum, i) => sum + i.open_cents, 0) } : {}) }
   const client = await one(db, 'SELECT copay_cents,email,phone FROM bm_clients WHERE id=?', clientId)
   const invoices = await rows(db, "SELECT id FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC LIMIT 24", clientId)
   const superbills = await Promise.all(invoices.map(async i => { const f = await superbillFacts(db, i.id as string); return { invoiceId: i.id, number: f.invoice.number, serviceDate: f.v.serviceDate, missing: f.missing } }))
