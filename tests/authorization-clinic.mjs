@@ -19,7 +19,9 @@ export async function authorizationClinic(h) {
   const auth=async(c,input={})=>h.cmd('insurance.authorization.save',{policyId:c.policy.id,number:c.id.slice(0,6),...coverage,visits:12,...input})
   const book=(c,date,time='09:00',extra={},status=200)=>h.cmd('appointment.book',{clientId:c.id,practitionerId:c.therapist.id,serviceId:service.id,date,time,...extra},h.owner,status)
   const attend=async(c,hoursAgo)=>{const appointmentId=await pastVisit(h,c.id,c.therapist,service.id,h.owner,hoursAgo);await h.cmd('appointment.attend',{id:appointmentId});return appointmentId}
-  const sign=async(c,appointmentId,charges=[{code:'97110',minutes:8},{code:'97140',minutes:8}])=>{
+  // The scope journey intentionally bills 97110 and leaves 97140 at zero;
+  // the clinician now records that CMS tie choice rather than relying on row order.
+  const sign=async(c,appointmentId,charges=[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}])=>{
     const note=await h.cmd('note.write',{clientId:c.id,appointmentId,body:'Patient tolerated therapeutic exercise and manual treatment; strength and functional tolerance improved. Continue the current plan.',charges},c.therapist.cookie)
     await h.cmd('note.sign',{id:note.id,revision:note.revision,signature:c.therapist.id===priya.id?'Priya Shah':'Sam',credentials:'PT',attest:true},c.therapist.cookie)
     return note
