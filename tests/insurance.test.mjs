@@ -314,10 +314,11 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     assert.equal((await patientFile(h, cash.id, base.priya.cookie)).notes.find(n => n.id === cashNote.id).billing.payerId, null)
     // A tied boundary can have more than one remaining unit. Choose exactly two
     // out of three equal remainders, while preserving the first code's whole unit.
-    const boundaryVisit = await pastVisit(h, cash.id, base.priya, service.id, h.owner, 20)
+    const boundaryPatient = await h.cmd('client.save', { firstName: 'Rowan', lastName: 'Synthetic tie', dateOfBirth: '1980-01-01' })
+    const boundaryVisit = await pastVisit(h, boundaryPatient.id, base.priya, service.id, h.owner, 20)
     const boundaryCharges = [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 8, cmsTieChosen: true }, { code: '97530', minutes: 8, cmsTieChosen: true }]
-    const boundary = await h.cmd('note.write', { clientId: cash.id, appointmentId: boundaryVisit, body: 'Synthetic three-code CMS treatment.', charges: boundaryCharges }, base.priya.cookie)
-    const boundaryPreview = (await patientFile(h, cash.id, base.priya.cookie)).notes.find(n => n.id === boundary.id).billing
+    const boundary = await h.cmd('note.write', { clientId: boundaryPatient.id, appointmentId: boundaryVisit, body: 'Synthetic three-code CMS treatment.', charges: boundaryCharges }, base.priya.cookie)
+    const boundaryPreview = (await patientFile(h, boundaryPatient.id, base.priya.cookie)).notes.find(n => n.id === boundary.id).billing
     assert.deepEqual(boundaryPreview.lines.map(l => l.units), [1, 1, 1])
     assert.deepEqual(boundaryPreview.cmsTie.selected, ['97140', '97530'])
     assert.equal(boundaryPreview.cmsTie.units, 2)
