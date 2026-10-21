@@ -92,7 +92,7 @@ export async function estimateFile(db:D1Database,who:Actor,clientId:string){
  if(who.role!=='owner'&&who.staffRole!=='reception')return null
  const issued=await estimatesFor(db,clientId),requests=await rows(db,'SELECT r.*,e.id AS issued_id FROM bm_estimate_requests r LEFT JOIN bm_estimates e ON e.request_id=r.id WHERE r.client_id=? ORDER BY r.requested_at DESC',clientId)
  const drafts=who.role==='owner'?(await rows(db,'SELECT d.* FROM bm_estimate_drafts d JOIN bm_estimate_requests r ON r.id=d.request_id WHERE r.client_id=?',clientId)).map(d=>({...d,payload:JSON.parse(d.payload)})):[]
- await commit(db,who,[audit(db,who,'estimate.file_read',clientId)])
+ if(requests.length||issued.length||drafts.length)await commit(db,who,[audit(db,who,'estimate.file_read',clientId)])
  return {issued,requests,drafts}
 }
 export async function estimateOriginal(db:D1Database,clientId:string,key:string){

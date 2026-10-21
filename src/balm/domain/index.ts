@@ -1,5 +1,5 @@
 import { coSignQueue, returnNote } from './supervision'
-import { saveLocation, locateRoom } from './role-access'
+import { saveLocation, locateRoom, locateHours } from './role-access'
 import { saveBalanceAccess } from './balance-access'
 import { saveHoliday } from './holidays'
 import { dailyClose } from '../reports/access'
@@ -27,7 +27,7 @@ export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
   'insurance.supervision.save': async (db,who,input)=>{ insist(who.role==='owner','only_the_owner_sets_payer_rules',403); insist([true,false,'true','false'].includes(input.billSupervisor),'invalid_supervisor_billing'); await commit(db,who,[db.prepare('UPDATE bm_payers SET supervisor_billing=?,version=version+1 WHERE id=?').bind(input.billSupervisor===true||input.billSupervisor==='true'?1:0,String(input.payerId)),audit(db,who,'payer.supervision_saved',null,String(input.payerId))]); return {saved:true} },
-  'location.save': saveLocation, 'room.location': locateRoom,
+  'hours.location': locateHours, 'location.save': saveLocation, 'room.location': locateRoom,
   'staff.balance_access': saveBalanceAccess,
   'booking.embed.save': saveBookingEmbed,
   'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
@@ -63,6 +63,7 @@ export async function snapshot(db: D1Database, who: Actor) {
   const accessRows = await rows(db,'SELECT * FROM bm_staff_access')
   for (const person of staff) Object.assign(person, accessRows.find(a=>a.staff_id===person.id) ?? {kind:person.role})
   const locations = owner ? await rows(db,'SELECT * FROM bm_locations ORDER BY name') : []
+  const hourLocations = owner ? await rows(db,'SELECT * FROM bm_hour_locations') : []
   const roomLocations = owner ? await rows(db,'SELECT * FROM bm_room_locations') : []
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')
@@ -87,5 +88,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, hourLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

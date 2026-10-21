@@ -9,7 +9,7 @@ const pct = (value: unknown) => value === null || value === undefined ? '—' : 
 export function reportsPage(s: any) {
   const r = s.reports
   if (!r) return financialSections(s)
-  const query = (kind: string) => `/api/balm/reports/${kind}.csv?` + new URLSearchParams({ from: r.from, to: r.to, ...(r.practitionerId ? { practitionerId: r.practitionerId } : {}) }).toString()
+  const query = (kind: string) => `/api/balm/reports/${kind}.csv?` + new URLSearchParams({ from: r.from, to: r.to, ...(r.practitionerId ? { practitionerId: r.practitionerId } : {}),...(r.locationId?{locationId:r.locationId}:{}) }).toString()
   const download = (kind: string, label: string) => `<p><a class="button secondary" href="${h(query(kind))}" download>Download ${h(label)} CSV</a></p>`
   const all = (row: any) => ({ ...row, practitioner: 'All practitioners' })
   const section = (kind: string, title: string, intro: string, heads: string[], cells: (row: any) => unknown[], label: string) => {
@@ -18,8 +18,9 @@ export function reportsPage(s: any) {
   }
   const choices = [['', 'All practitioners'], ...r.practitioners.map((p: any) => [p.id, p.name])]
   const filter = `<form method="get" action="/app/reports" class="report-filter"><div class="pair">${field('from', 'From', r.from, 'date', 'required')}${field('to', 'Through', r.to, 'date', 'required')}</div>`
+    + `<label>Location<select name="locationId">${[['','All locations'],['unassigned','Unassigned'],...(r.locations??[]).map((l:any)=>[l.id,l.name])].map(([value,label])=>`<option value="${h(value)}"${value===(r.locationId??'')?' selected':''}>${h(label)}</option>`).join('')}</select></label>`
     + `<label>Practitioner<select name="practitionerId">${choices.map(([value, label]) => `<option value="${h(value)}"${value === (r.practitionerId ?? '') ? ' selected' : ''}>${h(label)}</option>`).join('')}</select></label>`
-    + `<p class="help">Dates include the whole day in ${h(r.timeZone)}; a visit counts on the clinic date it starts. Every visit is at the clinic's one location, so there is no location filter yet.</p><button type="submit">Run reports</button></form>`
+    + `<p class="help">Dates include the whole day in ${h(r.timeZone)}; a visit counts on the clinic date it starts. Visits and evaluations use their room’s location; weekly hours use the owner’s explicit location assignment. Plans count once at their source note’s visit location (the latest plan’s source for an episode); completion counts that whole course. Referrals use their first episode visit’s location. Unknown locations remain Unassigned; older anonymous facts stay there.</p><button type="submit">Run reports</button></form>`
   return `<div class="grid">${panel('Operational reports', (s.reportError ? `<div class="notice error" role="alert">${h(s.reportError)}</div>` : '') + filter, 'full')}`
     + section('visits', 'Visits, arrivals, cancellations and no-shows', 'Every visit that starts in the range, by its current status. The no-show rate is no-shows out of arrivals plus no-shows.',
       ['Practitioner', 'Scheduled', 'Still booked', 'Arrived', 'Cancelled', 'No-shows', 'No-show rate'], x => [x.practitioner, x.scheduled, x.booked, x.arrived, x.cancelled, x.noShows, pct(x.noShowRate)], 'visits')

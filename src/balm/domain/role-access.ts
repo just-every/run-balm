@@ -55,3 +55,12 @@ export async function locationState(db: D1Database, who: Actor, input: Data = {}
  const settings = await one(db,'SELECT clinic_name,time_zone FROM bm_settings WHERE id=1')
  return {actor:who,settings,staff:[],services:[],clients:[],appointments:[],invoices:[],drafts:[],location:{...location,from:range.from,to:range.to,appointments,counts}}
 }
+
+export async function locateHours(db:D1Database,who:Actor,input:Data){
+ human(who);need(who,'owner')
+ const parts=text(input.window,'hours_window',150).split('|')
+ insist(parts.length===3 && /^[0-6]$/.test(parts[1]) && /^\d{1,4}$/.test(parts[2]),'invalid_hours_window')
+ const location=text(input.locationId,'location',100)
+ await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_hours WHERE practitioner_id=? AND weekday=? AND start_minute=?) AND EXISTS(SELECT 1 FROM bm_locations WHERE id=? AND active=1)',parts[0],Number(parts[1]),Number(parts[2]),location),stmt(db,'INSERT INTO bm_hour_locations(practitioner_id,weekday,start_minute,location_id) VALUES(?,?,?,?) ON CONFLICT(practitioner_id,weekday,start_minute) DO UPDATE SET location_id=excluded.location_id',parts[0],Number(parts[1]),Number(parts[2]),location),audit(db,who,'hours.location_saved',null,parts[0])])
+ return {saved:true}
+}

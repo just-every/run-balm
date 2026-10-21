@@ -21,7 +21,10 @@ async function filters(db: D1Database, input: Data) {
   const practitionerId = input.practitionerId ? text(input.practitionerId, 'practitioner', 100) : ''
   const practitioners = await rows<Practitioner>(db, "SELECT id,name FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL AND (?='' OR id=?) ORDER BY name,id", practitionerId, practitionerId)
   insist(!practitionerId || practitioners.length, 'practitioner_not_found', 404)
-  return { ...range, practitionerId, practitioners }
+  const locationId=input.locationId?text(input.locationId,'location',100):''
+  const locations=await rows(db,'SELECT id,name FROM bm_locations ORDER BY name,id')
+  insist(!locationId||locationId==='unassigned'||locations.some(l=>l.id===locationId),'location_not_found',404)
+  return { ...range, practitionerId, practitioners,locationId,locations }
 }
 
 /** The owner's operational reports for one inclusive clinic-local date range. */
@@ -30,21 +33,23 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   insist(who.role === 'owner', 'role_cannot_do_this', 403)
   const f = await filters(db, input), ids = f.practitioners.map(p => p.id)
   const mine = (id: unknown) => ids.includes(String(id))
-  const visits = (await rows(db, `SELECT a.practitioner_id,a.service_id,a.start_at,a.end_at,a.status,s.name AS service FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id
-    WHERE julianday(a.start_at)>=julianday(?) AND julianday(a.start_at)<julianday(?) ORDER BY a.start_at,a.id`, f.start, f.end)).filter(v => mine(v.practitioner_id))
-  const evaluations = (await rows(db, `SELECT n.author_id,n.template FROM bm_notes n LEFT JOIN bm_appointments a ON a.id=n.appointment_id
+  const located=(value:unknown)=>!f.locationId||(f.locationId==='unassigned'?!value:value===f.locationId)
+  const locationOf=(appointment:string)=>`(SELECT l.location_id FROM bm_appointments v JOIN bm_room_locations l ON l.room_id=v.room_id WHERE v.id=${appointment})`
+  const visits = (await rows(db, `SELECT ${locationOf('a.id')} AS location_id,a.practitioner_id,a.service_id,a.start_at,a.end_at,a.status,s.name AS service FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id
+    WHERE julianday(a.start_at)>=julianday(?) AND julianday(a.start_at)<julianday(?) ORDER BY a.start_at,a.id`, f.start, f.end)).filter(v => mine(v.practitioner_id)&&located(v.location_id))
+  const evaluations = (await rows(db, `SELECT ${locationOf('n.appointment_id')} AS location_id,n.author_id,n.template FROM bm_notes n LEFT JOIN bm_appointments a ON a.id=n.appointment_id
     WHERE n.signed_at IS NOT NULL AND n.template LIKE '%.evaluation'
-    AND julianday(COALESCE(a.start_at,n.signed_at))>=julianday(?) AND julianday(COALESCE(a.start_at,n.signed_at))<julianday(?)`, f.start, f.end)).filter(n => mine(n.author_id))
+    AND julianday(COALESCE(a.start_at,n.signed_at))>=julianday(?) AND julianday(COALESCE(a.start_at,n.signed_at))<julianday(?)`, f.start, f.end)).filter(n => mine(n.author_id)&&located(n.location_id))
   const episodeOf = (kind: string, column: string) => `COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='${kind}' AND record_id=${column}),'') AS episode_id`
-  const plans = await rows(db, `SELECT id,client_id,author_id,json_extract(content,'$.startDate') AS start_date,
+  const plans = await rows(db, `SELECT (SELECT l.location_id FROM bm_notes n JOIN bm_appointments v ON v.id=n.appointment_id JOIN bm_room_locations l ON l.room_id=v.room_id WHERE n.id=bm_plans_of_care.note_id) AS location_id,id,client_id,author_id,json_extract(content,'$.startDate') AS start_date,
     json_extract(content,'$.frequencyPerWeek') AS per_week,json_extract(content,'$.durationWeeks') AS weeks,${episodeOf('plan', 'bm_plans_of_care.id')}
     FROM bm_plans_of_care WHERE json_extract(content,'$.startDate') BETWEEN ? AND ? OR EXISTS(SELECT 1 FROM bm_episode_records WHERE record_kind='plan' AND record_id=bm_plans_of_care.id)`, f.from, f.to)
   const planVisits = plans.length ? await rows(db, `SELECT client_id,practitioner_id,start_at,status,${episodeOf('visit', 'bm_appointments.id')} FROM bm_appointments WHERE status IN ('attended','booked')
     AND client_id IN (SELECT client_id FROM bm_plans_of_care)`) : []
-  const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours')
+  const hours = (await rows(db, 'SELECT h.*,(SELECT l.location_id FROM bm_hour_locations l WHERE l.practitioner_id=h.practitioner_id AND l.weekday=h.weekday AND l.start_minute=h.start_minute) AS location_id FROM bm_hours h')).filter(h=>located(h.location_id))
   const anonymous = await anonymousOperationalFacts(db, f)
-  visits.push(...anonymous.visits.filter(v => mine(v.practitioner_id)))
-  evaluations.push(...anonymous.evaluations.filter(n => mine(n.author_id)))
+  visits.push(...anonymous.visits.filter(v => mine(v.practitioner_id)&&located(v.location_id)))
+  evaluations.push(...anonymous.evaluations.filter(n => mine(n.author_id)&&located(n.location_id)))
   plans.push(...anonymous.plans)
   planVisits.push(...anonymous.planVisits)
 
@@ -97,7 +102,7 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   const episodes = new Map<string, Data[]>()
   for (const plan of plans) {
     if (plan.episode_id) { episodes.set(plan.episode_id, [...episodes.get(plan.episode_id) ?? [], plan]); continue }
-    if (plan.start_date < f.from || plan.start_date > f.to || !mine(plan.author_id)) continue
+    if (plan.start_date < f.from || plan.start_date > f.to || !mine(plan.author_id) || !located(plan.location_id)) continue
     const last = datePlus(plan.start_date, Number(plan.weeks) * 7 - 1), planned = Number(plan.per_week) * Number(plan.weeks)
     const theirs = planVisits.filter(v => !v.episode_id && v.client_id === plan.client_id && v.practitioner_id === plan.author_id)
     const attended = theirs.filter(v => v.status === 'attended' && (d => d >= plan.start_date && d <= last)(hostDateAt(new Date(v.start_at), f.zone))).length
@@ -106,7 +111,7 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   for (const [episode, list] of episodes) {
     const first = list.reduce((a, b) => b.start_date < a ? b.start_date : a, list[0].start_date as string)
     const latest = [...list].sort((a, b) => b.start_date.localeCompare(a.start_date) || String(b.id).localeCompare(String(a.id)))[0]
-    if (first < f.from || first > f.to || !mine(latest.author_id)) continue
+    if (first < f.from || first > f.to || !mine(latest.author_id) || !located(latest.location_id)) continue
     const theirs = planVisits.filter(v => v.episode_id === episode)
     tally(latest.author_id, theirs.filter(v => v.status === 'attended').length, Number(latest.per_week) * Number(latest.weeks), theirs.some(v => v.status === 'booked' && Date.parse(v.start_at) > now))
   }
@@ -125,7 +130,7 @@ export async function operationalReports(db: D1Database, who: Actor, input: Data
   const payrollList = [...payroll.values()].map(r => ({ ...r, practitioner: f.practitioners.find(p => p.id === r.practitionerId)!.name }))
     .sort((a, b) => a.practitioner.localeCompare(b.practitioner) || a.service.localeCompare(b.service))
   return {
-    from: f.from, to: f.to, timeZone: f.zone, practitionerId: f.practitionerId || null,
+    from: f.from, to: f.to, timeZone: f.zone, practitionerId: f.practitionerId || null,locationId:f.locationId||null,locations:f.locations,
     practitioners: (await rows<Practitioner>(db, "SELECT id,name FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name,id")),
     visits: { rows: visitList.map(withVisitRate), total: withVisitRate(total(visitList) as any) },
     plans: { rows: planList.map(withPlanRate), total: withPlanRate(total(planList) as any) },

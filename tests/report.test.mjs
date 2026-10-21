@@ -245,3 +245,38 @@ test('REF-001: three referrals entered with NPPES lookup, two scheduled and one 
   assert.ok(!calls.some(x=>Object.keys(x).some(k=>!['npi','version'].includes(k))))
  },{outbound:nppesRegistry(registry,calls)})
 })
+
+test('ROLE-002 REPORT-001: owner reports and CSVs split room locations, explicit hours, source-note plans and first-visit referrals',()=>run(async h=>{
+ await h.finishSetup()
+ const {service,practitioners:[priya,sam]}=await clinic(h,['Priya','Sam'])
+ const north=await h.cmd('location.save',{name:'North clinic'}),south=await h.cmd('location.save',{name:'South clinic'})
+ const nr=await h.cmd('room.save',{name:'North room'}),sr=await h.cmd('room.save',{name:'South room'})
+ await h.cmd('room.location',{roomId:nr.id,locationId:north.id});await h.cmd('room.location',{roomId:sr.id,locationId:south.id})
+ for(const [person,location] of [[priya,north],[sam,south]])for(let day=0;day<7;day++)await h.cmd('hours.location',{window:person.id+'|'+day+'|0',locationId:location.id})
+ const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'North'}),other=await h.cmd('client.save',{firstName:'Synthetic',lastName:'South'})
+ await h.cmd('episode.open',{clientId:patient.id,title:'Knee episode',start:'direct_access'})
+ const v1=await pastVisit(h,patient.id,priya,service.id,h.owner,2,{roomId:nr.id}),v2=await pastVisit(h,other.id,sam,service.id,h.owner,4,{roomId:sr.id})
+ for(const id of [v1,v2])await h.cmd('appointment.attend',{id})
+ const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:v1,template:'pt.evaluation',sections:{subjective:'Synthetic symptom',objective:'Synthetic findings',assessment:'Synthetic assessment',goals:'Synthetic goal',plan:'Synthetic plan',diagnosis:'M25.561'}},priya.cookie)
+ await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+ const visit=(await h.state()).appointments.find(a=>a.id===v1),date=new Date(Date.parse(visit.start_at)+10*3600000).toISOString().slice(0,10)
+ await h.cmd('plan.send',{clientId:patient.id,noteId:note.id,diagnoses:'M25.561',shortTermGoals:'Synthetic goal',longTermGoals:'Synthetic goal',frequencyPerWeek:1,durationWeeks:1,interventions:'Synthetic intervention',startDate:date,physicianName:'Synthetic Physician',physicianEmail:'physician@example.test',signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+ const to=new Date(Date.now()+10*3600000).toISOString().slice(0,10),from=new Date(Date.now()-7*86400000+10*3600000).toISOString().slice(0,10)
+ const query='from='+from+'&to='+to
+ const read=async locationId=>(await h.send('/api/balm/reports?'+query+'&locationId='+locationId,undefined,h.owner)).value
+ const n=await read(north.id),s=await read(south.id),u=await read('unassigned'),all=(await h.send('/api/balm/reports?'+query,undefined,h.owner)).value
+ assert.equal(n.visits.total.arrived,1);assert.equal(s.visits.total.arrived,1);assert.equal(u.visits.total.arrived,0);assert.equal(all.visits.total.arrived,2)
+ assert.equal(n.evaluations.total.total,1);assert.equal(s.evaluations.total.total,0)
+ assert.equal(n.plans.total.plans,1);assert.equal(s.plans.total.plans,0)
+ assert.equal(n.payroll.total.attendedVisits,1);assert.equal(s.payroll.total.attendedVisits,1)
+ assert.ok(n.utilization.total.availableMinutes>0);assert.equal(n.utilization.total.availableMinutes,s.utilization.total.availableMinutes)
+ assert.equal(n.referrals.total.received,1);assert.equal(s.referrals.total.received,0)
+ assert.ok(!JSON.stringify(n).includes('Synthetic North'))
+ for(const kind of ['visits','plans','evaluations','utilization','payroll','referrals']){
+  const csv=await h.send('/api/balm/reports/'+kind+'.csv?'+query+'&locationId='+north.id,undefined,h.owner)
+  assert.equal(csv.status,200);assert.ok(csvRows(csv.text).length>=2)
+ }
+ const page=await h.send('/app/reports?'+query+'&locationId='+north.id,undefined,h.owner)
+ assert.equal(page.status,200);assert.match(page.text,/name="locationId"/);assert.ok(page.text.includes('&amp;locationId='+north.id))
+ await h.cmd('room.location',{roomId:nr.id,locationId:south.id},h.owner,409)
+}))
