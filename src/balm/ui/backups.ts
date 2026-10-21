@@ -5,15 +5,17 @@
 import { check, field, form, h, panel, select, stamp, status, textarea } from './shared'
 
 const size = (bytes: unknown) => { const n = Number(bytes ?? 0); return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB' }
-const counts = (c: any) => c ? [`${c.clients ?? 0} clients`, `${c.visits ?? 0} visits`, `${c.notes ?? 0} notes`, `${c.invoices ?? 0} invoices`, `${c.audit ?? 0} audit entries`].join(', ') : ''
+const many = (n: unknown, one: string, plural = one + 's') => `${Number(n ?? 0)} ${Number(n ?? 0) === 1 ? one : plural}`
+const counts = (c: any) => c ? [many(c.clients, 'client'), many(c.visits, 'visit'), many(c.notes, 'note'), many(c.invoices, 'invoice'), many(c.audit, 'audit entry', 'audit entries')].join(', ') : ''
 const HOUR = 3_600_000
 
-/** 'ok' when the newest backup is within twice the chosen interval; otherwise why not. */
+/** 'ok' when the newest backup is within twice the chosen interval and the latest attempt did not fail; otherwise why not. */
 export function recoveryState(b: any, at = Date.now()) {
   if (!b?.saved) return { tone: 'none', label: 'Not backed up' }
   if (!b.recovery) return { tone: b.saved.enabled ? 'waiting' : 'paused', label: b.saved.enabled ? 'First backup pending' : 'Paused' }
   const age = at - Date.parse(b.recovery.recovery_point)
   if (!b.saved.enabled) return { tone: 'paused', label: 'Paused' }
+  if (b.runs[0]?.state === 'failed') return { tone: 'failing', label: 'Last attempt failed' }
   return age > 2 * b.saved.interval_hours * HOUR ? { tone: 'late', label: 'Backup overdue' } : { tone: 'ok', label: 'Backed up' }
 }
 
@@ -28,8 +30,8 @@ export function recoveryStrip(s: any) {
   if (!b || b.managed || s.actor.role !== 'owner') return ''
   const state = recoveryState(b), last = b.runs[0]
   if (state.tone === 'none') return '<div class="notice" role="status" data-recovery-point="none">Your clinic is not backed up automatically. <a href="/app/clinic#backups">Set up backups</a></div>'
-  const failing = last?.state === 'failed'
-  return `<div class="notice${state.tone === 'late' || failing ? ' error' : ''}" role="${failing ? 'alert' : 'status'}" data-recovery-point="${h(state.tone)}">${status(state.label)} ${point(s, b)}${failing ? ` · The latest attempt failed: ${h(last.error)}` : ''} <a href="/app/clinic#backups">Backups</a></div>`
+  const failing = state.tone === 'failing'
+  return `<div class="notice${state.tone === 'late' || failing ? ' error' : ''}" role="${failing ? 'alert' : 'status'}" data-recovery-point="${h(state.tone)}">${status(state.label)} ${point(s, b)}${failing ? ` · ${h(last.error)}` : ''} <a href="/app/clinic#backups">Backups</a></div>`
 }
 
 function runsTable(s: any, b: any) {

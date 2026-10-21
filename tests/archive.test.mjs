@@ -262,7 +262,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     // A storage outage is shown on the dashboard and retried after a pause, never silently dropped.
     bucket.state.refuse = 503
     await tick(first + 50 * 3_600_000)
-    assert.ok(/role="alert"[^>]*data-recovery-point="ok"[\s\S]*latest attempt failed/.test((await h.send('/app', undefined, h.owner)).text), 'a failed backup is shown on the dashboard')
+    assert.ok(/role="alert"[^>]*data-recovery-point="failing"[\s\S]*refused by the storage/.test((await h.send('/app', undefined, h.owner)).text), 'a failed backup is shown on the dashboard')
     await tick(first + 50 * 3_600_000 + 5 * 60_000)
     assert.equal((await h.state()).backups.runs.filter(r => r.state === 'failed').length, 1, 'a failed backup waits before it is retried')
     bucket.state.refuse = 0
