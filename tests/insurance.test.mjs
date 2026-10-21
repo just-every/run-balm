@@ -216,7 +216,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
   await run(async h => {
     const base = await setup(h), service = (await h.state()).services[0]
     await h.cmd('settings.save', { clinicName: 'Riverside Therapy', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '100 Main St, Austin TX 78701' })
-    for (const [method, expectedUnits, expectedCents] of [['cms', [1, 0], 3500], ['ama', [1, 1], 6000]]) {
+    for (const [method, expectedUnits, expectedCents] of [['cms', [0, 1], 2500], ['ama', [1, 1], 6000]]) {
       const payer = await h.cmd('insurance.payer.save', { name: method.toUpperCase() + ' Health', payerId: method.toUpperCase(), unitMethod: method, fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
       await h.cmd('insurance.enrollment.save', { payerId: payer.id, practitionerId: base.priya.id, taxonomy: '225100000X', active: true })
       const patient = await h.cmd('client.save', { firstName: 'Elena', lastName: method, dateOfBirth: '1975-03-04' })
@@ -225,6 +225,22 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       await h.cmd('appointment.attend', { id: visit })
       const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Reviewed therapeutic exercise and manual therapy.', charges: [{ code: '97110', minutes: 8 }, { code: '97140', minutes: 8 }] }, base.priya.cookie)
       const preview = async () => (await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id).billing
+      let signingRevision = 1
+      if (method === 'cms') {
+        assert.equal((await preview()).cmsTie.resolved, false, 'a CMS boundary tie is provisional until the clinician chooses')
+        const unresolved = await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya Shah', attest: true }, base.priya.cookie, 400)
+        assert.match(unresolved.error, /Choose exactly 1.*97110, 97140/)
+        await h.cmd('note.amend', { id: note.id, revision: 1, body: 'Reviewed treatment.', charges: [{ code: '97110', minutes: 8, cmsTieChosen: 'guess' }] }, base.priya.cookie, 400)
+        await h.cmd('note.amend', { id: note.id, revision: 1, body: 'Reviewed treatment.', charges: [{ code: '97161', minutes: 0, cmsTieChosen: true }] }, base.priya.cookie, 400)
+        await h.cmd('note.amend', { id: note.id, revision: 1, body: 'Reviewed treatment.', charges: [{ code: '97110', minutes: 8, cmsTieChosen: true }, { code: '97140', minutes: 8, cmsTieChosen: true }] }, base.priya.cookie)
+        await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya Shah', attest: true }, base.priya.cookie, 400)
+        // The actual edit form records the clinician's choice of the second code.
+        const saved = await h.form('/app/action?name=note.amend&returnTo=' + encodeURIComponent('/app/clients/' + patient.id), { id: note.id, revision: '2', body: 'Reviewed therapeutic exercise and manual therapy.', charge_code_0: '97110', charge_minutes_0: '8', charge_code_1: '97140', charge_minutes_1: '8', charge_cms_tie_1: 'on' }, base.priya.cookie)
+        assert.equal(saved.status, 303)
+        signingRevision = 3
+        assert.deepEqual((await preview()).cmsTie.selected, ['97140'])
+        assert.equal((await preview()).cmsTie.resolved, true)
+      }
       const draft = await preview()
       assert.deepEqual(draft.lines.map(l => l.units), expectedUnits, 'draft units follow the covering primary payer')
       assert.equal(draft.timedUnits, expectedUnits.reduce((a, b) => a + b, 0))
@@ -233,7 +249,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       // A covering secondary policy must not change the primary preview.
       await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: base.payer.id, priority: 2, memberId: method + '-secondary', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
       assert.deepEqual((await preview()).lines.map(l => l.units), expectedUnits)
-      await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya Shah', attest: true }, base.priya.cookie)
+      await h.cmd('note.sign', { id: note.id, revision: signingRevision, signature: 'Priya Shah', attest: true }, base.priya.cookie)
       assert.deepEqual((await preview()).lines, draft.lines, 'signing keeps the same primary-payer calculation')
       await h.cmd('pay.codes.save', { appointmentId: visit, cpt: '97110 GP, 97140 GP', icd10: 'M25.561' })
       const invoice = await h.cmd('invoice.prepare', { appointmentId: visit })
@@ -249,7 +265,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       const superbill = await h.send(`/api/balm/superbills/${invoice.id}.pdf`, undefined, h.owner)
       assert.equal(superbill.status, 200, superbill.text)
       assert.ok(superbill.text.includes(method === 'ama' ? 'AMA/CPT per-service' : 'CMS 8-minute rule'))
-      if (method === 'cms') assert.ok(!superbill.text.includes('97140'), 'zero-unit procedures are not billed on a superbill')
+      if (method === 'cms') assert.ok(!superbill.text.includes('97110'), 'zero-unit procedures are not billed on a superbill')
       const date = await visitDate(h, visit)
       assert.equal((await h.send(`/api/balm/period-superbills/${patient.id}.pdf?from=${date}&to=${date}`, undefined, h.owner)).status, 200)
       const claim = await h.cmd('insurance.claim.prepare', { appointmentId: visit, policyId: policy.id })
@@ -258,9 +274,9 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       assert.equal(claim.snapshot.payer.unitMethod, method)
       const batch = await h.cmd('insurance.batch.prepare', { claimIds: [claim.id] })
       const x12 = await h.send(`/api/balm/insurance/837P/${batch.id}`, undefined, h.owner)
-      assert.match(x12.text, /SV1\*HC:97110:GP\*35.00\*UN\*1/)
-      if (method === 'ama') assert.match(x12.text, /SV1\*HC:97140:GP\*25.00\*UN\*1/)
-      else assert.doesNotMatch(x12.text, /SV1\*HC:97140/)
+      assert.match(x12.text, /SV1\*HC:97140:GP\*25.00\*UN\*1/)
+      if (method === 'ama') assert.match(x12.text, /SV1\*HC:97110:GP\*35.00\*UN\*1/)
+      else assert.doesNotMatch(x12.text, /SV1\*HC:97110/)
       // Later payer settings cannot rewrite issued invoice bytes or superbill units.
       await h.cmd('insurance.payer.save', { id: payer.id, name: 'Changed Health', payerId: method.toUpperCase(), unitMethod: method === 'cms' ? 'ama' : 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
       assert.equal((await h.send(`/api/balm/invoices/${invoice.id}.html`, undefined, h.owner)).text, original.text)
@@ -270,7 +286,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     }
     const cash = await h.cmd('client.save', { firstName: 'Avery', lastName: 'Self-pay', dateOfBirth: '1980-04-02' })
     const cashVisit = await pastVisit(h, cash.id, base.priya, service.id, h.owner, 11)
-    const cashNote = await h.cmd('note.write', { clientId: cash.id, appointmentId: cashVisit, body: 'Synthetic self-pay treatment.', charges: [{ code: '97110', minutes: 10 }, { code: '97140', minutes: 8 }, { code: '97161', minutes: 0 }] }, base.priya.cookie)
+    const cashNote = await h.cmd('note.write', { clientId: cash.id, appointmentId: cashVisit, body: 'Synthetic self-pay treatment.', charges: [{ code: '97110', minutes: 10 }, { code: '97140', minutes: 8, cmsTieChosen: true }, { code: '97161', minutes: 0 }] }, base.priya.cookie)
     let cashPreview = (await patientFile(h, cash.id, base.priya.cookie)).notes.find(n => n.id === cashNote.id).billing
     assert.deepEqual(cashPreview.lines.map(l => l.units), [1, 0, 1], 'cash uses pooled CMS timed minutes and one untimed unit')
     assert.equal(cashPreview.timedMinutes, 18)
@@ -296,6 +312,18 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     const later = new Date(Date.parse(date + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)
     await h.cmd('insurance.policy.save', { id: policy.id, clientId: cash.id, payerId: unknown.id, memberId: 'pending-method', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', startsOn: later, endsOn: later })
     assert.equal((await patientFile(h, cash.id, base.priya.cookie)).notes.find(n => n.id === cashNote.id).billing.payerId, null)
+    // A tied boundary can have more than one remaining unit. Choose exactly two
+    // out of three equal remainders, while preserving the first code's whole unit.
+    const boundaryVisit = await pastVisit(h, cash.id, base.priya, service.id, h.owner, 20)
+    const boundaryCharges = [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 8, cmsTieChosen: true }, { code: '97530', minutes: 8, cmsTieChosen: true }]
+    const boundary = await h.cmd('note.write', { clientId: cash.id, appointmentId: boundaryVisit, body: 'Synthetic three-code CMS treatment.', charges: boundaryCharges }, base.priya.cookie)
+    const boundaryPreview = (await patientFile(h, cash.id, base.priya.cookie)).notes.find(n => n.id === boundary.id).billing
+    assert.deepEqual(boundaryPreview.lines.map(l => l.units), [1, 1, 1])
+    assert.deepEqual(boundaryPreview.cmsTie.selected, ['97140', '97530'])
+    assert.equal(boundaryPreview.cmsTie.units, 2)
+    await h.cmd('note.sign', { id: boundary.id, revision: 1, signature: 'Priya Shah', attest: true }, base.priya.cookie)
+    await h.cmd('note.amend', { id: boundary.id, revision: 1, body: 'Attempted changed choice', charges: boundaryCharges.map(c => ({ code: c.code, minutes: c.minutes })) }, base.priya.cookie, 409)
+
 
     // INS-001 / CHART-006: positive whole-minute thresholds count each code
     // independently, and zero-unit signed codes remain named scrubber errors.

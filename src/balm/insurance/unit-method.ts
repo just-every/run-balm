@@ -1,4 +1,4 @@
-import { bill, cpt, type Charge } from '../charting/cpt'
+import { bill, cpt, type Charge, type Billing } from '../charting/cpt'
 import { hostDateAt } from '../availability/timezone'
 import { insist, one } from '../domain/model'
 
@@ -14,16 +14,16 @@ export async function primaryUnitMethod(db: D1Database, clientId: string, servic
 /** The same per-service AMA or pooled CMS calculation for previews and charges.
  * An unconfigured payer retains a labelled provisional CMS estimate; the claim
  * scrubber still refuses submission until the owner chooses the payer method. */
-export function payerBilling(charges: Charge[], method: string | null, fixedUnitMinutes?: number | null) {
+export function payerBilling(charges: Charge[], method: string | null, fixedUnitMinutes?: number | null): Billing {
   if (fixedUnitMinutes != null || method === 'fixed') {
     insist(Number.isSafeInteger(fixedUnitMinutes) && fixedUnitMinutes! > 0, 'invalid_fixed_unit_minutes')
     const lines = charges.map(c => ({ ...cpt(c.code)!, minutes: c.minutes, units: cpt(c.code)!.timed ? Math.floor(c.minutes / fixedUnitMinutes!) : 1 }))
-    return { lines, timedMinutes: lines.filter(l => l.timed).reduce((sum, l) => sum + l.minutes, 0), timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
+    return { lines, cmsTie: null, timedMinutes: lines.filter(l => l.timed).reduce((sum, l) => sum + l.minutes, 0), timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
   }
   const cms = bill(charges)
   if (method !== 'ama') return cms
   const lines = charges.map(c => ({ ...cpt(c.code)!, minutes: c.minutes, units: cpt(c.code)!.timed ? Math.floor((c.minutes + 7) / 15) : 1 }))
-  return { lines, timedMinutes: cms.timedMinutes, timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
+  return { lines, cmsTie: null, timedMinutes: cms.timedMinutes, timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
 }
 
 /** Shared document wording uses the frozen threshold in each issued snapshot. */

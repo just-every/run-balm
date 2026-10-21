@@ -4,6 +4,7 @@
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
 import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
+import { payerBilling, primaryUnitMethod } from '../insurance/unit-method'
 import { audit, commit, guard, human, id, insist, now, one, practitionerId, sha256, stmt, text, type Actor, type Data } from './model'
 
 const same = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -51,9 +52,15 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
   const alerts = note.appointment_id ? await documentationAlerts(db, note.appointment_id, latest, note.template) : []
   const missing = alerts.find(a => a.blocking)
   insist(!missing, missing?.message ?? 'complete_required_documentation')
+  const basis = await primaryUnitMethod(db, note.client_id as string, (visit?.start_at ?? note.created_at) as string)
+  const billing = payerBilling(JSON.parse(latest.charges as string || '[]'), basis.method, basis.fixedUnitMinutes)
+  if ('cmsTie' in billing && billing.cmsTie && !billing.cmsTie.resolved) {
+    insist(false, `Choose exactly ${billing.cmsTie.units} tied CMS code${billing.cmsTie.units === 1 ? '' : 's'} before signing: ${billing.cmsTie.codes.join(', ')}`)
+  }
   const by = signer(staff, input), signedAt = now()
   const digest = await signedDigest(note, latest, sections, by, signedAt)
   await commit(db, who, [
+    ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_policies)=?', policyVersion!.total),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)', note.id, latest.number),

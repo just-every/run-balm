@@ -24,14 +24,17 @@ const clean = (value: unknown, field: string, max: number) => {
 /** Charges as JSON [{code, minutes}] or the form's charge_code_N / charge_minutes_N rows. */
 export function charges(input: Data): Charge[] {
   const raw: Data[] = Array.isArray(input.charges) ? input.charges
-    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`] })).filter(c => c.code)
+    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`] })).filter(c => c.code)
   insist(raw.length <= 12, 'too_many_cpt_codes')
   const list = raw.map(c => {
     const code = cpt(String(c?.code ?? '').trim())
     insist(code, 'unknown_cpt_code')
     const minutes = c.minutes === undefined || c.minutes === '' ? 0 : integer(c.minutes, 'cpt_minutes', 0, 480)
     if (code.timed) insist(minutes > 0, 'enter_minutes_for_each_timed_code')
-    return { code: code.code, minutes }
+    insist([undefined, null, '', false, true, 'on'].includes(c.cmsTieChosen), 'invalid_cms_tie_choice')
+    const selected = c.cmsTieChosen === true || c.cmsTieChosen === 'on'
+    insist(!selected || code.timed, 'cms_tie_choice_requires_a_timed_code')
+    return { code: code.code, minutes, ...(selected ? { cmsTieChosen: true as const } : {}) }
   })
   insist(new Set(list.map(c => c.code)).size === list.length, 'cpt_code_listed_twice')
   return list

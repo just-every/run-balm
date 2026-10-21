@@ -24,7 +24,7 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
   insist(row, 'appointment_not_found', 404)
   // Freeze the same payer method and signed units used by pricing and claims.
   const billing = await visitBilling(db, appointmentId)
-  const procedures = (billing?.lines ?? []).map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units }))
+  const procedures = (billing?.lines ?? []).map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units, ...(l.cmsTieChosen ? { cmsTieChosen: true } : {}) }))
   return { row, value: {
     clinic: { name: row.clinic_name, abn: row.abn, taxIdType: row.tax_id_type, practiceNpi: row.practice_npi, address: row.address },
     client: { name: `${row.first_name} ${row.last_name}`, dateOfBirth: row.date_of_birth },

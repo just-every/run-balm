@@ -16,7 +16,7 @@ export const templateSelect = (name: string, label: string, current: string) => 
 
 function chargeRows(charges: any[]) {
   const options = (value: string) => `<option value="">No code</option>${codes.map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
-  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div>`).join('')}</fieldset>`
+  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>`).join('')}</fieldset>`
 }
 
 function sectionFields(t: any, values: Record<string, string>) {
@@ -27,14 +27,17 @@ function sectionFields(t: any, values: Record<string, string>) {
 export function billing(b: any) {
   if (!b?.lines?.length) return ''
   const method = b.method === 'fixed' ? `Fixed ${b.fixedUnitMinutes}-minute threshold` : b.method === 'ama' ? 'AMA/CPT per-service' : b.method === null ? 'CMS estimate; payer method not selected' : '8-minute rule'
-  return `<div class="table"><table class="units"><thead><tr><th>CPT</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${b.lines.map((l: any) => `<tr><td>${h(l.code)}</td><td>${h(l.description)}</td><td>${l.timed ? h(l.minutes) : 'untimed'}</td><td>${h(l.units)}</td></tr>`).join('')}</tbody></table></div>`
+  const tie = b.cmsTie ? `<p class="${b.cmsTie.resolved ? 'help' : 'notice'}">${b.cmsTie.resolved ? 'Recorded CMS tie choice: ' + h(b.cmsTie.selected.join(', ')) : 'Provisional units. Choose exactly ' + b.cmsTie.units + ' of the tied codes (' + h(b.cmsTie.codes.join(', ')) + ') in Edit draft before signing.'}</p>` : ''
+  return tie + `<div class="table"><table class="units"><thead><tr><th>CPT</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${b.lines.map((l: any) => `<tr><td>${h(l.code)}</td><td>${h(l.description)}</td><td>${l.timed ? h(l.minutes) : 'untimed'}</td><td>${h(l.units)}</td></tr>`).join('')}</tbody></table></div>`
     + `<p class="billed"><strong>${b.timedMinutes ? `${h(method)} · ${b.timedMinutes} timed min · ${b.timedUnits} ${b.timedUnits === 1 ? 'unit' : 'units'}` : 'No timed minutes'}</strong> · ${b.units} ${b.method === null ? 'estimated' : 'billed'} ${b.units === 1 ? 'unit' : 'units'} in all</p>`
     + `<p class="help">Current primary-payer preview${b.payer ? ' for ' + h(b.payer) : ' for a cash visit'}. Issued invoices keep their original units and payer settings.</p>`
 }
 
 function content(r: any) {
-  if (!r.sections) return `<div class="note">${h(r.body)}</div>`
-  return `<dl class="answers">${r.sections.map((s: any) => `<dt>${h(s.label)}</dt><dd>${s.text ? h(s.text) : '<span class="help">Not written</span>'}</dd>`).join('')}</dl>`
+  const choice = (r.charges ?? []).filter((c: any) => c.cmsTieChosen).map((c: any) => c.code)
+  const recorded = choice.length ? `<p class="help">Recorded CMS tie preference: ${h(choice.join(', '))}. Used only for equal timed remainders.</p>` : ''
+  if (!r.sections) return recorded + `<div class="note">${h(r.body)}</div>`
+  return recorded + `<dl class="answers">${r.sections.map((s: any) => `<dt>${h(s.label)}</dt><dd>${s.text ? h(s.text) : '<span class="help">Not written</span>'}</dd>`).join('')}</dl>`
 }
 
 const me = (s: any) => (s.staff ?? []).find((x: any) => x.id === s.actor.staffId) ?? {}
