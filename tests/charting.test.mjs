@@ -713,8 +713,12 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  await h.cmd('note.amend',{id:note.id,body:'Changed',revision:1},student.cookie,409)
  await h.cmd('note.cosign',{...signature,signature:'Cover',credentials:'PT'},cover.cookie,404)
  await h.cmd('note.return',{id:note.id,reason:'Clarify skilled intervention'},priya.cookie)
+ assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).status,404,'return revokes submission-only access before the author edits')
  await h.cmd('note.amend',{id:note.id,revision:1,body:'Skilled student intervention with feedback',charges:[{code:'97110',minutes:30}]},student.cookie)
  await h.cmd('note.submit',{...signature,revision:2},student.cookie)
+ const exact=(await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value
+ assert.deepEqual(exact.notes[0].revisions.map(r=>r.number),[2],'supervisor receives the submitted revision only')
+ assert.equal(exact.client.email,undefined);assert.equal(exact.client.date_of_birth,undefined);assert.deepEqual(exact.episodes,[])
  const raced=await Promise.all([1,2].map(()=>h.send('/api/balm/command',{name:'note.cosign',input:{id:note.id,revision:2,signature:'Priya Supervisor',credentials:'PT, DPT',attest:true}},priya.cookie)))
  assert.deepEqual(raced.map(r=>r.status).sort(),[200,409])
  file=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value

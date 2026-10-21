@@ -101,6 +101,10 @@ export async function actor(db: D1Database, operatorId: string, agent = false): 
     if (agent) return { ...base, role: 'agent' }
     return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, ...scope, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility } : {}) }
   }
+  if (!agent && !staff) {
+    const previous = await one(db,'SELECT COALESCE(a.kind,s.role) AS kind FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE lower(s.email)=lower(?)',operator.email)
+    await commit(db,null,[audit(db,{email:operator.email,role:String(previous?.kind ?? 'inactive staff')},'access.refused',null,null,'inactive staff access refused')])
+  }
   insist(!agent && staff, 'active_staff_required', 403)
   return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, ...scope, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility }
 }

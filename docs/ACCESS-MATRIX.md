@@ -1,6 +1,6 @@
 # Staff access
 
-The owner assigns and revokes each job in **Clinic → Staff**. Job changes and deactivation take effect on the next request, including an existing session. A command checks the staff version again in its write transaction. Refusals are audited without submitted clinical text.
+The owner assigns and revokes each job in **Clinic → Staff**. Job changes and deactivation take effect on the next request, including an existing session. A command checks the staff version again in its write transaction. Refusals are audited without submitted clinical text, including an inactive staff session. The owner downloads the latest access refusals from Clinic → Staff.
 
 | Job | Reads | Writes |
 | --- | --- | --- |
@@ -9,7 +9,7 @@ The owner assigns and revokes each job in **Clinic → Staff**. Job changes and 
 | Reception | Clinic calendar, administrative files and billing; no note text, clinical intake or chart search | Existing reception work; no owner administration or clinical signatures |
 | Biller | Administrative patient files, invoices, signed charge facts, claims and financial reports/CSVs; no note text, intake answers, chart document metadata, operational reports or owner settings | Invoices and recorded payments; exact-digest adjustment/credit/refund preparation and approval; patient payment links/plans/reminders; coverage, authorization, eligibility, claim, batch, acknowledgment, remittance and recognized-expense billing commands. No clinical attestations, calendar writes, patient identity changes or configuration |
 | PTA/COTA/SLPA assistant, student, clinical fellow | Their own calendar and treating-patient files, with existing clinical read audits | Own note drafts, revisions and objective measures; author signature submitted to a named licensed supervisor. An explicit documentation review uses the already configured clinic model and includes the supervision rule. No independent final signature, clinical addendum, billing, emergency opening, calendar write or administration |
-| Supervisor | Practitioner access plus the exact notes submitted to them and their review history. Submission alone grants no other patient-file access | Own practitioner work; co-sign or return their named submissions. No editing another author's revision |
+| Supervisor | Practitioner access plus the exact notes submitted to them and their review history. Submission alone grants no other patient-file access or contact/demographic details. Returning the note revokes that access until the author submits again | Own practitioner work; co-sign or return their named submissions. No editing another author's revision |
 | Location manager | Read-only schedule and visit-count reports for the one assigned location; each named patient audited | None; every command except sign-out is refused |
 
 New commands default to refusal for billers, supervised staff and location managers until explicitly included. Agent keys keep their existing preparation-only permissions and never become staff.

@@ -16,7 +16,7 @@ import { referralCommand } from './referrals'
 import { saveCapacity } from './scheduling/capacity'
 import { bookedIntake } from './domain/intake-requests'
 import { saveClientAlert, alertsFor } from './domain/alerts'
-import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv } from './domain/disclosures'
+import { recordDisclosure, disclosuresFor, disclosureReport, accessReport, reportCsv, csvCell } from './domain/disclosures'
 import { calendarFeed, feedCommand, feedState } from './domain/calendar-feed'
 import { uploadText } from './movein/upload'
 import { bundleCommand, bundleJobs, importedForClient } from './movein/bundle'
@@ -467,6 +467,13 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
       }
       if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path === '/app/reports' ? path + url.search : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
+      if (path === '/api/balm/access-refusals' || path === '/api/balm/access-refusals.csv') {
+        human(who);insist(who.role==='owner','only_the_owner_reads_access_refusals',403)
+        const found=(await env.DB.prepare("SELECT sequence,at,actor_email,actor_role,action,detail FROM bm_audit WHERE action='access.refused' ORDER BY sequence DESC LIMIT 500").all()).results
+        await commit(env.DB,who,[audit(env.DB,who,'access.refusals_read',null)])
+        if(path.endsWith('.csv')){const columns=['at','actor_email','actor_role','action','detail'];const cell=csvCell;return new Response([columns.map(cell).join(','),...found.map(row=>columns.map(k=>cell(row[k])).join(','))].join('\r\n')+'\r\n',{headers:{...headers,'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="balm-access-refusals.csv"'}})}
+        return json(found)
+      }
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/cases') return json(await caseList(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })

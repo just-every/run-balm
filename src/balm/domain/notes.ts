@@ -1,4 +1,4 @@
-import { pendingSubmission } from './supervision'
+import { pendingSubmission, supervisorReadSql } from './supervision'
 import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // Notes keep immutable revisions, as Willow keeps document versions
 // (src/willow/documents.ts, just-every/run-willow @ 5b116db): every save of a
@@ -147,23 +147,25 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const author = practitionerId(who)
   if (who.role !== 'owner' && !author) return null
   const access = await noteAccess(db, who, clientId)
-  const notes = await rows(db, `SELECT n.*,s.name AS author_name,COALESCE(v.start_at,n.created_at) AS visit_at FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id LEFT JOIN bm_appointments v ON v.id=n.appointment_id WHERE n.client_id=? AND (?=1 OR n.author_id=? OR EXISTS(SELECT 1 FROM bm_note_submissions u WHERE u.note_id=n.id AND u.supervisor_id=?)) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '', author ?? '')
+  const notes = await rows(db, `SELECT n.*,s.name AS author_name,COALESCE(v.start_at,n.created_at) AS visit_at FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id LEFT JOIN bm_appointments v ON v.id=n.appointment_id WHERE n.client_id=? AND (?=1 OR n.author_id=? OR ${supervisorReadSql('n')}) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '', author ?? '')
   if (!notes.length) return []
   const marks = notes.map(() => '?').join(',')
   const revisions = await rows(db, `SELECT * FROM bm_note_revisions WHERE note_id IN (${marks}) ORDER BY number DESC`, ...notes.map(n => n.id))
   const addenda = await rows(db, `SELECT * FROM bm_note_addenda WHERE note_id IN (${marks}) ORDER BY written_at`, ...notes.map(n => n.id))
   const measures = await measuresOf(db, notes.map(n => n.id as string))
   return Promise.all(notes.map(async n => {
-    const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
+    const reviewOnly = !access.all && n.author_id !== author
+    const submitted = reviewOnly ? await rows(db,`SELECT s.revision FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND s.supervisor_id=? AND (r.decision IS NULL OR r.decision='cosigned')`,n.id,author ?? '') : []
+    const own = revisions.filter(r => r.note_id === n.id && (!reviewOnly || submitted.some(s=>s.revision===r.number))).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
     const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
-    const submissions = await rows(db,`SELECT s.*,r.decision,r.reason FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? ORDER BY s.submitted_at DESC`,n.id)
+    const submissions = await rows(db,`SELECT s.*,r.decision,r.reason FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND (? OR s.supervisor_id=?) ORDER BY s.submitted_at DESC`,n.id,reviewOnly?0:1,author ?? '')
     const pending = submissions.find(s=>!s.decision)
-    return { submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
+    return { supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
-      defensibility: parse((await one(db, 'SELECT result FROM bm_note_checks WHERE note_id=? ORDER BY checked_at DESC,id DESC LIMIT 1', n.id))?.result),
+      defensibility: parse((await one(db, 'SELECT result FROM bm_note_checks WHERE note_id=? AND (? OR revision=?) ORDER BY checked_at DESC,id DESC LIMIT 1', n.id,reviewOnly?0:1,own[0]?.number ?? -1))?.result),
       billing: { ...payerBilling(own[0]?.charges ?? [], basis.method, basis.fixedUnitMinutes), ...basis }, revisions: own, measures: measures.filter(m => m.note_id === n.id),
-      addenda: addenda.filter(a => a.note_id === n.id).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
+      addenda: addenda.filter(a => a.note_id === n.id && !reviewOnly).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
   }))
 }

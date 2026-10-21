@@ -460,9 +460,13 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
   assert.equal((await h.send('/api/balm/clients/'+hidden.id,undefined,trainee.cookie)).status,404)
   for(const path of ['/app/clinic','/api/balm/reports/financial','/api/balm/chart-documents/missing']) assert.equal((await h.send(path,undefined,trainee.cookie)).status,403)
  }
- const audit=(await h.db.prepare("SELECT actor_email,actor_role,detail FROM bm_audit WHERE action='access.refused'").all()).results
+ const audit=(await h.send('/api/balm/access-refusals',undefined,h.owner)).value
  for(const member of [biller,manager]) assert.ok(audit.some(a=>a.actor_email===member.email && a.actor_role===member.role))
  assert.ok(audit.some(a=>a.actor_role==='student'));assert.ok(audit.some(a=>a.actor_role==='assistant'));assert.ok(audit.some(a=>a.actor_role==='fellow'))
  await h.cmd('staff.save',{id:biller.id,name:'Billing',email:biller.email,role:'biller',active:false})
  await h.state(biller.cookie,403)
+ const refused=(await h.send('/api/balm/access-refusals',undefined,h.owner)).value
+ assert.ok(refused.some(a=>a.actor_email===biller.email&&a.detail==='inactive staff access refused'))
+ assert.equal((await h.send('/api/balm/access-refusals.csv',undefined,h.owner)).status,200)
+ assert.equal((await h.send('/api/balm/access-refusals',undefined,priya.cookie)).status,403)
 }))

@@ -25,3 +25,6 @@ export async function returnNote(db:D1Database,who:Actor,input:Data) {
  await commit(db,who,[stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by) VALUES(?,'returned',?,?,?)",pending.id,reason,now(),who.email),audit(db,who,'note.returned',note.client_id,note.id)])
  return {id:note.id,returned:true}
 }
+
+/** A returned draft grants no continuing chart access; care-team grants remain separate. */
+export const supervisorReadSql=(noteAlias:string)=>`EXISTS(SELECT 1 FROM bm_note_submissions u LEFT JOIN bm_note_reviews v ON v.submission_id=u.id WHERE u.note_id=${noteAlias}.id AND u.supervisor_id=? AND (v.decision IS NULL OR v.decision='cosigned'))`

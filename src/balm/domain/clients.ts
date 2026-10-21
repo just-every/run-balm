@@ -1,3 +1,4 @@
+import { supervisorReadSql } from './supervision'
 import { phoneNumber } from './us-clinic'
 // Client-file access adapted from Satchel's matter membership (src/satchel/matters.ts,
 // just-every/run-satchel @ 2d460e4): the owner and reception see every file, a
@@ -32,7 +33,7 @@ export async function clientVisible(db: D1Database, who: Actor, key: unknown) {
 export async function chartClient(db: D1Database, who: Actor, key: unknown) {
   try { return await clientVisible(db, who, key) } catch (error) {
     const client = await one(db, 'SELECT * FROM bm_clients WHERE id=? AND erased_at IS NULL', text(key, 'client', 100))
-    if (client && (await careTeamOnly(db, who, client.id as string) || await one(db,'SELECT 1 FROM bm_note_submissions s JOIN bm_notes n ON n.id=s.note_id WHERE n.client_id=? AND s.supervisor_id=?',client.id,practitionerId(who) ?? ''))) return client
+    if (client && (await careTeamOnly(db, who, client.id as string) || await one(db,'SELECT 1 FROM bm_notes n WHERE n.client_id=? AND '+supervisorReadSql('n'),client.id,practitionerId(who) ?? ''))) return client
     throw error
   }
 }
@@ -119,7 +120,7 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
     ...(intake ?? []).map(r => audit(db, who, 'intake.read', client.id as string, r.id as string)),
     ...(notes ?? []).map(n => who.role === 'owner' || n.mine ? audit(db, who, 'note.read', client.id as string, n.id as string, `revisions ${n.revisions.length}`)
       : access.breakGlass ? audit(db, who, 'note.break_glass_read', client.id as string, n.id as string, `break glass: ${access.breakGlass.reason}`)
-      : audit(db, who, 'note.read', client.id as string, n.id as string, `care team grant; revisions ${n.revisions.length}`)),
+      : audit(db, who, 'note.read', client.id as string, n.id as string, `${n.supervisorRead ? 'named supervisor; submitted revisions' : 'care team grant; revisions'} ${n.revisions.length}`)),
     ...plans.filter(p => p.content).map(p => audit(db, who, 'plan.read', client.id as string, p.id as string)),
   ])
   // CHART-005: series and progress changes are built only from the notes this reader reaches.
@@ -127,9 +128,10 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesInEpisode(measures, n)])) : null
   const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
   const referrals = teamOnly || who.role === 'agent' ? null : await referralsFor(db, client.id as string, (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string)
-  const visibleClient = { ...client }
+  const supervisionOnly = teamOnly && !access.all
+  const visibleClient: Data = supervisionOnly ? {id:client.id,first_name:client.first_name,last_name:client.last_name} : { ...client }
   if (!all) delete visibleClient.copay_cents
-  return { client: visibleClient, careAccess: { ...access, teamOnly },  appointments: visibleAppointments, episodes: episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  return { client: visibleClient, careAccess: { ...access, teamOnly, supervisionOnly },  appointments: visibleAppointments, episodes: supervisionOnly ? [] : episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 
