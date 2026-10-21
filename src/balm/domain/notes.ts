@@ -5,7 +5,8 @@ import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // a discipline template keeps its sections and CPT minutes per revision; signing
 // locks it (src/balm/domain/signing.ts) and later changes are addenda.
 import { documentationAlerts, documentationInput, type Documentation } from '../charting/compliance'
-import { bill, cpt, type Charge } from '../charting/cpt'
+import { cpt, type Charge } from '../charting/cpt'
+import { payerBilling, primaryUnitMethod } from '../insurance/unit-method'
 import { template, type Template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, integer, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
 import { clientVisible } from './clients'
@@ -131,12 +132,13 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const measures = await measuresOf(db, notes.map(n => n.id as string))
   return Promise.all(notes.map(async n => {
     const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
+    const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
     return { id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
       defensibility: parse((await one(db, 'SELECT result FROM bm_note_checks WHERE note_id=? ORDER BY checked_at DESC,id DESC LIMIT 1', n.id))?.result),
-      billing: bill(own[0]?.charges ?? []), revisions: own, measures: measures.filter(m => m.note_id === n.id),
+      billing: { ...payerBilling(own[0]?.charges ?? [], basis.method), ...basis }, revisions: own, measures: measures.filter(m => m.note_id === n.id),
       addenda: addenda.filter(a => a.note_id === n.id).map(a => ({ id: a.id, body: a.body, writtenAt: a.written_at, name: a.signer_name, credentials: a.signer_credentials })) }
   }))
 }

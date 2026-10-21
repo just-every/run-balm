@@ -1,17 +1,16 @@
 import { one, rows } from '../domain/model'
-import { hostDateAt } from '../availability/timezone'
+import { primaryUnitMethod } from './unit-method'
 import { billedLines, signedCharges } from './facts'
 
 /** The covering primary payer and its signed procedure units at snapshot time.
  * Cash visits use CMS; an unconfigured payer remains explicitly unconfigured. */
 export async function visitBilling(db: D1Database, appointmentId: string) {
-  const visit = await one(db, 'SELECT a.client_id,a.start_at,s.time_zone FROM bm_appointments a JOIN bm_settings s ON s.id=1 WHERE a.id=?', appointmentId)
+  const visit = await one(db, 'SELECT client_id,start_at FROM bm_appointments WHERE id=?', appointmentId)
   if (!visit) return null
-  const date = hostDateAt(new Date(visit.start_at as string), visit.time_zone as string)
-  const policy = await one(db, "SELECT p.payer_id,y.name,y.unit_method,y.version AS payer_version FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on='' OR p.ends_on>=?) ORDER BY p.priority,p.starts_on DESC LIMIT 1", visit.client_id, date, date)
+  const basis = await primaryUnitMethod(db, visit.client_id as string, visit.start_at as string)
   const charges = (await signedCharges(db, appointmentId)).charges
-  const lines = billedLines(charges, (policy?.unit_method ?? null) as string | null)
-  return { lines, method: policy?.unit_method ?? (policy ? null : 'cms'), payerId: policy?.payer_id ?? null, payer: policy?.name ?? null, payerVersion: policy?.payer_version ?? null }
+  const lines = billedLines(charges, basis.method)
+  return { lines, ...basis }
 }
 
 /** The primary payer's priced signed units, shared with the invoice snapshot. */

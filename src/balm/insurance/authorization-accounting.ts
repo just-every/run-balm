@@ -1,4 +1,5 @@
-import { bill, cpt, type Charge } from '../charting/cpt'
+import { cpt, type Charge } from '../charting/cpt'
+import { payerBilling } from './unit-method'
 import { hostDateAt } from '../availability/timezone'
 import { insist, rows, type Data } from '../domain/model'
 
@@ -22,7 +23,7 @@ export const signedAuthorizationChargeSql = `SELECT n.appointment_id,n.client_id
 
 /** CMS allocation is computed over the whole visit before any scope check. */
 export function billedLines(charges: Charge[], unitMethod: string | null) {
-  return unitMethod === 'ama' ? charges.map(c => ({ ...cpt(c.code)!, minutes: c.minutes, units: cpt(c.code)!.timed ? Math.floor((c.minutes + 7) / 15) : 1 })) : bill(charges).lines
+  return payerBilling(charges, unitMethod).lines
 }
 export function aggregateCharges(chargeRows: Data[]): Charge[] {
   const minutes = new Map<string, number>()
