@@ -32,7 +32,7 @@ export async function clientVisible(db: D1Database, who: Actor, key: unknown) {
 export async function chartClient(db: D1Database, who: Actor, key: unknown) {
   try { return await clientVisible(db, who, key) } catch (error) {
     const client = await one(db, 'SELECT * FROM bm_clients WHERE id=? AND erased_at IS NULL', text(key, 'client', 100))
-    if (client && await careTeamOnly(db, who, client.id as string)) return client
+    if (client && (await careTeamOnly(db, who, client.id as string) || await one(db,'SELECT 1 FROM bm_note_submissions s JOIN bm_notes n ON n.id=s.note_id WHERE n.client_id=? AND s.supervisor_id=?',client.id,practitionerId(who) ?? ''))) return client
     throw error
   }
 }
@@ -93,7 +93,7 @@ async function auditEntries(db: D1Database, clientId: string, before: number | n
 export async function clientFile(db: D1Database, who: Actor, key: unknown, auditBefore?: unknown) {
   const client = await chartClient(db, who, key)
   const own = practitionerId(who), all = who.role === 'owner' || who.staffRole === 'reception'
-  const access = await noteAccess(db, who, client.id as string), teamOnly = await careTeamOnly(db, who, client.id as string)
+  const access = await noteAccess(db, who, client.id as string), teamOnly = who.role !== 'owner' && !!own && !await one(db,'SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?',client.id,own)
   const appointments = await rows(db, `SELECT a.id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,a.practitioner_id,p.name AS practitioner,s.name AS service,s.id AS service_id,s.note_template,
     (SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT json_group_array(json_object('other',o.other_appointment_id,'by',o.acknowledged_by,'at',o.acknowledged_at)) FROM bm_medicare_overlaps o WHERE o.appointment_id=a.id) AS medicare_overlaps,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     EXISTS(SELECT 1 FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND json_array_length(COALESCE(r.charges,'[]'))>0) AS note_billed

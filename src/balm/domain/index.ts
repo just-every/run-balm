@@ -1,3 +1,5 @@
+import { coSignQueue, returnNote } from './supervision'
+import { saveLocation, locateRoom } from './role-access'
 import { saveBalanceAccess } from './balance-access'
 import { saveHoliday } from './holidays'
 import { dailyClose } from '../reports/access'
@@ -24,6 +26,8 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
+  'insurance.supervision.save': async (db,who,input)=>{ insist(who.role==='owner','only_the_owner_sets_payer_rules',403); insist([true,false,'true','false'].includes(input.billSupervisor),'invalid_supervisor_billing'); await commit(db,who,[db.prepare('UPDATE bm_payers SET supervisor_billing=?,version=version+1 WHERE id=?').bind(input.billSupervisor===true||input.billSupervisor==='true'?1:0,String(input.payerId)),audit(db,who,'payer.supervision_saved',null,String(input.payerId))]); return {saved:true} },
+  'location.save': saveLocation, 'room.location': locateRoom,
   'staff.balance_access': saveBalanceAccess,
   'booking.embed.save': saveBookingEmbed,
   'documentation.settings.save': saveDocumentationSettings, 'documentation.payer.save': savePayerDocumentation,
@@ -35,6 +39,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
   'appointment.cancel': (db, who, input) => setAppointmentStatus(db, who, input, 'cancelled'),
   'appointment.attend': (db, who, input) => setAppointmentStatus(db, who, input, 'attended'),
   'appointment.no_show': (db, who, input) => setAppointmentStatus(db, who, input, 'no_show'),
+  'note.submit': (db,who,input)=>signNote(db,who,input,'submit'), 'note.cosign': (db,who,input)=>signNote(db,who,input,'cosign'), 'note.return': returnNote,
   'note.write': writeNote, 'note.amend': amendNote, 'note.sign': signNote, 'note.addendum': addAddendum,
   'note.measure': recordMeasure, 'note.measure_remove': removeMeasure,
   'invoice.prepare': prepareInvoice, 'invoice.approve': approveInvoice, 'invoice.void': voidInvoice, 'payment.record': recordPayment,
@@ -55,6 +60,10 @@ export async function snapshot(db: D1Database, who: Actor) {
   const owner = who.role === 'owner', desk = owner || who.role === 'agent' || who.staffRole === 'reception', own = practitionerId(who)
   const settings = await one(db, "SELECT version,nppes_lookup,booking_embed_origins,cancellation_notice_hours,late_cancel_fee_cents,no_show_fee_cents,holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
   const staff = await rows(db, owner ? "SELECT s.*,EXISTS(SELECT 1 FROM oa_operators o WHERE lower(o.email)=lower(s.email) AND o.status IN ('active','invited')) AS can_sign_in FROM bm_staff s WHERE s.erased_at IS NULL ORDER BY s.name" : 'SELECT id,name,role,profession,credentials FROM bm_staff WHERE active=1 AND erased_at IS NULL ORDER BY name')
+  const accessRows = await rows(db,'SELECT * FROM bm_staff_access')
+  for (const person of staff) Object.assign(person, accessRows.find(a=>a.staff_id===person.id) ?? {kind:person.role})
+  const locations = owner ? await rows(db,'SELECT * FROM bm_locations ORDER BY name') : []
+  const roomLocations = owner ? await rows(db,'SELECT * FROM bm_room_locations') : []
   const services = await rows(db, 'SELECT * FROM bm_services ORDER BY name')
   const hours = await rows(db, 'SELECT practitioner_id,weekday,start_minute,end_minute FROM bm_hours ORDER BY practitioner_id,weekday,start_minute')
   const rooms = await rows(db, owner ? 'SELECT * FROM bm_rooms ORDER BY name' : 'SELECT id,name FROM bm_rooms WHERE active=1 ORDER BY name')
@@ -78,5 +87,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

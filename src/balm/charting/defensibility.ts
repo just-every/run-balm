@@ -1,3 +1,4 @@
+import { pendingSubmission } from '../domain/supervision'
 import type { Bindings } from '../../auth.server'
 import { hostDateAt } from '../availability/timezone'
 import { actor, audit, commit, guard, human, id, insist, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
@@ -18,7 +19,8 @@ const cmsRules: ReviewRule[] = [
 ]
 async function context(db: D1Database, noteId: string, who: Actor) {
   const note = await one(db, 'SELECT n.*,r.number,r.body,r.sections,r.charges,r.documentation FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.id=? ORDER BY r.number DESC LIMIT 1', noteId)
-  insist(note && note.author_id === practitionerId(who), 'note_not_found', 404)
+  const submission=note ? await pendingSubmission(db,note.id) : null
+  insist(note && (note.author_id === practitionerId(who) || submission?.supervisor_id === practitionerId(who)), 'note_not_found', 404)
   insist(!note.signed_at, 'check_an_unsigned_note', 409)
   insist(note.appointment_id, 'choose_a_visit_before_checking', 409)
   const visit = (await one(db, 'SELECT a.*,s.time_zone FROM bm_appointments a JOIN bm_settings s ON s.id=1 WHERE a.id=?', note.appointment_id))!
@@ -34,6 +36,8 @@ async function context(db: D1Database, noteId: string, who: Actor) {
     AND json_extract(p.content,'$.startDate')<=? ORDER BY p.created_at DESC,p.id DESC LIMIT 1`, visit.id, note.client_id, note.author_id, date)
   const plan = plans[0] ?? null
   const rules = payer?.medicare ? [...cmsRules] : []
+  const supervision=await one(db,'SELECT kind,supervisor_id FROM bm_staff_access WHERE staff_id=?',note.author_id)
+  if (supervision && ['assistant','student','fellow'].includes(supervision.kind)) rules.push({id:'role.supervision',title:'Clinic supervision and co-signature policy',source:'/app/clinic',rule:'This author documents under a named licensed supervisor. Their author signature alone cannot finalize the note. The named supervisor reviews and co-signs the exact revision before billing, using the payer-recorded rendering rule.'})
   if (payer) rules.push({ id: 'payer.configuration', title: `${payer.name}: clinic-recorded documentation rules v${payer.documentation_version}, unit method v${payer.version}`, source: '/app/clinic#documentation', rule: `Configured unit method: ${unitMethodLabel(payer.fixed_unit_minutes != null ? 'fixed' : payer.unit_method, payer.fixed_unit_minutes)}. Required elements: ${(JSON.parse(payer.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
   const rawPlan = plan ? JSON.parse(plan.content) : null
   const planContent = rawPlan ? Object.fromEntries(['diagnoses', 'shortTermGoals', 'longTermGoals', 'frequencyPerWeek', 'durationWeeks', 'interventions', 'startDate', 'certifiedThrough'].map(k => [k, rawPlan[k]])) : null
@@ -41,7 +45,7 @@ async function context(db: D1Database, noteId: string, who: Actor) {
     charges: JSON.parse(note.charges ?? '[]'), billed: billedLines(JSON.parse(note.charges ?? '[]'), payer?.unit_method ?? (payer ? null : 'cms'), payer?.fixed_unit_minutes),
     plan: plan ? { content: planContent, status: plan.status } : null,
     payer: payer ? { name: payer.name, medicare: !!payer.medicare, method: payer.fixed_unit_minutes != null ? 'fixed' : payer.unit_method, fixedUnitMinutes: payer.fixed_unit_minutes } : null,
-    alerts: await documentationAlerts(db, visit.id, note, note.template), rules }
+    supervision: supervision ?? null, alerts: await documentationAlerts(db, visit.id, note, note.template), rules }
   return { note, visit, payer, plan, rules, facts, digest: await sha256(JSON.stringify(facts)), evidence: note.body + '\n' + JSON.stringify({ charges: facts.charges, documentation: facts.note.documentation, plan: facts.plan, alerts: facts.alerts }) }
 }
 
@@ -62,7 +66,7 @@ export async function checkDefensibility(env: Bindings, who: Actor, input: Data)
   insist(before.digest === after.digest, 'note_or_rules_changed_recheck', 409)
   const result = { findings, rules: before.rules, revision: before.note.number, contextSha256: before.digest, model: model.config.model, checkedAt: now() }
   await commit(env.DB, live, [
-    guard(env.DB, 'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL AND author_id=?) AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=?)=?', noteId, practitionerId(live)!, noteId, before.note.number),
+    guard(env.DB, 'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL AND (author_id=? OR EXISTS(SELECT 1 FROM bm_note_submissions s WHERE s.note_id=bm_notes.id AND s.supervisor_id=? AND NOT EXISTS(SELECT 1 FROM bm_note_reviews r WHERE r.submission_id=s.id)))) AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=?)=?', noteId, practitionerId(live)!, practitionerId(live)!, noteId, before.note.number),
     ...(before.payer ? [guard(env.DB, `EXISTS(SELECT 1 FROM bm_payers y JOIN bm_policies p ON p.payer_id=y.id LEFT JOIN bm_payer_documentation d ON d.payer_id=y.id WHERE y.id=? AND y.version=? AND p.id=? AND p.version=? AND COALESCE(d.version,0)=?)`, before.payer.id, before.payer.version, before.payer.policy_id, before.payer.policy_version, before.payer.documentation_version)] : []),
     stmt(env.DB, 'INSERT INTO bm_note_checks(id,note_id,revision,context_sha256,model,result,checked_by,checked_at) VALUES(?,?,?,?,?,?,?,?)', id(), noteId, before.note.number, before.digest, model.config.model, JSON.stringify(result), live.email, result.checkedAt),
     audit(env.DB, live, 'note.defensibility_checked', before.note.client_id, noteId, `revision ${before.note.number}; ${findings.length} questions`),

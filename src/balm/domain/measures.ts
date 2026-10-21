@@ -2,6 +2,7 @@
 // Measures are read with the note they belong to, so the owner, the author, a
 // care-team grant and open break glass (CHART-013) read them under the note's own
 // read audit; nobody else does.
+import { pendingSubmission } from './supervision'
 import { gradeValue, measureKinds, sides, type MeasureKind } from '../charting/measures'
 import { audit, commit, guard, human, id, insist, integer, now, one, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
 
@@ -10,6 +11,7 @@ async function ownDraft(db: D1Database, who: Actor, noteId: unknown) {
   const note = await one(db, 'SELECT * FROM bm_notes WHERE id=?', text(noteId, 'note', 100))
   insist(note && note.author_id === practitionerId(who), 'note_not_found', 404)
   insist(!note.signed_at, 'note_signed_add_an_addendum', 409)
+  insist(!await pendingSubmission(db,note.id),'note_waiting_for_supervisor',409)
   return note
 }
 

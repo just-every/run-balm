@@ -1,3 +1,4 @@
+import { biller } from '../domain/role-access'
 import { anonymousFinancialFacts } from '../retention/accounting'
 // Owner-only financial reports (REPORT-002), read from the same records as each
 // patient's ledger (src/balm/payments/ledger.ts): approved invoices are charges,
@@ -18,8 +19,8 @@ const bucket = (days: number) => days <= 30 ? '0-30' : days <= 60 ? '31-60' : da
 const emptyBuckets = () => Object.fromEntries(agingBuckets.map(b => [b, 0])) as Record<typeof agingBuckets[number], number>
 
 export async function financialReports(db: D1Database, who: Actor, input: Data) {
-  human(who); need(who, 'owner')
-  insist(who.role === 'owner', 'role_cannot_do_this', 403)
+  human(who)
+  insist(who.role === 'owner' || biller(who), 'role_cannot_do_this', 403)
   const r = await reportRange(db, input), local = (iso: unknown) => hostDateAt(new Date(String(iso)), r.zone)
   const inRange = (iso: unknown) => { const d = local(iso); return d >= r.from && d <= r.to }
   const before = (iso: unknown) => Date.parse(String(iso)) < Date.parse(r.end)

@@ -1,3 +1,5 @@
+import { biller, manager, locationState, roleCommand, roleRead } from './domain/role-access'
+import { audit, commit } from './domain/model'
 import { takeAddressRate, takeEmailRate, takePatientRate } from './public-rates'
 import { saveBookingEmbed } from './domain/clinic'
 import { freedVisitOffers, patientChangedNotice } from './scheduling/patient-effects'
@@ -74,6 +76,7 @@ const pages = /^\/app(\/clients(\/[\w-]+)?|\/invoices|\/clinic|\/intake|\/import
 const redirect = (location: string) => new Response(null, { status: 303, headers: { ...headers, location } })
 
 async function state(env: Bindings, who: Actor) {
+  if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
   return { retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
@@ -93,7 +96,9 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
 
 /** One signed-in page: `target` is a page path with an optional calendar query. */
 async function page(env: Bindings, who: Actor, target: string, notice: Parameters<typeof renderApp>[2] = {}, status = 200) {
-  const [path, query = ''] = target.split('?'), s: any = await state(env, who)
+  const [path, query = ''] = target.split('?'), s: any = manager(who) ? await locationState(env.DB,who,Object.fromEntries(new URLSearchParams(query))) : await state(env, who)
+  if (manager(who)) return renderApp(s,target,notice,undefined,status)
+  if (biller(who) && path === '/app') return redirect('/app/invoices')
   // Until the owner chooses the clinic's time zone, every page is the time zone step.
   if (!s.settings.time_zone) return renderApp(s, target, notice, undefined, status)
   if (path === '/app') {
@@ -103,7 +108,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
-  if (path === '/app/reports' && who.role === 'owner') s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})
+  if (path === '/app/reports' && (who.role === 'owner' || biller(who))) s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
   const opened = file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => {
     // A practitioner outside this chart may open it in an emergency by giving a reason (CHART-013).
@@ -126,6 +131,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 }
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
+  roleCommand(who,name)
   if (name === 'booking.embed.save') return saveBookingEmbed(env.DB, who, input, env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1')
   if (name === 'retention.save') return saveRetention(env.DB, who, input)
   if (name === 'retention.hold') return holdRecords(env.DB, who, input)
@@ -150,6 +156,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
   if (name === 'insurance.read') return readInsurance(env, who, input)
+  if (name === 'insurance.supervision.save') return command(env.DB,who,name,input)
   if (name.startsWith('insurance.')) {
     if (name === 'insurance.authorization.save' && typeof input.cptCodes === 'string') input.cptScope = input.cptCodes.trim() ? input.cptCodes.trim().split(/[,\s]+/) : []
     if (name === 'insurance.batch.prepare' && !Array.isArray(input.claimIds)) input.claimIds = Object.keys(input).filter(k => k.startsWith('claim_') && input[k] === 'on').map(k => k.slice(6))
@@ -439,6 +446,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
     if (request.method === 'GET') {
+      roleRead(who,path)
+      if (manager(who) && path === '/api/balm/reports/location') return json((await locationState(env.DB,who,Object.fromEntries(url.searchParams))).location)
       const chartDocument = path.match(/^\/api\/balm\/chart-documents\/([\w-]+)$/)
       if (chartDocument) return await downloadDocument(env.DB, who, chartDocument[1])
       const chartSearch = path.match(/^\/api\/balm\/clients\/([\w-]+)\/history$/)
@@ -566,8 +575,11 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     return json({ error: 'Not found' }, 404)
   } catch (error) {
     const failure = message(error)
+    if (who && [403,404].includes(failure.status)) await commit(env.DB,who,[audit(env.DB,who,'access.refused',null,null,request.method + ' ' + path + (path === '/app/action' ? ' ' + (url.searchParams.get('name') ?? '') : ''))]).catch(()=>{})
     if (failure.status >= 500) console.error(error)
     const detail = (error as any)?.detail
+    if (who && failure.status === 403 && (biller(who) || manager(who) || ['assistant','student','fellow'].includes(who.staffKind ?? ''))) return renderPublic('refused',{reason:failure.text},403)
+    if (path === '/app/action' && who && manager(who)) return renderPublic('refused',{reason:failure.text},failure.status)
     if (path === '/app/action' && who && failure.status !== 401) return page(env, who, back, { error: failure.text, ...(detail ? { result: detail } : {}) }, failure.status)
     if ((pages.test(path) || path === '/app/action') && failure.status === 401) return redirect('/signin?returnTo=' + encodeURIComponent(pages.test(path) ? path : back))
     if (pages.test(path) && who) return page(env, who, '/app', { error: failure.text }, failure.status)

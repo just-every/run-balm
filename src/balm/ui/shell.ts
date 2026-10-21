@@ -10,6 +10,8 @@ export type Tab = { url: string; label: string; icon: string; count?: number; to
 
 /** The pages this person can open, with the counts that need them. */
 export function tabsFor(s: any): Tab[] {
+  if (s.location) return [{url:'/app',label:'Location schedule',icon:'calendar'},{url:'/app/reports',label:'Location reports',icon:'bars'}]
+  if (s.actor.role !== 'owner' && s.actor.staffKind === 'biller') return [{url:'/app/clients',label:'Clients',icon:'person'},{url:'/app/invoices',label:'Invoices',icon:'card'},{url:'/app/insurance',label:'Insurance',icon:'claim'},{url:'/app/reports',label:'Financial reports',icon:'bars'}]
   const waiting = rows(s, 'invoices').filter(i => i.status === 'draft').length + rows(s, 'drafts').filter(d => d.type === 'reminder' && d.status === 'draft').length
   const fixes = (s.insurance?.queue ?? []).filter((q: any) => ['denied', 'rejected', 'partial'].includes(q.status)).length
   return [
@@ -42,7 +44,7 @@ export const lockup = `<span class="lockup"><img src="/brand/mark.svg" alt="" wi
 export function shell(s: any, o: { tabs: Tab[]; section: string; zoneUnset: boolean; top: string; content: string }) {
   const clinicName = s.settings?.clinic_name ?? branding.name, me = person(s)
   const nav = o.zoneUnset ? '' : `<nav class="rail-nav" aria-label="Clinic">${o.tabs.map(t => `<a href="${h(t.url)}"${o.section === t.url ? ' aria-current="page"' : ''}>${icon(t.icon)}<span>${h(t.label)}</span>${t.count ? `<span class="count${t.tone ? ' ' + t.tone : ''}" aria-label="${t.count} waiting">${t.count}</span>` : ''}</a>`).join('')}</nav>`
-  const foot = `<div class="rail-foot"><p class="clinic">${icon('pin')}<span>${h(clinicName)}</span></p><div class="me">${avatar(me.initials)}<div><strong>${h(me.name)}</strong><span title="${h(s.actor.email)}">${h(s.actor.role === 'owner' ? 'Owner' : s.actor.staffRole === 'reception' ? 'Reception' : s.actor.staffRole === 'practitioner' ? 'Practitioner' : s.actor.role)}</span></div></div>`
+  const foot = `<div class="rail-foot"><p class="clinic">${icon('pin')}<span>${h(clinicName)}</span></p><div class="me">${avatar(me.initials)}<div><strong>${h(me.name)}</strong><span title="${h(s.actor.email)}">${h(s.actor.role === 'owner' ? 'Owner' : s.actor.staffKind && !['practitioner','reception'].includes(s.actor.staffKind) ? s.actor.staffKind.replace('_',' ') : s.actor.staffRole === 'reception' ? 'Reception' : s.actor.staffRole === 'practitioner' ? 'Practitioner' : s.actor.role)}</span></div></div>`
     + `<div class="me-actions">${owner(s) ? `<a href="/auth/settings/identity">Sign-in settings</a>` : ''}<form method="post" action="/app/action?name=session.signout&amp;returnTo=/app"><button type="submit" class="quiet">${icon('signout')}Sign out</button></form></div></div>`
   return `${iconSprite}<a class="skip" href="#content">Skip to content</a><div class="app">`
     + `<aside class="rail"><div class="rail-inner">${nav ? '<input type="checkbox" id="menu" class="menu-toggle">' : ''}<div class="rail-head"><a class="brand" href="/app" aria-label="${h(branding.name)} schedule">${lockup}</a>${nav ? `<label class="menu-button" for="menu">${icon('menu')}<span>Menu</span></label>` : ''}</div><div class="rail-body">${nav}${foot}</div></div></aside>`

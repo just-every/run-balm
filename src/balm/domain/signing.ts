@@ -2,6 +2,8 @@
 // typed name and credentials; the signature records the time and the SHA-256 of
 // what was signed, and the database refuses any later change to a signed note
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
+import { supervised } from './role-access'
+import { licensedSql, pendingSubmission, supervisorFor } from './supervision'
 import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
 import { diagnosisGuards } from './notes'
@@ -32,8 +34,18 @@ function signer(staff: Data, input: Data) {
 export const signedDigest = (note: Data, revision: Data, sections: unknown, by: { name: string; credentials: string }, signedAt: string) =>
   sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, documentation: revision.documentation, signer: by, signedAt }))
 
-export async function signNote(db: D1Database, who: Actor, input: Data) {
-  const { note, staff } = await authored(db, who, input.id)
+export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'author' | 'submit' | 'cosign' = 'author') {
+  human(who)
+  insist(mode !== 'author' || !supervised(who), 'submit_to_your_supervisor', 403)
+  let note: Data, staff: Data
+  const pending = mode === 'cosign' ? await one(db,`SELECT s.* FROM bm_note_submissions s WHERE s.note_id=? AND NOT EXISTS(SELECT 1 FROM bm_note_reviews r WHERE r.submission_id=s.id AND r.decision='returned') ORDER BY s.revision DESC LIMIT 1`,text(input.id,'note',100)) : null
+  if (mode === 'cosign') {
+    insist(!supervised(who) && pending?.supervisor_id===practitionerId(who),'supervision_not_found',404)
+    note=(await one(db,'SELECT * FROM bm_notes WHERE id=?',input.id))!
+    staff=(await one(db,'SELECT name,credentials FROM bm_staff WHERE id=?',practitionerId(who)))!
+    insist(await one(db,'SELECT 1 WHERE '+licensedSql,practitionerId(who)),'active_licensed_supervisor_required',409)
+  } else ({note,staff}=await authored(db,who,input.id))
+  const supervisor = mode === 'submit' ? await supervisorFor(db,who) : null
   insist(!note.signed_at, 'note_already_signed', 409)
   // A note records care given: it is signed once its visit has started, and never for a canceled visit.
   const visit = note.appointment_id ? await one(db, 'SELECT start_at,status FROM bm_appointments WHERE id=?', note.appointment_id) : null
@@ -60,9 +72,21 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
   }
   const diagnoses = await diagnosisGuards(db, note.appointment_id, JSON.parse(latest.charges as string || '[]'))
   const by = signer(staff, input), signedAt = now()
-  const digest = await signedDigest(note, latest, sections, by, signedAt)
+  const authorDigest = await signedDigest(note, latest, sections, by, signedAt)
+  const digest = pending ? await sha256(JSON.stringify({supervisor:authorDigest,author:pending.sha256,submission:pending.id})) : authorDigest
+  if (mode === 'submit') {
+    const submissionId=id()
+    await commit(db,who,[guard(db,licensedSql,supervisor),
+      guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)',note.id,latest.number),
+      guard(db,'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL)',note.id),
+      stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256) VALUES(?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest),
+      audit(db,who,'note.submitted',note.client_id as string,note.id as string,`revision ${latest.number}`)])
+    return {id:note.id,status:'awaiting_cosignature',revision:latest.number}
+  }
+  if (pending) insist(pending.revision===latest.number,'note_changed_reload',409)
   await commit(db, who, [
     ...diagnoses,
+    ...(pending ? [guard(db,licensedSql,practitionerId(who)),stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by) VALUES(?,'cosigned','',?,?)",pending.id,signedAt,who.email)] : []),
     ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_policies)=?', policyVersion!.total),

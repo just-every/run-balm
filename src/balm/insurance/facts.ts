@@ -45,20 +45,27 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const threshold=annual?.threshold_cents??null,used=spending.usedCents
   const required=!!policy.medicare&&threshold!==null&&used+estimatedAllowed>threshold
   const auth=claimAuthorization(auths,policy.id,serviceDate,visit.practitioner_id,input.authorizationCorrection,visit.episodeId)
-  const rendering=nameParts(visit.practitioner_name)
+  const payerRule=await one(db,'SELECT supervisor_billing FROM bm_payers WHERE id=?',policy.payer_id)
+  const reviewed=await rows(db,`SELECT s.supervisor_id FROM bm_note_submissions s JOIN bm_note_reviews r ON r.submission_id=s.id AND r.decision='cosigned' JOIN bm_notes n ON n.id=s.note_id AND n.signed_revision=s.revision WHERE n.appointment_id=?`,visit.id)
+  const supervisors=[...new Set(reviewed.map(r=>r.supervisor_id))]
+  insist(supervisors.length<=1,'choose_one_rendering_supervisor_for_the_visit',409)
+  const renderingStaff=supervisors.length && payerRule?.supervisor_billing ? await one(db,'SELECT * FROM bm_staff WHERE id=? AND active=1 AND erased_at IS NULL',supervisors[0]) : null
+  insist(!supervisors.length || !payerRule?.supervisor_billing || renderingStaff,'active_rendering_supervisor_required',409)
+  const renderingEnrollment=renderingStaff ? await one(db,'SELECT * FROM bm_payer_enrollments WHERE payer_id=? AND practitioner_id=?',policy.payer_id,renderingStaff.id) : enrollment
+  const rendering=nameParts(renderingStaff?.name ?? visit.practitioner_name)
   const value:ClaimSnapshot & {estimatedAllowedCents:number;policyCovers:boolean;authorizationExhausted:boolean;basis:Data}={
     patient:{first:visit.first_name,last:visit.last_name,dob:visit.date_of_birth??'',sex:policy.patient_sex},
     subscriber:{first:policy.subscriber_first,last:policy.subscriber_last,dob:policy.subscriber_dob,sex:policy.subscriber_sex,relationship:policy.relationship,memberId:policy.member_id,group:policy.group_number},
     address:{street:policy.address,city:policy.city,state:policy.state,postal:policy.postal_code},
     payer:{id:policy.payer_id,name:policy.payer_name,code:policy.payer_code,receiver:policy.receiver_id,medicare:!!policy.medicare,unitMethod:policy.fixed_unit_minutes != null ? 'fixed' : policy.unit_method,...(policy.fixed_unit_minutes != null ? {fixedUnitMinutes:policy.fixed_unit_minutes} : {})},
     billing:{name:visit.clinic_name,npi:settings?.billing_npi??'',taxId:settings?.tax_id??'',address:settings?.address??'',city:settings?.city??'',state:settings?.state??'',postal:settings?.postal_code??'',sender:settings?.sender_id??'',contact:settings?.contact_name??'',phone:settings?.contact_phone??'',production:!!settings?.production},
-    rendering:{...rendering,npi:visit.npi,taxonomy:enrollment?.taxonomy??'',enrolled:!!enrollment?.active},
+    rendering:{...rendering,npi:renderingStaff?.npi ?? visit.npi,taxonomy:renderingEnrollment?.taxonomy??'',enrolled:!!renderingEnrollment?.active},
     referring:input.referringNpi||input.referringLast?{first:String(input.referringFirst??''),last:String(input.referringLast??''),npi:String(input.referringNpi??'')}:null,
     authorization:auth?.number??null,serviceDate,diagnoses:diag,lines,signedNotes:signed.map(n=>({id:n.id,digest:n.signed_sha256,revision:n.signed_revision})),
     ...(policy.fixed_unit_minutes != null ? {belowThresholdCodes:billed.filter(l=>l.timed&&l.units===0).map(l=>l.code)} : {}),
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
     kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
-    basis:{...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
+    basis:{...(renderingStaff ? {renderingStaffId:renderingStaff.id,renderingStaffVersion:renderingStaff.version} : {}),...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
     policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_allowance>auth.allowance_total,authorizationNotCovered:!!auth&&!authorizationCoversCodes(auth,billed.filter(l=>l.units>0).map(l=>l.code))
   }
   return applyMedicareServices(value)

@@ -1,6 +1,7 @@
 // Guarded batches adapted from Satchel's atomic()/audit() (src/satchel/model.ts,
 // just-every/run-satchel @ 2d460e4) and Strap's st_assert fence: every write
 // re-checks the actor's live authority inside the same D1 batch.
+export type StaffKind = 'practitioner' | 'reception' | 'biller' | 'assistant' | 'student' | 'fellow' | 'supervisor' | 'location_manager'
 export type Role = 'owner' | 'practitioner' | 'reception' | 'agent'
 export interface Actor {
   /** Native operator id (the owner's id for an agent key). */
@@ -8,6 +9,7 @@ export interface Actor {
   /** The linked staff row, when this person is on the clinic's staff list. */
   staffId?: string; staffRole?: 'practitioner' | 'reception'
   operatorVersion: number; staffVersion?: number; balanceVisibility?: boolean
+  staffKind?: StaffKind; supervisorId?: string; locationId?: string
 }
 export type Data = Record<string, any>
 
@@ -72,7 +74,7 @@ function authority(db: D1Database, who: Actor) {
 }
 
 export function audit(db: D1Database, who: Actor | { email: string; role: string }, action: string, clientId: string | null, subjectId: string | null = null, detail = '') {
-  return stmt(db, 'INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)', now(), who.email, who.role, action, clientId, subjectId, detail)
+  return stmt(db, 'INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)', now(), who.email, (['owner','agent'].includes(who.role) ? who.role : ('staffKind' in who ? who.staffKind : null) ?? who.role), action, clientId, subjectId, detail)
 }
 
 /** One D1 batch: live authority, the caller's guards and writes, then cleanup. */
@@ -87,19 +89,20 @@ export async function commit(db: D1Database, who: Actor | null, statements: D1Pr
 }
 
 type OperatorRow = { id: string; email: string; role: string; status: string; version: number }
-type StaffRow = { id: string; role: 'practitioner' | 'reception'; version: number; balance_visibility: number }
+type StaffRow = { id: string; role: 'practitioner' | 'reception'; version: number; balance_visibility: number; kind: StaffKind; supervisor_id: string | null; location_id: string | null }
 /** Resolves the current person from the native operator and the staff list. */
 export async function actor(db: D1Database, operatorId: string, agent = false): Promise<Actor> {
   const operator = await one<OperatorRow>(db, 'SELECT id,email,role,status,version FROM oa_operators WHERE id=?', operatorId)
   insist(operator?.status === 'active', 'sign_in_required', 401)
-  const staff = await one<StaffRow>(db, 'SELECT id,role,version,balance_visibility FROM bm_staff WHERE lower(email)=lower(?) AND active=1 AND erased_at IS NULL', operator.email)
+  const staff = await one<StaffRow>(db, 'SELECT s.id,s.role,s.version,s.balance_visibility,COALESCE(a.kind,s.role) AS kind,a.supervisor_id,a.location_id FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE lower(s.email)=lower(?) AND s.active=1 AND s.erased_at IS NULL', operator.email)
   const base = { id: operator.id, email: operator.email, operatorVersion: operator.version }
+  const scope = staff ? { staffKind: staff.kind, supervisorId: staff.supervisor_id ?? undefined, locationId: staff.location_id ?? undefined } : {}
   if (operator.role === 'owner') {
     if (agent) return { ...base, role: 'agent' }
-    return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility } : {}) }
+    return { ...base, role: 'owner', ...(staff ? { staffId: staff.id, staffRole: staff.role, ...scope, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility } : {}) }
   }
   insist(!agent && staff, 'active_staff_required', 403)
-  return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility }
+  return { ...base, role: staff.role, staffId: staff.id, staffRole: staff.role, ...scope, staffVersion: staff.version, balanceVisibility: staff.role === 'practitioner' && !!staff.balance_visibility }
 }
 
 /** BALM-001: a balance grant adds no client scope, copay/card access or payment powers. */

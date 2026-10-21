@@ -53,19 +53,23 @@ function noteEntry(s: any, f: any, n: any) {
   const addenda = n.addenda.length ? `<h4>Addenda</h4>${n.addenda.map((a: any) => `<div class="note">${h(a.body)}</div><p class="help">Addendum signed by ${h(a.name)}, ${h(a.credentials)} · ${stamp(s, a.writtenAt)}</p>`).join('')}` : ''
   const history = older.length ? `<details><summary>Earlier revisions (${older.length})</summary>${older.map((r: any) => `<p class="help">Revision ${r.number} · ${stamp(s, r.writtenAt)}${r.reason ? ' · ' + h(r.reason) : ''}</p>${content(r)}`).join('')}</details>` : ''
   let actions = ''
-  if (n.mine && n.status !== 'signed') {
+  if (n.mine && n.status !== 'signed' && !n.pending) {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
     actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
-    else actions += `<details><summary>Review and sign</summary>${form('note.sign', path, hidden('id', n.id) + hidden('revision', latest.number)
+    else actions += `<details><summary>Review and sign</summary>${form(['assistant','student','fellow'].includes(s.actor.staffKind) ? 'note.submit' : 'note.sign', path, hidden('id', n.id) + hidden('revision', latest.number)
       + `<p>You are signing revision ${latest.number} exactly as shown above. Once signed the note is locked; later changes are addenda.</p>`
       + `<div class="pair">${field('signature', 'Type your full name to sign', '', 'text', `required maxlength="160" autocomplete="name" placeholder="${h(me(s).name ?? '')}"`)}${field('credentials', 'Credentials', me(s).credentials ?? '', 'text', 'required maxlength="60" placeholder="PT, DPT"')}</div>`
-      + '<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed this note and attest that it is accurate and complete.</span></label>', 'Sign note')}</details>`
+      + '<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed this note and attest that it is accurate and complete.</span></label>', ['assistant','student','fellow'].includes(s.actor.staffKind) ? 'Sign and send to supervisor' : 'Sign note')}</details>`
   }
-  if (n.mine && n.status === 'signed') actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
-  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
+  const signatureFields = hidden('id',n.id)+hidden('revision',latest.number)+field('signature','Type your full name','','text','required maxlength="160"')+field('credentials','Credentials',me(s).credentials ?? '','text','required maxlength="60"')+'<label class="check"><input name="attest" type="checkbox" value="on" required><span>I reviewed this exact revision and accept responsibility for it.</span></label>'
+  if(n.pending) actions += `<p class="notice">Awaiting the named supervisor’s co-signature. This submitted revision is locked.</p>`
+  if(n.canCosign && n.status!=='signed') actions += form('note.cosign',path,signatureFields,'Co-sign note') + `<details><summary>Return for correction</summary>${form('note.return',path,hidden('id',n.id)+field('reason','What needs correction?','','text','required maxlength="500"'),'Return to author')}</details>`
+  const authorSignatures=(n.submissions ?? []).map((x:any)=>`<p class="signature">Author signature: <strong>${h(x.author_name)}, ${h(x.author_credentials)}</strong> · ${stamp(s,x.submitted_at)} · revision ${h(x.revision)} · ${h(x.decision ?? 'awaiting supervisor')}<br><span class="help">Digest ${h(x.sha256)}${x.reason ? '<br>Returned: '+h(x.reason) : ''}</span></p>`).join('')
+  if (n.mine && n.status === 'signed' && !['assistant','student','fellow'].includes(s.actor.staffKind)) actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
+  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
 }
 
 /** Goals carried forward from the practitioner's latest signed note on this file. */

@@ -8,7 +8,7 @@ const pct = (value: unknown) => value === null || value === undefined ? '—' : 
 
 export function reportsPage(s: any) {
   const r = s.reports
-  if (!r) return ''
+  if (!r) return financialSections(s)
   const query = (kind: string) => `/api/balm/reports/${kind}.csv?` + new URLSearchParams({ from: r.from, to: r.to, ...(r.practitionerId ? { practitionerId: r.practitionerId } : {}) }).toString()
   const download = (kind: string, label: string) => `<p><a class="button secondary" href="${h(query(kind))}" download>Download ${h(label)} CSV</a></p>`
   const all = (row: any) => ({ ...row, practitioner: 'All practitioners' })

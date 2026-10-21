@@ -1,3 +1,4 @@
+import { locationPage } from './location'
 import { noteDraftScript } from './note-drafts'
 import branding from '../../branding.json'
 import { agent, copyScript } from './agent'
@@ -45,7 +46,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const zoneUnset = !zoneOf(state)
   const tab = tabs.find(t => t.url === current)
   const title = zoneUnset ? 'Clinic time zone' : notice.breakGlass ? 'Chart outside your care' : current.startsWith('/app/clients/') && file ? `${file.client.first_name} ${file.client.last_name}` : tab?.label ?? 'Page unavailable'
-  const content = zoneUnset ? timeZoneStep(state, allowed ? path : '/app') : !allowed ? '<div class="empty-state">' + icon('shield') + '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><a class="button secondary" href="/app">Open the schedule</a></div>'
+  const content = state.location ? locationPage(state,path) : zoneUnset ? timeZoneStep(state, allowed ? path : '/app') : !allowed ? '<div class="empty-state">' + icon('shield') + '<h1>Page unavailable</h1><p>Your role cannot open this page.</p><a class="button secondary" href="/app">Open the schedule</a></div>'
     : notice.breakGlass ? breakGlassRequest(notice.breakGlass)
     : file ? clientFilePage(state, file, notice)
       : current === '/app/clients' ? clientList(state)
@@ -62,7 +63,8 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const book = !zoneUnset && allowed && current !== '/app' && (desk(state) || state.actor.staffId) && rows(state, 'services').some(x => x.active) ? `<a class="button new" href="/app#book">${icon('plus')}Book a visit</a>` : ''
   const top = zoneUnset ? '<div class="crumb"><strong>First run</strong></div>' : current === '/app' && allowed && state.calendar ? scheduleTop(state)
     : `<div class="crumb">${file ? `<a href="/app/clients">Clients</a>${icon('chevron')}<strong>${h(title)}</strong>` : `<strong>${h(title)}</strong>`}</div><span class="grow"></span>${book}`
-  const notices = `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
+  const queue = (state.coSignQueue ?? []).length ? `<section class="panel full"><h2>Notes awaiting your co-signature</h2>${state.coSignQueue.map((n:any)=>`<p><a href="/app/clients/${h(n.client_id)}#note-${h(n.note_id)}">${h(n.client)} · ${h(n.author)} · revision ${h(n.revision)}</a></p>`).join('')}</section>` : ''
+  const notices = queue + `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
   const body = shell(state, { tabs, section, zoneUnset, top, content: notices + (current === '/app' && allowed && !zoneUnset ? recoveryStrip(state) : '') + content })
   return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)
 }

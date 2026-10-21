@@ -39,8 +39,17 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const previous = input.id ? await one(db, 'SELECT * FROM bm_staff WHERE id=? AND erased_at IS NULL', text(input.id, 'id', 100)) : null
   if (input.id) insist(previous, 'staff_not_found', 404)
-  const address = email(input.email), role = input.role ?? previous?.role ?? 'practitioner'
-  insist(role === 'practitioner' || role === 'reception', 'invalid_role')
+  const address = email(input.email), role = input.role ?? (previous ? (await one(db, 'SELECT kind FROM bm_staff_access WHERE staff_id=?',previous.id))?.kind : null) ?? previous?.role ?? 'practitioner'
+  const kinds = ['practitioner','reception','biller','assistant','student','fellow','supervisor','location_manager']
+  insist(kinds.includes(role), 'invalid_role')
+  const kind = role, storedRole = ['reception','biller','location_manager'].includes(kind) ? 'reception' : 'practitioner'
+  const previousAccess = previous ? await one(db, 'SELECT * FROM bm_staff_access WHERE staff_id=?', previous.id) : null
+  const supervisor = ['assistant','student','fellow'].includes(kind) ? text(input.supervisorId ?? previousAccess?.supervisor_id, 'supervisor', 100) : null
+  const location = kind === 'location_manager' ? text(input.locationId ?? previousAccess?.location_id, 'location', 100) : null
+  insist(!supervisor || supervisor !== previous?.id, 'a_supervisor_must_be_another_person')
+  const supervisorSql = "EXISTS(SELECT 1 FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.role='practitioner' AND s.active=1 AND s.erased_at IS NULL AND COALESCE(a.kind,s.role) IN ('practitioner','supervisor'))"
+  if (supervisor) insist(await one(db, 'SELECT 1 WHERE ' + supervisorSql, supervisor), 'active_licensed_supervisor_required', 409)
+  if (location) insist(await one(db, 'SELECT 1 FROM bm_locations WHERE id=? AND active=1', location), 'location_not_found', 404)
   const active = input.active === undefined ? (previous ? previous.active : 1) : (input.active === true || input.active === 'true' ? 1 : 0)
   insist(!await one(db, 'SELECT 1 FROM bm_staff WHERE lower(email)=? AND id<>?', address, previous?.id ?? ''), 'email_already_used', 409)
   const identity = await sha256('staff:' + address)
@@ -51,10 +60,13 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
     stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials,active,version) VALUES(?,?,?,?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,email=excluded.email,role=excluded.role,profession=excluded.profession,
       provider_number=excluded.provider_number,credentials=excluded.credentials,active=excluded.active,version=bm_staff.version+1`,
-    staffId, text(input.name, 'name', 160), address, role, optional(input.profession, 'profession', 80) ?? '', providerNumber,
+    staffId, text(input.name, 'name', 160), address, storedRole, optional(input.profession, 'profession', 80) ?? '', providerNumber,
     input.credentials === undefined ? previous?.credentials ?? '' : optional(input.credentials, 'credentials', 60) ?? '', active),
+    ...(supervisor ? [guard(db, supervisorSql, supervisor)] : []),
+    ...(location ? [guard(db,'EXISTS(SELECT 1 FROM bm_locations WHERE id=? AND active=1)',location)] : []),
+    stmt(db,'INSERT INTO bm_staff_access(staff_id,kind,supervisor_id,location_id) VALUES(?,?,?,?) ON CONFLICT(staff_id) DO UPDATE SET kind=excluded.kind,supervisor_id=excluded.supervisor_id,location_id=excluded.location_id',staffId,kind,supervisor,location),
     // A provider number that is an NPI also fills the practitioner's empty NPI (Billing identifiers), so it is asked once.
-    ...(role === 'practitioner' && validNpi(providerNumber) ? [stmt(db, "UPDATE bm_staff SET npi=? WHERE id=? AND npi=''", providerNumber, staffId)] : []),
+    ...(storedRole === 'practitioner' && validNpi(providerNumber) ? [stmt(db, "UPDATE bm_staff SET npi=? WHERE id=? AND npi=''", providerNumber, staffId)] : []),
     audit(db, who, previous ? 'staff.updated' : 'staff.added', null, staffId),
   ])
   return { id: staffId, name: input.name, email: address, role, active: !!active }

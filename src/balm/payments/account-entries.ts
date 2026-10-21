@@ -1,4 +1,5 @@
 // PAY-004: immutable proposals, exact digest approval, and guarded postings.
+import { biller } from '../domain/role-access'
 import { hostDateAt } from '../availability/timezone'
 import { clientVisible } from '../domain/clients'
 import { audit, commit, day, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
@@ -45,7 +46,7 @@ export async function prepareAccountEntry(db: D1Database, who: Actor, input: Dat
 }
 
 export async function approveAccountEntry(db: D1Database, who: Actor, input: Data) {
-  human(who); insist(who.role === 'owner', 'only_the_owner_approves_account_entries', 403)
+  human(who); insist(who.role === 'owner' || biller(who), 'only_the_owner_approves_account_entries', 403)
   insist(input.attest === true || input.attest === 'on', 'confirm_the_exact_account_entry')
   const e = await one(db, 'SELECT * FROM bm_account_entries WHERE id=?', text(input.id, 'entry', 100))
   insist(e, 'account_entry_not_found', 404)

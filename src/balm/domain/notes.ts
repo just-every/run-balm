@@ -1,3 +1,4 @@
+import { pendingSubmission } from './supervision'
 import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // Notes keep immutable revisions, as Willow keeps document versions
 // (src/willow/documents.ts, just-every/run-willow @ 5b116db): every save of a
@@ -122,6 +123,7 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
   if (request?.replay) return request.replay
   try {
     insist(!note.signed_at, 'note_signed_add_an_addendum', 409)
+    insist(!await pendingSubmission(db,note.id),'note_waiting_for_supervisor',409)
     const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
     insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
     const content = written(input, template(note.template))
@@ -145,7 +147,7 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   const author = practitionerId(who)
   if (who.role !== 'owner' && !author) return null
   const access = await noteAccess(db, who, clientId)
-  const notes = await rows(db, `SELECT n.*,s.name AS author_name,COALESCE(v.start_at,n.created_at) AS visit_at FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id LEFT JOIN bm_appointments v ON v.id=n.appointment_id WHERE n.client_id=? AND (?=1 OR n.author_id=?) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '')
+  const notes = await rows(db, `SELECT n.*,s.name AS author_name,COALESCE(v.start_at,n.created_at) AS visit_at FROM bm_notes n JOIN bm_staff s ON s.id=n.author_id LEFT JOIN bm_appointments v ON v.id=n.appointment_id WHERE n.client_id=? AND (?=1 OR n.author_id=? OR EXISTS(SELECT 1 FROM bm_note_submissions u WHERE u.note_id=n.id AND u.supervisor_id=?)) ORDER BY n.created_at DESC`, clientId, access.all ? 1 : 0, author ?? '', author ?? '')
   if (!notes.length) return []
   const marks = notes.map(() => '?').join(',')
   const revisions = await rows(db, `SELECT * FROM bm_note_revisions WHERE note_id IN (${marks}) ORDER BY number DESC`, ...notes.map(n => n.id))
@@ -154,7 +156,9 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   return Promise.all(notes.map(async n => {
     const own = revisions.filter(r => r.note_id === n.id).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
     const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
-    return { id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
+    const submissions = await rows(db,`SELECT s.*,r.decision,r.reason FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? ORDER BY s.submitted_at DESC`,n.id)
+    const pending = submissions.find(s=>!s.decision)
+    return { submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
