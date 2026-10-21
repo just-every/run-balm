@@ -202,13 +202,13 @@ test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archi
 
 
 test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a recovery point, and the last one restores into a scratch deployment with a later change present', { timeout: 600_000 }, async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch')
+  const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch'), refused = join(temporary, 'refused')
   const bucket = fakeBucket(), keys = await generateBackupKeys(), other = await generateBackupKeys(), local = await bucket.serve()
   const storage = { endpoint: 'https://s3.balm-test.example', bucket: bucket.config.bucket, region: bucket.config.region, prefix: 'clinic', accessKeyId: bucket.config.accessKeyId, secretAccessKey: bucket.config.secretAccessKey, publicKey: keys.publicKey, intervalHours: 24, consent: 'on' }
   const began = Date.now(), mark = label => console.log(`backup ${label} at ${Date.now() - began}ms`)
   let h
   try {
-    for (const path of [source, scratch]) await checkout(path)
+    for (const path of [source, scratch, refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 2e6 })
     h = await harness({ root: source, outbound: bucket.fetchHandler })
     await clinic(h, []); await h.finishSetup()
@@ -234,6 +234,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     mark('settings checked')
     // Change data, then the scheduler backs up by itself.
     await h.cmd('client.save', { firstName: 'Before', lastName: 'Backup', dateOfBirth: '1990-01-01' })
+    const enquiry = await h.cmd('client.save', { firstName: 'Temporary', lastName: 'Enquiry', dateOfBirth: '2000-01-01' })
     const first = Date.now()
     await tick(first)
     const names = () => [...bucket.objects.keys()].filter(k => k.endsWith('.balmbk')).sort()
@@ -254,7 +255,9 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.equal(names().length, 2, 'the next automatic backup follows the interval and is a new object')
     assert.ok(Buffer.compare(Buffer.from(bucket.objects.get(names()[0])), stored) === 0, 'an earlier backup is never rewritten')
     const runs = (await h.state()).backups.runs
-    assert.deepEqual(runs.map(r => r.state), ['ok', 'ok']); assert.equal(runs[0].counts.clients, 2); assert.equal(runs[1].counts.clients, 1)
+    assert.deepEqual(runs.map(r => r.state), ['ok', 'ok']); assert.equal(runs[0].counts.clients, 3); assert.equal(runs[1].counts.clients, 2)
+    // An erasure after those backups: the next backup carries it, and the older ones cannot bring the patient back.
+    await h.cmd('client.erase', { id: enquiry.id })
     mark('automatic backups checked')
     // A storage outage is shown on the dashboard and retried after a pause, never silently dropped.
     bucket.state.refuse = 503
@@ -288,13 +291,17 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.match(await script('drill.mjs', ['--key', keyFile, '--env-file', env]), /Drill passed/)
     mark('drill passed')
     const restored = join(temporary, 'restored.rer')
-    assert.match(await script('restore.mjs', ['--key', keyFile, '--env-file', env, '--output', restored]), /3 clients|2 clients/)
+    assert.match(await script('restore.mjs', ['--key', keyFile, '--env-file', env, '--output', restored]), /recovery point/)
+    const older = join(temporary, 'older.rer')
+    assert.match(await script('restore.mjs', ['--key', keyFile, '--env-file', env, '--object', names()[0], '--output', older]), /journal/)
+    await command(refused, ['import', '--input', older, '--journal', older + '.later.rer', '--yes', '--no-queue'], 4)
     await command(scratch, ['import', '--input', restored, '--yes', '--no-queue'])
     const scratchClinic = await harness({ root: scratch, ...identity })
     try {
       const cookie = await scratchClinic.signIn(scratchClinic.auth.OWNER_EMAIL)
       const names2 = (await scratchClinic.state(cookie)).clients.map(c => c.first_name)
       assert.ok(names2.includes('Before') && names2.includes('Changed'), 'the change made after the first backup is present in the scratch deployment')
+      assert.ok(!names2.includes('Temporary'), 'the patient erased before the last backup stays erased')
     } finally { await scratchClinic.close() }
   } finally { if (h) await h.close(); await local.close(); await rm(temporary, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) }
 })

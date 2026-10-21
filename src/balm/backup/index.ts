@@ -31,6 +31,7 @@ export async function backupState(env: Bindings, who: Actor) {
 async function save(env: Bindings, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   insist(!managed(env), 'backups_not_available_on_managed_hosting', 409)
+  insist(env.RER_DEMO !== '1', 'backups_are_not_available_in_the_demo', 409)
   const current = await one(env.DB, 'SELECT secret_sealed,secret_hint,public_key,key_fingerprint,consent_by,consent_at FROM bm_backup_settings WHERE id=1')
   const consent = input.consent === true || input.consent === 'on'
   insist(consent || current, 'confirm_you_understand_how_backups_are_protected')
@@ -103,7 +104,7 @@ async function* bytesOf(stream: ReadableStream<Uint8Array>, onManifest: (manifes
 /** One backup: snapshot, archive, encrypt and write it as a new object. Returns the recorded run; a failure is recorded, never thrown. */
 export async function runBackup(env: Bindings, trigger: 'schedule' | 'manual', at = Date.now(), who?: Actor) {
   const row = await one(env.DB, 'SELECT * FROM bm_backup_settings WHERE id=1')
-  insist(row, 'backups_are_not_set_up', 409)
+  insist(row && env.RER_DEMO !== '1', 'backups_are_not_set_up', 409)
   const runId = id(), started = new Date(at).toISOString()
   await stmt(env.DB, "UPDATE bm_backup_runs SET state='failed',finished_at=?,error='Interrupted before it finished' WHERE state='running' AND started_at<?", started, new Date(at - STALE_MINUTES * 60_000).toISOString()).run()
   await stmt(env.DB, "DELETE FROM bm_backup_runs WHERE state='failed' AND started_at<?", new Date(at - 30 * 86_400_000).toISOString()).run()
