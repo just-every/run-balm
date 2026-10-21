@@ -436,3 +436,44 @@ test('PAY-004: reviewed write-offs, external credit/refund, periodic statements 
 
 
 test('PAY-007: scheduled and requested estimates meet business-day deadlines, preserve originals and portal isolation, and flag the $400 boundary',async()=>{const {goodFaithJourney}=await import('./good-faith-journey.mjs');await run(goodFaithJourney)})
+
+test('ROLE-002: the biller completes card, payment-plan, statement, adjustment, credit, refund and A/R work without clinical or owner powers',async()=>{
+ const {h,stripe,service,priya,client}=await connected()
+ try{
+  const biller=await h.staff('PaymentsBiller','biller')
+  await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane',taxId:'12-3456789',practiceNpi:'1234567893',address:'100 Main St, Austin TX'})
+  await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
+  const saved=await saveCard(h,stripe,biller,client.id)
+  assert.equal((await h.send('/pay/'+saved.token+'?setup='+saved.session)).status,200)
+  await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},biller.cookie)
+  const visit=await pastVisit(h,client.id,priya,service.id)
+  await h.cmd('pay.codes.save',{appointmentId:visit,cpt:'97110 GP x3',icd10:'M25.561'},priya.cookie)
+  await h.cmd('appointment.attend',{id:visit})
+  const invoice=await h.cmd('invoice.prepare',{appointmentId:visit},biller.cookie)
+  await h.cmd('invoice.approve',{id:invoice.id},biller.cookie)
+  await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:1000,reference:'synthetic-balm-biller-payment'},biller.cookie)
+  const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
+  for(const kind of ['adjustment','write_off']){
+   const proposal=await h.cmd('pay.entry.prepare',{clientId:client.id,invoiceId:invoice.id,kind,amountCents:500,reason:'Approved courtesy correction',reference:'synthetic-balm-'+kind,occurredOn:today},biller.cookie)
+   await h.cmd('pay.entry.approve',{id:proposal.id,sha256:proposal.sha256,attest:true},biller.cookie)
+  }
+  const consent={...recordedAuthorization('Ava Ng'),authorizedOn:today}
+  const plan=await h.cmd('pay.plan.create',{clientId:client.id,amountCents:5000,months:2,firstDue:'2030-01-01',...consent},biller.cookie)
+  await h.cmd('pay.plan.stop',{clientId:client.id,id:plan.id,reason:'Patient requested a different schedule'},biller.cookie)
+  for(const name of ['pay.reminders.save','pay.statements.save']){
+   const reminder=await h.cmd(name,{clientId:client.id,everyDays:30,firstDue:today,...consent},biller.cookie)
+   await h.cmd('pay.reminders.stop',{clientId:client.id,id:reminder.id,reason:'Patient stopped this cadence'},biller.cookie)
+  }
+  const link=await h.cmd('pay.link.create',{clientId:client.id,purpose:'balance',delivery:'shown'},biller.cookie)
+  assert.equal((await h.send(new URL(link.url).pathname)).status,200)
+  await h.cmd('pay.invoice.charge',{invoiceId:invoice.id},biller.cookie)
+  const credit=await h.cmd('pay.entry.prepare',{clientId:client.id,kind:'credit',amountCents:1000,reason:'External money actually received',reference:'synthetic-balm-biller-credit',occurredOn:today},biller.cookie)
+  await h.cmd('pay.entry.approve',{id:credit.id,sha256:credit.sha256,attest:true},biller.cookie)
+  const refund=await h.cmd('pay.entry.prepare',{clientId:client.id,creditId:credit.id,kind:'refund',amountCents:500,reason:'External money actually returned',reference:'synthetic-balm-biller-refund',occurredOn:today},biller.cookie)
+  await h.cmd('pay.entry.approve',{id:refund.id,sha256:refund.sha256,attest:true},biller.cookie)
+  for(const path of ['/api/balm/invoices/'+invoice.id+'.html','/api/balm/statements/'+client.id+'.pdf','/api/balm/superbills/'+invoice.id+'.pdf','/api/balm/receipts/'+credit.id+'.pdf','/api/balm/receipts/'+refund.id+'.pdf','/api/balm/reports/financial','/app/reports'])assert.equal((await h.send(path,undefined,biller.cookie)).status,200,path)
+  await h.cmd('pay.card.remove',{clientId:client.id},biller.cookie)
+  const file=(await h.send('/api/balm/clients/'+client.id,undefined,biller.cookie)).value
+  assert.equal(file.notes,null);assert.equal(file.intake,null);assert.equal(file.billing.card,null)
+ }finally{await h.close()}
+})

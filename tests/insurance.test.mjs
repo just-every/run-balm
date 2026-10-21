@@ -32,7 +32,12 @@ const setup = async h => {
   await h.cmd('pay.codes.save', { appointmentId, icd10: 'M25.561' })
   const invoice = await h.cmd('invoice.prepare', { appointmentId })
   await h.cmd('invoice.approve', { id: invoice.id })
-  return { patient, priya, payer, policy, appointmentId, serviceDate, invoice }
+  // Exercise every downstream billing journey through a real biller session;
+  // owner configuration and clinical attestations retain their existing actors.
+  const biller=await h.staff('InsuranceBiller','biller'),nativeCommand=h.cmd
+  const ownerCommands=new Set(['insurance.settings.save','insurance.payer.save','insurance.enrollment.save','insurance.medicare.settings.save','insurance.supervision.save','insurance.claim.necessity','insurance.denial.appeal'])
+  h.cmd=(name,input,cookie,status,headers)=>nativeCommand(name,input,cookie ?? (name.startsWith('insurance.')&&!ownerCommands.has(name)?biller.cookie:h.owner),status,headers)
+  return { patient, priya, payer, policy, appointmentId, serviceDate, invoice, biller }
 }
 
 test('signed care becomes a scrubbed 837P, a payer acknowledgment and an ERA with the right patient balance exactly once', async () => {

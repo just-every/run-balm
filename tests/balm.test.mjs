@@ -452,6 +452,11 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
   const draft=await h.cmd('note.write',{clientId:patient.id,appointmentId:ownVisit,body:kind+' draft'},trainee.cookie)
   await h.cmd('note.amend',{id:draft.id,revision:1,body:kind+' revised draft'},trainee.cookie)
   for(const name of ['note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
+  await h.cmd('note.submit',{id:draft.id,revision:2,signature:kind,credentials:kind==='assistant'?'PTA':kind==='fellow'?'CF-SLP':'SPT',attest:true},trainee.cookie)
+  assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===draft.id))
+  await h.cmd('note.cosign',{id:draft.id,revision:2,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  const coSigned=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes.find(n=>n.id===draft.id)
+  assert.equal(coSigned.signature.name,'Priya');assert.equal(coSigned.submissions[0].author_name,kind)
   assert.equal((await h.send('/api/balm/clients/'+hidden.id,undefined,trainee.cookie)).status,404)
   for(const path of ['/app/clinic','/api/balm/reports/financial','/api/balm/chart-documents/missing']) assert.equal((await h.send(path,undefined,trainee.cookie)).status,403)
  }
