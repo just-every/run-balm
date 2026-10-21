@@ -11,7 +11,7 @@ const chargeFacts = (db: D1Database, clientId: string) => rows(db, `SELECT * FRO
  * own selected authorization and its own configured reservation. */
 export async function authorizationsFor(db: D1Database, clientId: string, excludeAppointmentId?: string) {
   const [authorizations, visits, settings, charges] = await Promise.all([
-    rows(db, `SELECT z.*,p.client_id,y.unit_method,${episodeOf('authorization', 'z.id')} FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? ORDER BY z.starts_on DESC,z.id DESC`, clientId),
+    rows(db, `SELECT z.*,p.client_id,y.unit_method,y.fixed_unit_minutes,${episodeOf('authorization', 'z.id')} FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? ORDER BY z.starts_on DESC,z.id DESC`, clientId),
     rows(db, `SELECT id,client_id,start_at,status,practitioner_id,${episodeOf('visit', 'bm_appointments.id')} FROM bm_appointments WHERE client_id=? AND status IN ('attended','booked')`, clientId),
     one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'), chargeFacts(db, clientId),
   ])

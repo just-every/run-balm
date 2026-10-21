@@ -81,7 +81,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       WHERE q.status IN ('draft','ready','batched','exported') AND i.status<>'void' AND q.service_date<=?
       AND julianday(a.start_at)<julianday(?) AND julianday(q.created_at)<julianday(?) ORDER BY q.service_date,q.id`, date, cutoff, cutoff),
     stmt(db, `SELECT id,client_id,starts_on,ends_on FROM bm_policies ORDER BY priority,starts_on DESC,id`),
-    stmt(db, `SELECT z.*,p.client_id,y.unit_method,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='authorization' AND record_id=z.id),'') AS episodeId,
+    stmt(db, `SELECT z.*,p.client_id,y.unit_method,y.fixed_unit_minutes,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='authorization' AND record_id=z.id),'') AS episodeId,
       c.first_name||' '||c.last_name AS client FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=p.client_id
       ORDER BY z.starts_on DESC,z.id DESC`),
     stmt(db, signedAuthorizationChargeSql),

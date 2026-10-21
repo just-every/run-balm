@@ -10,6 +10,7 @@ export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
   if(!s.attended)add('visit_not_attended','appointment','Mark the visit attended before claiming.')
   if(!s.signedNotes.length)add('signed_note_required','note','Sign the treatment note before claiming.')
   if(!s.payer.unitMethod)add('payer_unit_method_missing','payer.unitMethod',`Choose how ${s.payer.name} counts timed units, in the payer list on the Insurance page.`)
+  for(const code of s.belowThresholdCodes??[])add('timed_code_below_threshold',`lines.${code}`,`${code} has fewer than ${s.payer.fixedUnitMinutes} minutes for ${s.payer.name}’s fixed per-unit threshold. Review the signed minutes before billing.`)
   if(!s.rendering.enrolled)add('provider_enrollment_missing','rendering.enrollment',`Record the treating practitioner’s enrollment with ${s.payer.name} under Provider enrollment on the Insurance page.`)
   if(!validNpi(s.rendering.npi))add('rendering_npi_invalid','rendering.npi','Enter the treating practitioner’s 10-digit NPI under Billing identifiers in Clinic.')
   if(!validNpi(s.billing.npi))add('billing_npi_invalid','billing.npi','Enter the practice’s billing NPI in Practice billing details on the Insurance page.')

@@ -1,6 +1,7 @@
 // The patient's documents: a superbill per visit (to submit to their insurer),
 // a statement across visits, and a receipt per card payment. Each is built from
 // the approved invoice's frozen facts and the ledger, never from note text.
+import { unitMethodLabel } from '../insurance/unit-method'
 import { externalReceipt } from './account-documents'
 import { dollars, invoiceNumber } from '../domain/invoices'
 import { insist, one, rows, type Data } from '../domain/model'
@@ -46,7 +47,7 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
     { kind: 'table', columns: [{ label: 'CPT', width: 1.2 }, { label: 'Modifiers', width: 1.3 }, { label: 'Description', width: 4 }, { label: 'Diagnosis', width: 1.4 }, { label: 'Units', width: 0.9, right: true }],
       rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', letters.slice(0, f.diagnoses.length).split('').join(', '), String(p.units)]),
       totals: [['Total charges', dollars(f.invoice.amount_cents as number)], ['Paid', dollars(f.paidCents)], ['Adjustments', dollars(Number(f.invoice.adjusted_cents))], ['Balance', dollars((f.invoice.amount_cents as number) - f.paidCents - Number(f.invoice.adjusted_cents))]] },
-    { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? `CPT units are those billed from the signed treatment note by ${f.v.timedUnitBasis?.method === 'ama' ? 'AMA/CPT per-service substantial portion' : f.v.timedUnitBasis?.method === null ? 'CMS calculation pending payer method selection' : 'the CMS 8-minute rule'}.` : 'CPT codes and units as recorded for the visit.',
+    { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? `CPT units are those billed from the signed treatment note by ${unitMethodLabel(f.v.timedUnitBasis?.method, f.v.timedUnitBasis?.fixedUnitMinutes)}.` : 'CPT codes and units as recorded for the visit.',
       'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },
   ]
   return { name: `superbill-${number}.pdf`, bytes: pdf({ header: f.v.clinic.name, title: 'Superbill', blocks }) }

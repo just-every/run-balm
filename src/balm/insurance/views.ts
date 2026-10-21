@@ -17,7 +17,7 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
   const who=await insuranceActor(db,initial),client=await insuranceClient(db,who,clientId)
   const clinical=who.role==='owner'||who.staffRole==='practitioner',own=practitionerId(who)
   const [policies,auths,eligibility,claims,medicare,visits]=await Promise.all([
-    rows(db,'SELECT p.*,y.name AS payer_name,y.medicare,y.unit_method FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? ORDER BY p.priority,p.starts_on DESC',client.id),
+    rows(db,'SELECT p.*,y.name AS payer_name,y.medicare,y.unit_method,y.fixed_unit_minutes FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? ORDER BY p.priority,p.starts_on DESC',client.id),
     authorizationsFor(db,client.id),
     rows(db,'SELECT e.id,e.policy_id,e.service_date,e.status,e.benefits,e.created_at,e.checked_at FROM bm_eligibility e JOIN bm_policies p ON p.id=e.policy_id WHERE p.client_id=? ORDER BY e.created_at DESC',client.id),
     rows(db,`SELECT c.*,a.practitioner_id,(SELECT recognized_cents FROM bm_medicare_expenses WHERE claim_id=c.id) AS recognized_cents,(SELECT source FROM bm_medicare_expenses WHERE claim_id=c.id) AS expense_source,(SELECT r.paid_cents FROM bm_remittance_claims r WHERE r.claim_id=c.id) AS payer_paid_cents,(SELECT r.pr_cents FROM bm_remittance_claims r WHERE r.claim_id=c.id) AS patient_responsibility_cents FROM bm_claims c JOIN bm_appointments a ON a.id=c.appointment_id WHERE c.client_id=? AND (? OR a.practitioner_id=?) ORDER BY c.created_at DESC`,client.id,who.role==='owner'||who.staffRole==='reception'?1:0,own??''),
@@ -57,7 +57,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
     const existing = await existingVisitWarnings(db, clientId)
     for(const v of visits.filter(v => v.client_id === clientId)) warnings[v.id] = existing[v.id] ?? []
   }
-  return {settings,payers,fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)

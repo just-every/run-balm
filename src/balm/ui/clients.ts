@@ -1,3 +1,4 @@
+import { unitMethodLabel } from '../insurance/unit-method'
 import { accountEntriesPanel } from './account-entries'
 import { clientRetentionPanel, retentionPreview } from './retention'
 import { visitFeePanel } from './visit-policy'
@@ -80,7 +81,7 @@ export function invoiceEntry(s: any, i: any, path: string) {
   }
   return entry(title, `<p>${status(i.status)} ${i.attendance_started && i.status === 'draft' ? status('Started at attendance · awaiting review') : ''} ${i.status === 'approved' ? status(outstanding > 0 ? `${money(outstanding)} outstanding` : 'Paid') : ''}</p><p>${h(v.client.name)} · ${h(v.service.name)} · ${h(v.serviceDate)}<br>${h(v.practitioner.name)}${v.practitioner.providerNumber ? ` (provider ${h(v.practitioner.providerNumber)})` : ''} · <strong>${money(i.amount_cents)}</strong></p>`
     + `<p class="help">Prepared by ${h(i.prepared_by)} (${h(i.prepared_role)}) ${stamp(s, i.prepared_at)}${i.approved_by ? ` · approved by ${h(i.approved_by)} ${stamp(s, i.approved_at)}` : ''}${i.void_reason ? ` · void: ${h(i.void_reason)}` : ''}</p>`
-    + (v.procedures ? `<p>CPT ${v.procedures.map((p: any) => `${h(p.code)} × ${h(p.units)}`).join(', ')} <span class="help">(units by ${h(v.timedUnitBasis?.method === 'ama' ? 'AMA/CPT per-service' : v.timedUnitBasis?.method === null ? 'CMS calculation pending payer method selection' : 'CMS 8-minute rule')}, from the signed note)</span></p>` : '')
+    + (v.procedures ? `<p>CPT ${v.procedures.map((p: any) => `${h(p.code)} × ${h(p.units)}`).join(', ')} <span class="help">(units by ${h(unitMethodLabel(v.timedUnitBasis?.method, v.timedUnitBasis?.fixedUnitMinutes))}, from the signed note)</span></p>` : '')
     + (i.adjusted_cents ? `<p>Adjustments: ${money(i.adjusted_cents)}</p>` : '')
     + (i.payments.length ? `<ul class="plain">${i.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${p.card_payment_id ? 'card payment through Stripe' : h(p.reference.startsWith('era:') ? 'Payer payment · ' + payerReference(p.reference) : p.reference)} · ${stamp(s, p.recorded_at)}</li>`).join('')}</ul>` : '') + actions, `invoice-${i.id}`)
 }

@@ -25,8 +25,9 @@ export async function savePayer(db: D1Database, who: Actor, input: Data) {
   insist(who.role === 'owner', 'only_the_owner_can_change_payers', 403)
   const key = input.id ? text(input.id,'payer',100) : id(), medicare = yes(input.medicare)
   const method = input.unitMethod || (medicare ? 'cms' : null)
-  insist(method === null || method === 'cms' || method === 'ama', 'invalid_unit_method')
+  insist(method === null || method === 'cms' || method === 'ama' || method === 'fixed', 'invalid_unit_method')
   insist(!medicare || method === 'cms', 'medicare_requires_cms_units')
+  const fixed = method === 'fixed' ? integer(input.fixedUnitMinutes, 'fixed_unit_minutes', 1, Number.MAX_SAFE_INTEGER) : null
   const payerCode = text(input.payerId,'payer_id',50).toUpperCase(), receiver = (optional(input.receiverId,'receiver_id',15) ?? '').toUpperCase()
   insist(/^[A-Za-z0-9]+$/.test(payerCode), 'invalid_payer_id'); insist(!receiver || /^[A-Za-z0-9]+$/.test(receiver), 'invalid_receiver_id')
   const sending = await one(db, 'SELECT production FROM bm_insurance_settings WHERE id=1')
@@ -35,7 +36,7 @@ export async function savePayer(db: D1Database, who: Actor, input: Data) {
   if (same) throw new DomainError(`${same.name} already uses payer ID ${payerCode}. Open ${same.name} in the payer list to change it instead of adding it again.`, 409)
   const fees = input.fees === undefined ? null : input.fees
   insist(fees === null || (Array.isArray(fees) && fees.length <= 200), 'invalid_fee_schedule')
-  await commit(db,who,[stmt(db,`INSERT INTO bm_payers(id,name,payer_id,receiver_id,medicare,unit_method,requires_referral) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,payer_id=excluded.payer_id,receiver_id=excluded.receiver_id,medicare=excluded.medicare,unit_method=excluded.unit_method,requires_referral=excluded.requires_referral,version=bm_payers.version+1`,key,text(input.name,'payer_name',100),payerCode,receiver,medicare?1:0,method,yes(input.requiresReferral)?1:0),
+  await commit(db,who,[stmt(db,`INSERT INTO bm_payers(id,name,payer_id,receiver_id,medicare,unit_method,fixed_unit_minutes,requires_referral) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,payer_id=excluded.payer_id,receiver_id=excluded.receiver_id,medicare=excluded.medicare,unit_method=excluded.unit_method,fixed_unit_minutes=excluded.fixed_unit_minutes,requires_referral=excluded.requires_referral,version=bm_payers.version+1`,key,text(input.name,'payer_name',100),payerCode,receiver,medicare?1:0,method === 'fixed' ? null : method,fixed,yes(input.requiresReferral)?1:0),
     ...(fees === null ? [] : [stmt(db,'DELETE FROM bm_payer_fees WHERE payer_id=?',key), ...fees.map((f: Data) => { const code = text(f.code,'cpt',5); insist(/^\d{4}[\dA-Z]$/.test(code),'invalid_cpt'); return stmt(db,'INSERT INTO bm_payer_fees(payer_id,code,cents) VALUES(?,?,?)',key,code,integer(f.cents,'fee_cents',1)) })]),audit(db,who,'insurance.payer_saved',null,key)])
   return { id:key }
 }

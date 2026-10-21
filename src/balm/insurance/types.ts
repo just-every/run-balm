@@ -7,10 +7,11 @@ export type ClaimSnapshot = {
   patient: { first: string; last: string; dob: string; sex: string }
   subscriber: { first: string; last: string; dob: string; sex: string; relationship: string; memberId: string; group: string }
   address: { street: string; city: string; state: string; postal: string }
-  payer: { id: string; name: string; code: string; receiver: string; medicare: boolean; unitMethod: string | null }
+  payer: { id: string; name: string; code: string; receiver: string; medicare: boolean; unitMethod: string | null; fixedUnitMinutes?: number }
   billing: { name: string; npi: string; taxId: string; address: string; city: string; state: string; postal: string; sender: string; contact: string; phone: string; production: boolean }
   rendering: { first: string; last: string; npi: string; taxonomy: string; enrolled: boolean }
   referring: { first: string; last: string; npi: string } | null
+  belowThresholdCodes?: string[]
   authorizationExhausted?: boolean; authorizationNotCovered?: boolean
   authorization: string | null; serviceDate: string; diagnoses: string[]; lines: ClaimLine[]
   signedNotes: { id: string; digest: string; revision: number }[]

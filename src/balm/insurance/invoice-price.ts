@@ -9,7 +9,7 @@ export async function visitBilling(db: D1Database, appointmentId: string) {
   if (!visit) return null
   const basis = await primaryUnitMethod(db, visit.client_id as string, visit.start_at as string)
   const charges = (await signedCharges(db, appointmentId)).charges
-  const lines = billedLines(charges, basis.method)
+  const lines = billedLines(charges, basis.method, basis.fixedUnitMinutes)
   return { lines, ...basis }
 }
 
@@ -19,6 +19,6 @@ export async function insuredCharge(db: D1Database, appointmentId: string) {
   if (!billing?.payerId) return null
   const lines = billing.lines.filter(l => l.units > 0)
   const fees = new Map((await rows(db, 'SELECT code,cents FROM bm_payer_fees WHERE payer_id=?', billing.payerId)).map(f => [f.code as string, f.cents as number]))
-  if (!lines.length || lines.some(l => !fees.has(l.code))) return null
+  if (!billing.lines.length || lines.some(l => !fees.has(l.code))) return null
   return { cents: lines.reduce((sum, l) => sum + fees.get(l.code)! * l.units, 0), payer: billing.payer as string }
 }

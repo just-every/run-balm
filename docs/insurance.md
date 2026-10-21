@@ -106,3 +106,9 @@ Submitting creates the patient’s policies and a prepared 270 eligibility inqui
 Balm writes ANSI X12 5010 files: 270/271 eligibility (005010X279A1), 837P professional claims (005010X222A1), 277CA acknowledgments (005010X214) and 835 remittances (005010X221A1). Without a submitter ID the interchange sender is the practice’s EIN (ISA qualifier 30); without a receiver ID the receiver is the payer ID. Payer companion guides and the clearinghouse’s enrollment testing still apply.
 
 A self-hosted Balm connects to a clearinghouse through the practice’s own HTTPS adapter, set as the private deployment settings `BALM_INSURANCE_ADAPTER_URL` and `BALM_INSURANCE_ADAPTER_TOKEN`. Balm sends one authenticated POST with the transaction kind, a stable request ID, the X12 body and its SHA-256 digest. The adapter submits that exact body, deduplicates by the request ID, and returns its durable submission reference only after the clearinghouse accepts the file. A lost response is an uncertain submission: reconcile with the clearinghouse before sending again. RER Managed hosting cannot reach a clearinghouse yet.
+
+### Fixed timed-unit thresholds
+
+If a payer contract uses a fixed number of minutes per unit, choose **Fixed minutes per unit for each code** in its payer form and enter the positive whole-minute threshold. Balm counts only complete thresholds for each timed CPT separately; it never pools those minutes. Untimed codes still bill one unit. For example, at 15 minutes per unit, 8 minutes of 97110 and 8 of 97140 bill no timed units; the claim scrubber names both codes. Thirty minutes and 29 minutes bill two units and one unit.
+
+The note shows the current payer calculation. An approved invoice and its superbill keep the method, threshold and units used when issued, even after a payer edit. Authorization usage and daily close use the same calculation. Dated payer-setting history is not implemented yet. Medicare continues to require CMS total-time units.

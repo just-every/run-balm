@@ -33,7 +33,7 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
@@ -44,7 +44,7 @@ test('AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-0
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
     await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
-    const payer=await h.cmd('insurance.payer.save',{name:'Archive Health',payerId:'ARCHIVE',receiverId:'ARCHIVE'})
+    const payer=await h.cmd('insurance.payer.save',{name:'Archive Health',payerId:'ARCHIVE',receiverId:'ARCHIVE',unitMethod:'fixed',fixedUnitMinutes:15})
     const card='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII='
     const insurance={insurancePayerId:payer.id,insuranceMemberId:'ARCHIVE-MEMBER',insuranceRelationship:'self',insurancePatientSex:'F',insuranceStartsOn:'2026-01-01',insuranceAddress:'200 Oak St',insuranceCity:'Austin',insuranceState:'TX',insurancePostalCode:'78701',insuranceFront:card,insuranceBack:card,identityPhoto:card}
     const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0])
@@ -126,6 +126,11 @@ test('AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-0
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
+      const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')
+      await restoredClinic.cmd('note.amend',{id:checkedNote.id,revision:1,body:'Synthetic treatment after restore.',charges:[{code:'97110',minutes:30},{code:'97140',minutes:8}]},clinicianCookie)
+      const restoredPreview=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===checkedNote.id).billing
+      assert.deepEqual(restoredPreview.lines.map(l=>l.units),[2,0],'CHART-006 / INS-001 restored payer threshold controls newly saved clinical minutes')
+      assert.equal(restoredPreview.fixedUnitMinutes,15)
       const setup=await restoredClinic.form('/setup',{confirm:'yes'},cookie)
       assert.equal(setup.status,303);assert.equal(setup.location,'/app')
       const restoredEntry=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.billing.account.entries.find(e=>e.id===external.id)

@@ -19,7 +19,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   // Billing sees only signed charge facts, never body/sections/intake answers.
   const {signed,charges}=await signedCharges(db,visit.id)
   await commit(db,who,[audit(db,who,'insurance.signed_charges_read',visit.client_id,visit.id)])
-  const billed=billedLines(charges,policy.unit_method)
+  const billed=billedLines(charges,policy.unit_method,policy.fixed_unit_minutes)
   const [codes,fees,invoice,settings,enrollment,auths]=await Promise.all([
     rows(db,'SELECT * FROM bm_visit_codes WHERE appointment_id=? ORDER BY kind,position',visit.id),
     rows(db,'SELECT code,cents FROM bm_payer_fees WHERE payer_id=?',policy.payer_id),
@@ -50,11 +50,12 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     patient:{first:visit.first_name,last:visit.last_name,dob:visit.date_of_birth??'',sex:policy.patient_sex},
     subscriber:{first:policy.subscriber_first,last:policy.subscriber_last,dob:policy.subscriber_dob,sex:policy.subscriber_sex,relationship:policy.relationship,memberId:policy.member_id,group:policy.group_number},
     address:{street:policy.address,city:policy.city,state:policy.state,postal:policy.postal_code},
-    payer:{id:policy.payer_id,name:policy.payer_name,code:policy.payer_code,receiver:policy.receiver_id,medicare:!!policy.medicare,unitMethod:policy.unit_method},
+    payer:{id:policy.payer_id,name:policy.payer_name,code:policy.payer_code,receiver:policy.receiver_id,medicare:!!policy.medicare,unitMethod:policy.fixed_unit_minutes != null ? 'fixed' : policy.unit_method,...(policy.fixed_unit_minutes != null ? {fixedUnitMinutes:policy.fixed_unit_minutes} : {})},
     billing:{name:visit.clinic_name,npi:settings?.billing_npi??'',taxId:settings?.tax_id??'',address:settings?.address??'',city:settings?.city??'',state:settings?.state??'',postal:settings?.postal_code??'',sender:settings?.sender_id??'',contact:settings?.contact_name??'',phone:settings?.contact_phone??'',production:!!settings?.production},
     rendering:{...rendering,npi:visit.npi,taxonomy:enrollment?.taxonomy??'',enrolled:!!enrollment?.active},
     referring:input.referringNpi||input.referringLast?{first:String(input.referringFirst??''),last:String(input.referringLast??''),npi:String(input.referringNpi??'')}:null,
     authorization:auth?.number??null,serviceDate,diagnoses:diag,lines,signedNotes:signed.map(n=>({id:n.id,digest:n.signed_sha256,revision:n.signed_revision})),
+    ...(policy.fixed_unit_minutes != null ? {belowThresholdCodes:billed.filter(l=>l.timed&&l.units===0).map(l=>l.code)} : {}),
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
     kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
     basis:{...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},

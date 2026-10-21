@@ -1,4 +1,4 @@
-import { audit, commit, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
+import { audit, commit, DomainError, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
 import { claimFor } from './access'
 import { claimFacts } from './facts'
 import { applyMedicareServices } from './medicare-claim'
@@ -23,6 +23,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
   // Zero-priced incomplete claims still keep the approved invoice charge while
   // the scrubber names the missing line prices. No invented price is billed.
   const cents=amount||facts.invoiceCents
+  if(cents<=0&&facts.belowThresholdCodes?.length)throw new DomainError(errors.filter(e=>e.code==='timed_code_below_threshold').map(e=>e.message).join(' '),400,{scrubErrors:errors})
   insist(cents>0,'claim_amount_must_be_positive')
   await commit(db,who,[
     ...claimFactGuards(db,{client_id:(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,policy_id:input.policyId,appointment_id:input.appointmentId},facts),

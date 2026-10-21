@@ -2,6 +2,7 @@ import type { Bindings } from '../../auth.server'
 import { hostDateAt } from '../availability/timezone'
 import { actor, audit, commit, guard, human, id, insist, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { installModel } from '../scribe'
+import { unitMethodLabel } from '../insurance/unit-method'
 import { billedLines } from '../insurance/authorization-accounting'
 import { documentationAlerts, documentationElements } from './compliance'
 import { reviewNote, type ReviewRule } from './defensibility-model'
@@ -22,7 +23,7 @@ async function context(db: D1Database, noteId: string, who: Actor) {
   insist(note.appointment_id, 'choose_a_visit_before_checking', 409)
   const visit = (await one(db, 'SELECT a.*,s.time_zone FROM bm_appointments a JOIN bm_settings s ON s.id=1 WHERE a.id=?', note.appointment_id))!
   const date = hostDateAt(new Date(visit.start_at), visit.time_zone)
-  const payer = await one(db, `SELECT y.id,y.name,y.medicare,y.unit_method,y.version,p.id AS policy_id,p.version AS policy_version,COALESCE(d.required,'[]') AS required,COALESCE(d.version,0) AS documentation_version
+  const payer = await one(db, `SELECT y.id,y.name,y.medicare,y.unit_method,y.fixed_unit_minutes,y.version,p.id AS policy_id,p.version AS policy_version,COALESCE(d.required,'[]') AS required,COALESCE(d.version,0) AS documentation_version
     FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id LEFT JOIN bm_payer_documentation d ON d.payer_id=y.id
     WHERE p.client_id=? AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on='' OR p.ends_on>=?) ORDER BY p.priority,p.starts_on DESC LIMIT 1`, note.client_id, date, date)
   // Match the visit's explicitly assigned episode; never guess across episodes.
@@ -33,13 +34,13 @@ async function context(db: D1Database, noteId: string, who: Actor) {
     AND json_extract(p.content,'$.startDate')<=? ORDER BY p.created_at DESC,p.id DESC LIMIT 1`, visit.id, note.client_id, note.author_id, date)
   const plan = plans[0] ?? null
   const rules = payer?.medicare ? [...cmsRules] : []
-  if (payer) rules.push({ id: 'payer.configuration', title: `${payer.name}: clinic-recorded documentation rules v${payer.documentation_version}, unit method v${payer.version}`, source: '/app/clinic#documentation', rule: `Configured unit method: ${payer.unit_method ?? 'not configured'}. Required elements: ${(JSON.parse(payer.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
+  if (payer) rules.push({ id: 'payer.configuration', title: `${payer.name}: clinic-recorded documentation rules v${payer.documentation_version}, unit method v${payer.version}`, source: '/app/clinic#documentation', rule: `Configured unit method: ${unitMethodLabel(payer.fixed_unit_minutes != null ? 'fixed' : payer.unit_method, payer.fixed_unit_minutes)}. Required elements: ${(JSON.parse(payer.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
   const rawPlan = plan ? JSON.parse(plan.content) : null
   const planContent = rawPlan ? Object.fromEntries(['diagnoses', 'shortTermGoals', 'longTermGoals', 'frequencyPerWeek', 'durationWeeks', 'interventions', 'startDate', 'certifiedThrough'].map(k => [k, rawPlan[k]])) : null
   const facts = { note: { template: note.template, revision: note.number, body: note.body, sections: JSON.parse(note.sections ?? 'null'), documentation: JSON.parse(note.documentation ?? '{}') },
-    charges: JSON.parse(note.charges ?? '[]'), billed: billedLines(JSON.parse(note.charges ?? '[]'), payer?.unit_method ?? (payer ? null : 'cms')),
+    charges: JSON.parse(note.charges ?? '[]'), billed: billedLines(JSON.parse(note.charges ?? '[]'), payer?.unit_method ?? (payer ? null : 'cms'), payer?.fixed_unit_minutes),
     plan: plan ? { content: planContent, status: plan.status } : null,
-    payer: payer ? { name: payer.name, medicare: !!payer.medicare, method: payer.unit_method } : null,
+    payer: payer ? { name: payer.name, medicare: !!payer.medicare, method: payer.fixed_unit_minutes != null ? 'fixed' : payer.unit_method, fixedUnitMinutes: payer.fixed_unit_minutes } : null,
     alerts: await documentationAlerts(db, visit.id, note, note.template), rules }
   return { note, visit, payer, plan, rules, facts, digest: await sha256(JSON.stringify(facts)), evidence: note.body + '\n' + JSON.stringify({ charges: facts.charges, documentation: facts.note.documentation, plan: facts.plan, alerts: facts.alerts }) }
 }

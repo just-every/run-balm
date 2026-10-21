@@ -26,7 +26,7 @@ function sectionFields(t: any, values: Record<string, string>) {
 /** Current primary-payer preview; issued invoices retain their frozen basis. */
 export function billing(b: any) {
   if (!b?.lines?.length) return ''
-  const method = b.method === 'ama' ? 'AMA/CPT per-service' : b.method === null ? 'CMS estimate; payer method not selected' : '8-minute rule'
+  const method = b.method === 'fixed' ? `Fixed ${b.fixedUnitMinutes}-minute threshold` : b.method === 'ama' ? 'AMA/CPT per-service' : b.method === null ? 'CMS estimate; payer method not selected' : '8-minute rule'
   return `<div class="table"><table class="units"><thead><tr><th>CPT</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${b.lines.map((l: any) => `<tr><td>${h(l.code)}</td><td>${h(l.description)}</td><td>${l.timed ? h(l.minutes) : 'untimed'}</td><td>${h(l.units)}</td></tr>`).join('')}</tbody></table></div>`
     + `<p class="billed"><strong>${b.timedMinutes ? `${h(method)} · ${b.timedMinutes} timed min · ${b.timedUnits} ${b.timedUnits === 1 ? 'unit' : 'units'}` : 'No timed minutes'}</strong> · ${b.units} ${b.method === null ? 'estimated' : 'billed'} ${b.units === 1 ? 'unit' : 'units'} in all</p>`
     + `<p class="help">Current primary-payer preview${b.payer ? ' for ' + h(b.payer) : ' for a cash visit'}. Issued invoices keep their original units and payer settings.</p>`

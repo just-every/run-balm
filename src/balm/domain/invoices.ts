@@ -1,6 +1,7 @@
 // Reviewed billing adapted from Satchel (src/satchel/billing.ts, just-every/run-satchel
 // @ 2d460e4): a preparation freezes a snapshot, a person approves that exact
 // snapshot, and approval fixes the number and the downloadable bytes forever.
+import { unitMethodLabel } from '../insurance/unit-method'
 import { creditStatements } from '../payments/ledger'
 import { approvalStatements } from './approvals'
 import { insuredCharge, visitBilling } from '../insurance/invoice-price'
@@ -30,7 +31,7 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
     appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'USD',
-    ...(procedures.length ? { procedures, timedUnitBasis: { method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion } } : {}),
+    ...(procedures.length ? { procedures, timedUnitBasis: { method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion, ...(billing!.method === 'fixed' ? { fixedUnitMinutes: billing!.fixedUnitMinutes } : {}) } } : {}),
   } }
 }
 
@@ -72,7 +73,7 @@ export function artifact(number: number, value: any, approvedAt: string, zone = 
     + `<table><thead><tr><th>Date of service</th><th>Service</th><th>Amount (${escape(value.currency)})</th></tr></thead><tbody>`
     + `<tr><td>${escape(value.serviceDate)}</td><td>${escape(value.service.name)} (${escape(value.service.durationMinutes)} min)</td><td>${dollars(value.amountCents)}</td></tr></tbody>`
     + `<tfoot><tr><th colspan="2">Total</th><th>${dollars(value.amountCents)}</th></tr></tfoot></table>`
-    + (value.procedures ? `<h2>Procedures billed (CPT)</h2><table><thead><tr><th>Code</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${value.procedures.map((p: any) => `<tr><td>${escape(p.code)}</td><td>${escape(p.description)}</td><td>${p.minutes ?? 'untimed'}</td><td>${p.units}</td></tr>`).join('')}</tbody></table><p>Timed units by ${escape(value.timedUnitBasis?.method === 'ama' ? 'AMA/CPT per-service substantial portion' : value.timedUnitBasis?.method === null ? 'CMS calculation pending payer method selection' : 'CMS 8-minute rule')}${value.timedUnitBasis?.payer ? ' for ' + escape(value.timedUnitBasis.payer) : ''}, from the signed treatment note.</p>` : '')
+    + (value.procedures ? `<h2>Procedures billed (CPT)</h2><table><thead><tr><th>Code</th><th>Procedure</th><th>Minutes</th><th>Units</th></tr></thead><tbody>${value.procedures.map((p: any) => `<tr><td>${escape(p.code)}</td><td>${escape(p.description)}</td><td>${p.minutes ?? 'untimed'}</td><td>${p.units}</td></tr>`).join('')}</tbody></table><p>Timed units by ${escape(unitMethodLabel(value.timedUnitBasis?.method, value.timedUnitBasis?.fixedUnitMinutes))}${value.timedUnitBasis?.payer ? ' for ' + escape(value.timedUnitBasis.payer) : ''}, from the signed treatment note.</p>` : '')
     + '<p>Keep this invoice for your records. Insurance claims and remittances are tracked separately from this invoice.</p></body></html>\n'
 }
 

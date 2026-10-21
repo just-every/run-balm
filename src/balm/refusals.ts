@@ -99,6 +99,7 @@ const sentences: Record<string, string> = {
   invalid_postal_code: 'ZIP code: enter 5 or 9 digits.',
   invalid_payer_name: 'Payer name: enter the insurance company’s name.',
   invalid_payer_id: 'Payer ID: enter the payer’s electronic ID, letters and digits only, like 87726.',
+  invalid_fixed_unit_minutes: 'Minutes per unit: enter a positive whole number for the fixed method.',
   invalid_unit_method: 'How this payer counts timed units: choose one.',
   medicare_requires_cms_units: 'Medicare counts timed units by the CMS 8-minute rule: choose that for this payer.',
   invalid_cpt: 'Fee schedule: start each line with a 5-character CPT code, like 97110 65.00.',

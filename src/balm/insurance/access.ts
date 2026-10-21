@@ -17,7 +17,7 @@ export async function insuranceClient(db: D1Database, who: Actor, clientId: unkn
   return client
 }
 export async function policyFor(db: D1Database, who: Actor, key: unknown) {
-  const policy = await one(db, 'SELECT p.*,y.name AS payer_name,y.payer_id AS payer_code,y.receiver_id,y.medicare,y.unit_method,y.requires_referral,y.version AS payer_version FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.id=?', text(key, 'policy', 100))
+  const policy = await one(db, 'SELECT p.*,y.name AS payer_name,y.payer_id AS payer_code,y.receiver_id,y.medicare,y.unit_method,y.fixed_unit_minutes,y.requires_referral,y.version AS payer_version FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.id=?', text(key, 'policy', 100))
   insist(policy, 'insurance_policy_not_found', 404)
   await insuranceClient(db, who, policy.client_id)
   return policy

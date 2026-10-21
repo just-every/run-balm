@@ -22,8 +22,8 @@ export const signedAuthorizationChargeSql = `SELECT n.appointment_id,n.client_id
   FROM bm_visit_codes c JOIN bm_appointments a ON a.id=c.appointment_id WHERE c.kind='cpt'`
 
 /** CMS allocation is computed over the whole visit before any scope check. */
-export function billedLines(charges: Charge[], unitMethod: string | null) {
-  return payerBilling(charges, unitMethod).lines
+export function billedLines(charges: Charge[], unitMethod: string | null, fixedUnitMinutes?: number | null) {
+  return payerBilling(charges, unitMethod, fixedUnitMinutes).lines
 }
 export function aggregateCharges(chargeRows: Data[]): Charge[] {
   const minutes = new Map<string, number>()
@@ -66,7 +66,7 @@ function visitCharges(visit: Data, chargeRows: Data[], cutoff?: string, zone = '
  * neither a partial unit debit nor a reservation. Empty scope covers all CPTs. */
 export function authorizationCoversVisit(a: Data, visit: Data, chargeRows: Data[], cutoff?: string, zone = 'UTC') {
   const facts = visitCharges(visit, chargeRows, cutoff, zone)
-  const codes = facts.signed ? billedLines(facts.charges, a.unit_method ?? null).filter(l => l.units > 0).map(l => l.code) : facts.known.flatMap(row => {
+  const codes = facts.signed ? billedLines(facts.charges, a.unit_method ?? null, a.fixed_unit_minutes).filter(l => l.units > 0).map(l => l.code) : facts.known.flatMap(row => {
     const charges = typeof row.charges === 'string' ? JSON.parse(row.charges) : row.charges
     return (charges ?? []).map((c: Charge) => c.code)
   })
@@ -79,7 +79,7 @@ export function visitAllowance(a: Data, visit: Data, chargeRows: Data[], cutoff?
     || !authorizationCoversVisit(a, visit, chargeRows, cutoff, zone)) return empty
   const facts = visitCharges(visit, chargeRows, cutoff, zone)
   if (visit.status === 'booked' || a.allowance_kind === 'units' && !facts.signed) return { ...empty, reserved: reservationAllowance(a), reservedVisits: 1 }
-  const used = a.allowance_kind === 'units' ? billedLines(facts.charges, a.unit_method ?? null).reduce((sum, l) => sum + l.units, 0) : 1
+  const used = a.allowance_kind === 'units' ? billedLines(facts.charges, a.unit_method ?? null, a.fixed_unit_minutes).reduce((sum, l) => sum + l.units, 0) : 1
   return { ...empty, used, usedVisits: 1 }
 }
 /** Shared bulk accounting for visits, claims, calendar and audited daily close.
