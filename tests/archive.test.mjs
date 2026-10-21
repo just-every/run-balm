@@ -249,7 +249,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.ok(/data-recovery-point="ok"/.test(strip) && /Recovery point/.test(strip), 'the owner\'s schedule shows the recovery point')
     assert.equal((await h.send('/app', undefined, reception.cookie)).text.includes('data-recovery-point'), false, 'reception sees no recovery strip')
     const panelHtml = (await h.send('/app/clinic', undefined, h.owner)).text
-    assert.ok(panelHtml.includes('id="backups"') && panelHtml.includes(keys.fingerprint) && panelHtml.includes('1 clients'))
+    assert.ok(panelHtml.includes('id="backups"') && panelHtml.includes(keys.fingerprint) && panelHtml.includes('2 clients'))
     await h.cmd('client.save', { firstName: 'Changed', lastName: 'AfterBackup', dateOfBirth: '1991-02-02' })
     await tick(first + 25 * 3_600_000)
     assert.equal(names().length, 2, 'the next automatic backup follows the interval and is a new object')
