@@ -6,6 +6,7 @@ import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // locks it (src/balm/domain/signing.ts) and later changes are addenda.
 import { documentationAlerts, documentationInput, type Documentation } from '../charting/compliance'
 import { cpt, type Charge } from '../charting/cpt'
+import { parseIcd10 } from '../payments/codes'
 import { payerBilling, primaryUnitMethod } from '../insurance/unit-method'
 import { template, type Template } from '../charting/templates'
 import { audit, commit, guard, human, id, insist, integer, now, one, optional, practitionerId, rows, stmt, text, type Actor, type Data } from './model'
@@ -24,7 +25,7 @@ const clean = (value: unknown, field: string, max: number) => {
 /** Charges as JSON [{code, minutes}] or the form's charge_code_N / charge_minutes_N rows. */
 export function charges(input: Data): Charge[] {
   const raw: Data[] = Array.isArray(input.charges) ? input.charges
-    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`] })).filter(c => c.code)
+    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`], diagnosisCodes: input[`charge_diagnoses_${n}`] })).filter(c => c.code)
   insist(raw.length <= 12, 'too_many_cpt_codes')
   const list = raw.map(c => {
     const code = cpt(String(c?.code ?? '').trim())
@@ -34,10 +35,23 @@ export function charges(input: Data): Charge[] {
     insist([undefined, null, '', false, true, 'on'].includes(c.cmsTieChosen), 'invalid_cms_tie_choice')
     const selected = c.cmsTieChosen === true || c.cmsTieChosen === 'on'
     insist(!selected || code.timed, 'cms_tie_choice_requires_a_timed_code')
-    return { code: code.code, minutes, ...(selected ? { cmsTieChosen: true as const } : {}) }
+    insist(c.diagnosisCodes == null || typeof c.diagnosisCodes === 'string' || Array.isArray(c.diagnosisCodes) && c.diagnosisCodes.every((d: unknown) => typeof d === 'string'), 'invalid_diagnosis_selection')
+    const diagnosisCodes = parseIcd10(Array.isArray(c.diagnosisCodes) ? c.diagnosisCodes.join(',') : c.diagnosisCodes)
+    insist(diagnosisCodes.length <= 4, 'select_at_most_four_diagnoses_per_cpt_code')
+    return { code: code.code, minutes, ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
   })
   insist(new Set(list.map(c => c.code)).size === list.length, 'cpt_code_listed_twice')
   return list
+}
+
+/** Selected ICD-10 codes are identities, not mutable list positions. */
+export async function diagnosisGuards(db: D1Database, appointmentId: unknown, list: Charge[]) {
+  const selected = [...new Set(list.flatMap(c => c.diagnosisCodes ?? []))]
+  if (!selected.length) return []
+  insist(appointmentId, 'select_diagnoses_on_a_visit_note')
+  const available = await rows(db, "SELECT code FROM bm_visit_codes WHERE appointment_id=? AND kind='icd10'", appointmentId)
+  insist(selected.every(code => available.some(d => d.code === code)), 'selected_diagnosis_missing_from_visit')
+  return selected.map(code => guard(db, "EXISTS(SELECT 1 FROM bm_visit_codes WHERE appointment_id=? AND kind='icd10' AND code=?)", appointmentId, code))
 }
 
 /** A template's sections from JSON {sections: {id: text}} or the form's section_<id> fields. */
@@ -73,7 +87,9 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   const starter = appointment ? await one(db, `SELECT n.id FROM bm_notes n WHERE n.appointment_id=? AND n.author_id=? AND n.signed_at IS NULL
     AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=n.id)=0`, appointment.id, author) : null
   const content = written(input, t), noteId = (starter?.id as string) ?? id()
+  const diagnoses = await diagnosisGuards(db, appointment?.id, content.charges)
   await commit(db, who, [
+    ...diagnoses,
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     ...(starter ? [
@@ -109,7 +125,9 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
     const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
     insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
     const content = written(input, template(note.template))
+    const diagnoses = await diagnosisGuards(db, note.appointment_id, content.charges)
     await commit(db, who, [
+      ...diagnoses,
       stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
         optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation)),
       audit(db, who, 'note.amended', note.client_id as string, note.id as string, `revision ${latest + 1}`),

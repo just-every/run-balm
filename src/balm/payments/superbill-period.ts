@@ -35,7 +35,7 @@ function visitBlocks(f: Visit): Block[] {
     { kind: 'table', columns: [
       { label: 'CPT', width: 1.1 }, { label: 'Modifiers', width: 1.4 },
       { label: 'Description', width: 3.2 }, { label: 'Diagnosis', width: 1.6 }, { label: 'Units', width: 0.8, right: true },
-    ], rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', letters.slice(0, f.diagnoses.length).split('').join(', '), String(p.units)]),
+    ], rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', (p.diagnosisCodes?.length ? p.diagnosisCodes.map((d: string) => letters[f.diagnoses.indexOf(d)]) : letters.slice(0, f.diagnoses.length).split('')).join(', '), String(p.units)]),
     totals: totals(Number(f.invoice.amount_cents), f.paidCents, Number(f.invoice.adjusted_cents)) },
   ]
 }

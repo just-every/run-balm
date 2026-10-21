@@ -19,16 +19,18 @@ export async function superbillFacts(db: D1Database, invoiceId: string) {
   insist(invoice, 'invoice_not_found', 404)
   const v = JSON.parse(invoice.snapshot as string), codes = (await visitCodes(db, { appointmentId: invoice.appointment_id as string }))[invoice.appointment_id as string]
   // CPT units the visit's signed notes billed (frozen on the invoice) win over codes entered for the visit.
-  const procedures: Data[] = v.procedures?.length ? v.procedures.filter((p: Data) => p.units > 0).map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? codes.cpt.find(c => c.code === p.code)?.modifiers ?? '', units: p.units, from: 'notes' }))
+  const procedures: Data[] = v.procedures?.length ? v.procedures.filter((p: Data) => p.units > 0).map((p: Data) => ({ code: p.code, description: p.description ?? '', modifiers: p.modifiers ?? codes.cpt.find(c => c.code === p.code)?.modifiers ?? '', units: p.units, ...(p.diagnosisCodes?.length ? { diagnosisCodes: p.diagnosisCodes } : {}), from: 'notes' }))
     : codes.cpt.map(c => ({ ...c, description: '', from: 'visit' }))
+  const diagnoses: string[] = v.diagnoses ?? codes.icd10
   const missing = [
+    ...(procedures.some(p => p.diagnosisCodes?.length && p.diagnosisCodes.some((d: string) => !diagnoses.includes(d))) ? ['the signed procedure’s selected ICD-10 diagnoses'] : []),
     ...(invoice.npi ? [] : ['the practitioner’s NPI (Clinic → Billing identifiers)']),
     ...(v.clinic.practiceNpi ? [] : ['the practice’s NPI on the approved invoice']),
     ...(v.clinic.abn ? [] : ['the clinic’s tax ID (Clinic details, before the invoice is approved)']),
-    ...(codes.icd10.length ? [] : ['an ICD-10 diagnosis for the visit']),
+    ...(diagnoses.length ? [] : ['an ICD-10 diagnosis for the visit']),
     ...(procedures.length ? [] : ['a CPT code for the visit']),
   ]
-  return { invoice, v, npi: invoice.npi as string, diagnoses: codes.icd10, procedures, missing, paidCents: invoice.paid_cents as number }
+  return { invoice, v, npi: invoice.npi as string, diagnoses, procedures, missing, paidCents: invoice.paid_cents as number }
 }
 
 export async function superbillPdf(db: D1Database, invoiceId: string) {
@@ -45,7 +47,7 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
     { kind: 'table', columns: [{ label: 'Pointer', width: 1 }, { label: 'Code', width: 2 }], rows: f.diagnoses.map((d, i) => [letters[i], d]) },
     { kind: 'heading', text: 'Procedures (CPT)' },
     { kind: 'table', columns: [{ label: 'CPT', width: 1.2 }, { label: 'Modifiers', width: 1.3 }, { label: 'Description', width: 4 }, { label: 'Diagnosis', width: 1.4 }, { label: 'Units', width: 0.9, right: true }],
-      rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', letters.slice(0, f.diagnoses.length).split('').join(', '), String(p.units)]),
+      rows: f.procedures.map(p => [p.code, p.modifiers || '—', p.description || '—', (p.diagnosisCodes?.length ? p.diagnosisCodes.map((d: string) => letters[f.diagnoses.indexOf(d)]) : letters.slice(0, f.diagnoses.length).split('')).join(', '), String(p.units)]),
       totals: [['Total charges', dollars(f.invoice.amount_cents as number)], ['Paid', dollars(f.paidCents)], ['Adjustments', dollars(Number(f.invoice.adjusted_cents))], ['Balance', dollars((f.invoice.amount_cents as number) - f.paidCents - Number(f.invoice.adjusted_cents))]] },
     { kind: 'notes', lines: [`Charges are for ${f.v.service.name} (${f.v.service.durationMinutes} min).`, f.procedures[0].from === 'notes' ? `CPT units are those billed from the signed treatment note by ${unitMethodLabel(f.v.timedUnitBasis?.method, f.v.timedUnitBasis?.fixedUnitMinutes)}.` : 'CPT codes and units as recorded for the visit.',
       'Submit this superbill to your insurance company to request reimbursement for out-of-network care. It is not a bill.'] },

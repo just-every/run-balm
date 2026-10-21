@@ -24,14 +24,15 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
   insist(row, 'appointment_not_found', 404)
   // Freeze the same payer method and signed units used by pricing and claims.
   const billing = await visitBilling(db, appointmentId)
-  const procedures = (billing?.lines ?? []).map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units, ...(l.cmsTieChosen ? { cmsTieChosen: true } : {}) }))
+  const procedures = (billing?.lines ?? []).map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units, ...(l.cmsTieChosen ? { cmsTieChosen: true } : {}), ...(l.diagnosisCodes?.length ? { diagnosisCodes: l.diagnosisCodes } : {}) }))
+  const diagnoses = (await rows(db, "SELECT code FROM bm_visit_codes WHERE appointment_id=? AND kind='icd10' ORDER BY position", appointmentId)).map(d => d.code as string)
   return { row, value: {
     clinic: { name: row.clinic_name, abn: row.abn, taxIdType: row.tax_id_type, practiceNpi: row.practice_npi, address: row.address },
     client: { name: `${row.first_name} ${row.last_name}`, dateOfBirth: row.date_of_birth },
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
     appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'USD',
-    ...(procedures.length ? { procedures, timedUnitBasis: { method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion, ...(billing!.method === 'fixed' ? { fixedUnitMinutes: billing!.fixedUnitMinutes } : {}) } } : {}),
+    ...(procedures.length ? { procedures, ...(procedures.some(p => p.diagnosisCodes?.length) ? { diagnoses } : {}), timedUnitBasis: { method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion, ...(billing!.method === 'fixed' ? { fixedUnitMinutes: billing!.fixedUnitMinutes } : {}) } } : {}),
   } }
 }
 

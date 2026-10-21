@@ -6,8 +6,8 @@
 // tied allocation boundary; unresolved previews keep stable provisional units.
 // Untimed (service-based) codes bill one unit each.
 export type Code = { code: string; description: string; timed: boolean }
-export type Charge = { code: string; minutes: number; cmsTieChosen?: true }
-export type BilledLine = Code & { minutes: number; units: number; cmsTieChosen?: true }
+export type Charge = { code: string; minutes: number; cmsTieChosen?: true; diagnosisCodes?: string[] }
+export type BilledLine = Code & { minutes: number; units: number; cmsTieChosen?: true; diagnosisCodes?: string[] }
 export type CmsTie = { codes: string[]; units: number; selected: string[]; resolved: boolean }
 export type Billing = { lines: BilledLine[]; timedMinutes: number; timedUnits: number; units: number; cmsTie: CmsTie | null }
 
@@ -31,7 +31,7 @@ export const cpt = (code: unknown) => codes.find(c => c.code === code)
 
 /** Billed units for one note's charges. */
 export function bill(charges: Charge[]): Billing {
-  const lines = charges.map(c => ({ ...cpt(c.code)!, minutes: c.minutes, units: 0, ...(c.cmsTieChosen ? { cmsTieChosen: true as const } : {}) }))
+  const lines = charges.map(c => ({ ...cpt(c.code)!, ...(c.diagnosisCodes?.length ? { diagnosisCodes: c.diagnosisCodes } : {}), minutes: c.minutes, units: 0, ...(c.cmsTieChosen ? { cmsTieChosen: true as const } : {}) }))
   const timed = lines.filter(l => l.timed)
   const timedMinutes = timed.reduce((sum, l) => sum + l.minutes, 0)
   const timedUnits = Math.floor((timedMinutes + 7) / 15)

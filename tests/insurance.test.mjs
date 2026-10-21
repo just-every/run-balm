@@ -223,7 +223,8 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: method + '-123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
       const visit = await pastVisit(h, patient.id, base.priya, service.id, h.owner, method === 'cms' ? 5 : 8)
       await h.cmd('appointment.attend', { id: visit })
-      const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Reviewed therapeutic exercise and manual therapy.', charges: [{ code: '97110', minutes: 8 }, { code: '97140', minutes: 8 }] }, base.priya.cookie)
+      await h.cmd('pay.codes.save', { appointmentId: visit, icd10: 'M25.561, M54.50' })
+      const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Reviewed therapeutic exercise and manual therapy.', charges: [{ code: '97110', minutes: 8, diagnosisCodes: ['M25.561'] }, { code: '97140', minutes: 8, diagnosisCodes: ['M54.50'] }] }, base.priya.cookie)
       const preview = async () => (await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id).billing
       let signingRevision = 1
       if (method === 'cms') {
@@ -235,7 +236,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
         await h.cmd('note.amend', { id: note.id, revision: 1, body: 'Reviewed treatment.', charges: [{ code: '97110', minutes: 8, cmsTieChosen: true }, { code: '97140', minutes: 8, cmsTieChosen: true }] }, base.priya.cookie)
         await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya Shah', attest: true }, base.priya.cookie, 400)
         // The actual edit form records the clinician's choice of the second code.
-        const saved = await h.form('/app/action?name=note.amend&returnTo=' + encodeURIComponent('/app/clients/' + patient.id), { id: note.id, revision: '2', body: 'Reviewed therapeutic exercise and manual therapy.', charge_code_0: '97110', charge_minutes_0: '8', charge_code_1: '97140', charge_minutes_1: '8', charge_cms_tie_1: 'on' }, base.priya.cookie)
+        const saved = await h.form('/app/action?name=note.amend&returnTo=' + encodeURIComponent('/app/clients/' + patient.id), { id: note.id, revision: '2', body: 'Reviewed therapeutic exercise and manual therapy.', charge_code_0: '97110', charge_minutes_0: '8', charge_code_1: '97140', charge_minutes_1: '8', charge_cms_tie_1: 'on', charge_diagnoses_0: 'M25.561', charge_diagnoses_1: 'M54.50' }, base.priya.cookie)
         assert.equal(saved.status, 303)
         signingRevision = 3
         assert.deepEqual((await preview()).cmsTie.selected, ['97140'])
@@ -251,7 +252,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       assert.deepEqual((await preview()).lines.map(l => l.units), expectedUnits)
       await h.cmd('note.sign', { id: note.id, revision: signingRevision, signature: 'Priya Shah', attest: true }, base.priya.cookie)
       assert.deepEqual((await preview()).lines, draft.lines, 'signing keeps the same primary-payer calculation')
-      await h.cmd('pay.codes.save', { appointmentId: visit, cpt: '97110 GP, 97140 GP', icd10: 'M25.561' })
+      await h.cmd('pay.codes.save', { appointmentId: visit, cpt: '97110 GP, 97140 GP', icd10: 'M25.561, M54.50' })
       const invoice = await h.cmd('invoice.prepare', { appointmentId: visit })
       assert.deepEqual(invoice.snapshot.procedures.map(p => p.units), expectedUnits)
       assert.equal(invoice.snapshot.amountCents, expectedCents)
@@ -272,6 +273,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       assert.equal(claim.status, 'ready', JSON.stringify(claim.errors))
       assert.deepEqual(claim.snapshot.lines.map(l => l.units), expectedUnits.filter(u => u > 0))
       assert.equal(claim.snapshot.payer.unitMethod, method)
+      assert.deepEqual(claim.snapshot.lines.map(l => l.diagnosisPointers), method === 'ama' ? [[1], [2]] : [[2]])
       const batch = await h.cmd('insurance.batch.prepare', { claimIds: [claim.id] })
       const x12 = await h.send(`/api/balm/insurance/837P/${batch.id}`, undefined, h.owner)
       assert.match(x12.text, /SV1\*HC:97140:GP\*25.00\*UN\*1/)
@@ -386,5 +388,72 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     await h.cmd('insurance.payer.save', { ...fixedInput, id: fixed.id, unitMethod: 'ama' })
     const amaAgain = (await patientFile(h, fixedPatient.id)).notes.find(n => n.id === fixedNote.id).billing
     assert.deepEqual(amaAgain.lines.map(l => l.units), [2, 2, 1], 'switching methods clears the old threshold')
+  })
+})
+
+
+test('CHART-006 selected diagnoses follow signed procedures into claims and fixed superbills without retargeting on reorder', async () => {
+  await run(async h => {
+    const base = await setup(h), service = (await h.state()).services[0]
+    await h.cmd('settings.save', { clinicName: 'Riverside Therapy', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '100 Main St, Austin TX 78701' })
+    const patient = await h.cmd('client.save', { firstName: 'Synthetic', lastName: 'Diagnosis selections', dateOfBirth: '1980-01-01' })
+    const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: base.payer.id, memberId: 'DIAG-123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+    const visit = await pastVisit(h, patient.id, base.priya, service.id, h.owner, 5)
+    await h.cmd('appointment.attend', { id: visit })
+    const codes = icd10 => h.cmd('pay.codes.save', { appointmentId: visit, icd10 })
+    await codes('M25.561, M54.50, R26.2, M25.562, R53.1')
+    const input = { clientId: patient.id, appointmentId: visit, body: 'Synthetic knee exercise and separate lumbar manual treatment.' }
+    const charges = [{ code: '97110', minutes: 23, diagnosisCodes: ['M25.561', 'R26.2'] }, { code: '97140', minutes: 15, diagnosisCodes: ['M54.50'] }]
+    for (const diagnosisCodes of [['M25.561', 'M25.561'], ['M25.561', 'M54.50', 'R26.2', 'M25.562', 'R53.1'], ['M99.99'], [2]]) {
+      await h.cmd('note.write', { ...input, charges: [{ ...charges[0], diagnosisCodes }] }, base.priya.cookie, 400)
+    }
+    const note = await h.cmd('note.write', { ...input, charges }, base.priya.cookie)
+    // Exercise the production edit form, including a different selection for each CPT.
+    assert.equal((await h.form('/app/action?name=note.amend&returnTo=' + encodeURIComponent('/app/clients/' + patient.id), {
+      id: note.id, revision: '1', body: input.body, charge_code_0: '97110', charge_minutes_0: '23', charge_diagnoses_0: 'm25.561, r26.2',
+      charge_code_1: '97140', charge_minutes_1: '15', charge_diagnoses_1: 'm54.50'
+    }, base.priya.cookie)).status, 303)
+    // Removing a selected diagnosis after saving cannot turn the signature into approval of another diagnosis.
+    await codes('M25.561, R26.2')
+    const refused = await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya Shah', attest: true }, base.priya.cookie, 400)
+    assert.equal(refused.code, 'selected_diagnosis_missing_from_visit')
+    assert.equal((await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id).status, 'draft')
+    await codes('M25.561, M54.50, R26.2')
+    await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya Shah', attest: true }, base.priya.cookie)
+    await h.cmd('note.amend', { id: note.id, revision: 2, body: 'Attempt to relink a signed service', charges: [{ ...charges[0], diagnosisCodes: ['M54.50'] }] }, base.priya.cookie, 409)
+    const invoice = await h.cmd('invoice.prepare', { appointmentId: visit })
+    assert.deepEqual(invoice.snapshot.procedures.map(p => p.diagnosisCodes), [['M25.561', 'R26.2'], ['M54.50']])
+    await h.cmd('invoice.approve', { id: invoice.id })
+    const original = await h.send(`/api/balm/superbills/${invoice.id}.pdf`, undefined, h.owner)
+    assert.equal(original.status, 200, original.text)
+    const assertLinks = text => {
+      const printed = [...text.matchAll(/\(([^()]*)\) Tj/g)].map(m => m[1])
+      assert.ok(printed.slice(printed.indexOf('97110') + 1, printed.indexOf('97140')).includes('A, C'), 'exercise links only to the selected knee and gait diagnoses')
+      assert.ok(printed.slice(printed.indexOf('97140') + 1).includes('B'), 'manual therapy links to the selected lumbar diagnosis')
+    }
+    assertLinks(original.text)
+    const date = await visitDate(h, visit), period = await h.send(`/api/balm/period-superbills/${patient.id}.pdf?from=${date}&to=${date}`, undefined, h.owner)
+    assert.equal(period.status, 200); assertLinks(period.text)
+    await codes('R26.2, M54.50, M25.561')
+    assert.equal((await h.send(`/api/balm/superbills/${invoice.id}.pdf`, undefined, h.owner)).text, original.text)
+    assert.equal((await h.send(`/api/balm/period-superbills/${patient.id}.pdf?from=${date}&to=${date}`, undefined, h.owner)).text, period.text)
+    const claim = await h.cmd('insurance.claim.prepare', { appointmentId: visit, policyId: policy.id })
+    assert.equal(claim.status, 'ready', JSON.stringify(claim.errors))
+    assert.deepEqual(claim.snapshot.lines.map(l => l.diagnosisPointers), [[3, 1], [2]])
+    assert.deepEqual(claim.snapshot.lines.map(l => l.units), [2, 1])
+    await codes('M25.561, R26.2')
+    const incomplete = await h.cmd('insurance.claim.scrub', { id: claim.id })
+    assert.equal(incomplete.status, 'draft')
+    assert.ok(incomplete.errors.some(e => e.code === 'diagnosis_pointer_invalid' && e.field === 'lines.97140.diagnosisPointers'))
+    await h.cmd('insurance.batch.prepare', { claimIds: [claim.id] }, h.owner, 409)
+    await codes('R26.2, M54.50, M25.561')
+    assert.equal((await h.cmd('insurance.claim.scrub', { id: claim.id })).status, 'ready')
+    const batch = await h.cmd('insurance.batch.prepare', { claimIds: [claim.id] })
+    const x12 = await h.send(`/api/balm/insurance/837P/${batch.id}`, undefined, h.owner)
+    assert.equal(x12.status, 200)
+    assert.match(x12.text, /SV1\*HC:97110:GP\*70.00\*UN\*2\*\*\*3:1~/)
+    assert.match(x12.text, /SV1\*HC:97140:GP\*25.00\*UN\*1\*\*\*2~/)
+    const signed = (await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id)
+    assert.deepEqual(signed.revisions[0].charges, charges, 'the signed code identities survive subsequent visit edits')
   })
 })

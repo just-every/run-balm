@@ -37,7 +37,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const lines=billed.filter(l=>l.units>0).map(l=>{
     const saved=codes.find(c=>c.kind==='cpt'&&c.code===l.code),fee=fees.find(f=>f.code===l.code)
     const mods=new Set<string>(String(saved?.modifiers??'').split(/\s+/).filter(Boolean)); mods.add(modifier)
-    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:fee?fee.cents*l.units:0,allowedCents:fee?fee.cents*l.units:0,diagnosisPointers:diag.length?[1]:[]}
+    return {code:l.code,minutes:l.minutes,units:l.units,modifiers:[...mods],amountCents:fee?fee.cents*l.units:0,allowedCents:fee?fee.cents*l.units:0,diagnosisPointers:l.diagnosisCodes?.length?l.diagnosisCodes.map(code=>diag.indexOf(code)+1):diag.length?[1]:[]}
   })
   const total=lines.reduce((sum,l)=>sum+l.amountCents,0)
   const spending=await medicareSpending(db,policy.client_id,year,group,visit.id),config=spending.external,annual=spending.annual

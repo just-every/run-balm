@@ -26,13 +26,18 @@ export function billedLines(charges: Charge[], unitMethod: string | null, fixedU
   return payerBilling(charges, unitMethod, fixedUnitMinutes).lines
 }
 export function aggregateCharges(chargeRows: Data[]): Charge[] {
-  const minutes = new Map<string, number>(), chosen = new Set<string>()
+  const minutes = new Map<string, number>(), chosen = new Set<string>(), diagnoses = new Map<string, Set<string>>()
   for (const row of [...chargeRows].sort((a, b) => String(a.id ?? '').localeCompare(String(b.id ?? '')))) for (const charge of (typeof row.charges === 'string' ? JSON.parse(row.charges) : row.charges) ?? []) {
     insist(cpt(charge.code) && Number.isInteger(charge.minutes) && charge.minutes >= 0, 'invalid_signed_charge')
     minutes.set(charge.code, (minutes.get(charge.code) ?? 0) + charge.minutes)
     if (charge.cmsTieChosen === true) chosen.add(charge.code)
+    if (charge.diagnosisCodes?.length) {
+      const selected = diagnoses.get(charge.code) ?? new Set<string>()
+      for (const code of charge.diagnosisCodes) selected.add(code)
+      diagnoses.set(charge.code, selected)
+    }
   }
-  return [...minutes].map(([code, minutes]) => ({ code, minutes, ...(chosen.has(code) ? { cmsTieChosen: true as const } : {}) }))
+  return [...minutes].map(([code, minutes]) => ({ code, minutes, ...(chosen.has(code) ? { cmsTieChosen: true as const } : {}), ...(diagnoses.has(code) ? { diagnosisCodes: [...diagnoses.get(code)!] } : {}) }))
 }
 export async function signedCharges(db: D1Database, appointmentId: string) {
   const signed = await rows(db, `SELECT n.id,n.signed_sha256,n.signed_revision,r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`, appointmentId)

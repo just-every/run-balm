@@ -16,7 +16,7 @@ export const templateSelect = (name: string, label: string, current: string) => 
 
 function chargeRows(charges: any[]) {
   const options = (value: string) => `<option value="">No code</option>${codes.map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
-  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>`).join('')}</fieldset>`
+  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}`).join('')}</fieldset>`
 }
 
 function sectionFields(t: any, values: Record<string, string>) {
@@ -35,7 +35,9 @@ export function billing(b: any) {
 
 function content(r: any) {
   const choice = (r.charges ?? []).filter((c: any) => c.cmsTieChosen).map((c: any) => c.code)
-  const recorded = choice.length ? `<p class="help">Recorded CMS tie preference: ${h(choice.join(', '))}. Used only for equal timed remainders.</p>` : ''
+  const diagnosisLinks = (r.charges ?? []).filter((c: any) => c.diagnosisCodes?.length).map((c: any) => `${c.code}: ${c.diagnosisCodes.join(', ')}`)
+  const linked = diagnosisLinks.length ? `<p class="help">Selected ICD-10 diagnoses · ${h(diagnosisLinks.join(' · '))}</p>` : ''
+  const recorded = linked + (choice.length ? `<p class="help">Recorded CMS tie preference: ${h(choice.join(', '))}. Used only for equal timed remainders.</p>` : '')
   if (!r.sections) return recorded + `<div class="note">${h(r.body)}</div>`
   return recorded + `<dl class="answers">${r.sections.map((s: any) => `<dt>${h(s.label)}</dt><dd>${s.text ? h(s.text) : '<span class="help">Not written</span>'}</dd>`).join('')}</dl>`
 }

@@ -160,7 +160,7 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
 })
 
 
-test('CHART-006 recorded CMS tie choice survives a public CLI archive with signed units and fixed invoice bytes', { timeout: 120_000 }, async () => {
+test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archive with signed units and fixed invoice bytes', { timeout: 120_000 }, async () => {
   const temporary=await mkdtemp(join(tmpdir(),'balm-tie-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
   let h
   try {
@@ -171,7 +171,8 @@ test('CHART-006 recorded CMS tie choice survives a public CLI archive with signe
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
     const visit=await pastVisit(h,patient.id,priya,service.id)
     await h.cmd('appointment.attend',{id:visit})
-    const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
+    await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561, M54.50'})
+    const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8,diagnosisCodes:['M25.561']},{code:'97140',minutes:8,cmsTieChosen:true,diagnosisCodes:['M54.50']}]},priya.cookie)
     await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
     const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
     assert.deepEqual(invoice.snapshot.procedures.map(p=>p.units),[0,1])
@@ -188,6 +189,9 @@ test('CHART-006 recorded CMS tie choice survives a public CLI archive with signe
     assert.equal(restoredNote.status,'signed')
     assert.deepEqual(restoredNote.billing.lines.map(l=>l.units),[0,1])
     assert.deepEqual(restoredNote.billing.cmsTie.selected,['97140'])
+    assert.deepEqual(restoredNote.revisions[0].charges.map(c=>c.diagnosisCodes),[['M25.561'],['M54.50']])
+    const restoredInvoice=(await h.send('/api/balm/clients/'+patient.id,undefined,await h.signIn(h.auth.OWNER_EMAIL))).value.invoices.find(i=>i.id===invoice.id)
+    assert.deepEqual(restoredInvoice.snapshot.procedures.map(p=>p.diagnosisCodes),[['M25.561'],['M54.50']])
     await h.cmd('note.amend',{id:note.id,revision:1,body:'Attempted changed allocation',charges:[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}]},clinician,409)
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
     assert.equal((await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,owner)).text,original)
