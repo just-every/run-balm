@@ -68,6 +68,7 @@ export function clinic(s: any, notice: any = {}) {
 function serviceFields(x?: any) {
   return (x ? hidden('version', x.version) : '') + field('name', 'Service name', x?.name, 'text', 'required maxlength="120" placeholder="Initial evaluation"') + `<div class="pair">${field('durationMinutes', 'Length (minutes)', x?.duration_minutes ?? 60, 'number', 'required min="5" max="480" step="5"')}${field('price', 'Price ($)', x ? dollarsField(x.price_cents) : '', 'text', 'required inputmode="decimal" maxlength="12" placeholder="95.00"')}</div>` + select('active', 'Status', [['true', 'Active'], ['false', 'Inactive']], x ? String(!!x.active) : 'true')
     + templateSelect('noteTemplate', 'Notes for this service start from', x?.note_template ?? '')
+    + select('intakeDiscipline','Intake discipline',[['','From the note template'],['pt','PT'],['ot','OT'],['slp','SLP'],['pediatric','Pediatric']],x?.intake_discipline??'','')
     + select('selfBookEnabled', 'Patient self-booking', [['true', 'Enabled'], ['false', 'Disabled']], String(!!(x?.self_book_enabled ?? 1)))
     + field('selfBookNoticeMinutes', 'Minimum booking notice (minutes)', x?.self_book_notice_minutes ?? 120, 'number', 'required min="120" max="86400" step="1"')
     + select('selfBookPlanRequired', 'Plan of care for self-booking', [['false', 'Not required'], ['true', 'Active certified plan required']], String(!!(x?.self_book_plan_required ?? 0)))

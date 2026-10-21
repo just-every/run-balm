@@ -137,7 +137,7 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
 export async function eraseClient(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   const client = await clientVisible(db, who, input.id)
-  const accountRecords = await one(db, 'SELECT 1 FROM bm_account_entries WHERE client_id=? LIMIT 1', client.id)
+  const accountRecords = await one(db, 'SELECT 1 FROM bm_account_entries WHERE client_id=? UNION ALL SELECT 1 FROM bm_estimate_requests WHERE client_id=? LIMIT 1', client.id, client.id)
   insist(!accountRecords, 'clients_with_health_records_are_retained', 409)
   const unused = `NOT EXISTS(SELECT 1 FROM bm_policies WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_notes WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_plans_of_care WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoices WHERE client_id=?)
@@ -151,7 +151,7 @@ export async function eraseClient(db: D1Database, who: Actor, input: Data) {
   const at = Date.now()
   await commit(db, who, [
     guard(db, unused, ...args),
-    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE client_id=?)', client.id),
+    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_estimate_requests WHERE client_id=?)', client.id, client.id),
     ...await portability.redactionStatements(), ...await portability.invalidateTransfersStatements(),
     stmt(db, 'INSERT INTO bm_erasure_journal(identity_hash,kind,erased_at) VALUES(?,?,?)', await clientIdentity(client.first_name as string, client.last_name as string, client.date_of_birth as string | null), 'client', at),
     stmt(db, "UPDATE bm_clients SET first_name='Erased',last_name='client',date_of_birth=NULL,email=NULL,phone=NULL,version=version+1,erased_at=? WHERE id=?", at, client.id),

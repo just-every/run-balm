@@ -28,6 +28,7 @@ function forms(d: any) {
 function statements(d: any) {
   const b = d.billing
   return `<p class="balance">${money(b.balanceCents)} <span>balance</span></p><p><a href="/portal/statement.pdf">Download statement PDF</a></p>`
+    + (b.estimates?.length ? `<h3>Good Faith Estimates</h3><ul>${b.estimates.map((e:any)=>`<li><a href="/portal/estimates/${h(e.id)}.pdf">Estimate · ${money(e.total_cents)} · ${h(usDate(e.from_on,'UTC'))}</a>${e.disputeFlag?'<p>Your billed charges are at least $400 above this estimate. Contact the clinic to review your bill; see the estimate for federal dispute information.</p>':''}</li>`).join('')}</ul>` : '')
     + (b.issuedStatements?.length ? `<h3>Issued statements</h3><ul>${b.issuedStatements.map((i: any) => `<li><a href="/portal/statements/${h(i.id)}.pdf">Statement ${h(usDate(i.due_on, 'UTC'))} · ${money(i.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + (b.receipts.length ? `<h3>Receipts</h3><ul>${b.receipts.map((r: any) => `<li><a href="/portal/receipts/${h(r.id)}.pdf">Receipt ${h(r.receipt_number)} · ${money(r.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + periodSuperbillForm('/portal/superbill.pdf')

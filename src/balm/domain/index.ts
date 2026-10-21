@@ -9,7 +9,7 @@ import { documentationClose, documentationSettings, saveDocumentationSettings, s
 import { bookForClient, moveAppointment, setAppointmentStatus } from './booking'
 import { eraseStaff, saveBookingEmbed, saveEquipment, saveHours, saveRoom, saveService, saveSettings, saveStaff } from './clinic'
 import { eraseClient, listClients, saveClient } from './clients'
-import { prepareForm, publishForm } from './intake'
+import { prepareForm, preparePacket, publishForm } from './intake'
 import { currentPolicies, publishPolicy } from '../intake/policies'
 import { approveInvoice, invoicesFor, prepareInvoice, recordPayment, voidInvoice } from './invoices'
 import { audit, commit, DomainError, insist, one, practitionerId, rows, type Actor, type Data } from './model'
@@ -44,7 +44,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
   'note.measure': recordMeasure, 'note.measure_remove': removeMeasure,
   'invoice.prepare': prepareInvoice, 'invoice.approve': approveInvoice, 'invoice.void': voidInvoice, 'payment.record': recordPayment,
   'reminder.prepare': prepareReminder, 'reminder.approve': approveReminder,
-  'intake.prepare': prepareForm, 'intake.publish': publishForm, 'consent.publish': publishPolicy,
+  'intake.packet.prepare': preparePacket, 'intake.prepare': prepareForm, 'intake.publish': publishForm, 'consent.publish': publishPolicy,
 }
 
 export async function command(db: D1Database, who: Actor, name: string, input: Data) {

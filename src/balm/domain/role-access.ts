@@ -19,7 +19,7 @@ export function roleRead(who: Actor, path: string) {
  if (manager(who)) insist(['/app','/app/reports','/api/balm/state','/api/balm/reports/location'].includes(path), 'location_scope_refused', 403)
  if (biller(who)) insist(['/app','/app/clients','/app/invoices','/app/insurance','/app/reports','/api/balm/state','/api/balm/commands','/api/balm/reports/financial'].includes(path)
   || /^\/app\/clients\/[\w-]+$/.test(path) || /^\/api\/balm\/clients\/[\w-]+$/.test(path)
-  || /^\/api\/balm\/(invoices|payments|receipts|statements|superbills|account-receipts|issued-statements)\//.test(path)
+  || /^\/api\/balm\/(period-superbills|estimates|invoices|payments|receipts|statements|superbills|account-receipts|issued-statements)\//.test(path)
   || /^\/api\/balm\/reports\/financial\//.test(path) || /^\/api\/balm\/insurance\/(270|837P)\//.test(path), 'biller_read_refused', 403)
  if (supervised(who)) insist(['/app','/app/clients','/api/balm/state','/api/balm/commands'].includes(path)
   || /^\/app\/clients\/[\w-]+$/.test(path) || /^\/api\/balm\/clients\/[\w-]+$/.test(path), 'supervised_staff_read_refused', 403)

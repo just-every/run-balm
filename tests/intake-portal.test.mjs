@@ -138,3 +138,66 @@ test('intake captures two policies and photo ID, creates eligibility requests, a
     assert.ok(!JSON.stringify(final.audit).includes('Private pediatric concern'))
   }, { outbound })
 })
+
+test('INTAKE-002: service and discipline packets score standard outcomes, isolate clinical reads and retain prior answers and scoring versions',()=>run(async h=>{
+ await h.finishSetup()
+ const {service,practitioners:[priya,other]}=await clinic(h,['Priya','Other'])
+ await h.cmd('service.save',{id:service.id,noteTemplate:'pt.evaluation'})
+ const ot=await h.cmd('service.save',{name:'OT evaluation',durationMinutes:45,priceCents:9500,noteTemplate:'ot.evaluation'})
+ const desk=await h.staff('PacketDesk','reception')
+ const instruments=[['lefs',20],['oswestry',10],['ndi',10],['quickdash',11],['psfs',3]].map(([kind,count])=>({kind,items:Array.from({length:count},(_,i)=>'Synthetic activity '+(i+1))}))
+ const base={title:'PT outcomes packet',discipline:'pt',questions:[{id:'reason',label:'What changed?',type:'short',required:true}],instruments}
+ await h.cmd('intake.prepare',base,desk.cookie,403)
+ await h.cmd('intake.prepare',{...base,instruments:[{kind:'lefs',items:['Incomplete instrument']}]},h.owner,400)
+ const draft=await h.cmd('intake.prepare',base),first=await h.cmd('intake.publish',{id:draft.id})
+ const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0])
+ const path=booked.location.split('?')[0],page=await h.send(path)
+ assert.match(page.text,/PT outcomes packet/);assert.match(page.text,/name="q_out_lefs_20" type="number"/)
+ const patient=(await h.state()).clients[0]
+ const answers={formId:first.id,q_reason:'Synthetic recovery update',...consentFields(page.text),signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee'}
+ for(const item of instruments)for(let i=1;i<=item.items.length;i++){
+  if(item.kind==='ndi'&&i>8||item.kind==='quickdash'&&i===11)continue
+  answers['q_out_'+item.kind+'_'+i]=String(item.kind==='lefs'?3:item.kind==='quickdash'?3:item.kind==='psfs'?[2,6,7][i-1]:2)
+ }
+ assert.equal((await h.form(path,{...answers,q_out_lefs_1:'5'})).status,400)
+ assert.equal((await h.form(path,{...answers,q_out_ndi_8:''})).status,400)
+ assert.equal((await h.form(path,{...answers,q_out_quickdash_10:''})).status,400)
+ assert.equal((await h.form(path,answers)).status,303)
+ const file=async(cookie=h.owner)=>{const result=await h.send('/api/balm/clients/'+patient.id,undefined,cookie);assert.equal(result.status,200,result.text);return result.value}
+ const old=(await file(priya.cookie)).intake.find(r=>r.formNumber===first.number)
+ assert.deepEqual(old.scores.map(s=>[s.kind,s.score,s.answered]),[['lefs',60,20],['oswestry',40,10],['ndi',40,8],['quickdash',50,10],['psfs',5,3]])
+ assert.equal((await file(desk.cookie)).intake,null)
+ assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,other.cookie)).status,404)
+ const next=await h.cmd('intake.prepare',{...base,title:'Updated PT outcomes packet',serviceId:service.id,instruments:[instruments[0]]})
+ const second=await h.cmd('intake.publish',{id:next.id})
+ const renewed=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[4])
+ const newPath=renewed.location.split('?')[0],newPage=await h.send(newPath)
+ assert.match(newPage.text,/Updated PT outcomes packet/)
+ assert.equal((await h.form(newPath,{...answers,formId:first.id})).status,409)
+ const nextAnswers={formId:second.id,q_reason:'Synthetic second version'}
+ for(let i=1;i<=20;i++)nextAnswers['q_out_lefs_'+i]='4'
+ assert.equal((await h.form(newPath,nextAnswers)).status,303)
+ const records=(await file()).intake
+ assert.equal(records.find(r=>r.formNumber===first.number).scores[0].score,60)
+ assert.equal(records.find(r=>r.formNumber===first.number).answers.reason,'Synthetic recovery update')
+ assert.equal(records.find(r=>r.formNumber===second.number).scores[0].score,80)
+ assert.ok(records.every(r=>r.scores.every(s=>s.scoringVersion==='1')))
+ const chart=await h.send('/app/clients/'+patient.id,undefined,priya.cookie)
+ assert.match(chart.text,/LEFS: 60 out of 80/);assert.match(chart.text,/LEFS: 80 out of 80/)
+ // A newer PT packet does not replace OT's default, or suppress its own link.
+ const otBooked=await bookOnline(h,ot.id,priya.id,(await slots(h,ot.id,priya.id))[8])
+ assert.match(otBooked.location,/^\/intake\//)
+ assert.match((await h.send(otBooked.location)).text,/New client intake/)
+ for(const discipline of ['ot','slp']){
+  const target=discipline==='ot'?ot:await h.cmd('service.save',{name:'Speech evaluation',durationMinutes:45,priceCents:9500,noteTemplate:'slp.evaluation'})
+  const prepared=await h.cmd('intake.prepare',{title:discipline.toUpperCase()+' packet',discipline,questions:[{id:'update',label:'Current function',type:'short',required:true}]})
+  await h.cmd('intake.publish',{id:prepared.id})
+  const selected=await bookOnline(h,target.id,priya.id,(await slots(h,target.id,priya.id))[16],{firstName:discipline.toUpperCase(),email:discipline+'@patient.example'})
+  assert.ok((await h.send(selected.location)).text.includes(discipline.toUpperCase()+' packet'))
+ }
+ const pediatric=await h.cmd('service.save',{name:'Pediatric evaluation',durationMinutes:45,priceCents:9500,intakeDiscipline:'pediatric'})
+ const pedDraft=await h.cmd('intake.prepare',{title:'Pediatric packet',discipline:'pediatric',questions:[{id:'guardian',label:'Guardian contact',type:'short',required:true}]})
+ await h.cmd('intake.publish',{id:pedDraft.id})
+ const ped=await bookOnline(h,pediatric.id,priya.id,(await slots(h,pediatric.id,priya.id))[12],{firstName:'Pediatric',email:'pediatric@patient.example'})
+ assert.match((await h.send(ped.location)).text,/Pediatric packet/)
+}))

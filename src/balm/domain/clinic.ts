@@ -80,17 +80,19 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
   // The note template a visit of this service starts from (for example pt.evaluation).
   const noteTemplate = input.noteTemplate === undefined ? previous?.note_template ?? '' : String(input.noteTemplate)
   insist(!noteTemplate || template(noteTemplate), 'unknown_template')
+  const intakeDiscipline=input.intakeDiscipline===undefined?previous?.intake_discipline??'':String(input.intakeDiscipline)
+  insist(['','pt','ot','slp','pediatric'].includes(intakeDiscipline),'invalid_intake_discipline')
   const enabled = serviceBoolean(input.selfBookEnabled, 'self_book_enabled', previous?.self_book_enabled ?? 1)
   const notice = integer(input.selfBookNoticeMinutes === undefined ? previous?.self_book_notice_minutes ?? 120 : input.selfBookNoticeMinutes, 'self_book_notice_minutes', 120, 86400)
   const plan = serviceBoolean(input.selfBookPlanRequired, 'self_book_plan_required', previous?.self_book_plan_required ?? 0)
   const authorization = serviceBoolean(input.selfBookAuthRequired, 'self_book_auth_required', previous?.self_book_auth_required ?? 0)
   await commit(db, who, [
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=?)', serviceId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
-    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template,self_book_enabled,self_book_notice_minutes,self_book_plan_required,self_book_auth_required) VALUES(?,?,?,?,?,?,?,?,?,?)
+    stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template,self_book_enabled,self_book_notice_minutes,self_book_plan_required,self_book_auth_required,intake_discipline) VALUES(?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_minutes=excluded.duration_minutes,price_cents=excluded.price_cents,active=excluded.active,note_template=excluded.note_template,
-      self_book_enabled=excluded.self_book_enabled,self_book_notice_minutes=excluded.self_book_notice_minutes,self_book_plan_required=excluded.self_book_plan_required,self_book_auth_required=excluded.self_book_auth_required,version=bm_services.version+1`,
+      self_book_enabled=excluded.self_book_enabled,self_book_notice_minutes=excluded.self_book_notice_minutes,self_book_plan_required=excluded.self_book_plan_required,self_book_auth_required=excluded.self_book_auth_required,intake_discipline=excluded.intake_discipline,version=bm_services.version+1`,
     serviceId, text(input.name === undefined ? previous?.name : input.name, 'name', 120), integer(input.durationMinutes === undefined ? previous?.duration_minutes : input.durationMinutes, 'duration_minutes', 5, 480),
-    integer(input.priceCents === undefined ? previous?.price_cents : input.priceCents, 'price_cents', 0, 10_000_000), serviceBoolean(input.active, 'active', previous?.active ?? 1), noteTemplate, enabled, notice, plan, authorization),
+    integer(input.priceCents === undefined ? previous?.price_cents : input.priceCents, 'price_cents', 0, 10_000_000), serviceBoolean(input.active, 'active', previous?.active ?? 1), noteTemplate, enabled, notice, plan, authorization,intakeDiscipline),
     audit(db, who, 'service.saved', null, serviceId),
   ])
   return { id: serviceId }

@@ -64,12 +64,6 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
     const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
     await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-3'})
     const noteCheck=await h.cmd('note.check',{id:checkedNote.id,revision:1},priya.cookie)
-    const student=await h.staff('ArchiveStudent','student',{supervisorId:priya.id,credentials:'SPT'})
-    await h.cmd('hours.save',{practitionerId:student.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
-    const studentVisit=await pastVisit(h,maya.id,student,service.id)
-    const coNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:studentVisit,body:'Synthetic archived co-signed care'},student.cookie)
-    await h.cmd('note.submit',{id:coNote.id,revision:1,signature:'ArchiveStudent',credentials:'SPT',attest:true},student.cookie)
-    await h.cmd('note.cosign',{id:coNote.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
     const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
     await h.cmd('invoice.approve',{id:invoice.id})
     await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Backup-EFTPOS-1'})
@@ -134,12 +128,6 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
-      const restoredCoNote=checkedFile.value.notes.find(n=>n.id===coNote.id)
-      assert.equal(restoredCoNote.signature.name,'Priya')
-      assert.equal(restoredCoNote.submissions[0].author_name,'ArchiveStudent')
-      assert.equal(restoredCoNote.submissions[0].decision,'cosigned')
-      const restoredStudentCookie=await restoredClinic.signIn('archivestudent@clinic.example')
-      await restoredClinic.cmd('note.sign',{id:coNote.id,revision:1,signature:'ArchiveStudent',attest:true},restoredStudentCookie,403)
       const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')
       await restoredClinic.cmd('note.amend',{id:checkedNote.id,revision:1,body:'Synthetic treatment after restore.',charges:[{code:'97110',minutes:30},{code:'97140',minutes:8}]},clinicianCookie)
       const restoredPreview=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===checkedNote.id).billing
@@ -356,4 +344,49 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
       assert.ok(!names2.includes('Temporary'), 'the patient erased before the last backup stays erased')
     } finally { await scratchClinic.close() }
   } finally { if (h) await h.close(); await local.close(); await rm(temporary, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) }
+})
+
+
+test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both signatures, estimate originals and versioned scores', {timeout:240_000}, async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-c23-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try {
+  await checkout(source);await checkout(restored)
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+  h=await harness({root:source})
+  const {service,practitioners:[priya]}=await clinic(h)
+  const student=await h.staff('ArchiveStudent','student',{supervisorId:priya.id,credentials:'SPT'})
+  await h.cmd('hours.save',{practitionerId:student.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
+  const visit=await pastVisit(h,patient.id,student,service.id)
+  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic portable supervised care'},student.cookie)
+  await h.cmd('note.submit',{id:note.id,revision:1,signature:'ArchiveStudent',credentials:'SPT',attest:true},student.cookie)
+  await h.cmd('note.cosign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
+  const request=await h.cmd('estimate.request',{clientId:patient.id,coverageKind:'self_pay',coverageAttestation:'Patient elected self-pay',attest:true})
+  const prepared=await h.cmd('estimate.prepare',{requestId:request.id,fromOn:today,throughOn:today,lines:[{serviceId:service.id,quantity:1}],attest:true})
+  const estimate=await h.cmd('estimate.issue',{id:prepared.id,sha256:prepared.sha256,attest:true})
+  const original=(await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,h.owner)).text
+  const packet=await h.cmd('intake.prepare',{title:'Portable LEFS packet',serviceId:service.id,questions:[{id:'reason',label:'Reason',type:'short',required:true}],instruments:[{kind:'lefs',items:Array.from({length:20},(_,i)=>'Synthetic item '+i)}]})
+  const form=await h.cmd('intake.publish',{id:packet.id})
+  const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0],{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
+  const path=booked.location.split('?')[0],page=await h.send(path)
+  const fields={formId:form.id,q_reason:'Synthetic portable answer',consentVersion:page.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Synthetic Portability',signerRelationship:'patient',signatureTyped:'Synthetic Portability'}
+  for(let i=1;i<=20;i++)fields['q_out_lefs_'+i]='3'
+  assert.equal((await h.form(path,fields)).status,303)
+  const auth=h.auth,ownerSession=h.owner
+  await h.close();h=null
+  const archive=join(temporary,'clinic.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,auth,owner:ownerSession})
+  const owner=await h.signIn(auth.OWNER_EMAIL),cookie=await h.signIn('archivestudent@clinic.example')
+  const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
+  assert.equal(file.status,200,file.text)
+  const fixed=file.value.notes.find(n=>n.id===note.id)
+  assert.equal(fixed.signature.name,'Priya');assert.equal(fixed.submissions[0].author_name,'ArchiveStudent');assert.equal(fixed.submissions[0].decision,'cosigned')
+  assert.equal(file.value.intake[0].scores[0].score,60);assert.equal(file.value.intake[0].formNumber,form.number)
+  assert.equal((await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,owner)).text,original)
+  await h.cmd('note.sign',{id:note.id,revision:1,signature:'ArchiveStudent',attest:true},cookie,403)
+ } finally {await h?.close();await rm(temporary,{recursive:true,force:true})}
 })

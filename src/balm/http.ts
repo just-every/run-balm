@@ -1,3 +1,4 @@
+import { estimateCommand, estimateFile, estimateOriginal } from './payments/estimates'
 import { biller, manager, locationState, roleCommand, roleRead } from './domain/role-access'
 import { audit, commit } from './domain/model'
 import { takeAddressRate, takeEmailRate, takePatientRate } from './public-rates'
@@ -90,7 +91,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
   const cancellations = (await env.DB.prepare('SELECT * FROM bm_visit_cancellations WHERE appointment_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(file.appointments.map(a => a.id))).all<any>()).results
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
-  const enriched = { ...file, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, estimates: await estimateFile(env.DB,who,clientId), retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -132,6 +133,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name.startsWith('estimate.')) return estimateCommand(env.DB,who,name,input)
   if (name === 'booking.embed.save') return saveBookingEmbed(env.DB, who, input, env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1')
   if (name === 'retention.save') return saveRetention(env.DB, who, input)
   if (name === 'retention.hold') return holdRecords(env.DB, who, input)
@@ -513,6 +515,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
       }
+      const estimate = path.match(/^\/api\/balm\/estimates\/([\w-]+)\.pdf$/)
+      if(estimate){need(who,'owner','reception');human(who);const row=await one(env.DB,'SELECT client_id FROM bm_estimates WHERE id=?',estimate[1]);insist(row,'estimate_not_found',404);const doc=await estimateOriginal(env.DB,row.client_id as string,estimate[1]);await commit(env.DB,who,[audit(env.DB,who,'estimate.downloaded',row.client_id as string,estimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
       const document = await paymentDocument(env.DB, who, path, url.searchParams)
       if (document) return document
       const original = path.match(/^\/api\/balm\/imports\/([\w-]+)\/original\.csv$/)

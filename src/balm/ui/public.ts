@@ -47,6 +47,7 @@ export function bookPage(d: any) {
 
 function question(q: any) {
   const name = 'q_' + q.id, req = q.required ? ' required' : '', label = h(q.label) + (q.required ? '' : ' <span class="help">(optional)</span>')
+  if(q.type==='number')return `<label>${label}<input name="${h(name)}" type="number" min="${q.min}" max="${q.max}" step="1"${req}><span class="help">Whole number ${q.min}–${q.max} from the questionnaire supplied by your clinic.</span></label>`
   if (q.type === 'yes') return `<label class="check"><input type="checkbox" name="${h(name)}" value="yes"${req}><span>${label}</span></label>`
   if (q.type === 'long') return `<label>${label}<textarea name="${h(name)}" maxlength="5000"${req}></textarea></label>`
   return `<label>${label}<input name="${h(name)}" type="${q.type === 'date' ? 'date' : 'text'}" maxlength="300"${req}></label>`

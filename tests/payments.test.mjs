@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { harness } from './harness.mjs'
+import { harness, run } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { portalBilling, portalLogin } from './portal-billing.mjs'
@@ -433,3 +433,6 @@ test('PAY-004: reviewed write-offs, external credit/refund, periodic statements 
   const { accountLedgerJourney } = await import('./account-ledger-journey.mjs')
   await accountLedgerJourney()
 })
+
+
+test('PAY-007: scheduled and requested estimates meet business-day deadlines, preserve originals and portal isolation, and flag the $400 boundary',async()=>{const {goodFaithJourney}=await import('./good-faith-journey.mjs');await run(goodFaithJourney)})
