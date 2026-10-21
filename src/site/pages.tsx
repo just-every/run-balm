@@ -25,8 +25,9 @@ const keepSeparators = (html: string) => html.replaceAll(' · ', '\u00a0·\u00a0
   .replace(/\b(Mar|Apr) (\d)/g, '$1\u00a0$2').replace(/(\d) min\b/g, '$1\u00a0min')
   .replace(HELD, phrase => phrase.replaceAll(' ', '\u00a0'))
 
-/** The run site's own tokens (public/site/theme.css), for Base's Run and not-found pages; no floor art there. */
-const siteIdentity: EditionIdentity = { ...identity, theme: '/site/theme.css', band: undefined }
+/** The run site's own theme (public/site/theme.css: its tokens, faces and page font), for Base's Run and not-found
+ * pages; no floor art there, and not the app's look in /fonts/fonts.css. */
+const siteIdentity: EditionIdentity = { ...identity, theme: '/site/theme.css', band: undefined, fonts: undefined }
 const SHARE_IMAGE = `${identity.runSite}/site/share.jpg`
 const HOME_DESCRIPTION = 'Balm runs your clinic’s schedule, intake, notes and reminders, and bills insurance and patients through to paid. 100% free, open source alternative to WebPT, SimplePractice and Jane.'
 
@@ -53,7 +54,6 @@ export function sitePages({ styles, contract }: SiteContext): SiteBuild {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="preload" href="/fonts/newsreader/newsreader-latin-standard-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/inter/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-        <link rel="stylesheet" href="/fonts/fonts.css" />
         <link rel="stylesheet" href={siteIdentity.theme} />
         {styles.map(href => <link key={href} rel="stylesheet" href={href} />)}
       </head>

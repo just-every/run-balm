@@ -29,6 +29,7 @@ export async function selfServiceBrowser() {
     const context=await browser.newContext({viewport:{width:1440,height:1000},ignoreHTTPSErrors:true})
     await context.route('**/brand/mark.svg',r=>r.fulfill({path:'public/brand/mark.svg',contentType:'image/svg+xml'}))
     await context.route('**/rer-theme.css',r=>r.fulfill({path:'public/rer-theme.css',contentType:'text/css'}))
+    await context.route('**/fonts/fonts.css',r=>r.fulfill({path:'public/fonts/fonts.css',contentType:'text/css'}))
     await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
     const addCookie=async cookie=>{const [name,...value]=cookie.split('=');await context.addCookies([{name,value:value.join('='),url:h.origin,secure:true,httpOnly:true,sameSite:'Lax'}])}
     await addCookie(h.owner)

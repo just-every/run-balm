@@ -50,6 +50,7 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     await context.addCookies([cookie])
     await context.route('**/brand/mark.svg',r=>r.fulfill({path:'public/brand/mark.svg',contentType:'image/svg+xml'}))
     await context.route('**/rer-theme.css',r=>r.fulfill({path:'public/rer-theme.css',contentType:'text/css'}))
+    await context.route('**/fonts/fonts.css',r=>r.fulfill({path:'public/fonts/fonts.css',contentType:'text/css'}))
     await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
     const page = await context.newPage()
     await page.goto(`${h.origin}/app?date=${await visitDate(h,visit)}&appt=${visit}`)

@@ -10,10 +10,13 @@ Latin Extended WOFF2 subsets come from Fontsource's variable distributions. No p
 | JetBrains Mono (wght axis) | `jetbrains-mono/` | Commands and code on the run site | https://github.com/JetBrains/JetBrainsMono |
 | Outfit (wght axis) | `outfit/` | The app's body text, until its design round | https://github.com/Outfitio/Outfit-Fonts |
 
-`fonts.css` declares all of them. The app's root document links it once, outside the temporary dev SSR stylesheet,
-and preloads only Outfit's Latin file; the run site preloads Newsreader's and Inter's Latin files. Do not import this
-CSS from a component. Every body-font stack uses `--font-body`, including the local fallback faces before generic
-fallback fonts; controls inherit it.
+`/rer-theme.css` declares all of them, so the installer serves them too, and the run site's own theme
+(`/site/theme.css`) declares the three it uses. `fonts.css` sets the app's page font and carries Balm's own tokens and
+Base's pages in its look, which the theme grammar keeps out of `/rer-theme.css`; every app document links it once,
+before the theme. The app's root document links it outside the temporary dev SSR stylesheet and preloads only
+Outfit's Latin file; the run site preloads Newsreader's and Inter's Latin files. Do not import these CSS files from a
+component. Every body-font stack uses `--font-body`, including the local fallback faces before generic fallback fonts;
+controls inherit it.
 
 Each `… Fallback` face scales a local Arial or Georgia to the sampled advance widths (A-Z, a-z, 0-9) of its web face
 at the weights it covers, with matching ascent and descent, which reduces layout movement while the web face loads.

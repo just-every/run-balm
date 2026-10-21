@@ -1,6 +1,6 @@
 // The Today screen's layout and its patient panel: the day beside the selected
 // visit's patient, the coral denied-claim card with its dated trail, and the
-// quiet case agent strip. Every colour is a token from public/rer-theme.css.
+// quiet case agent strip. Every colour is a token from public/rer-theme.css or public/fonts/fonts.css.
 export const todayStyle = `
 .today{display:grid;grid-template-columns:minmax(0,1fr) 426px;gap:14px;align-items:start}
 .today.single{grid-template-columns:minmax(0,1fr)}

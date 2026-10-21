@@ -51,7 +51,10 @@ export async function identitySettingsView(v: View, branding: unknown) {
       ? `<p><strong>Waiting for Auth to approve the link</strong> to ${escape(v.pending.issuer)} until ${escape(clock(v.pending.expiresAt, v.timeZone))}. Approve it in Auth (step 3), then refresh this page.</p>`
       : `<p><strong>No identity provider is linked.</strong> Everyone signs in with email links. Provider sign-in can be turned on once Auth is linked.</p>`
   const content = note + state + what + (linked ? '<details><summary>How linking works</summary>' + steps(v) + '</details>' : steps(v)) + '<p class="secondary-link"><a href="/app">Back to app</a></p>'
-  return pageResponse({ branding, title: 'Sign-in settings', heading: 'Sign-in settings', content, referrer: 'strict-origin' })
+  const page = await pageResponse({ branding, title: 'Sign-in settings', heading: 'Sign-in settings', content, referrer: 'strict-origin' })
+  // Base's frame links only the theme; the rest of Balm's look (/fonts/fonts.css) goes before it, as on Balm's other pages.
+  const html = (await page.text()).replace('<link rel="stylesheet" href="/rer-theme.css">', '<link rel="stylesheet" href="/fonts/fonts.css">$&')
+  return new Response(html, { status: page.status, headers: page.headers })
 }
 
 /** The clinic's time zone, for the times this page shows. */

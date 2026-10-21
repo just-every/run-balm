@@ -1,80 +1,176 @@
-/* Balm's app tokens, defined once: the app's own pages, the installer, sign-in,
-   confirmation and /setup read them, and every app style refers to them by name.
+/* Balm's theme for Base: the --rer-* tokens and the faces that the installer,
+   sign-in, its confirmation, /setup, the development hand-off page, the Lobby,
+   the app's own pages and the patient portal read. The installer reads this
+   file with Base's theme grammar (only :root --rer-* tokens with literal values,
+   and @font-face rules) and checks its colour pairs, so Balm's own tokens and
+   Base's pages in its look are in public/fonts/fonts.css, linked before it.
    The look is the owner-picked app screen (design desk, 17 Oct 2026): an airy
    off-white page, white hairline cards, deep navy-green ink and buttons, sage for
    done, amber for waiting, sky for booked, coral only for an exception, Newsreader
    for titles and Inter for the rest. The brand colours are the homepage's
    (public/site/theme.css); the page is the pick's cooler off-white, not the
    homepage's ivory. */
-@import url('/fonts/fonts.css');
 :root {
   --rer-font-body: 'Inter', 'Inter Fallback', Arial, sans-serif;
   --rer-font-heading: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
-  --rer-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --rer-wordmark-weight: 500;
   --rer-page: #fbfdfc;
   --rer-surface: #ffffff;
   --rer-text: #082d37;
   --rer-muted: #56636b;
-  --rer-border: #a9b7b1;
+  /* A field edge needs 3:1 on white: #a9b7b1 was 2.08:1. */
+  --rer-border: #8b9891;
   --rer-focus: #1e907e;
   --rer-link: #17675b;
   --rer-accent: #16403d;
   --rer-accent-text: #ffffff;
   --rer-radius: 12px;
   --rer-logo: url('/brand/mark.svg');
-
-  /* Brand palette (the homepage's values). */
-  --ink: var(--rer-text);
-  --body: #536477;
-  --soft: #64707d;
-  --pill: var(--rer-accent);
-  --pill-hover: #1f5450;
-  --teal: #1e907e;
-  --teal-ink: #17675b;
-  --sage: #6e9d77;
-  --sage-ink: #3d6e48;
-  --sage-tint: #e5f2e9;
-  --sage-wash: #edf6e9;
-  --check: #3f8c55;
-  --honey: #f8b842;
-  --honey-ink: #8f5a12;
-  --honey-tint: #fdf1d9;
-  --honey-wash: #fff6e2;
-  --sky: #7fb4e6;
-  --sky-ink: #1f5d96;
-  --sky-tint: #d5e9f8;
-  --sky-wash: #e5f3ff;
-  --coral: #e0573f;
-  --coral-ink: #b2361f;
-  --coral-tint: #fde9e4;
-  --coral-wash: #ffebe5;
-
-  /* Surfaces and lines of the app. */
-  --line: #e4ebed;
-  --line-strong: #d3ddd8;
-  --field: #b9c6c0;
-  --row: #f4f7f5;
-  --hover: #f1f5f3;
-  --rail: #fcfefd;
-  --radius-card: 12px;
-  --radius-chip: 6px;
-  --shadow-card: none;
-  --shadow-float: 0 2px 4px rgba(23, 50, 58, .05), 0 18px 40px -18px rgba(23, 50, 58, .26);
 }
 
-/* Base's sign-in, confirmation and /setup pages in the same look: the pick's
-   off-white with its faint sage and sky washes, a white hairline card, the serif
-   title and thin quiet fields with a clear teal focus ring. */
-html.rer-themed { background: radial-gradient(50% 40% at 100% 0%, var(--sky-wash), transparent 70%), radial-gradient(45% 40% at 0% 100%, var(--sage-wash), transparent 70%), var(--rer-page); }
-html.rer-themed body { background: transparent; color: var(--rer-text); font-family: var(--rer-font-body); -webkit-font-smoothing: antialiased; }
-html.rer-themed body main { border: 1px solid var(--line); box-shadow: var(--shadow-card); }
-html.rer-themed body h1 { font-family: var(--rer-font-heading); font-weight: 500; letter-spacing: -.02em; font-variation-settings: 'opsz' 48; }
-html.rer-themed body .brand, html.rer-themed body .rer-brand { font-size: 24px; font-weight: 500; letter-spacing: -.02em; gap: 8px; }
-html.rer-themed body .brand::before, html.rer-themed body .rer-brand::before { width: 28px; height: 28px; }
-html.rer-themed body input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { border: 1px solid var(--field); border-radius: 8px; background: var(--rer-surface); min-height: 44px; transition: border-color .15s, box-shadow .15s; }
-html.rer-themed body input:not([type=checkbox]):not([type=radio]):not([type=hidden]):focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 22%, transparent); }
-html.rer-themed body button, html.rer-themed body .action { border-radius: 10px; font-weight: 600; }
-html.rer-themed body button:hover { background: var(--pill-hover); }
-html.rer-themed body button.secondary { background: var(--rer-surface); color: var(--rer-text); border: 1px solid var(--line-strong); }
-html.rer-themed body dt { color: var(--soft); }
+/* Outfit (SIL Open Font License 1.1), self-hosted from public/fonts/outfit. The page makes no third-party request. */
+@font-face {
+  font-family: Outfit;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/outfit/outfit-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: Outfit;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/outfit/outfit-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* Match Outfit's sampled advance widths and its 1000/-260/0 vertical metrics.
+   Divide each vertical override by size-adjust, which scales it again. */
+@font-face {
+  font-family: 'Outfit Fallback';
+  font-style: normal;
+  font-weight: 100 450;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans');
+  size-adjust: 99.4503%;
+  ascent-override: 100.5527%;
+  descent-override: 26.1437%;
+  line-gap-override: 0%;
+}
+/* Match Outfit's sampled advance widths and its 1000/-260/0 vertical metrics.
+   Divide each vertical override by size-adjust, which scales it again. */
+@font-face {
+  font-family: 'Outfit Fallback';
+  font-style: normal;
+  font-weight: 451 549;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans');
+  size-adjust: 99.8319%;
+  ascent-override: 100.1684%;
+  descent-override: 26.0438%;
+  line-gap-override: 0%;
+}
+/* Match Outfit's sampled advance widths and its 1000/-260/0 vertical metrics.
+   Divide each vertical override by size-adjust, which scales it again. */
+@font-face {
+  font-family: 'Outfit Fallback';
+  font-style: normal;
+  font-weight: 550 900;
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold');
+  size-adjust: 98.8729%;
+  ascent-override: 101.1399%;
+  descent-override: 26.2964%;
+  line-gap-override: 0%;
+}
+
+/* The run site's faces, also used for the Balm wordmark and headings in the app (SIL Open Font License 1.1,
+   self-hosted from public/fonts; see README.md). Newsreader carries its optical-size axis for display contrast. */
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader/newsreader-latin-standard-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader/newsreader-latin-ext-standard-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter/inter-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* Fallbacks matched to the sampled advance widths (A-Z, a-z, 0-9) and vertical metrics of each face. */
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 100 450;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans');
+  size-adjust: 104.57%;
+  ascent-override: 92.76%;
+  descent-override: 22.95%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 451 549;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans');
+  size-adjust: 105.96%;
+  ascent-override: 91.54%;
+  descent-override: 22.65%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 550 900;
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('LiberationSans-Bold');
+  size-adjust: 102.90%;
+  ascent-override: 94.27%;
+  descent-override: 23.32%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Newsreader Fallback';
+  font-style: normal;
+  font-weight: 100 549;
+  src: local('Georgia');
+  size-adjust: 107.44%;
+  ascent-override: 68.88%;
+  descent-override: 24.20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Newsreader Fallback';
+  font-style: normal;
+  font-weight: 550 900;
+  src: local('Georgia Bold'), local('Georgia-Bold');
+  size-adjust: 96.77%;
+  ascent-override: 76.47%;
+  descent-override: 26.87%;
+  line-gap-override: 0%;
+}

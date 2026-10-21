@@ -1,5 +1,5 @@
 // The app's type, cards, forms, chips, tables and notices, in the owner-picked
-// look. Every colour is a token from public/rer-theme.css.
+// look. Every colour is a token from public/rer-theme.css or public/fonts/fonts.css.
 export const baseStyle = `
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;background:var(--rer-page)}
