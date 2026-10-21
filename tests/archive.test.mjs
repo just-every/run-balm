@@ -205,6 +205,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
   const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch')
   const bucket = fakeBucket(), keys = await generateBackupKeys(), other = await generateBackupKeys(), local = await bucket.serve()
   const storage = { endpoint: 'https://s3.balm-test.example', bucket: bucket.config.bucket, region: bucket.config.region, prefix: 'clinic', accessKeyId: bucket.config.accessKeyId, secretAccessKey: bucket.config.secretAccessKey, publicKey: keys.publicKey, intervalHours: 24, consent: 'on' }
+  const began = Date.now(), mark = label => console.log(`backup ${label} at ${Date.now() - began}ms`)
   let h
   try {
     for (const path of [source, scratch]) await checkout(path)
@@ -230,6 +231,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.equal((await h.state(reception.cookie)).backups, null, 'staff other than the owner see no backup settings')
     // Before any backup the dashboard says one is pending.
     assert.ok(/data-recovery-point="waiting"/.test((await h.send('/app', undefined, h.owner)).text), 'before the first backup the dashboard says it is pending')
+    mark('settings checked')
     // Change data, then the scheduler backs up by itself.
     await h.cmd('client.save', { firstName: 'Before', lastName: 'Backup', dateOfBirth: '1990-01-01' })
     const first = Date.now()
@@ -253,6 +255,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.ok(Buffer.compare(Buffer.from(bucket.objects.get(names()[0])), stored) === 0, 'an earlier backup is never rewritten')
     const runs = (await h.state()).backups.runs
     assert.deepEqual(runs.map(r => r.state), ['ok', 'ok']); assert.equal(runs[0].counts.clients, 2); assert.equal(runs[1].counts.clients, 1)
+    mark('automatic backups checked')
     // A storage outage is shown on the dashboard and retried after a pause, never silently dropped.
     bucket.state.refuse = 503
     await tick(first + 50 * 3_600_000)
@@ -266,6 +269,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     const audit = (await h.state()).audit ?? []
     const identity = { auth: h.auth, owner: h.owner }
     await h.close(); h = null
+    mark('outage and retry checked')
     // The restore drill and the restore itself run on the owner's computer with only the private key, against the bucket.
     const env = join(temporary, 'backup.env'), keyFile = join(temporary, 'private.pem'), wrongFile = join(temporary, 'wrong.pem')
     await writeFile(keyFile, keys.privateKeyPem, { mode: 0o600 }); await writeFile(wrongFile, other.privateKeyPem, { mode: 0o600 })
@@ -282,6 +286,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.match(await script('restore.mjs', ['--key', keyFile, '--input', damaged, '--output', join(temporary, 'bad.rer')], 2), /damaged/)
     assert.equal(await readFile(join(temporary, 'bad.rer')).then(() => true, () => false), false, 'a damaged backup leaves no partial archive')
     assert.match(await script('drill.mjs', ['--key', keyFile, '--env-file', env]), /Drill passed/)
+    mark('drill passed')
     const restored = join(temporary, 'restored.rer')
     assert.match(await script('restore.mjs', ['--key', keyFile, '--env-file', env, '--output', restored]), /3 clients|2 clients/)
     await command(scratch, ['import', '--input', restored, '--yes', '--no-queue'])
