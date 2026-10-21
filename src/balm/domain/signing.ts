@@ -4,6 +4,7 @@
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
 import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
+import { diagnosisGuards } from './notes'
 import { payerBilling, primaryUnitMethod } from '../insurance/unit-method'
 import { audit, commit, guard, human, id, insist, now, one, practitionerId, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -57,9 +58,11 @@ export async function signNote(db: D1Database, who: Actor, input: Data) {
   if ('cmsTie' in billing && billing.cmsTie && !billing.cmsTie.resolved) {
     insist(false, `Choose exactly ${billing.cmsTie.units} tied CMS code${billing.cmsTie.units === 1 ? '' : 's'} before signing: ${billing.cmsTie.codes.join(', ')}`)
   }
+  const diagnoses = await diagnosisGuards(db, note.appointment_id, JSON.parse(latest.charges as string || '[]'))
   const by = signer(staff, input), signedAt = now()
   const digest = await signedDigest(note, latest, sections, by, signedAt)
   await commit(db, who, [
+    ...diagnoses,
     ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_policies)=?', policyVersion!.total),
