@@ -70,3 +70,11 @@ instructions under `node_modules/@runeditrun/rer/modules/deploy-kit`; account sc
 resource ownership, migrations, receipt and health checks are defined there.
 Local validation does not prove hosted acceptance, provider delivery or remote
 health.
+
+## Automatic backup custody and retention
+
+On Clinic → Backups the owner supplies an S3-compatible bucket and only the public half of an owner-held key pair. Keep the private key in two safe places away from this server and this bucket; without it no backup can be restored. A lost private key makes every backup made to it unrecoverable; destroying it leaves them all unreadable. Storage credentials are sealed under the install secret and never shown again.
+
+Set an expiry rule on the bucket: Balm never deletes or overwrites backups, so records you erase or destroy stay encrypted in older backups until that rule removes them. To protect against ransomware, turn on S3 Object Lock (governance mode) or an R2 bucket lock for no longer than that expiry, and where your provider allows it, give Balm a key that cannot delete objects. Unfinished multipart uploads are aborted. Run `rer run backup:drill` after setup and whenever you change the key.
+
+`backup:restore --object KEY` saves the newest backup’s journal beside an older restore; give that journal to `rer import` to fence later erasures. A fresh destination without the newer journal cannot know about them. RER Managed hosting offers no backups. See [backup setup and recovery](docs/backup.md). Live receipts against Amazon S3 and Cloudflare R2, and the off-site backup target’s BAA record, belong to `HIPAA-005`.

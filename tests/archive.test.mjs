@@ -203,11 +203,23 @@ test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archi
 
 test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a recovery point, and the last one restores into a scratch deployment with a later change present', { timeout: 600_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch'), refused = join(temporary, 'refused')
-  const bucket = fakeBucket(), keys = await generateBackupKeys(), other = await generateBackupKeys(), local = await bucket.serve()
+  const bucket = fakeBucket({ locked: true }), keys = await generateBackupKeys(), other = await generateBackupKeys(), local = await bucket.serve()
   const storage = { endpoint: 'https://s3.balm-test.example', bucket: bucket.config.bucket, region: bucket.config.region, prefix: 'clinic', accessKeyId: bucket.config.accessKeyId, secretAccessKey: bucket.config.secretAccessKey, publicKey: keys.publicKey, intervalHours: 24, consent: 'on' }
   const began = Date.now(), mark = label => console.log(`backup ${label} at ${Date.now() - began}ms`)
   let h
   try {
+    // Managed exposes the refusal through the same owner page and command door, without any storage write.
+    const managed = await harness({ auth: { RER_INSTALLATION_ID: 'synthetic-balm-1', RER_MANAGEMENT_ORIGIN: 'https://managed.balm-test.example' }, outbound: bucket.fetchHandler })
+    try {
+      await clinic(managed, []); await managed.finishSetup()
+      const panel = (await managed.send('/app/clinic', undefined, managed.owner)).text
+      assert.match(panel, /Automatic backups are not available yet on RER Managed hosting/)
+      assert.ok(!panel.includes('name=backup.save'))
+      assert.equal((await managed.state()).backups.managed, true)
+      await managed.cmd('backup.save', storage, managed.owner, 409)
+      assert.equal((await managed.db.prepare('SELECT COUNT(*) AS n FROM bm_backup_settings').first()).n, 0)
+      assert.equal(bucket.log.length, 0, 'Managed never contacts storage')
+    } finally { await managed.close() }
     for (const path of [source, scratch, refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 2e6 })
     h = await harness({ root: source, outbound: bucket.fetchHandler })
@@ -225,8 +237,16 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.equal((await h.send('/app/clinic', undefined, h.owner)).text.includes('synthetic-balm-secret'), false)
     const saved = await h.cmd('backup.save', storage, h.owner)
     assert.equal(saved.ok, true, saved.message)
-    assert.deepEqual([...bucket.objects.keys()], ['clinic/balm-connection-check.txt'])
+    assert.equal(bucket.objects.size, 1)
+    assert.match([...bucket.objects.keys()][0], /^clinic\/balm-connection-check-.*\.txt$/)
+    const firstCheck = [...bucket.objects.keys()][0]
+    assert.equal((await h.cmd('backup.save', { ...storage, secretAccessKey: '', publicKey: '', consent: undefined }, h.owner)).ok, true)
+    assert.equal(bucket.objects.size, 2, 'a second save writes a new connection-check object even in a locked bucket')
+    assert.ok(bucket.objects.has(firstCheck))
     const state = await h.state()
+    const credentials = await h.db.prepare('SELECT secret_sealed FROM bm_backup_settings WHERE id=1').first()
+    assert.match(credentials.secret_sealed, /^v1\.[^.]+\.[^.]+$/)
+    assert.ok(!credentials.secret_sealed.includes(storage.secretAccessKey), 'the database holds sealed storage credentials')
     assert.equal(state.backups.saved.secret_hint, '…cret'); assert.ok(!JSON.stringify(state).includes('synthetic-balm-secret'), 'the storage secret is sealed and never sent back')
     assert.equal((await h.state(reception.cookie)).backups, null, 'staff other than the owner see no backup settings')
     // Before any backup the dashboard says one is pending.
@@ -250,7 +270,13 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.equal((await h.send('/app', undefined, reception.cookie)).text.includes('data-recovery-point'), false, 'reception sees no recovery strip')
     const panelHtml = (await h.send('/app/clinic', undefined, h.owner)).text
     assert.ok(panelHtml.includes('id="backups"') && panelHtml.includes(keys.fingerprint) && panelHtml.includes('2 clients'))
-    await h.cmd('client.save', { firstName: 'Changed', lastName: 'AfterBackup', dateOfBirth: '1991-02-02' })
+    const changed = await h.cmd('client.save', { firstName: 'Changed', lastName: 'AfterBackup', dateOfBirth: '1991-02-02' })
+    // Real chart uploads make the next archive exceed one multipart part, without changing the upload limit.
+    const scan = mriReport('synthetic-balm-1', 'synthetic-balm-2 '.repeat(55_000))
+    for (let i = 0; i < 8; i++) await h.cmd('chart.document.upload', {
+      ...mriUpload(changed.id, '2026-10-01'), title: `synthetic-balm-${i + 3}`,
+      attachment: 'data:application/pdf;base64,' + scan.toString('base64'),
+    })
     await tick(first + 25 * 3_600_000)
     assert.equal(names().length, 2, 'the next automatic backup follows the interval and is a new object')
     assert.ok(Buffer.compare(Buffer.from(bucket.objects.get(names()[0])), stored) === 0, 'an earlier backup is never rewritten')
@@ -260,16 +286,30 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     await h.cmd('client.erase', { id: enquiry.id })
     mark('automatic backups checked')
     // A storage outage is shown on the dashboard and retried after a pause, never silently dropped.
-    bucket.state.refuse = 503
+    bucket.state.refusePart = 503
     await tick(first + 50 * 3_600_000)
     assert.ok(/role="alert"[^>]*data-recovery-point="failing"[\s\S]*refused by the storage/.test((await h.send('/app', undefined, h.owner)).text), 'a failed backup is shown on the dashboard')
     await tick(first + 50 * 3_600_000 + 5 * 60_000)
     assert.equal((await h.state()).backups.runs.filter(r => r.state === 'failed').length, 1, 'a failed backup waits before it is retried')
-    bucket.state.refuse = 0
+    assert.equal(bucket.uploads.size, 0, 'a failed multipart upload is aborted even with bucket lock')
+    assert.ok(bucket.log.some(r => r.method === 'DELETE' && r.query?.uploadId))
+    bucket.state.refusePart = 0
     await tick(first + 50 * 3_600_000 + 16 * 60_000)
     assert.equal(names().length, 3, 'the backup succeeds once storage is back')
     await h.cmd('backup.run', {}, reception.cookie, 403)
-    const audit = (await h.state()).audit ?? []
+    const audit = (await h.db.prepare('SELECT * FROM bm_audit ORDER BY sequence').all()).results
+    const consent = audit.findLast(r => r.action === 'backup.saved' && r.detail.includes('consent recorded') && r.detail.includes(saved.fingerprint))
+    assert.ok(consent, 'owner consent is recorded in the append-only audit')
+    assert.equal(consent.actor_email, h.auth.OWNER_EMAIL); assert.equal(consent.actor_role, 'owner')
+    assert.ok(Date.parse(consent.at) >= Date.parse(state.backups.saved.consent_at), 'the consent audit row records its time')
+    assert.ok(consent.detail.includes(storage.bucket) && consent.detail.includes(storage.endpoint))
+    assert.ok(!JSON.stringify(audit).includes(storage.secretAccessKey), 'no storage secret appears anywhere in the audit')
+    assert.ok(bucket.log.some(r => r.query?.uploads === '') && bucket.log.some(r => r.query?.partNumber), 'scheduled backups exercise multipart uploads')
+    assert.equal(bucket.uploads.size, 0)
+    assert.ok(!bucket.log.some(r => r.method === 'DELETE' && !r.query?.uploadId), 'no object is deleted')
+    assert.ok(!bucket.log.some(r => r.refused === 'OverwriteRefused'), 'no object is rewritten')
+    const writes = bucket.log.filter(r => !r.refused && ((r.method === 'PUT' && !r.query.partNumber) || (r.method === 'POST' && r.query.uploadId)))
+    assert.equal(new Set(writes.map(r => r.path)).size, writes.length, 'every completed object has a new key')
     const identity = { auth: h.auth, owner: h.owner }
     await h.close(); h = null
     mark('outage and retry checked')

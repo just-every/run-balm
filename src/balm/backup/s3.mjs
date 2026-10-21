@@ -6,6 +6,7 @@ const encoder = new TextEncoder()
 const subtle = globalThis.crypto.subtle
 const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('')
 const sha = async data => hex(await subtle.digest('SHA-256', data))
+const base64Hash = hash => btoa(String.fromCharCode(...hash.match(/../g).map(byte => parseInt(byte, 16))))
 const hmac = async (key, data) => new Uint8Array(await subtle.sign('HMAC', await subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), encoder.encode(data)))
 const escape = value => encodeURIComponent(value).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
 export const PART_BYTES = 8 * 1024 * 1024
@@ -31,7 +32,7 @@ async function call(target, method, key, { query = {}, body, headers = {}, now =
   const search = Object.entries(query).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => `${escape(k)}=${escape(v)}`).join('&')
   const stamp = now.toISOString().replace(/[-:]|\.\d{3}/g, ''), day = stamp.slice(0, 8), payload = await sha(body ?? new Uint8Array(0))
   const host = new URL(target.origin).host
-  const signed = { host, 'x-amz-content-sha256': payload, 'x-amz-date': stamp, ...headers }
+  const signed = { host, 'x-amz-content-sha256': payload, 'x-amz-date': stamp, ...(method === 'PUT' ? { 'x-amz-checksum-sha256': base64Hash(payload) } : {}), ...headers }
   const names = Object.keys(signed).map(n => n.toLowerCase()).sort()
   const canonical = [method, path, search, ...names.map(n => `${n}:${String(Object.entries(signed).find(([k]) => k.toLowerCase() === n)[1]).trim()}`), '', names.join(';'), payload].join('\n')
   const scope = `${day}/${target.region}/s3/aws4_request`
@@ -58,12 +59,12 @@ export async function putObject(target, key, body, options) {
 /** Writes an async iterable of chunks as one new object, in multipart pieces once it passes one part. */
 export async function putStream(target, key, source, options = {}) {
   const full = target.prefix + key
-  let buffer = [], size = 0, total = 0, upload, etags = []
+  let buffer = [], size = 0, total = 0, upload, etags = [], checksums = []
   const take = () => { const out = new Uint8Array(size); let at = 0; for (const piece of buffer) { out.set(piece, at); at += piece.length } buffer = []; size = 0; return out }
   const flush = async () => {
     const part = take()
     if (!upload) {
-      const response = await call(target, 'POST', full, { ...options, query: { uploads: '' }, headers: { 'content-type': 'application/octet-stream' } })
+      const response = await call(target, 'POST', full, { ...options, query: { uploads: '' }, headers: { 'content-type': 'application/octet-stream', 'x-amz-checksum-algorithm': 'SHA256' } })
       if (!response.ok) await fail(response, 'Starting the backup upload')
       upload = /<UploadId>([^<]+)<\/UploadId>/.exec(await response.text())?.[1]
       if (!upload) throw new StorageError('the storage did not start a multipart upload')
@@ -72,7 +73,7 @@ export async function putStream(target, key, source, options = {}) {
     if (!response.ok) await fail(response, 'Writing a backup part')
     const etag = response.headers.get('etag'); await response.body?.cancel()
     if (!etag) throw new StorageError('the storage did not return a part receipt')
-    etags.push(etag)
+    etags.push(etag); checksums.push(base64Hash(await sha(part)))
   }
   try {
     for await (const chunk of source) {
@@ -81,7 +82,7 @@ export async function putStream(target, key, source, options = {}) {
     }
     if (!upload) { await putObject(target, key, take(), options); return { bytes: total } }
     if (size) await flush()
-    const xml = '<CompleteMultipartUpload>' + etags.map((tag, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${tag}</ETag></Part>`).join('') + '</CompleteMultipartUpload>'
+    const xml = '<CompleteMultipartUpload>' + etags.map((tag, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${tag}</ETag><ChecksumSHA256>${checksums[i]}</ChecksumSHA256></Part>`).join('') + '</CompleteMultipartUpload>'
     const done = await call(target, 'POST', full, { ...options, query: { uploadId: upload }, body: encoder.encode(xml), headers: { 'content-type': 'application/xml' } })
     const text = await done.text()
     // S3 can answer 200 with an error body for a failed completion.

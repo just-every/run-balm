@@ -53,7 +53,7 @@ async function save(env: Bindings, who: Actor, input: Data) {
   const at = now()
   // Saving proves the credentials the way every backup will use them: one small new object, never a patient record.
   let ok = true, message = 'Balm wrote a connection check to your storage.'
-  try { await putObject(target, 'balm-connection-check.txt', new TextEncoder().encode(`Balm connection check ${at}. Backups in this folder are encrypted; this file holds no clinic data.\n`)) }
+  try { await putObject(target, `balm-connection-check-${at.replace(/[-:]|\.\d{3}/g, '')}-${id()}.txt`, new TextEncoder().encode(`Balm connection check ${at}. Backups in this folder are encrypted; this file holds no clinic data.\n`)) }
   catch (error) { ok = false; message = error instanceof StorageError ? error.message : 'Balm could not reach your storage.' }
   await commit(env.DB, who, [
     stmt(env.DB, `INSERT INTO bm_backup_settings(id,enabled,endpoint,region,bucket,prefix,access_key_id,secret_sealed,secret_hint,public_key,key_fingerprint,interval_hours,consent_by,consent_at,updated_by,updated_at,checked_at,check_ok,check_message)
@@ -61,7 +61,7 @@ async function save(env: Bindings, who: Actor, input: Data) {
       ON CONFLICT(id) DO UPDATE SET enabled=1,endpoint=excluded.endpoint,region=excluded.region,bucket=excluded.bucket,prefix=excluded.prefix,access_key_id=excluded.access_key_id,secret_sealed=excluded.secret_sealed,secret_hint=excluded.secret_hint,
         public_key=excluded.public_key,key_fingerprint=excluded.key_fingerprint,interval_hours=excluded.interval_hours,consent_by=excluded.consent_by,consent_at=excluded.consent_at,updated_by=excluded.updated_by,updated_at=excluded.updated_at,checked_at=excluded.checked_at,check_ok=excluded.check_ok,check_message=excluded.check_message`,
     endpoint, region, bucket, target.prefix.replace(/\/$/, ''), accessKeyId, sealed, hint, key.publicKey, key.fingerprint, interval, consent ? who.email : current!.consent_by, consent ? at : current!.consent_at, who.email, at, at, ok ? 1 : 0, message),
-    audit(env.DB, who, 'backup.saved', null, null, `encrypted to key ${key.fingerprint}, every ${interval} h, bucket ${bucket}${secret ? ', credentials changed' : ''}${consent ? ', consent recorded' : ''}`),
+    audit(env.DB, who, 'backup.saved', null, null, `encrypted to key ${key.fingerprint}, every ${interval} h, endpoint ${endpoint}, bucket ${bucket}${secret ? ', credentials changed' : ''}${consent ? ', consent recorded' : ''}`),
   ])
   return { saved: true, ok, message, fingerprint: key.fingerprint }
 }
@@ -120,7 +120,7 @@ export async function runBackup(env: Bindings, trigger: 'schedule' | 'manual', a
     let status = await portability.exports.advance(exportId, { maxParts: 25 })
     while (status.phase !== 'complete') status = await portability.exports.advance(exportId, { maxParts: 25 })
     let manifest: any
-    const key = `balm-backup-${started.replace(/[-:]|\.\d{3}/g, '')}-${runId.slice(0, 8)}.balmbk`
+    const key = `balm-backup-${started.replace(/[-:]|\.\d{3}/g, '')}-${runId}.balmbk`
     const archive = bytesOf(await portability.exports.download(exportId), m => { manifest = m })
     const written = await putStream(target, key, encryptBackup(archive, String(row.public_key), started))
     const counts: Record<string, number> = {}

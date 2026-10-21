@@ -5,15 +5,18 @@
 import { createHash, createHmac } from 'node:crypto'
 import { createServer } from 'node:http'
 
+const checksum = data => createHash('sha256').update(data).digest('base64')
 const sha = data => createHash('sha256').update(data).digest('hex')
 const hmac = (key, data) => createHmac('sha256', key).update(data).digest()
 const encode = value => encodeURIComponent(value).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
 const xml = (status, body, headers = {}) => new Response(body, { status, headers: { 'content-type': 'application/xml', ...headers } })
 const problem = (status, code) => xml(status, `<?xml version="1.0"?><Error><Code>${code}</Code><Message>${code}</Message></Error>`)
 
-export function fakeBucket({ bucket = 'balm-backups', accessKeyId = 'synthetic-balm-key', secretAccessKey = 'synthetic-balm-secret', region = 'us-east-1' } = {}) {
+// Locked mode models Object Lock/bucket lock: upload checksums, no object replacement/deletion;
+// unfinished multipart uploads can still be aborted. It does not establish live S3/R2 acceptance.
+export function fakeBucket({ bucket = 'balm-backups', accessKeyId = 'synthetic-balm-key', secretAccessKey = 'synthetic-balm-secret', region = 'us-east-1', locked = false } = {}) {
   const objects = new Map(), uploads = new Map(), log = []
-  const state = { refuse: 0 }
+  const state = { refuse: 0, refusePart: 0 }
   let counter = 0
 
   async function verify(request, body) {
@@ -42,7 +45,15 @@ export function fakeBucket({ bucket = 'balm-backups', accessKeyId = 'synthetic-b
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
     if (parts[0] !== bucket) return problem(404, 'NoSuchBucket')
     const key = parts.slice(1).join('/'), q = url.searchParams
-    log.push({ method: request.method, path: url.pathname, query: Object.fromEntries(q), bytes: body.length })
+    const entry = { method: request.method, path: url.pathname, query: Object.fromEntries(q), bytes: body.length }
+    log.push(entry)
+    const reject = (status, code) => { entry.refused = code; return problem(status, code) }
+    if (request.method === 'PUT') {
+      const sent = request.headers.get('x-amz-checksum-sha256')
+      if (locked && !sent) return reject(400, 'InvalidRequest')
+      if (sent && sent !== checksum(body)) return reject(400, 'BadDigest')
+    }
+    if (locked && request.method === 'DELETE' && !q.has('uploadId')) return reject(403, 'AccessDenied')
     if (request.method === 'GET' && q.get('list-type') === '2') {
       const prefix = q.get('prefix') ?? ''
       const keys = [...objects.keys()].filter(k => k.startsWith(prefix)).sort()
@@ -50,6 +61,7 @@ export function fakeBucket({ bucket = 'balm-backups', accessKeyId = 'synthetic-b
     }
     if (request.method === 'GET') return objects.has(key) ? new Response(objects.get(key)) : problem(404, 'NoSuchKey')
     if (request.method === 'PUT' && q.has('partNumber')) {
+      if (state.refusePart) return reject(state.refusePart, 'AccessDenied')
       const upload = uploads.get(q.get('uploadId'))
       if (!upload) return problem(404, 'NoSuchUpload')
       upload.parts.set(Number(q.get('partNumber')), body)
@@ -57,15 +69,25 @@ export function fakeBucket({ bucket = 'balm-backups', accessKeyId = 'synthetic-b
     }
     if (request.method === 'PUT') {
       // Backups are only ever added: a second write to the same name is Balm overwriting one.
-      if (objects.has(key) && key.endsWith('.balmbk')) return problem(409, 'OverwriteRefused')
+      if (objects.has(key) && (locked || key.endsWith('.balmbk'))) return reject(409, 'OverwriteRefused')
       objects.set(key, body); return new Response(null, { status: 200, headers: { etag: `"${sha(body).slice(0, 32)}"` } })
     }
-    if (request.method === 'POST' && q.has('uploads')) { const id = `upload-${++counter}`; uploads.set(id, { key, parts: new Map() }); return xml(200, `<?xml version="1.0"?><InitiateMultipartUploadResult><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`) }
+    if (request.method === 'POST' && q.has('uploads')) {
+      if (locked && request.headers.get('x-amz-checksum-algorithm') !== 'SHA256') return reject(400, 'InvalidRequest')
+      const id = `upload-${++counter}`; uploads.set(id, { key, parts: new Map() }); return xml(200, `<?xml version="1.0"?><InitiateMultipartUploadResult><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`) }
     if (request.method === 'POST' && q.has('uploadId')) {
       const upload = uploads.get(q.get('uploadId'))
       if (!upload) return problem(404, 'NoSuchUpload')
-      const numbers = [...new TextDecoder().decode(body).matchAll(/<PartNumber>(\d+)<\/PartNumber>/g)].map(x => Number(x[1]))
+      const parts = [...new TextDecoder().decode(body).matchAll(/<Part>([\s\S]*?)<\/Part>/g)].map(m => ({
+        number: Number(/<PartNumber>(\d+)<\/PartNumber>/.exec(m[1])?.[1]),
+        etag: /<ETag>([^<]+)<\/ETag>/.exec(m[1])?.[1],
+        checksum: /<ChecksumSHA256>([^<]+)<\/ChecksumSHA256>/.exec(m[1])?.[1],
+      }))
+      const numbers = parts.map(p => p.number)
       if (!numbers.length || numbers.some((n, i) => n !== i + 1 || !upload.parts.has(n))) return problem(400, 'InvalidPart')
+      if (parts.some(p => p.etag !== `"${sha(upload.parts.get(p.number)).slice(0, 32)}"`)) return reject(400, 'InvalidPart')
+      if (parts.some(p => (locked || p.checksum) && p.checksum !== checksum(upload.parts.get(p.number)))) return reject(400, 'BadDigest')
+      if (objects.has(upload.key) && (locked || upload.key.endsWith('.balmbk'))) return reject(409, 'OverwriteRefused')
       if (numbers.slice(0, -1).some(n => upload.parts.get(n).length < 5 * 1024 * 1024)) return problem(400, 'EntityTooSmall')
       objects.set(upload.key, Buffer.concat(numbers.map(n => upload.parts.get(n)))); uploads.delete(q.get('uploadId'))
       return xml(200, '<?xml version="1.0"?><CompleteMultipartUploadResult><ETag>"done"</ETag></CompleteMultipartUploadResult>')
