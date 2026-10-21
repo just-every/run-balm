@@ -1,3 +1,4 @@
+import { modelEdge as supervisionModelEdge } from './defensibility-clinic.mjs'
 // Charting through the public doors: discipline templates, sign and lock,
 // addenda, the physician-certified plan of care, CPT units by the 8-minute rule
 // carried to the invoice, and the scribe with its model faked at the network edge.
@@ -704,12 +705,17 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  const visit=await pastVisit(h,patient.id,student,service.id)
  await h.cmd('appointment.attend',{id:visit})
  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Student clinical draft',charges:[{code:'97110',minutes:30}]},student.cookie)
+ await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-supervision-model'})
+ const authorReview=await h.cmd('note.check',{id:note.id,revision:1},student.cookie)
+ assert.ok(authorReview.rules.some(r=>r.id==='role.supervision'))
  const signature={id:note.id,revision:1,signature:'Student',credentials:'SPT',attest:true}
  await h.cmd('note.submit',{...signature,signature:'Another Person'},student.cookie,400)
  await h.cmd('note.submit',signature,student.cookie)
  assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===note.id))
  let file=(await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value
  assert.equal(file.notes[0].canCosign,true);assert.equal(file.intake?.length,0);assert.equal(file.appointments.length,0)
+ const supervisorReview=await h.cmd('note.check',{id:note.id,revision:1},priya.cookie)
+ assert.ok(supervisorReview.rules.some(r=>r.id==='role.supervision'))
  await h.cmd('note.amend',{id:note.id,body:'Changed',revision:1},student.cookie,409)
  await h.cmd('note.cosign',{...signature,signature:'Cover',credentials:'PT'},cover.cookie,404)
  await h.cmd('note.return',{id:note.id,reason:'Clarify skilled intervention'},priya.cookie)
@@ -743,4 +749,4 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  assert.match((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,biller.cookie)).text,/NM1\*82\*1\*SUPERVISOR\*PRIYA\*\*\*\*XX\*1234567893/)
  const audit=(await h.db.prepare('SELECT action,actor_email FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['note.submitted','note.returned','note.signed','note.read','note.break_glass_read']) assert.ok(audit.some(a=>a.action===action),action)
-}))
+},{outbound:supervisionModelEdge().outbound}))
