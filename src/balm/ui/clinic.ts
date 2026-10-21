@@ -8,6 +8,7 @@ import { documentationSettingsPanel } from './documentation'
 import { template } from '../charting/templates'
 import { templateSelect } from './notes'
 import { scribeCard } from './scribe'
+import { backupsPanel } from './backups'
 import { clinicPayments } from './payments'
 import { reminderSettingsPanel } from './reminders'
 import { hoursFor } from './hours'
@@ -59,7 +60,7 @@ export function clinic(s: any, notice: any = {}) {
   const sent = invited ? `<div class="notice" role="status"><strong>Invitation sent to ${h(invited.name)}.</strong> ${s.local
     ? `Balm is running on this computer, so no email leaves it. To work as ${h(invited.name)}, run <code>rer dev --as ${h(invited.email)}</code> in the Balm folder and open the RER_OPEN link it prints.`
     : `Balm emailed a sign-in link to ${h(invited.email)}. They select it to join; it works once. Select <strong>Invite to sign in</strong> again to send a new link.`}</div>` : ''
-  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${retentionPreview(s, notice)}${retentionPanel(s)}${you(s)}${settings}${nppes}${capacityPanel}${embed}${holidaysPanel(s)}${visitPolicyPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${followupSettingsPanel(s)}${clinicPayments(s)}${paymentReviewPanel(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${equipment}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}</div>`
+  return `<h1>Clinic</h1>${sent}<p>Your clinic details, services, rooms, staff and practitioner hours. Add yourself as a practitioner with your own sign-in email if you treat clients.</p><div class="grid">${retentionPreview(s, notice)}${retentionPanel(s)}${you(s)}${settings}${nppes}${capacityPanel}${embed}${holidaysPanel(s)}${visitPolicyPanel(s)}${documentationSettingsPanel(s)}${reminderSettingsPanel(s)}${followupSettingsPanel(s)}${clinicPayments(s)}${paymentReviewPanel(s)}${panel('Services', (serviceList || empty('No services yet.')) + `<details${serviceList ? '' : ' open'}><summary>Add a service</summary>${form('service.save', '/app/clinic', serviceFields(), 'Add service')}</details>`)}${rooms}${equipment}${panel('Staff', (staff || empty('No staff yet.')) + `<details${staff ? '' : ' open'}><summary>Add a staff member</summary>${form('staff.save', '/app/clinic', staffFields(), 'Add staff member')}</details>`, 'full')}${scribeCard(s, notice)}${backupsPanel(s, notice)}</div>`
 }
 
 function serviceFields(x?: any) {

@@ -57,7 +57,7 @@ rer dev --stop
 rer export --output exports/balm.rer
 ```
 
-A hosted Balm keeps its clinic in your Cloudflare account, and `rer export` never saves it (it refuses a hosted address). Back it up from the folder you deploy from with `rer run backup:hosted -- --environment NAME`: one SQL file in `exports/`, readable only by you, that `rer run restore:hosted -- --input FILE` restores into a fresh copy ([Back up and restore](docs/backup.md#back-up-a-hosted-balm)).
+A hosted Balm keeps its clinic in your Cloudflare account, and `rer export` never saves it (it refuses a hosted address). It can back itself up automatically, encrypted, to a bucket you control, and show the recovery point on your schedule ([Automatic backups](docs/backup.md#automatic-backups); `rer run backup:keygen`, `backup:drill`, `backup:restore`). You can also back it up by hand from the folder you deploy from with `rer run backup:hosted -- --environment NAME`: one SQL file in `exports/`, readable only by you, that `rer run restore:hosted -- --input FILE` restores into a fresh copy ([Back up and restore](docs/backup.md#back-up-a-hosted-balm)).
 
 To restore, use a fresh clone of the same revision, before setup or any data:
 

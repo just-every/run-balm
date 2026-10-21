@@ -3,6 +3,7 @@ import branding from '../../branding.json'
 import { agent, copyScript } from './agent'
 import { clientFilePage, clientList } from './clients'
 import { clinic } from './clinic'
+import { recoveryStrip } from './backups'
 import { intakeForms } from './intake'
 import { insurancePage } from './insurance'
 import { casesPage } from './cases'
@@ -62,7 +63,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const top = zoneUnset ? '<div class="crumb"><strong>First run</strong></div>' : current === '/app' && allowed && state.calendar ? scheduleTop(state)
     : `<div class="crumb">${file ? `<a href="/app/clients">Clients</a>${icon('chevron')}<strong>${h(title)}</strong>` : `<strong>${h(title)}</strong>`}</div><span class="grow"></span>${book}`
   const notices = `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
-  const body = shell(state, { tabs, section, zoneUnset, top, content: notices + content })
+  const body = shell(state, { tabs, section, zoneUnset, top, content: notices + (current === '/app' && allowed && !zoneUnset ? recoveryStrip(state) : '') + content })
   return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)
 }
 

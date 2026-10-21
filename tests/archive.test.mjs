@@ -11,6 +11,8 @@ import { harness } from './harness.mjs'
 import { mriUpload, mriReport } from './chart-document-fixtures.mjs'
 import { modelEdge } from './defensibility-clinic.mjs'
 import { clinic, pastVisit, slots, bookOnline } from './clinic.mjs'
+import { fakeBucket } from './fakes/s3.mjs'
+import { generateBackupKeys } from '../src/balm/backup/envelope.mjs'
 const exec = promisify(execFile)
 const cli = resolve('node_modules/@runeditrun/rer/global/rer.mjs')
 const command = async (cwd, args, expected = 0) => {
@@ -196,4 +198,98 @@ test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archi
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
     assert.equal((await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,owner)).text,original)
   } finally {if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
+
+
+test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a recovery point, and the last one restores into a scratch deployment with a later change present', { timeout: 600_000 }, async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch')
+  const bucket = fakeBucket(), keys = await generateBackupKeys(), other = await generateBackupKeys(), local = await bucket.serve()
+  const storage = { endpoint: 'https://s3.balm-test.example', bucket: bucket.config.bucket, region: bucket.config.region, prefix: 'clinic', accessKeyId: bucket.config.accessKeyId, secretAccessKey: bucket.config.secretAccessKey, publicKey: keys.publicKey, intervalHours: 24, consent: 'on' }
+  let h
+  try {
+    for (const path of [source, scratch]) await checkout(path)
+    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 2e6 })
+    h = await harness({ root: source, outbound: bucket.fetchHandler })
+    await clinic(h, []); await h.finishSetup()
+    const tick = async at => (await h.mf.getWorker()).scheduled({ scheduledTime: at, cron: '* * * * *' })
+    const reception = await h.staff('Riley', 'reception')
+    // Only the owner, with the consent box ticked, a valid public key and working credentials, turns backups on.
+    await h.cmd('backup.save', storage, reception.cookie, 403)
+    await h.cmd('backup.save', { ...storage, consent: undefined }, h.owner, 400)
+    await h.cmd('backup.save', { ...storage, publicKey: 'not a key' }, h.owner, 400)
+    await h.cmd('backup.save', { ...storage, endpoint: 'http://s3.balm-test.example' }, h.owner, 400)
+    assert.equal(bucket.objects.size, 0, 'nothing is written until the owner has saved valid settings')
+    await h.cmd('backup.save', { ...storage, secretAccessKey: 'synthetic-balm-wrong' }, h.owner)
+    assert.equal((await h.state()).backups.saved.check_ok, 0, 'wrong credentials are reported, not hidden')
+    assert.equal((await h.send('/app/clinic', undefined, h.owner)).text.includes('synthetic-balm-secret'), false)
+    const saved = await h.cmd('backup.save', storage, h.owner)
+    assert.equal(saved.ok, true, saved.message)
+    assert.deepEqual([...bucket.objects.keys()], ['clinic/balm-connection-check.txt'])
+    const state = await h.state()
+    assert.equal(state.backups.saved.secret_hint, '…cret'); assert.ok(!JSON.stringify(state).includes('synthetic-balm-secret'), 'the storage secret is sealed and never sent back')
+    assert.equal((await h.state(reception.cookie)).backups, null, 'staff other than the owner see no backup settings')
+    // Before any backup the dashboard says one is pending.
+    assert.ok(/data-recovery-point="waiting"/.test((await h.send('/app', undefined, h.owner)).text), 'before the first backup the dashboard says it is pending')
+    // Change data, then the scheduler backs up by itself.
+    await h.cmd('client.save', { firstName: 'Before', lastName: 'Backup', dateOfBirth: '1990-01-01' })
+    const first = Date.now()
+    await tick(first)
+    const names = () => [...bucket.objects.keys()].filter(k => k.endsWith('.balmbk')).sort()
+    assert.equal(names().length, 1, 'the first backup is written without anyone asking')
+    const stored = Buffer.from(bucket.objects.get(names()[0]))
+    assert.ok(stored.subarray(0, 8).toString() === 'BALMBK1\n' && !stored.includes('Backup') && !stored.includes('clinic_name') && !stored.includes('"kind":"manifest"'), 'the stored object is ciphertext: no clinic text, table name or archive structure')
+    assert.equal(bucket.log.filter(r => r.refused).length > 0, true, 'the wrong secret was refused by the signature check')
+    await tick(first + 3_600_000)
+    assert.equal(names().length, 1, 'no second backup before the owner\'s interval has passed')
+    // The newest recovery point is on the schedule and the Clinic page, and a change after it is not in it.
+    const strip = (await h.send('/app', undefined, h.owner)).text
+    assert.ok(/data-recovery-point="ok"/.test(strip) && /Recovery point/.test(strip), 'the owner\'s schedule shows the recovery point')
+    assert.equal((await h.send('/app', undefined, reception.cookie)).text.includes('data-recovery-point'), false, 'reception sees no recovery strip')
+    const panelHtml = (await h.send('/app/clinic', undefined, h.owner)).text
+    assert.ok(panelHtml.includes('id="backups"') && panelHtml.includes(keys.fingerprint) && panelHtml.includes('1 clients'))
+    await h.cmd('client.save', { firstName: 'Changed', lastName: 'AfterBackup', dateOfBirth: '1991-02-02' })
+    await tick(first + 25 * 3_600_000)
+    assert.equal(names().length, 2, 'the next automatic backup follows the interval and is a new object')
+    assert.ok(Buffer.compare(Buffer.from(bucket.objects.get(names()[0])), stored) === 0, 'an earlier backup is never rewritten')
+    const runs = (await h.state()).backups.runs
+    assert.deepEqual(runs.map(r => r.state), ['ok', 'ok']); assert.equal(runs[0].counts.clients, 2); assert.equal(runs[1].counts.clients, 1)
+    // A storage outage is shown on the dashboard and retried after a pause, never silently dropped.
+    bucket.state.refuse = 503
+    await tick(first + 50 * 3_600_000)
+    assert.ok(/role="alert"[^>]*data-recovery-point="ok"[\s\S]*latest attempt failed/.test((await h.send('/app', undefined, h.owner)).text), 'a failed backup is shown on the dashboard')
+    await tick(first + 50 * 3_600_000 + 5 * 60_000)
+    assert.equal((await h.state()).backups.runs.filter(r => r.state === 'failed').length, 1, 'a failed backup waits before it is retried')
+    bucket.state.refuse = 0
+    await tick(first + 50 * 3_600_000 + 16 * 60_000)
+    assert.equal(names().length, 3, 'the backup succeeds once storage is back')
+    await h.cmd('backup.run', {}, reception.cookie, 403)
+    const audit = (await h.state()).audit ?? []
+    const identity = { auth: h.auth, owner: h.owner }
+    await h.close(); h = null
+    // The restore drill and the restore itself run on the owner's computer with only the private key, against the bucket.
+    const env = join(temporary, 'backup.env'), keyFile = join(temporary, 'private.pem'), wrongFile = join(temporary, 'wrong.pem')
+    await writeFile(keyFile, keys.privateKeyPem, { mode: 0o600 }); await writeFile(wrongFile, other.privateKeyPem, { mode: 0o600 })
+    await writeFile(env, `BALM_BACKUP_ENDPOINT=${local.url}\nBALM_BACKUP_REGION=${bucket.config.region}\nBALM_BACKUP_BUCKET=${bucket.config.bucket}\nBALM_BACKUP_PREFIX=clinic\nBALM_BACKUP_ACCESS_KEY_ID=${bucket.config.accessKeyId}\nBALM_BACKUP_SECRET_ACCESS_KEY=${bucket.config.secretAccessKey}\n`, { mode: 0o600 })
+    const script = async (name, extra, expected = 0) => {
+      let result
+      try { result = { ...await exec(process.execPath, [join(source, 'scripts/backups', name), ...extra], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 2e6 }), code: 0 } } catch (error) { result = error }
+      assert.equal(result.code, expected, `${name}: ${result.stdout ?? ''} ${result.stderr ?? ''}`)
+      return `${result.stdout}${result.stderr}`
+    }
+    assert.match(await script('restore.mjs', ['--key', wrongFile, '--env-file', env, '--output', join(temporary, 'nope.rer')], 2), /does not open this backup/)
+    const damaged = join(temporary, 'damaged.balmbk'), good = Buffer.from(bucket.objects.get(names().at(-1)))
+    good[good.length - 40] ^= 1; await writeFile(damaged, good)
+    assert.match(await script('restore.mjs', ['--key', keyFile, '--input', damaged, '--output', join(temporary, 'bad.rer')], 2), /damaged/)
+    assert.equal(await readFile(join(temporary, 'bad.rer')).then(() => true, () => false), false, 'a damaged backup leaves no partial archive')
+    assert.match(await script('drill.mjs', ['--key', keyFile, '--env-file', env]), /Drill passed/)
+    const restored = join(temporary, 'restored.rer')
+    assert.match(await script('restore.mjs', ['--key', keyFile, '--env-file', env, '--output', restored]), /3 clients|2 clients/)
+    await command(scratch, ['import', '--input', restored, '--yes', '--no-queue'])
+    const scratchClinic = await harness({ root: scratch, ...identity })
+    try {
+      const cookie = await scratchClinic.signIn(scratchClinic.auth.OWNER_EMAIL)
+      const names2 = (await scratchClinic.state(cookie)).clients.map(c => c.first_name)
+      assert.ok(names2.includes('Before') && names2.includes('Changed'), 'the change made after the first backup is present in the scratch deployment')
+    } finally { await scratchClinic.close() }
+  } finally { if (h) await h.close(); await local.close(); await rm(temporary, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) }
 })

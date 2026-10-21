@@ -5,7 +5,8 @@ import { setupStateResponse } from '../src/base/setup-state'
 import { identity } from '../src/identity'
 import { balmResponse } from '../src/balm/http'
 import { sendDueReminders } from '../src/balm/reminders/scheduler'
-export default { async scheduled(controller: ScheduledController, env: Bindings) { await sendDueReminders(env, controller.scheduledTime) }, async fetch(request: Request, env: Bindings) {
+import { runDueBackup } from '../src/balm/backup'
+export default { async scheduled(controller: ScheduledController, env: Bindings) { await sendDueReminders(env, controller.scheduledTime); await runDueBackup(env, controller.scheduledTime) }, async fetch(request: Request, env: Bindings) {
   return await authResponse(request, env) ?? await balmResponse(request, env)
     ?? await setupStateResponse(request, runtimeBindings(env))
     ?? await lobbyResponse(request, runtimeBindings(env), identity)

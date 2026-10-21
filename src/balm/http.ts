@@ -41,6 +41,7 @@ import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
 import { sendBooked, sendCanceled, sendIntake, sendPlanLink, sendTaken } from './mail-out'
 import { checkDefensibility } from './charting/defensibility'
 import { scribeCommand, scribeStatus } from './scribe'
+import { backupCommand, backupState } from './backup'
 import { importCommand, importOriginal, undoCounts } from './movein'
 import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
 import { plain } from './refusals'
@@ -75,7 +76,7 @@ const redirect = (location: string) => new Response(null, { status: 303, headers
 async function state(env: Bindings, who: Actor) {
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -184,6 +185,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   }
   if (name === 'note.check') return checkDefensibility(env, who, input)
   if (name.startsWith('scribe.') || name === 'note.scribe') return scribeCommand(env, who, name, input)
+  if (name.startsWith('backup.')) return backupCommand(env, who, name, input)
   if (name === 'plan.send' || name === 'plan.resend') {
     const plan = await (name === 'plan.send' ? sendPlan : resendPlan)(env.DB, who, input)
     return { ...plan, mail: await sendPlanLink(env, plan.physicianEmail, plan.token) }
