@@ -62,11 +62,6 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
     const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
     await h.cmd('scribe.save',{provider:'anthropic',key:'sk-ant-archive-test'})
     const noteCheck=await h.cmd('note.check',{id:checkedNote.id,revision:1},priya.cookie)
-    const tiePatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
-    const tieVisit=await pastVisit(h,tiePatient.id,priya,service.id,h.owner,5)
-    await h.cmd('appointment.attend',{id:tieVisit})
-    const tieNote=await h.cmd('note.write',{clientId:tiePatient.id,appointmentId:tieVisit,body:'Synthetic CMS treatment with clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
-    await h.cmd('note.sign',{id:tieNote.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
     const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
     await h.cmd('invoice.approve',{id:invoice.id})
     await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Backup-EFTPOS-1'})
@@ -132,11 +127,6 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
       const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')
-      const restoredTie=(await restoredClinic.send('/api/balm/clients/'+tiePatient.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===tieNote.id)
-      assert.equal(restoredTie.status,'signed')
-      assert.deepEqual(restoredTie.billing.lines.map(l=>l.units),[0,1],'CHART-006 clinician-selected second-code allocation survives the public CLI archive')
-      assert.deepEqual(restoredTie.billing.cmsTie.selected,['97140'])
-      await restoredClinic.cmd('note.amend',{id:tieNote.id,revision:1,body:'Attempted changed allocation',charges:[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}]},clinicianCookie,409)
       await restoredClinic.cmd('note.amend',{id:checkedNote.id,revision:1,body:'Synthetic treatment after restore.',charges:[{code:'97110',minutes:30},{code:'97140',minutes:8}]},clinicianCookie)
       const restoredPreview=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===checkedNote.id).billing
       assert.deepEqual(restoredPreview.lines.map(l=>l.units),[2,0],'CHART-006 / INS-001 restored payer threshold controls newly saved clinical minutes')
@@ -167,4 +157,39 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
     finally { await proxy.dispose() }
   // macOS can add .DS_Store during removal; only filesystem cleanup is retried.
   } finally { if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100}) }
+})
+
+
+test('CHART-006 recorded CMS tie choice survives a public CLI archive with signed units and fixed invoice bytes', { timeout: 120_000 }, async () => {
+  const temporary=await mkdtemp(join(tmpdir(),'balm-tie-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+  let h
+  try {
+    for(const path of [source,restored])await checkout(path)
+    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+    h=await harness({root:source})
+    const {service,practitioners:[priya]}=await clinic(h)
+    const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
+    const visit=await pastVisit(h,patient.id,priya,service.id)
+    await h.cmd('appointment.attend',{id:visit})
+    const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
+    await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+    const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
+    assert.deepEqual(invoice.snapshot.procedures.map(p=>p.units),[0,1])
+    await h.cmd('invoice.approve',{id:invoice.id})
+    const original=(await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,h.owner)).text
+    const identity={auth:h.auth,owner:h.owner}
+    await h.close();h=null
+    const archive=join(temporary,'tie.rer')
+    await command(source,['export','--output',archive,'--no-queue'])
+    await command(restored,['import','--input',archive,'--yes','--no-queue'])
+    h=await harness({root:restored,...identity})
+    const clinician=await h.signIn('priya@clinic.example')
+    const restoredNote=(await h.send('/api/balm/clients/'+patient.id,undefined,clinician)).value.notes.find(n=>n.id===note.id)
+    assert.equal(restoredNote.status,'signed')
+    assert.deepEqual(restoredNote.billing.lines.map(l=>l.units),[0,1])
+    assert.deepEqual(restoredNote.billing.cmsTie.selected,['97140'])
+    await h.cmd('note.amend',{id:note.id,revision:1,body:'Attempted changed allocation',charges:[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}]},clinician,409)
+    const owner=await h.signIn(h.auth.OWNER_EMAIL)
+    assert.equal((await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,owner)).text,original)
+  } finally {if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
