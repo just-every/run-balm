@@ -7,6 +7,7 @@ import { dollars as usd } from '../domain/invoices'
 
 export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
   const errors:ScrubError[]=[],add=(code:string,field:string,message:string)=>errors.push({code,field,message})
+  for(const message of s.supervisionErrors??[])add('supervision_not_billable','note',message)
   if(!s.attended)add('visit_not_attended','appointment','Mark the visit attended before claiming.')
   if(!s.signedNotes.length)add('signed_note_required','note','Sign the treatment note before claiming.')
   if(!s.payer.unitMethod)add('payer_unit_method_missing','payer.unitMethod',`Choose how ${s.payer.name} counts timed units, in the payer list on the Insurance page.`)

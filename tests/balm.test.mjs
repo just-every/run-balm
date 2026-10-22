@@ -446,7 +446,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  for(const name of ['appointment.book','appointment.move','client.save','invoice.prepare','location.save','unknown.future.command']) await h.cmd(name,{},manager.cookie,403)
  for(const kind of ['assistant','student','fellow']) {
   await h.cmd('staff.save',{name:'Unassigned',email:'unassigned@clinic.example',role:kind},h.owner,400)
-  const trainee=await h.staff(kind,kind,{supervisorId:priya.id})
+  const trainee=await h.staff(kind,kind,{discipline:'pt',supervisorId:priya.id})
   await h.cmd('hours.save',{practitionerId:trainee.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
   const ownVisit=await pastVisit(h,patient.id,trainee,service.id)
   const sections={subjective:'Daily symptoms',objective:'Skilled treatment',assessment:'Response to treatment',goals:'Progress',plan:'Continue daily treatment'}
@@ -469,7 +469,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
   for(const name of ['note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
   await h.cmd('note.submit',{id:draft.id,revision:2,signature:kind,credentials:kind==='assistant'?'PTA':kind==='fellow'?'CF-SLP':'SPT',attest:true},trainee.cookie)
   assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===draft.id))
-  await h.cmd('note.cosign',{id:draft.id,revision:2,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  await h.cmd('note.cosign',{id:draft.id,revision:2,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
   const coSigned=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes.find(n=>n.id===draft.id)
   assert.equal(coSigned.signature.name,'Priya');assert.equal(coSigned.submissions[0].author_name,kind)
   assert.equal((await h.send('/api/balm/clients/'+hidden.id,undefined,trainee.cookie)).status,404)

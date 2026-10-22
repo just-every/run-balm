@@ -26,7 +26,14 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
-  'insurance.supervision.save': async (db,who,input)=>{ insist(who.role==='owner','only_the_owner_sets_payer_rules',403); insist([true,false,'true','false'].includes(input.billSupervisor),'invalid_supervisor_billing'); await commit(db,who,[db.prepare('UPDATE bm_payers SET supervisor_billing=?,version=version+1 WHERE id=?').bind(input.billSupervisor===true||input.billSupervisor==='true'?1:0,String(input.payerId)),audit(db,who,'payer.supervision_saved',null,String(input.payerId))]); return {saved:true} },
+  'insurance.supervision.save': async (db,who,input)=>{
+    insist(who.role==='owner','only_the_owner_sets_payer_rules',403)
+    insist([true,false,'true','false'].includes(input.billSupervisor),'invalid_supervisor_billing')
+    insist(['in_room','on_site','general'].includes(input.minimumSupervision),'record_the_payer_supervision_requirement')
+    insist([true,false,'true','false'].includes(input.billable),'record_whether_supervised_visits_are_billable')
+    await commit(db,who,[db.prepare('UPDATE bm_payers SET supervisor_billing=?,supervision_minimum=?,supervision_billable=?,supervision_rule_recorded=1,version=version+1 WHERE id=?').bind(input.billSupervisor===true||input.billSupervisor==='true'?1:0,input.minimumSupervision,input.billable===true||input.billable==='true'?1:0,String(input.payerId)),audit(db,who,'payer.supervision_saved',null,String(input.payerId))])
+    return {saved:true}
+  },
   'hours.location': locateHours, 'location.save': saveLocation, 'room.location': locateRoom,
   'staff.balance_access': saveBalanceAccess,
   'booking.embed.save': saveBookingEmbed,
@@ -59,7 +66,7 @@ export async function command(db: D1Database, who: Actor, name: string, input: D
 export async function snapshot(db: D1Database, who: Actor) {
   const owner = who.role === 'owner', desk = owner || who.role === 'agent' || who.staffRole === 'reception', own = practitionerId(who)
   const settings = await one(db, "SELECT version,nppes_lookup,booking_embed_origins,cancellation_notice_hours,late_cancel_fee_cents,no_show_fee_cents,holidays,clinic_name,time_zone,time_zone_chosen,abn,address,tax_id_type,practice_npi,street_address,city,state,postal_code,booking_open,(SELECT COUNT(*) FROM bm_appointments WHERE status='booked' AND end_at>?) AS upcoming FROM bm_settings WHERE id=1", new Date().toISOString())
-  const staff = await rows(db, owner ? "SELECT s.*,EXISTS(SELECT 1 FROM oa_operators o WHERE lower(o.email)=lower(s.email) AND o.status IN ('active','invited')) AS can_sign_in FROM bm_staff s WHERE s.erased_at IS NULL ORDER BY s.name" : 'SELECT id,name,role,profession,credentials FROM bm_staff WHERE active=1 AND erased_at IS NULL ORDER BY name')
+  const staff = await rows(db, owner ? "SELECT s.*,EXISTS(SELECT 1 FROM oa_operators o WHERE lower(o.email)=lower(s.email) AND o.status IN ('active','invited')) AS can_sign_in FROM bm_staff s WHERE s.erased_at IS NULL ORDER BY s.name" : 'SELECT id,name,role,profession,credentials,discipline FROM bm_staff WHERE active=1 AND erased_at IS NULL ORDER BY name')
   const accessRows = await rows(db,'SELECT * FROM bm_staff_access')
   for (const person of staff) Object.assign(person, accessRows.find(a=>a.staff_id===person.id) ?? {kind:person.role})
   const locations = owner ? await rows(db,'SELECT * FROM bm_locations ORDER BY name') : []

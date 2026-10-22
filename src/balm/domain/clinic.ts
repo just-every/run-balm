@@ -47,8 +47,11 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
   const supervisor = ['assistant','student','fellow'].includes(kind) ? text(input.supervisorId ?? previousAccess?.supervisor_id, 'supervisor', 100) : null
   const location = kind === 'location_manager' ? text(input.locationId ?? previousAccess?.location_id, 'location', 100) : null
   insist(!supervisor || supervisor !== previous?.id, 'a_supervisor_must_be_another_person')
-  const supervisorSql = "EXISTS(SELECT 1 FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.role='practitioner' AND s.active=1 AND s.erased_at IS NULL AND COALESCE(a.kind,s.role) IN ('practitioner','supervisor'))"
-  if (supervisor) insist(await one(db, 'SELECT 1 WHERE ' + supervisorSql, supervisor), 'active_licensed_supervisor_required', 409)
+  const discipline = input.discipline === undefined ? previous?.discipline ?? '' : String(input.discipline)
+  insist(['','pt','ot','slp'].includes(discipline), 'invalid_discipline')
+  insist(!supervisor || discipline, 'record_the_authors_discipline')
+  const supervisorSql = "EXISTS(SELECT 1 FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.role='practitioner' AND s.active=1 AND s.erased_at IS NULL AND COALESCE(a.kind,s.role) IN ('practitioner','supervisor') AND s.discipline<>'' AND s.discipline=?)"
+  if (supervisor) insist(await one(db, 'SELECT 1 WHERE ' + supervisorSql, supervisor, discipline), 'active_same_discipline_supervisor_required', 409)
   if (location) insist(await one(db, 'SELECT 1 FROM bm_locations WHERE id=? AND active=1', location), 'location_not_found', 404)
   const active = input.active === undefined ? (previous ? previous.active : 1) : (input.active === true || input.active === 'true' ? 1 : 0)
   insist(!await one(db, 'SELECT 1 FROM bm_staff WHERE lower(email)=? AND id<>?', address, previous?.id ?? ''), 'email_already_used', 409)
@@ -57,12 +60,12 @@ export async function saveStaff(db: D1Database, who: Actor, input: Data) {
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_erasure_journal WHERE identity_hash=?)', identity),
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=?)', previous.id, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
-    stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials,active,version) VALUES(?,?,?,?,?,?,?,?,1)
+    stmt(db, `INSERT INTO bm_staff(id,name,email,role,profession,provider_number,credentials,active,discipline,version) VALUES(?,?,?,?,?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,email=excluded.email,role=excluded.role,profession=excluded.profession,
-      provider_number=excluded.provider_number,credentials=excluded.credentials,active=excluded.active,version=bm_staff.version+1`,
+      provider_number=excluded.provider_number,credentials=excluded.credentials,active=excluded.active,discipline=excluded.discipline,version=bm_staff.version+1`,
     staffId, text(input.name, 'name', 160), address, storedRole, optional(input.profession, 'profession', 80) ?? '', providerNumber,
-    input.credentials === undefined ? previous?.credentials ?? '' : optional(input.credentials, 'credentials', 60) ?? '', active),
-    ...(supervisor ? [guard(db, supervisorSql, supervisor)] : []),
+    input.credentials === undefined ? previous?.credentials ?? '' : optional(input.credentials, 'credentials', 60) ?? '', active, discipline),
+    ...(supervisor ? [guard(db, supervisorSql, supervisor, discipline)] : []),
     ...(location ? [guard(db,'EXISTS(SELECT 1 FROM bm_locations WHERE id=? AND active=1)',location)] : []),
     stmt(db,'INSERT INTO bm_staff_access(staff_id,kind,supervisor_id,location_id) VALUES(?,?,?,?) ON CONFLICT(staff_id) DO UPDATE SET kind=excluded.kind,supervisor_id=excluded.supervisor_id,location_id=excluded.location_id',staffId,kind,supervisor,location),
     // A provider number that is an NPI also fills the practitioner's empty NPI (Billing identifiers), so it is asked once.

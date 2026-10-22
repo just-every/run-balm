@@ -16,7 +16,7 @@ async function authored(db: D1Database, who: Actor, noteId: unknown) {
   human(who)
   const note = await one(db, 'SELECT * FROM bm_notes WHERE id=?', text(noteId, 'id', 100))
   insist(note && note.author_id === practitionerId(who), 'note_not_found', 404)
-  const staff = (await one(db, 'SELECT name,credentials FROM bm_staff WHERE id=?', note.author_id))!
+  const staff = (await one(db, 'SELECT name,credentials,discipline FROM bm_staff WHERE id=?', note.author_id))!
   return { note, staff }
 }
 
@@ -43,7 +43,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
     insist(!supervised(who) && pending?.supervisor_id===practitionerId(who),'supervision_not_found',404)
     note=(await one(db,'SELECT * FROM bm_notes WHERE id=?',input.id))!
     staff=(await one(db,'SELECT name,credentials FROM bm_staff WHERE id=?',practitionerId(who)))!
-    insist(await one(db,'SELECT 1 WHERE '+licensedSql,practitionerId(who)),'active_licensed_supervisor_required',409)
+    insist(await one(db,'SELECT 1 WHERE '+licensedSql,practitionerId(who),note.author_id),'active_same_discipline_supervisor_required',409)
   } else ({note,staff}=await authored(db,who,input.id))
   const supervisor = mode === 'submit' ? await supervisorFor(db,who) : null
   insist(!note.signed_at, 'note_already_signed', 409)
@@ -73,21 +73,23 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   }
   const diagnoses = await diagnosisGuards(db, note.appointment_id, JSON.parse(latest.charges as string || '[]'))
   const by = signer(staff, input), signedAt = now()
+  const supervision = mode === 'cosign' ? text(input.supervisionGiven, 'supervision_given', 20) : ''
+  insist(mode !== 'cosign' || ['in_room','on_site','general'].includes(supervision), 'record_the_supervision_given')
   const authorDigest = await signedDigest(note, latest, sections, by, signedAt)
-  const digest = pending ? await sha256(JSON.stringify({supervisor:authorDigest,author:pending.sha256,submission:pending.id})) : authorDigest
+  const digest = pending ? await sha256(JSON.stringify({supervisor:authorDigest,author:pending.sha256,submission:pending.id,supervisionGiven:supervision})) : authorDigest
   if (mode === 'submit') {
     const submissionId=id()
-    await commit(db,who,[guard(db,licensedSql,supervisor),
+    await commit(db,who,[guard(db,licensedSql,supervisor,note.author_id),
       guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)',note.id,latest.number),
       guard(db,'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL)',note.id),
-      stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256) VALUES(?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest),
+      stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256,author_kind,author_discipline) VALUES(?,?,?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest,who.staffKind,staff.discipline),
       audit(db,who,'note.submitted',note.client_id as string,note.id as string,`revision ${latest.number}`)])
     return {id:note.id,status:'awaiting_cosignature',revision:latest.number}
   }
   if (pending) insist(pending.revision===latest.number,'note_changed_reload',409)
   await commit(db, who, [
     ...diagnoses,
-    ...(pending ? [guard(db,licensedSql,practitionerId(who)),stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by) VALUES(?,'cosigned','',?,?)",pending.id,signedAt,who.email)] : []),
+    ...(pending ? [guard(db,licensedSql,practitionerId(who),note.author_id),stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by,supervision_given) VALUES(?,'cosigned','',?,?,?)",pending.id,signedAt,who.email,supervision)] : []),
     ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_policies)=?', policyVersion!.total),

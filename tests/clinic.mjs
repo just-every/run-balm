@@ -10,7 +10,7 @@ export async function clinic(h, names = ['Priya']) {
   const service = await h.cmd('service.save', { name: 'Initial consultation', durationMinutes: 45, priceCents: 9500 })
   const practitioners = []
   for (const name of names) {
-    const p = await h.staff(name, 'practitioner', { profession: 'Physiotherapist', providerNumber: '2' + name.length + '34567A' })
+    const p = await h.staff(name, 'practitioner', { discipline: 'pt', profession: 'Physiotherapist', providerNumber: '2' + name.length + '34567A' })
     await h.cmd('hours.save', { practitionerId: p.id, hours: allWeek })
     practitioners.push(p)
   }

@@ -45,15 +45,29 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   const threshold=annual?.threshold_cents??null,used=spending.usedCents
   const required=!!policy.medicare&&threshold!==null&&used+estimatedAllowed>threshold
   const auth=claimAuthorization(auths,policy.id,serviceDate,visit.practitioner_id,input.authorizationCorrection,visit.episodeId)
-  const payerRule=await one(db,'SELECT supervisor_billing FROM bm_payers WHERE id=?',policy.payer_id)
-  const reviewed=await rows(db,`SELECT s.supervisor_id FROM bm_note_submissions s JOIN bm_note_reviews r ON r.submission_id=s.id AND r.decision='cosigned' JOIN bm_notes n ON n.id=s.note_id AND n.signed_revision=s.revision WHERE n.appointment_id=?`,visit.id)
+  const payerRule=await one(db,'SELECT supervisor_billing,supervision_minimum,supervision_billable,supervision_rule_recorded FROM bm_payers WHERE id=?',policy.payer_id)
+  const reviewed=await rows(db,`SELECT s.supervisor_id,s.author_kind,s.author_discipline,r.supervision_given FROM bm_note_submissions s JOIN bm_note_reviews r ON r.submission_id=s.id AND r.decision='cosigned' JOIN bm_notes n ON n.id=s.note_id AND n.signed_revision=s.revision WHERE n.appointment_id=?`,visit.id)
   const supervisors=[...new Set(reviewed.map(r=>r.supervisor_id))]
   insist(supervisors.length<=1,'choose_one_rendering_supervisor_for_the_visit',409)
-  const renderingStaff=supervisors.length && payerRule?.supervisor_billing ? await one(db,'SELECT * FROM bm_staff WHERE id=? AND active=1 AND erased_at IS NULL',supervisors[0]) : null
-  insist(!supervisors.length || !payerRule?.supervisor_billing || renderingStaff,'active_rendering_supervisor_required',409)
+  const supervisionErrors:string[]=[]
+  const rank:Record<string,number>={in_room:0,on_site:1,general:2}
+  if(reviewed.length && !payerRule?.supervision_rule_recorded) supervisionErrors.push('Record the payer supervision rule in Clinic before claiming this supervised visit.')
+  if(reviewed.length && !payerRule?.supervision_billable) supervisionErrors.push('The recorded payer rule does not allow billing this supervised visit.')
+  for(const review of reviewed) {
+    if(!['assistant','student','fellow'].includes(review.author_kind) || !review.author_discipline || !(review.supervision_given in rank)) supervisionErrors.push('This co-signature has no complete supervision record; review the visit before claiming.')
+    else if(rank[review.supervision_given]>rank[payerRule!.supervision_minimum]) supervisionErrors.push('The supervision given does not meet the recorded payer minimum.')
+    if(policy.medicare && review.author_kind==='student' && review.supervision_given!=='in_room') supervisionErrors.push('Medicare student care requires the supervising therapist in the room; this visit cannot be claimed.')
+  }
+  // An owner rule cannot enroll Medicare assistants or students as therapists.
+  const mustBillSupervisor=!!policy.medicare && reviewed.some(r=>['assistant','student'].includes(r.author_kind))
+  if(mustBillSupervisor && !payerRule?.supervisor_billing) supervisionErrors.push('Medicare assistant and student visits must bill under the supervising therapist.')
+  const billSupervisor=!!payerRule?.supervisor_billing || mustBillSupervisor
+  const renderingStaff=supervisors.length && billSupervisor ? await one(db,'SELECT * FROM bm_staff WHERE id=? AND active=1 AND erased_at IS NULL',supervisors[0]) : null
+  insist(!supervisors.length || !billSupervisor || renderingStaff,'active_rendering_supervisor_required',409)
   const renderingEnrollment=renderingStaff ? await one(db,'SELECT * FROM bm_payer_enrollments WHERE payer_id=? AND practitioner_id=?',policy.payer_id,renderingStaff.id) : enrollment
   const rendering=nameParts(renderingStaff?.name ?? visit.practitioner_name)
   const value:ClaimSnapshot & {estimatedAllowedCents:number;policyCovers:boolean;authorizationExhausted:boolean;basis:Data}={
+    ...(reviewed.length ? {supervisionErrors} : {}),
     patient:{first:visit.first_name,last:visit.last_name,dob:visit.date_of_birth??'',sex:policy.patient_sex},
     subscriber:{first:policy.subscriber_first,last:policy.subscriber_last,dob:policy.subscriber_dob,sex:policy.subscriber_sex,relationship:policy.relationship,memberId:policy.member_id,group:policy.group_number},
     address:{street:policy.address,city:policy.city,state:policy.state,postal:policy.postal_code},

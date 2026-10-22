@@ -7,7 +7,7 @@ import { noteMeasures, progressChanges } from './measures'
 import { documentationFields, documentationSummary, documentationWarnings } from './documentation'
 import { codes } from '../charting/cpt'
 import { disciplines, template, templates } from '../charting/templates'
-import { clinician, empty, entry, field, form, h, hidden, panel, stamp, status, textarea, usDate, when, zoneOf } from './shared'
+import { clinician, empty, entry, field, form, h, hidden, panel, select, stamp, status, textarea, usDate, when, zoneOf } from './shared'
 
 const draftForm = (s: any, command: string, path: string, body: string, button: string) => form(command, path, body, button).replace('<form ', `<form autocomplete="off" data-actor-id="${h(s.actor.id)}" `)
 
@@ -67,8 +67,8 @@ function noteEntry(s: any, f: any, n: any) {
   }
   const signatureFields = hidden('id',n.id)+hidden('revision',latest.number)+field('signature','Type your full name','','text','required maxlength="160"')+field('credentials','Credentials',me(s).credentials ?? '','text','required maxlength="60"')+'<label class="check"><input name="attest" type="checkbox" value="on" required><span>I reviewed this exact revision and accept responsibility for it.</span></label>'
   if(n.pending) actions += `<p class="notice">Awaiting the named supervisor’s co-signature. This submitted revision is locked.</p>`
-  if(n.canCosign && n.status!=='signed') actions += form('note.cosign',path,signatureFields,'Co-sign note') + `<details><summary>Return for correction</summary>${form('note.return',path,hidden('id',n.id)+field('reason','What needs correction?','','text','required maxlength="500"'),'Return to author')}</details>`
-  const authorSignatures=(n.submissions ?? []).map((x:any)=>`<p class="signature">Author signature: <strong>${h(x.author_name)}, ${h(x.author_credentials)}</strong> · ${stamp(s,x.submitted_at)} · revision ${h(x.revision)} · ${h(x.decision ?? 'awaiting supervisor')}<br><span class="help">Digest ${h(String(x.sha256).slice(0,16))}…${x.reason ? '<br>Returned: '+h(x.reason) : ''}</span></p>`).join('')
+  if(n.canCosign && n.status!=='signed') actions += form('note.cosign',path,signatureFields+select('supervisionGiven','Supervision given',[['','Choose the supervision actually given'],['in_room','In the room'],['on_site','On site'],['general','General']]),'Co-sign note') + `<details><summary>Return for correction</summary>${form('note.return',path,hidden('id',n.id)+field('reason','What needs correction?','','text','required maxlength="500"'),'Return to author')}</details>`
+  const authorSignatures=(n.submissions ?? []).map((x:any)=>`<p class="signature">Author signature: <strong>${h(x.author_name)}, ${h(x.author_credentials)}</strong> · ${stamp(s,x.submitted_at)} · revision ${h(x.revision)} · ${h(x.decision ?? 'awaiting supervisor')}<br><span class="help">Digest ${h(String(x.sha256).slice(0,16))}…${x.supervision_given ? '<br>Supervision: '+h(x.supervision_given.replace('_',' ')) : ''}${x.reason ? '<br>Returned: '+h(x.reason) : ''}</span></p>`).join('')
   if (n.mine && n.status === 'signed' && !['assistant','student','fellow'].includes(s.actor.staffKind)) actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
   return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
 }

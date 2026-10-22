@@ -3,10 +3,10 @@ import { audit, commit, guard, human, id, insist, now, one, practitionerId, rows
 
 export const pendingSql = `SELECT s.* FROM bm_note_submissions s WHERE s.note_id=? AND NOT EXISTS(SELECT 1 FROM bm_note_reviews r WHERE r.submission_id=s.id)`
 export async function pendingSubmission(db:D1Database,noteId:unknown) { return one(db,pendingSql,noteId) }
-export const licensedSql = `EXISTS(SELECT 1 FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.role='practitioner' AND s.active=1 AND s.erased_at IS NULL AND COALESCE(a.kind,s.role) IN ('practitioner','supervisor'))`
+export const licensedSql = `EXISTS(SELECT 1 FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.role='practitioner' AND s.active=1 AND s.erased_at IS NULL AND COALESCE(a.kind,s.role) IN ('practitioner','supervisor') AND s.discipline<>'' AND s.discipline=(SELECT discipline FROM bm_staff WHERE id=?))`
 export async function supervisorFor(db:D1Database,who:Actor) {
  insist(supervised(who) && who.supervisorId,'named_supervisor_required',403)
- insist(await one(db,'SELECT 1 WHERE '+licensedSql,who.supervisorId),'active_licensed_supervisor_required',409)
+ insist(await one(db,'SELECT 1 WHERE '+licensedSql,who.supervisorId,who.staffId),'active_same_discipline_supervisor_required',409)
  return who.supervisorId!
 }
 export async function coSignQueue(db:D1Database,who:Actor) {
