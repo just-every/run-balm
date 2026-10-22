@@ -51,5 +51,14 @@
       ]
     }
   ],
-  "nightly": []
+  "nightly": [
+    {
+      "name": "owned-clean-start",
+      "browser": true,
+      "hosted": false,
+      "commands": [
+        "node tests/runtime.mjs --owned-clean-start"
+      ]
+    }
+  ]
 }

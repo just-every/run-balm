@@ -8,6 +8,14 @@ import { localPortability } from '@runeditrun/rer/portability';
 import * as model from './ui/seed.mjs';
 import archivePolicy from '../../src/balm/archive-policy.mjs';
 
+// Local lifecycle commands need no Wrangler registry lookup or telemetry.
+// Hiding its banner also disables the banner's automatic npm version request.
+process.env.WRANGLER_HIDE_BANNER = 'true';
+process.env.WRANGLER_SEND_METRICS = 'false';
+process.env.WRANGLER_SEND_ERROR_REPORTS = 'false';
+// Local Request.cf uses Miniflare's built-in placeholder, never a remote IP lookup.
+process.env.CLOUDFLARE_CF_FETCH_ENABLED = 'false';
+
 export { selectLocalState };
 const lifecycle = operatorInstaller({
  database: 'foundation', features: model.features,
