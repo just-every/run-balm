@@ -1,3 +1,4 @@
+import {aeobsFor} from '../payments/aeobs'
 import { estimatesFor } from '../payments/estimates'
 import { getVisitPolicy } from '../scheduling/policy'
 import { portalAppointmentAction } from './scheduling'
@@ -42,7 +43,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     paymentPlans: await patientPlans(db, patient.clientId),
-    billing: { estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
+    billing: { payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
   }
 }
 

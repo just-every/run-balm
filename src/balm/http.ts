@@ -1,3 +1,4 @@
+import {aeobCommand,aeobsFor,aeobOriginal} from './payments/aeobs'
 import {releaseCommand,releasesFor,releasePdf} from './domain/payer-note-releases'
 import { estimateCommand, estimateFile, estimateOriginal, pendingEstimates } from './payments/estimates'
 import { biller, manager, locationState, roleCommand, roleRead } from './domain/role-access'
@@ -47,7 +48,7 @@ import { checkDefensibility } from './charting/defensibility'
 import { scribeCommand, scribeStatus } from './scribe'
 import { backupCommand, backupState } from './backup'
 import { importCommand, importOriginal, undoCounts } from './movein'
-import { builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
+import { estimateContributorsFromForm, builderRows, editRows, fileFromField, hoursFromForm, questionsFromRows } from './forms'
 import { plain } from './refusals'
 import { hostDateAt } from './availability/timezone'
 import { agentKeys, credentialCommand, fail, principal } from './credentials'
@@ -92,7 +93,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
   const cancellations = (await env.DB.prepare('SELECT * FROM bm_visit_cancellations WHERE appointment_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(file.appointments.map(a => a.id))).all<any>()).results
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
-  const enriched = { ...file, noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -135,6 +136,8 @@ async function noticeOthers(env: Bindings, offerId: string) {
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
   if(name.startsWith('note_release.'))return releaseCommand(env.DB,who,name,input)
+  if(name.startsWith('estimate.aeob.'))return aeobCommand(env.DB,who,name,input)
+  if(name==='estimate.prepare'&&input.contributorsForm==='on')input.contributors=estimateContributorsFromForm(input)
   if(name.startsWith('estimate.')) return estimateCommand(env.DB,who,name,input)
   if (name === 'booking.embed.save') return saveBookingEmbed(env.DB, who, input, env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1')
   if (name === 'retention.save') return saveRetention(env.DB, who, input)
@@ -526,6 +529,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       }
       const release=path.match(/^\/api\/balm\/note-releases\/([\w-]+)\.pdf$/)
       if(release)return new Response(await releasePdf(env.DB,who,release[1]),{headers:{...headers,'content-type':'application/pdf','content-disposition':'attachment; filename="payer-note-release.pdf"'}})
+      const aeob=path.match(/^\/api\/balm\/aeobs\/([\w-]+)\.pdf$/)
+      if(aeob){human(who);insist(who.role==='owner','only_the_owner_reviews_payer_estimates',403);const row=await one(env.DB,'SELECT client_id FROM bm_aeob_sources WHERE id=?',aeob[1]);insist(row,'payer_estimate_not_found',404);const doc=await aeobOriginal(env.DB,row.client_id,aeob[1]);await commit(env.DB,who,[audit(env.DB,who,'aeob.original_reviewed',row.client_id,aeob[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
       const estimate = path.match(/^\/api\/balm\/estimates\/([\w-]+)\.pdf$/)
       if(estimate){need(who,'owner','reception');human(who);const row=await one(env.DB,'SELECT client_id FROM bm_estimates WHERE id=?',estimate[1]);insist(row,'estimate_not_found',404);const doc=await estimateOriginal(env.DB,row.client_id as string,estimate[1]);await commit(env.DB,who,[audit(env.DB,who,'estimate.downloaded',row.client_id as string,estimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
       const document = await paymentDocument(env.DB, who, path, url.searchParams)
@@ -540,7 +545,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (reminder) return new Response(await reminderDownload(env.DB, who, reminder[1]), { headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="balm-reminder-${reminder[1]}.txt"` } })
     } else {
       if (path === '/app/action') {
-        const name = url.searchParams.get('name') ?? ''; let input = (name.startsWith('message.') || name === 'chart.document.upload') ? await parseMessageInput(request) : await inputBody(request)
+        const name = url.searchParams.get('name') ?? ''; let input = (name.startsWith('message.') || name === 'chart.document.upload' || name === 'estimate.aeob.prepare') ? await parseMessageInput(request) : await inputBody(request)
         if (name === 'session.signout') {
           const response = await operatorAuth(env).signOut(request)
           return new Response(null, { status: 303, headers: { ...headers, 'set-cookie': response.cookie, location: '/signin' } })

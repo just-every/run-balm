@@ -477,3 +477,7 @@ test('ROLE-002: the biller completes card, payment-plan, statement, adjustment, 
   assert.equal(file.notes,null);assert.equal(file.intake,null);assert.equal(file.billing.card,null)
  }finally{await h.close()}
 })
+
+test('PAY-007: contributing provider quotes stay in the aggregate original without diluting the practice dispute flag', {timeout:120000}, async()=>{const {coProviderEstimateJourney}=await import('./estimate-contributors-journey.mjs');await run(coProviderEstimateJourney)})
+
+test('PAY-007: an owner matches, reviews and publishes the payer original with consent and patient isolation', {timeout:120000}, async()=>{const {payerEstimateJourney}=await import('./payer-estimate-journey.mjs');await run(payerEstimateJourney)})

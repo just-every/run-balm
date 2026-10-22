@@ -15,6 +15,8 @@ export const custody = [
   {"table":"bm_balance_review_queue","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_break_glass","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_invoices","client":true,"links":[["client_id","bm_clients","id"],["appointment_id","bm_appointments","id"]]},
+  {"table":"bm_aeob_sources","client":true,"links":[["client_id","bm_clients","id"],["policy_id","bm_policies","id"]]},
+  {"table":"bm_aeob_issues","client":false,"links":[["source_id","bm_aeob_sources","id"]]},
   {"table":"bm_estimate_requests","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_estimate_drafts","client":false,"links":[["request_id","bm_estimate_requests","id"]]},
   {"table":"bm_estimates","client":true,"links":[["request_id","bm_estimate_requests","id"],["draft_id","bm_estimate_drafts","id"]]},

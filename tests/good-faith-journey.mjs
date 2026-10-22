@@ -129,5 +129,5 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
  assert.equal(execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),'','timing journey requires a clean committed candidate')
  await run(goodFaithJourney,{browserHttps:true})
- console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c28-gfe-'+head)
+ console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c29-gfe')
 }

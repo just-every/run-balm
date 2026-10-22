@@ -1,5 +1,6 @@
 import { parseIcd10 } from './codes'
 import { estimateDue } from './estimate-requests'
+import { contributorQuoteBlocks,estimateContributors } from './estimate-contributors'
 import { hostDateAt } from '../availability/timezone'
 import { clientVisible } from '../domain/clients'
 import { audit,commit,day,guard,human,id,insist,integer,need,now,one,rows,sha256,stmt,text,type Actor,type Data } from '../domain/model'
@@ -65,8 +66,10 @@ async function facts(db:D1Database,request:Data,input:Data){
  }
  const visits=lines.reduce((sum,line)=>sum+line.quantity,0)
  if(planContent)insist(visits===Number(planContent.frequencyPerWeek)*Number(planContent.durationWeeks),'estimate_visits_must_match_the_plan_of_care')
- const total=lines.reduce((sum,line)=>sum+line.totalCents,0);insist(Number.isSafeInteger(total)&&total<=1_000_000_000,'estimate_total_too_large')
- const payload={supersedesId:request.supersedes_id??null,changeReason:request.change_reason??null,requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,referralId:referral?.id??null,diagnosisCodes,deliveryMethod:request.delivery_method,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,totalCents:total}
+ const practiceTotalCents=lines.reduce((sum,line)=>sum+line.totalCents,0),contributors=estimateContributors(input.contributors,clinic.practice_npi)
+ const contributorTotalCents=contributors.reduce((sum,provider)=>sum+provider.totalCents,0),total=practiceTotalCents+contributorTotalCents
+ insist(Number.isSafeInteger(total)&&total<=1_000_000_000,'estimate_total_too_large')
+ const payload={supersedesId:request.supersedes_id??null,changeReason:request.change_reason??null,requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,referralId:referral?.id??null,diagnosisCodes,deliveryMethod:request.delivery_method,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,contributors,practiceTotalCents,contributorTotalCents,totalCents:total}
  return {payload,basis:{clientVersion:client.version,clinicVersion:clinic.version,services:versions,planDigest:plan?.content_sha256??null,referralVersion:referral?.version??null}}
 }
 export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
@@ -79,9 +82,13 @@ export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
 }
 function document(value:Data,key:string,at:string){
  return pdf({header:value.clinic.name,title:'Good Faith Estimate',blocks:[{kind:'facts',rows:[['Estimate',key],...(value.supersedesId?[['Replaces estimate',String(value.supersedesId)],['Change in care',String(value.changeReason)]] as [string,string][]:[]),['Patient',value.client.name],['Date of birth',value.client.dob??'Not recorded'],['Provider',value.clinic.name],['Provider NPI',value.clinic.npi||'Not yet assigned'],['Tax ID',value.clinic.taxId],['Provider address',value.clinic.address],['Requested',value.requestedAt.slice(0,10)],['Issued',at.slice(0,10)],['Due by',value.dueOn],['Expected care dates',value.fromOn+' through '+value.throughOn],['Coverage',value.coverageKind==='self_pay'?'Patient elected self-pay':'Uninsured'],['Care plan',value.planId?'Recorded plan of care':'Anticipated course from referral'],['Diagnosis codes',value.diagnosisCodes.join(', ')],['Requested delivery',value.deliveryMethod==='paper'?'Paper original':'Patient portal']]},
- {kind:'table',columns:[{label:'Expected service',width:4},{label:'Code',width:1},{label:'Visits',width:1,right:true},{label:'Each',width:1.5,right:true},{label:'Expected charge',width:2,right:true}],rows:value.lines.map((l:Data)=>[l.name,l.code,String(l.quantity),dollars(l.unitCents),dollars(l.totalCents)]),totals:[['Total expected charges',dollars(value.totalCents)]]},
- {kind:'notes',lines:['This is an estimate of expected charges, not a contract or a requirement to receive care. Actual care may differ. This estimate covers this practice only; other providers or facilities give their own estimates. Unexpected services may be billed separately. No other provider services are included in this estimate.',
- 'You may ask for a corrected or updated estimate. Keep a copy of this estimate. If billed charges from this provider are at least $400 above its estimate, you may be eligible for the federal patient-provider dispute resolution process. Start that process within 120 calendar days of the date on the initial bill. Starting a dispute does not affect the quality of care you receive.',
+ {kind:'heading',text:'Practice services: '+value.clinic.name},
+ {kind:'table',columns:[{label:'Expected service',width:4},{label:'Code',width:1},{label:'Visits',width:1,right:true},{label:'Each',width:1.5,right:true},{label:'Expected charge',width:2,right:true}],rows:value.lines.map((l:Data)=>[l.name,l.code,String(l.quantity),dollars(l.unitCents),dollars(l.totalCents)]),totals:[['Practice subtotal',dollars(value.practiceTotalCents)]]},
+ ...contributorQuoteBlocks(value.contributors),
+ {kind:'facts',rows:[['Practice expected charges',dollars(value.practiceTotalCents)],['Contributing providers',dollars(value.contributorTotalCents)],['Total expected charges',dollars(value.totalCents)]]},
+ {kind:'notes',lines:['This is an estimate of expected charges, not a contract or a requirement to receive care. Actual care may differ. '+(value.contributors.length?'This estimate includes the practice services and the written quotes of the contributing providers listed above. Each named provider is responsible for its own services and charges.':'This estimate includes this practice\'s expected services.')+' Providers and facilities not identified here are not included. Unexpected services may be billed separately.',
+ 'You may ask for a corrected or updated estimate. Keep a copy of this estimate. If billed charges from a provider are at least $400 above that provider\'s estimated charges, you may be eligible for the federal patient-provider dispute resolution process. Start that process within 120 calendar days of the date on the initial bill. Starting a dispute does not affect the quality of care you receive.',
+ 'Compare each provider\'s bill with that provider\'s estimated charges. This practice\'s billing comparison excludes other providers\' bills.',
  'For information, visit www.cms.gov/nosurprises/consumers or call 1-800-985-3059. A federal dispute process may charge an administrative fee. Contact the clinic first if a bill differs from this estimate.']}]})
 }
 export async function issueEstimate(db:D1Database,who:Actor,input:Data){
@@ -102,17 +109,23 @@ export async function issueEstimate(db:D1Database,who:Actor,input:Data){
  ...(payload.referralId?[guard(db,'EXISTS(SELECT 1 FROM bm_referrals WHERE id=? AND client_id=? AND version=?)',payload.referralId,request.client_id,basis.referralVersion)]:[]),
  ...(payload.planId?[guard(db,'EXISTS(SELECT 1 FROM bm_plans_of_care WHERE id=? AND content_sha256=?)',payload.planId,basis.planDigest)]:[]),
  stmt(db,'INSERT INTO bm_estimates(id,request_id,draft_id,client_id,from_on,through_on,total_cents,payload,sha256,pdf,issued_at,issued_by,delivery_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',key,request.id,draft.id,request.client_id,payload.fromOn,payload.throughOn,payload.totalCents,JSON.stringify(payload),[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join(''),bytes,at,who.email,payload.deliveryMethod),audit(db,who,'estimate.issued',request.client_id,key,payload.deliveryMethod==='paper'?'Paper original issued; print and record handoff or mailing; no automatic sending':'Published to the patient portal; no email sent')])
- return {id:key,issuedAt:at,dueOn:request.due_on,totalCents:payload.totalCents}
+ return {id:key,issuedAt:at,dueOn:request.due_on,totalCents:payload.totalCents,practiceTotalCents:payload.practiceTotalCents,contributorTotalCents:payload.contributorTotalCents}
 }
 export async function estimatesFor(db:D1Database,clientId:string){
- const estimates=await rows(db,'SELECT e.id,e.request_id,e.from_on,e.through_on,e.total_cents,e.sha256,e.issued_at,e.delivery_method,r.supersedes_id,r.change_reason FROM bm_estimates e JOIN bm_estimate_requests r ON r.id=e.request_id WHERE e.client_id=? ORDER BY e.issued_at DESC,e.id',clientId)
+ const estimates=await rows(db,'SELECT e.id,e.request_id,e.from_on,e.through_on,e.total_cents,e.payload,e.sha256,e.issued_at,e.delivery_method,r.supersedes_id,r.change_reason FROM bm_estimates e JOIN bm_estimate_requests r ON r.id=e.request_id WHERE e.client_id=? ORDER BY e.issued_at DESC,e.id',clientId)
  for(const e of estimates){
+  const payload=JSON.parse(e.payload)
+  // Old issued originals predate aggregation and contain only this practice's charges.
+  e.practiceTotalCents=payload.practiceTotalCents??Number(e.total_cents)
+  e.contributorTotalCents=payload.contributorTotalCents??0
+  e.contributors=payload.contributors??[]
+  delete e.payload
   e.delivery=await one(db,'SELECT method,delivered_on,original_sha256,recorded_at,recorded_by FROM bm_estimate_deliveries WHERE estimate_id=?',e.id)
   // Invoice service dates use the same clinic-local calendar as the estimate.
   const visits=await rows(db,`SELECT i.amount_cents,a.start_at FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id WHERE i.client_id=? AND i.status='approved'`,clientId)
   const zone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
   e.billedCents=visits.filter(v=>{const d=hostDateAt(new Date(v.start_at),zone);return d>=e.from_on&&d<=e.through_on}).reduce((sum,v)=>sum+Number(v.amount_cents),0)
-  e.overByCents=Math.max(0,Number(e.billedCents)-Number(e.total_cents));e.disputeFlag=e.overByCents>=40000
+  e.overByCents=Math.max(0,Number(e.billedCents)-Number(e.practiceTotalCents));e.disputeFlag=e.overByCents>=40000
  }
  return estimates
 }

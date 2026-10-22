@@ -1,3 +1,4 @@
+import {parseDollars} from './payments/ledger'
 // Page forms in, command input out: the weekly-hours form becomes `hours.save`'s
 // windows and the intake builder becomes `intake.prepare`'s questions. The JSON
 // command doors keep taking those shapes directly (agents prepare intake versions).
@@ -91,4 +92,14 @@ export function fileField(text: string) {
 }
 export function fileFromField(value: string) {
   return new TextDecoder().decode(Uint8Array.from(atob(value), c => c.charCodeAt(0)))
+}
+
+/** Form rows carry quoted charges as typed dollars; commands use integer cents. */
+export function estimateContributorsFromForm(input:Record<string,any>){
+ return Array.from({length:2},(_,i)=>{
+  const key='contributor_'+i+'_',value=(name:string)=>input[key+name]
+  const lines=Array.from({length:2},(_,n)=>{const line=key+'line_'+n+'_';return {name:input[line+'name'],code:input[line+'code'],quantity:input[line+'quantity'],price:input[line+'price']}}).filter(l=>l.name||l.code||l.quantity||l.price).map(l=>({name:l.name,code:l.code,quantity:l.quantity,unitCents:parseDollars(l.price,'quoted_unit_charge')}))
+  const result={name:value('name'),npi:value('npi'),taxId:value('taxId'),address:value('address'),sourceReference:value('sourceReference'),receivedOn:value('receivedOn'),diagnosisCodes:String(value('diagnosisCodes')??'').split(/[ ,;]+/).filter(Boolean),attest:value('attest')==='on',lines}
+  return Object.values(result).some(value=>Array.isArray(value)?value.length:!!value)?result:null
+ }).filter(Boolean)
 }

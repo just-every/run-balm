@@ -383,7 +383,8 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
   const request=await h.cmd('estimate.request',{clientId:patient.id,coverageKind:'self_pay',coverageAttestation:'Patient elected self-pay',deliveryMethod:'paper',attest:true})
   const referral=await h.cmd('case.open',{clientId:patient.id,receivedOn:today,referringFirst:'Synthetic',referringLast:'Referrer',diagnosis:'M25.561 knee pain'})
-  const prepared=await h.cmd('estimate.prepare',{requestId:request.id,referralId:referral.id,fromOn:today,throughOn:today,lines:[{serviceId:service.id,quantity:1,code:'97161'}],attest:true})
+  const contributor={name:'Synthetic Imaging Center',npi:'1245319599',taxId:'98-7654321',address:'200 Main St, Austin TX 78701',sourceReference:'synthetic-balm-5',receivedOn:today,diagnosisCodes:['M25.561'],lines:[{name:'Knee imaging',code:'73721',quantity:1,unitCents:30000}],attest:true}
+  const prepared=await h.cmd('estimate.prepare',{requestId:request.id,referralId:referral.id,fromOn:today,throughOn:today,lines:[{serviceId:service.id,quantity:1,code:'97161'}],contributors:[contributor],attest:true})
   const estimate=await h.cmd('estimate.issue',{id:prepared.id,sha256:prepared.sha256,attest:true})
   const original=(await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,h.owner)).text
   const issued=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.estimates.issued[0]
@@ -396,7 +397,13 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   for(let i=1;i<=20;i++)fields['q_out_lefs_'+i]='3'
   assert.equal((await h.form(path,fields)).status,303)
   const payer=await h.cmd('insurance.payer.save',{name:'Synthetic archive payer',payerId:'SYNTHETICARCHIVE',receiverId:'SYNTHETIC',unitMethod:'cms',fees:[{code:'97110',cents:3500}]})
-  await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:payer.id,memberId:'synthetic-balm-2',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
+  const archivePolicy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:payer.id,memberId:'synthetic-balm-2',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
+  const {payerEstimatePdf}=await import('./payer-estimate-journey.mjs')
+  const payerOriginal=payerEstimatePdf('Synthetic Portability')
+  const payerSource=await h.cmd('estimate.aeob.prepare',{clientId:patient.id,policyId:archivePolicy.id,sourceReference:'synthetic-balm-6',sourceDate:new Date().toISOString().slice(0,10),matchEvidence:'Matched name, birth date and member ID on the payer original',attachment:'data:application/pdf;base64,'+payerOriginal.toString('base64'),attachmentName:'synthetic-balm-6.pdf',attest:true})
+  const payerPath='/api/balm/aeobs/'+payerSource.id+'.pdf'
+  assert.equal((await h.send(payerPath,undefined,h.owner)).text,payerOriginal.toString())
+  await h.cmd('estimate.aeob.issue',{id:payerSource.id,sha256:payerSource.sha256,portalConsent:'Patient requested the portal copy at the desk',attest:true})
   const release=await h.cmd('note_release.prepare',{clientId:patient.id,payerId:payer.id,purpose:'appeal',reference:'synthetic-balm-3',appointmentIds:[visit]})
   const releasePath='/api/balm/note-releases/'+release.id+'.pdf',releaseOriginal=(await h.send(releasePath,undefined,h.owner)).text
   await h.cmd('note_release.approve',{id:release.id,sha256:release.sha256,attest:true})
@@ -422,6 +429,10 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   assert.equal((await h.send(releasePath,undefined,owner)).text,releaseOriginal)
   assert.ok(file.value.noteReleases.find(r=>r.id===release.id).approved_at)
   assert.equal(fixed.submissions[0].supervision_given,'in_room');assert.equal(fixed.signature.name,'Priya');assert.equal(fixed.submissions[0].author_name,'ArchiveStudent');assert.equal(fixed.submissions[0].decision,'cosigned')
+  assert.equal(file.value.estimates.issued[0].contributors[0].sourceReference,contributor.sourceReference)
+  assert.equal(file.value.estimates.issued[0].contributors[0].totalCents,30000)
+  assert.equal((await h.send(payerPath,undefined,owner)).text,payerOriginal.toString())
+  assert.ok(file.value.aeobs.find(a=>a.id===payerSource.id).issued_at)
   assert.equal(file.value.estimates.issued[0].delivery.method,'handed');assert.equal(file.value.estimates.issued[0].delivery.original_sha256,issued.sha256)
   assert.equal(file.value.intake[0].scores[0].score,60);assert.equal(file.value.intake[0].formNumber,form.number)
   assert.equal((await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,owner)).text,original)
