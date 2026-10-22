@@ -156,3 +156,9 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
 test('SCHED-006: clinic settings, portal follow-up and a cross-origin embedded booking work in the browser', {timeout:120_000}, async()=>{
   await (await import('./self-service-browser.mjs')).selfServiceBrowser()
 })
+
+
+test('SEC-001: staff enroll and recover through real browser forms, then change idle policy and revoke a device', {timeout:90000}, async()=>{
+ const {staffSecurityBrowser}=await import('./staff-security-browser.mjs')
+ await staffSecurityBrowser()
+})

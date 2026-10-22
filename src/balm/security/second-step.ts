@@ -110,7 +110,7 @@ async function screen(auth:Data,env:Bindings,session:Data,notice='',extra=''){
   content+='<p><a href="/app">Open Balm</a></p>'
  }
  content+='<form method="post" action="/auth/signout"><button class="secondary">Sign out</button></form>'
- return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Staff security',content})
+ return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Staff security',content,referrer:'strict-origin'})
 }
 /** Uses the established native identity; never trusts a claimed email or role in an MFA form. */
 export async function securityResponse(request:Request,env:Bindings,createAuth:()=>Data):Promise<Response|null>{
@@ -160,7 +160,7 @@ export async function securityResponse(request:Request,env:Bindings,createAuth:(
   if(owns&&[401,429].includes(status))await env.DB.batch([audit(env.DB,{email:'staff sign-in',role:'system'},'session.second_step_refused',null,null,code)])
   if(owns&&isForm(request)&&currentSession&&auth){
    const message=code==='second_step_rate_limited'?'Too many attempts. Wait five minutes before trying again.':code==='session_idle_expired'?'This device was idle too long. Sign in again with a new email link.':code==='second_step_refused'?'That code did not verify. Use a fresh authenticator code or an unused recovery code.':'The change could not be completed. Check your sign-in and try again.'
-   return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Check your sign-in',content:'<p role="alert">'+h(message)+'</p><p><a href="/auth/security">Back to staff security</a></p><p><a href="/signin">Sign in again</a></p>',status})
+   return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Check your sign-in',content:'<p role="alert">'+h(message)+'</p><p><a href="/auth/security">Back to staff security</a></p><p><a href="/signin">Sign in again</a></p>',status,referrer:'strict-origin'})
   }
   return json({error:code},status)
  }
