@@ -1,7 +1,11 @@
-import { empty, field, h, panel, stamp, status, when } from './shared'
-export function locationPage(s:any,path:string) {
- const l=s.location
+import {coverageFields} from './estimates'
+import {empty,field,form,h,hidden,panel,select,status,when,cancelForm} from './shared'
+export function locationPage(s:any,path:string){
+ const l=s.location,back='/app'
  const filter=`<form method="get"><div class="pair">${field('from','From',l.from,'date','required')}${field('to','Through',l.to,'date','required')}</div><button>Show location</button></form>`
- const schedule=l.appointments.map((a:any)=>`<article class="entry"><h3>${h(a.client)}</h3><p>${when(s,a.start_at)} · ${status(a.status)}<br>${h(a.service)} · ${h(a.practitioner)} · ${h(a.room)}</p></article>`).join('')
- return `<h1>${h(l.name)} · ${path.startsWith('/app/reports')?'Reports':'Schedule'}</h1><p>You have read-only access to this location’s schedule and visit counts. Rooms without a location are excluded.</p><div class="grid">${panel('Dates',filter)}${path.startsWith('/app/reports')?panel('Visit counts',Object.entries(l.counts).map(([k,v])=>`<p>${h(k)}: <strong>${h(v)}</strong></p>`).join('')):panel('Visits',schedule||empty('No visits in this date range.'),'full')}</div>`
+ const roomOptions=l.rooms.map((r:any)=>[r.id,r.name])
+ const placement=(a:any={})=>select('practitionerId','Practitioner',l.practitioners.map((p:any)=>[p.id,p.name]),a.practitioner_id)+select('roomId','Room in this location',roomOptions,a.room_id)+field('date','Date','','date','required')+field('time','Time in clinic time zone','','time','required')
+ const schedule=l.appointments.map((a:any)=>`<article class="entry"><h3>${h(a.client)}</h3><p>${when(s,a.start_at)} · ${status(a.status)}<br>${h(a.service)} · ${h(a.practitioner)} · ${h(a.room)}</p>${a.checked_in_at?'<p>Checked in</p>':''}${a.status==='booked'?`<details><summary>Reschedule</summary>${form('appointment.move',back,hidden('id',a.id)+hidden('version',a.version)+placement(a),'Move visit')}</details>${form('pay.checkin',back,hidden('appointmentId',a.id),'Check in')} ${cancelForm('appointment.cancel',back,hidden('id',a.id),'Cancel this visit','Cancel visit',a.client)}`:''}</article>`).join('')
+ const book=form('appointment.book',back,select('clientId','Patient already assigned to this location',l.patients.map((p:any)=>[p.id,p.name]))+select('serviceId','Service',l.services.map((x:any)=>[x.id,x.name]))+placement()+coverageFields(),'Book visit')
+ return `<h1>${h(l.name)} · ${path.startsWith('/app/reports')?'Reports':'Schedule'}</h1><p>Manage visits in this location’s assigned rooms. Patient choices include people already scheduled here. The owner books a new patient’s first visit here. Check-in never charges money.</p><div class="grid">${panel('Dates',filter)}${path.startsWith('/app/reports')?panel('Visit counts',Object.entries(l.counts).map(([k,v])=>`<p>${h(k)}: <strong>${h(v)}</strong></p>`).join('')):panel('Visits',schedule||empty('No visits in this date range.'),'full')+panel('Book a visit',book)}</div>`
 }

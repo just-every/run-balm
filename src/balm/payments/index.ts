@@ -1,3 +1,4 @@
+import {manager,locationWrite} from '../domain/role-access'
 import { seesBalances } from '../domain/model'
 // Patient payment commands and the state the pages read. Every command resolves
 // the live actor and enforces its role here; writes re-check authority in their
@@ -40,11 +41,13 @@ async function chargeCopay(env: SmsEnv, db: D1Database, who: Actor, visit: Data)
 /** Check a patient in on the day of the visit; with `charge`, the copay goes on their card in the same action. */
 async function checkIn(env: SmsEnv, db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception', 'practitioner'); human(who)
+  insist(!manager(who)||![true,'on'].includes(input.charge as any),'location_managers_cannot_charge',403)
   const visit = await visibleAppointment(db, who, input.appointmentId)
   insist(visit.status === 'booked', 'only_a_booked_visit_can_be_checked_in', 409)
   insist(!visit.checked_in_at, 'already_checked_in', 409)
   insist(Math.abs(Date.parse(visit.start_at as string) - Date.now()) < 12 * 3600_000, 'check_in_on_the_day_of_the_visit', 409)
   await commit(db, who, [
+    ...await locationWrite(db,who,visit.room_id),
     stmt(db, "UPDATE bm_appointments SET checked_in_at=?,checked_in_by=?,version=version+1 WHERE id=? AND status='booked' AND checked_in_at IS NULL", new Date().toISOString(), who.email, visit.id), guard(db, 'changes()=1'),
     audit(db, who, 'appointment.checked_in', visit.client_id as string, visit.id as string),
   ])

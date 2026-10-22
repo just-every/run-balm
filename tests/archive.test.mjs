@@ -360,6 +360,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
   const visit=await pastVisit(h,patient.id,student,service.id)
   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic portable supervised care'},student.cookie)
+  await h.cmd('supervision.deadline.save',{staffId:student.id,state:'TX',hours:24,source:'Synthetic reviewed state deadline'})
   await h.cmd('note.submit',{id:note.id,revision:1,signature:'ArchiveStudent',credentials:'SPT',attest:true},student.cookie)
   await h.cmd('note.cosign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
   const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
@@ -377,6 +378,11 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const fields={formId:form.id,q_reason:'Synthetic portable answer',consentVersion:page.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Synthetic Portability',signerRelationship:'patient',signatureTyped:'Synthetic Portability'}
   for(let i=1;i<=20;i++)fields['q_out_lefs_'+i]='3'
   assert.equal((await h.form(path,fields)).status,303)
+  const payer=await h.cmd('insurance.payer.save',{name:'Synthetic archive payer',payerId:'SYNTHETICARCHIVE',receiverId:'SYNTHETIC',unitMethod:'cms',fees:[{code:'97110',cents:3500}]})
+  await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:payer.id,memberId:'synthetic-balm-2',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
+  const release=await h.cmd('note_release.prepare',{clientId:patient.id,payerId:payer.id,purpose:'appeal',reference:'synthetic-balm-3',appointmentIds:[visit]})
+  const releasePath='/api/balm/note-releases/'+release.id+'.pdf',releaseOriginal=(await h.send(releasePath,undefined,h.owner)).text
+  await h.cmd('note_release.approve',{id:release.id,sha256:release.sha256,attest:true})
   const auth=h.auth,ownerSession=h.owner
   await h.close();h=null
   const archive=join(temporary,'clinic.rer')
@@ -387,6 +393,9 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
   assert.equal(file.status,200,file.text)
   const fixed=file.value.notes.find(n=>n.id===note.id)
+  assert.ok(fixed.submissions[0].due_at);assert.equal(JSON.parse(fixed.submissions[0].deadline_basis).state,'TX')
+  assert.equal((await h.send(releasePath,undefined,owner)).text,releaseOriginal)
+  assert.ok(file.value.noteReleases.find(r=>r.id===release.id).approved_at)
   assert.equal(fixed.submissions[0].supervision_given,'in_room');assert.equal(fixed.signature.name,'Priya');assert.equal(fixed.submissions[0].author_name,'ArchiveStudent');assert.equal(fixed.submissions[0].decision,'cosigned')
   assert.equal(file.value.estimates.issued[0].delivery.method,'handed');assert.equal(file.value.estimates.issued[0].delivery.original_sha256,issued.sha256)
   assert.equal(file.value.intake[0].scores[0].score,60);assert.equal(file.value.intake[0].formNumber,form.number)

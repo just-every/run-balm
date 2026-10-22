@@ -1,6 +1,10 @@
 /** Patient custody graph, including shared photo originals. Parent-first for selection; reverse for deletion. */
 export const custody = [
   {"table":"bm_clients","client":true,"links":[]},
+  {"table":"bm_note_releases","client":true,"links":[]},
+  {"table":"bm_note_release_approvals","client":false,"links":[["release_id","bm_note_releases","id"]]},
+  {"table":"bm_note_release_revocations","client":false,"links":[["release_id","bm_note_releases","id"]]},
+
   {"table":"bm_series","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_appointments","client":true,"links":[["series_id","bm_series","id"],["client_id","bm_clients","id"]]},
   {"table":"bm_policies","client":true,"links":[["client_id","bm_clients","id"]]},

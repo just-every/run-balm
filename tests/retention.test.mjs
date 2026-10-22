@@ -136,6 +136,11 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
     }
     return {operational:operational.value,financial}
   }
+  const releasePayer=await h.cmd('insurance.payer.save',{name:'Synthetic retained payer',payerId:'SYNTHETICRETENTION',receiverId:'SYNTHETIC',unitMethod:'cms',fees:[{code:'97110',cents:3500}]})
+  await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:releasePayer.id,memberId:'synthetic-balm-1',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'1980-01-01',endsOn:'2099-12-31'})
+  const released=await h.cmd('note_release.prepare',{clientId:patient.id,payerId:releasePayer.id,purpose:'appeal',reference:'synthetic-balm-2',appointmentIds:[visit]})
+  await h.send('/api/balm/note-releases/'+released.id+'.pdf',undefined,h.owner)
+  await h.cmd('note_release.approve',{id:released.id,sha256:released.sha256,attest:true})
   const reportBefore=await reports()
   assert.equal(reportBefore.operational.evaluations.total.pt,1)
   assert.equal(reportBefore.operational.plans.total.completed,1)
@@ -148,6 +153,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   assert.equal(locationBefore.status,200)
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
   assert.ok(preview.records.bm_note_revisions>0)
+  assert.equal(preview.records.bm_note_releases,1);assert.equal(preview.records.bm_note_release_approvals,1)
   assert.equal(preview.records.bm_note_checks,1,'AGENT-003 questions containing clinical excerpts join destruction scope')
   assert.ok(preview.records.bm_portal_links>0)
   assert.equal(preview.records.bm_measures,1)
@@ -155,6 +161,8 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
   const destroyed=await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   assert.equal(destroyed.destroyed,true)
+  assert.equal((await h.send('/api/balm/note-releases/'+released.id+'.pdf',undefined,h.owner)).status,404)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_note_releases WHERE client_id=?').bind(patient.id).first()).n,0)
   const locationAfter=await h.send('/api/balm/reports?from=1990-01-01&to=1990-01-31&locationId='+location.id,undefined,h.owner)
   assert.deepEqual(locationAfter.value,locationBefore.value,'anonymous location reports retain every figure')
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_note_checks WHERE note_id=?').bind(noteId).first()).n,0,'AGENT-003 clinical excerpts are removed by approved destruction')

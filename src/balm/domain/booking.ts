@@ -1,3 +1,4 @@
+import {manager,locationWrite} from './role-access'
 import { bookingCoverage, bookingEstimate } from '../payments/estimate-requests'
 import { checkSelfService, selfServiceSnapshot } from '../scheduling/self-service-policy'
 import { cancellationStatements, feeProposalStatements, getVisitPolicy } from '../scheduling/policy'
@@ -219,12 +220,13 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const client = await one(db, 'SELECT id FROM bm_clients WHERE id=? AND erased_at IS NULL', text(input.clientId, 'client', 100))
   insist(client, 'client_not_found', 404)
   const roomId = await roomFor(db, input.roomId), equipmentId = await equipmentFor(db, input.equipmentId)
+  const locationGuards=await locationWrite(db,who,roomId,client.id)
   const place = await placeVisit(db, clinic.time_zone, { practitionerId: practitioner.id as string, serviceId: service.id as string, durationMinutes: service.duration_minutes, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, equipmentId })
   insist(!place.problem, place.problem!, 409)
   const token = intakeToken(), appointmentId = id()
   const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
   filing.push(...await medicareStatements(db, who, { clientId: client.id as string, practitionerId: practitioner.id as string, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId }, input.acknowledgeMedicareOverlap))
-  await commit(db, who, [...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
+  await commit(db, who, [...locationGuards,...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 
@@ -238,6 +240,7 @@ export async function moveAppointment(db: D1Database, who: Actor, input: Data) {
   insist(who.role === 'owner' || who.staffRole === 'reception' || target === row.practitioner_id, 'practitioners_book_their_own_diary', 403)
   const roomId = 'roomId' in input ? await roomFor(db, input.roomId) : row.room_id as string | null
   const equipmentId = 'equipmentId' in input ? await equipmentFor(db, input.equipmentId) : row.equipment_id as string | null
+  const locationGuards=await locationWrite(db,who,roomId)
   const duration = Math.round((Date.parse(row.end_at) - Date.parse(row.start_at)) / 60_000)
   const place = await placeVisit(db, clinic.time_zone, { practitionerId: target, serviceId: row.service_id, durationMinutes: duration, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, equipmentId, exclude: [row.id] })
   insist(!place.problem, place.problem!, 409)
@@ -245,6 +248,7 @@ export async function moveAppointment(db: D1Database, who: Actor, input: Data) {
   const version = input.version === undefined ? row.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER)
   const startAt = place.start!.toISOString(), endAt = place.end!.toISOString()
   await commit(db, who, [
+    ...await locationWrite(db,who,row.room_id),...locationGuards,
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, version),
     ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId, startAt, endAt, except: row.id }),
     stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,equipment_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, equipmentId, startAt, endAt, row.id),
@@ -258,6 +262,7 @@ export async function moveAppointment(db: D1Database, who: Actor, input: Data) {
 export async function visibleAppointment(db: D1Database, who: Actor, key: unknown) {
   const row = await one(db, 'SELECT * FROM bm_appointments WHERE id=?', text(key, 'appointment', 100))
   insist(row && (who.role === 'owner' || who.role === 'agent' || who.staffRole === 'reception' || row.practitioner_id === practitionerId(who)), 'appointment_not_found', 404)
+  await locationWrite(db,who,row.room_id)
   return row
 }
 export async function setAppointmentStatus(db: D1Database, who: Actor, input: Data, status: 'cancelled' | 'attended' | 'no_show') {
@@ -265,10 +270,12 @@ export async function setAppointmentStatus(db: D1Database, who: Actor, input: Da
   const row = await visibleAppointment(db, who, input.id)
   insist(row.status === 'booked', 'appointment_not_booked', 409)
   if (status !== 'cancelled') insist(Date.parse(row.start_at) <= Date.now() + 3600_000, 'appointment_not_started', 409)
+  insist(!manager(who)||status==='cancelled','location_manager_action_refused',403)
   const started = status === 'attended' ? await attendanceStatements(db, who, row) : []
   const policy = await getVisitPolicy(db)
   const policyWrites = status === 'cancelled' ? cancellationStatements(db, who, row, input.reason, policy) : status === 'no_show' ? feeProposalStatements(db, who, row, status, policy) : []
   await commit(db, who, [
+    ...await locationWrite(db,who,row.room_id),
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, row.version),
     stmt(db, "UPDATE bm_appointments SET status=?,version=version+1 WHERE id=? AND status='booked' AND version=?", status, row.id, row.version),
     guard(db, 'changes()=1'),

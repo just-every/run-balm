@@ -17,7 +17,7 @@ import { fullName } from '../domain/model'
 import { dollarsField, empty, entry, field, form, h, hidden, money, panel, rows, select, status, textarea } from './shared'
 
 const staffFields = (p?: any, s?: any) => field('name', 'Full name', p?.name, 'text', 'required maxlength="160"') + field('email', 'Email', p?.email, 'email', 'required')
-  + select('role', 'Role', [['practitioner','Practitioner'],['reception','Reception'],['biller','Biller'],['assistant','PTA / COTA / SLPA assistant'],['student','Student'],['fellow','Clinical fellow'],['supervisor','Supervisor'],['location_manager','Location manager (read only)']], p?.kind ?? p?.role ?? 'practitioner')
+  + select('role', 'Role', [['practitioner','Practitioner'],['reception','Reception'],['biller','Biller'],['assistant','PTA / COTA / SLPA assistant'],['student','Student'],['fellow','Clinical fellow'],['supervisor','Supervisor'],['location_manager','Location manager']], p?.kind ?? p?.role ?? 'practitioner')
   + select('discipline','Clinical discipline (required for author and supervisor)',[['','Not recorded'],['pt','Physical therapy'],['ot','Occupational therapy'],['slp','Speech-language pathology']],p?.discipline ?? '', '')
   + select('supervisorId','Supervising therapist (required for assistant, student or fellow)',[['','None'],...(s?.staff ?? []).filter((x:any)=>x.role==='practitioner' && !['assistant','student','fellow'].includes(x.kind) && x.active && x.id!==p?.id).map((x:any)=>[x.id,x.name])],p?.supervisor_id ?? '', '')
   + select('locationId','Location (location managers only)',[['','None'],...(s?.locations ?? []).map((x:any)=>[x.id,x.name])],p?.location_id ?? '', '')
