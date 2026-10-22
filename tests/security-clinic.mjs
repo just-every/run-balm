@@ -51,12 +51,21 @@ export async function publicRequest(h, path, fields, options = {}) {
 }
 
 export async function untilLimited(attempt) {
-  for (let n = 0; n < 200; n++) {
-    const response = await attempt(n)
-    if (response.status === 429) return response
+  // The public contract gives a fresh allowance at each aligned 15-minute
+  // boundary. Count the bounded abuse batch within one window, not across two.
+  const window = () => Math.floor(Date.now() / (15 * 60_000))
+  let current = window(), count = 0, total = 0
+  while (count < 200) {
+    const started = window()
+    if (started !== current) { current = started; count = 0 }
+    const response = await attempt(total++)
     assert.ok(response.status < 500, 'public abuse attempts must not become server errors')
+    const completed = window()
+    if (completed !== started) { current = completed; count = 0; continue }
+    count++
+    if (response.status === 429) return response
   }
-  assert.fail('public door never refused sustained abuse')
+  assert.fail('public door never refused sustained abuse within a quota window')
 }
 
 export async function effects(h, stripe) {
