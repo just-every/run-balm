@@ -321,7 +321,9 @@ test('COMM-004: configured consented sequences follow chart goals, share contact
     assert.ok(plan.id)
     const noNext = await enroll('no_next'), recall = await enroll('recall')
     const tick = async time => (await h.mf.getWorker()).scheduled({ scheduledTime: time, cron: '* * * * *' })
-    const at = Date.now() + 1000, messages = () => h.mail.filter(m => m.subject.startsWith('A follow-up'))
+    // `at` is re-anchored after each real-time enrollment or signature below: a sequence is never due before the moment the clinic recorded it.
+    let at = Date.now() + 1000
+    const messages = () => h.mail.filter(m => m.subject.startsWith('A follow-up'))
     await Promise.all([tick(at), tick(at)])
     assert.equal(messages().length, 1, 'COMM-004 racing ticks share one per-patient contact reservation across all sequence kinds')
     assert.ok((await file()).followups.attempts.some(a => a.state === 'accepted'))
@@ -342,6 +344,7 @@ test('COMM-004: configured consented sequences follow chart goals, share contact
     const missedVisit = await pastVisit(h, missedClient.id, priya, service.id, h.owner, 5)
     await h.cmd('appointment.no_show', { id: missedVisit })
     const missed = await enroll('missed', missedClient)
+    at = Date.now() + 1000
     await tick(at)
     assert.equal(messages().length, 3, 'COMM-004 missed-visit outreach is triggered by a recorded no-show')
     await tick(at + 86400_000)
@@ -361,6 +364,7 @@ test('COMM-004: configured consented sequences follow chart goals, share contact
     await tick(at)
     assert.equal(messages().length, 4, 'COMM-004 welcome waits for a signed evaluation')
     await note('evaluation')
+    at = Date.now() + 1000
     await tick(at + 1000)
     assert.equal(messages().length, 5)
     await tick(at + 2 * 86400_000)
