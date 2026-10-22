@@ -363,10 +363,13 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('note.submit',{id:note.id,revision:1,signature:'ArchiveStudent',credentials:'SPT',attest:true},student.cookie)
   await h.cmd('note.cosign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
   const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
-  const request=await h.cmd('estimate.request',{clientId:patient.id,coverageKind:'self_pay',coverageAttestation:'Patient elected self-pay',attest:true})
-  const prepared=await h.cmd('estimate.prepare',{requestId:request.id,fromOn:today,throughOn:today,lines:[{serviceId:service.id,quantity:1}],attest:true})
+  const request=await h.cmd('estimate.request',{clientId:patient.id,coverageKind:'self_pay',coverageAttestation:'Patient elected self-pay',deliveryMethod:'paper',attest:true})
+  const referral=await h.cmd('case.open',{clientId:patient.id,receivedOn:today,referringFirst:'Synthetic',referringLast:'Referrer',diagnosis:'M25.561 knee pain'})
+  const prepared=await h.cmd('estimate.prepare',{requestId:request.id,referralId:referral.id,fromOn:today,throughOn:today,lines:[{serviceId:service.id,quantity:1,code:'97161'}],attest:true})
   const estimate=await h.cmd('estimate.issue',{id:prepared.id,sha256:prepared.sha256,attest:true})
   const original=(await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,h.owner)).text
+  const issued=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.estimates.issued[0]
+  await h.cmd('estimate.deliver',{id:estimate.id,sha256:issued.sha256,method:'handed',deliveredOn:today,attest:true})
   const packet=await h.cmd('intake.prepare',{title:'Portable LEFS packet',serviceId:service.id,questions:[{id:'reason',label:'Reason',type:'short',required:true}],instruments:[{kind:'lefs',items:Array.from({length:20},(_,i)=>'Synthetic item '+i)}]})
   const form=await h.cmd('intake.publish',{id:packet.id})
   const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0],{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
@@ -385,6 +388,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   assert.equal(file.status,200,file.text)
   const fixed=file.value.notes.find(n=>n.id===note.id)
   assert.equal(fixed.submissions[0].supervision_given,'in_room');assert.equal(fixed.signature.name,'Priya');assert.equal(fixed.submissions[0].author_name,'ArchiveStudent');assert.equal(fixed.submissions[0].decision,'cosigned')
+  assert.equal(file.value.estimates.issued[0].delivery.method,'handed');assert.equal(file.value.estimates.issued[0].delivery.original_sha256,issued.sha256)
   assert.equal(file.value.intake[0].scores[0].score,60);assert.equal(file.value.intake[0].formNumber,form.number)
   assert.equal((await h.send('/api/balm/estimates/'+estimate.id+'.pdf',undefined,owner)).text,original)
   await h.cmd('note.sign',{id:note.id,revision:1,signature:'ArchiveStudent',attest:true},cookie,403)

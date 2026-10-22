@@ -121,6 +121,7 @@ export async function selfServiceBrowser() {
     assert.equal(await page.evaluate(()=>{try{return document.querySelector('iframe').contentDocument?.body?.textContent ?? null}catch{return null}}),null)
     await capture('embedded-booking','form[action="/book#details"]',frame)
     const count=(await h.state()).appointments.filter(a=>a.client_id===patient.id).length
+    await frame.locator('[name=coverageChoice]').selectOption('insured_claim')
     await frame.getByRole('button',{name:'Book this appointment',exact:true}).click()
     await page.waitForURL(url=>url.origin===h.origin)
     assert.equal((await h.state()).appointments.filter(a=>a.client_id===patient.id).length,count+1,'SCHED-006 embedded booking commits and leaves the frame before private intake')

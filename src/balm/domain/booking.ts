@@ -1,3 +1,4 @@
+import { bookingCoverage, bookingEstimate } from '../payments/estimate-requests'
 import { checkSelfService, selfServiceSnapshot } from '../scheduling/self-service-policy'
 import { cancellationStatements, feeProposalStatements, getVisitPolicy } from '../scheduling/policy'
 import { allocateIntake } from './intake-requests'
@@ -126,9 +127,10 @@ export function appointmentStatements(db: D1Database, who: Actor | { email: stri
   return [
     // Rechecked in the batch: no other live appointment for this practitioner or room overlaps.
     ...placementGuards(db, appointment as any),
-    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id,equipment_id)
-      VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
-    appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null, appointment.equipmentId ?? null),
+    stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id,equipment_id,coverage_choice)
+      VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
+    appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null, appointment.equipmentId ?? null, appointment.coverageChoice ?? 'unknown'),
+    ...bookingEstimate(db, who, appointment),
     ...(appointment.tokenHash ? [allocateIntake(db, appointment.id, appointment.clientId, appointment.startAt, appointment.tokenHash)] : []),
     audit(db, who, 'appointment.booked', appointment.clientId, appointment.id, `${appointment.bookedVia}${appointment.seriesId ? ' series' : ''}${appointment.offerId ? ' waitlist offer' : ''} ${appointment.startAt}`),
   ]
@@ -203,7 +205,7 @@ export async function bookOnline(db: D1Database, input: Data) {
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),
-    ...appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', tokenHash: await sha256(token) }),
+    ...appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }),
   ])
   return { appointmentId, clientId, token, startAt: start.toISOString(), practitioner: practitioner.name, service: service.name, timeZone: clinic.time_zone, email: client.email, firstName: client.firstName }
 }
@@ -222,7 +224,7 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const token = intakeToken(), appointmentId = id()
   const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
   filing.push(...await medicareStatements(db, who, { clientId: client.id as string, practitionerId: practitioner.id as string, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId }, input.acknowledgeMedicareOverlap))
-  await commit(db, who, [...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId }), ...filing])
+  await commit(db, who, [...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 

@@ -1,4 +1,5 @@
 // The two pages a client sees: online booking and the private intake link.
+import { coverageFields } from './estimates'
 import { localTime } from '../domain/invoices'
 import { h, money, usDate } from './shared'
 import { frequency } from './plans'
@@ -39,6 +40,7 @@ export function bookPage(d: any) {
     <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" value="${value('firstName')}"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name" value="${value('lastName')}"></label></div>
     <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" type="tel" placeholder="+1 (312) 555-0100" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
     <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email" value="${value('email')}"></label>
+    ${coverageFields(typed)}
     <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
     <label class="check"><input type="checkbox" name="privacy" value="on" required${typed.privacy === 'on' ? ' checked' : ''}><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>
     <button type="submit">Book this appointment</button></form><p class="help">Next you will get a private link to your intake form.</p></section>` : ''

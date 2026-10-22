@@ -7,7 +7,7 @@ const groups: Record<string,string[]> = {
   'Intake answers, consent and uploaded images':['intake_responses','intake_consents','intake_photos','intake_identity','intake_insurance','consent_declines','consent_links'],
   'Chart documents and clinical alerts':['chart_documents','client_alerts'],
   'Messages, attachments and private conversation links':['messages','message_attachments','message_links'],
-  'Invoices, payments, fees and billing codes':['invoices','payments','card_payments','visit_codes','visit_fees','movein_balances','account_entries','account_postings','patient_statements','estimate_requests','estimate_drafts','estimates'],
+  'Invoices, payments, fees and billing codes':['invoices','payments','card_payments','visit_codes','visit_fees','movein_balances','account_entries','account_postings','patient_statements','estimate_requests','estimate_drafts','estimates','estimate_deliveries'],
   'Saved payment credentials and private payment links':['card_setups','cards','stripe_customers','pay_links'],
   'Payment plans and balance reminders':['payment_plans','plan_installments','balance_reminders','balance_notices','balance_review_queue'],
   'Insurance coverage, claims and remittance detail':['policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],

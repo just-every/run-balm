@@ -1,4 +1,4 @@
-import { estimateCommand, estimateFile, estimateOriginal } from './payments/estimates'
+import { estimateCommand, estimateFile, estimateOriginal, pendingEstimates } from './payments/estimates'
 import { biller, manager, locationState, roleCommand, roleRead } from './domain/role-access'
 import { audit, commit } from './domain/model'
 import { takeAddressRate, takeEmailRate, takePatientRate } from './public-rates'
@@ -80,7 +80,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -296,7 +296,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         const failure = message(error), code = (error as any)?.code ?? (error as Error)?.message
         if (failure.status === 429) return renderPublic('missing', { error: failure.text }, 429)
         // The patient's details come back filled in; a taken or missing time offers the open times instead.
-        const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
+        const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy', 'coverageChoice', 'deliveryMethod'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
         const chosen = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
         const retime = code === 'slot_unavailable' || code === 'invalid_start' || !chosen.start
         const from = !clinic?.time_zone || Number.isNaN(Date.parse(chosen.start)) ? undefined : hostDateAt(new Date(chosen.start), clinic!.time_zone)

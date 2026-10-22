@@ -1,3 +1,5 @@
+import { parseIcd10 } from './codes'
+import { estimateDue } from './estimate-requests'
 import { hostDateAt } from '../availability/timezone'
 import { clientVisible } from '../domain/clients'
 import { audit,commit,day,guard,human,id,insist,integer,need,now,one,rows,sha256,stmt,text,type Actor,type Data } from '../domain/model'
@@ -18,9 +20,10 @@ export async function requestEstimate(db:D1Database,who:Actor,input:Data){
  const booked=visit?hostDateAt(new Date(visit.created_at),clinic.time_zone):today
  const lead=visit?businessDistance(booked,hostDateAt(new Date(visit.start_at),clinic.time_zone)):null
  // A late office request cannot reset the original booking's deadline.
- const dueOn=visit?addBusinessDays(booked,lead!>=10?3:lead!>=3?1:0):addBusinessDays(today,3),key=id()
+ const dueOn=estimateDue(booked,visit?hostDateAt(new Date(visit.start_at),clinic.time_zone):null),key=id()
+ const delivery=text(input.deliveryMethod,'requested_delivery_method',20);insist(['portal','paper'].includes(delivery),'choose_portal_or_paper_delivery')
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',client.id),
- stmt(db,'INSERT INTO bm_estimate_requests(id,client_id,appointment_id,coverage_kind,coverage_attestation,requested_at,due_on,created_by) VALUES(?,?,?,?,?,?,?,?)',key,client.id,visit?.id??null,kind,attestation,at,dueOn,who.email),audit(db,who,'estimate.requested',client.id,key)])
+ stmt(db,'INSERT INTO bm_estimate_requests(id,client_id,appointment_id,coverage_kind,coverage_attestation,requested_at,due_on,created_by,delivery_method) VALUES(?,?,?,?,?,?,?,?,?)',key,client.id,visit?.id??null,kind,attestation,at,dueOn,who.email,delivery),audit(db,who,'estimate.requested',client.id,key)])
  return {id:key,dueOn,leadBusinessDays:lead}
 }
 async function facts(db:D1Database,request:Data,input:Data){
@@ -30,6 +33,13 @@ async function facts(db:D1Database,request:Data,input:Data){
  const plan=input.planId?await one(db,'SELECT id,content,content_sha256,client_id FROM bm_plans_of_care WHERE id=? AND client_id=?',text(input.planId,'plan',100),client.id):null
  insist(!input.planId||plan,'plan_not_found',404)
  const planContent=plan?JSON.parse(plan.content):null
+ const referral=input.referralId?await one(db,'SELECT id,diagnosis,version FROM bm_referrals WHERE id=? AND client_id=?',text(input.referralId,'referral',100),client.id):null
+ insist(!input.referralId||referral,'referral_not_found',404)
+ insist(plan||referral,'choose_a_coded_plan_or_referral_for_the_estimate')
+ const diagnosisText=String(planContent?.diagnoses ?? referral?.diagnosis ?? '').toUpperCase()
+ const diagnoses=[...new Set(diagnosisText.match(/\b[A-TV-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4}|[0-9A-Z]{0,4})\b/g)??[])]
+ insist(diagnoses.length,'record_diagnosis_codes_on_the_plan_or_referral')
+ const diagnosisCodes=parseIcd10(diagnoses.join(','))
  const from=day(input.fromOn??planContent?.startDate,'estimate_from'),through=day(input.throughOn,'estimate_through')
  insist(from<=through && Date.parse(through)-Date.parse(from)<=366*86400000,'estimate_date_range_invalid')
  const given=Array.isArray(input.lines)?input.lines:[]
@@ -38,15 +48,15 @@ async function facts(db:D1Database,request:Data,input:Data){
  for(const item of given){
   const service=await one(db,'SELECT * FROM bm_services WHERE id=? AND active=1',text(item?.serviceId,'service',100));insist(service,'service_not_found',404)
   const quantity=integer(item.quantity,'expected_visits',1,365)
-  const code=item.code?text(item.code,'billing_code',10):'';insist(!code||/^[A-Z0-9]{4,10}$/.test(code),'invalid_billing_code')
+  const code=text(item.code,'billing_code',5);insist(/^(?:[0-9]{5}|[A-Z][0-9]{4}|[0-9]{4}[A-Z])$/.test(code),'record_a_service_code_for_every_estimate_line')
   lines.push({serviceId:service.id,name:service.name,code,quantity,unitCents:service.price_cents,totalCents:service.price_cents*quantity})
   versions.push({id:service.id,version:service.version})
  }
  const visits=lines.reduce((sum,line)=>sum+line.quantity,0)
  if(planContent)insist(visits===Number(planContent.frequencyPerWeek)*Number(planContent.durationWeeks),'estimate_visits_must_match_the_plan_of_care')
  const total=lines.reduce((sum,line)=>sum+line.totalCents,0);insist(Number.isSafeInteger(total)&&total<=1_000_000_000,'estimate_total_too_large')
- const payload={requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,totalCents:total}
- return {payload,basis:{clientVersion:client.version,clinicVersion:clinic.version,services:versions,planDigest:plan?.content_sha256??null}}
+ const payload={requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,referralId:referral?.id??null,diagnosisCodes,deliveryMethod:request.delivery_method,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,totalCents:total}
+ return {payload,basis:{clientVersion:client.version,clinicVersion:clinic.version,services:versions,planDigest:plan?.content_sha256??null,referralVersion:referral?.version??null}}
 }
 export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
  owner(who);attested(input)
@@ -57,8 +67,8 @@ export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
  return {id:key,sha256:digest,...value.payload}
 }
 function document(value:Data,key:string,at:string){
- return pdf({header:value.clinic.name,title:'Good Faith Estimate',blocks:[{kind:'facts',rows:[['Estimate',key],['Patient',value.client.name],['Date of birth',value.client.dob??'Not recorded'],['Provider',value.clinic.name],['Provider NPI',value.clinic.npi||'Not yet assigned'],['Tax ID',value.clinic.taxId],['Provider address',value.clinic.address],['Requested',value.requestedAt.slice(0,10)],['Issued',at.slice(0,10)],['Due by',value.dueOn],['Expected care dates',value.fromOn+' through '+value.throughOn],['Coverage',value.coverageKind==='self_pay'?'Patient elected self-pay':'Uninsured'],['Care plan',value.planId?'Recorded plan of care':'Anticipated course confirmed by the clinic']]},
- {kind:'table',columns:[{label:'Expected service',width:4},{label:'Code',width:1},{label:'Visits',width:1,right:true},{label:'Each',width:1.5,right:true},{label:'Expected charge',width:2,right:true}],rows:value.lines.map((l:Data)=>[l.name,l.code||'TBD',String(l.quantity),dollars(l.unitCents),dollars(l.totalCents)]),totals:[['Total expected charges',dollars(value.totalCents)]]},
+ return pdf({header:value.clinic.name,title:'Good Faith Estimate',blocks:[{kind:'facts',rows:[['Estimate',key],['Patient',value.client.name],['Date of birth',value.client.dob??'Not recorded'],['Provider',value.clinic.name],['Provider NPI',value.clinic.npi||'Not yet assigned'],['Tax ID',value.clinic.taxId],['Provider address',value.clinic.address],['Requested',value.requestedAt.slice(0,10)],['Issued',at.slice(0,10)],['Due by',value.dueOn],['Expected care dates',value.fromOn+' through '+value.throughOn],['Coverage',value.coverageKind==='self_pay'?'Patient elected self-pay':'Uninsured'],['Care plan',value.planId?'Recorded plan of care':'Anticipated course from referral'],['Diagnosis codes',value.diagnosisCodes.join(', ')],['Requested delivery',value.deliveryMethod==='paper'?'Paper original':'Patient portal']]},
+ {kind:'table',columns:[{label:'Expected service',width:4},{label:'Code',width:1},{label:'Visits',width:1,right:true},{label:'Each',width:1.5,right:true},{label:'Expected charge',width:2,right:true}],rows:value.lines.map((l:Data)=>[l.name,l.code,String(l.quantity),dollars(l.unitCents),dollars(l.totalCents)]),totals:[['Total expected charges',dollars(value.totalCents)]]},
  {kind:'notes',lines:['This is an estimate of expected charges, not a contract or a requirement to receive care. Actual care may differ. This estimate covers this practice only; other providers or facilities give their own estimates. Unexpected services may be billed separately. No other provider services are included in this estimate.',
  'You may ask for a corrected or updated estimate. Keep a copy of this estimate. If billed charges from this provider are at least $400 above its estimate, you may be eligible for the federal patient-provider dispute resolution process. Start that process within 120 calendar days of the date on the initial bill. Starting a dispute does not affect the quality of care you receive.',
  'For information, visit www.cms.gov/nosurprises/consumers or call 1-800-985-3059. A federal dispute process may charge an administrative fee. Contact the clinic first if a bill differs from this estimate.']}]})
@@ -73,13 +83,15 @@ export async function issueEstimate(db:D1Database,who:Actor,input:Data){
  const key=id(),at=now(),bytes=document(payload,key,at)
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND erased_at IS NULL)',request.client_id,basis.clientVersion),guard(db,'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)',basis.clinicVersion),
  ...basis.services.map((s:Data)=>guard(db,'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=? AND active=1)',s.id,s.version)),
+ ...(payload.referralId?[guard(db,'EXISTS(SELECT 1 FROM bm_referrals WHERE id=? AND client_id=? AND version=?)',payload.referralId,request.client_id,basis.referralVersion)]:[]),
  ...(payload.planId?[guard(db,'EXISTS(SELECT 1 FROM bm_plans_of_care WHERE id=? AND content_sha256=?)',payload.planId,basis.planDigest)]:[]),
- stmt(db,'INSERT INTO bm_estimates(id,request_id,draft_id,client_id,from_on,through_on,total_cents,payload,sha256,pdf,issued_at,issued_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',key,request.id,draft.id,request.client_id,payload.fromOn,payload.throughOn,payload.totalCents,JSON.stringify(payload),[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join(''),bytes,at,who.email),audit(db,who,'estimate.issued',request.client_id,key,'Published to the patient portal; no email sent')])
+ stmt(db,'INSERT INTO bm_estimates(id,request_id,draft_id,client_id,from_on,through_on,total_cents,payload,sha256,pdf,issued_at,issued_by,delivery_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',key,request.id,draft.id,request.client_id,payload.fromOn,payload.throughOn,payload.totalCents,JSON.stringify(payload),[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join(''),bytes,at,who.email,payload.deliveryMethod),audit(db,who,'estimate.issued',request.client_id,key,payload.deliveryMethod==='paper'?'Paper original issued; print and record handoff or mailing; no automatic sending':'Published to the patient portal; no email sent')])
  return {id:key,issuedAt:at,dueOn:request.due_on,totalCents:payload.totalCents}
 }
 export async function estimatesFor(db:D1Database,clientId:string){
- const estimates=await rows(db,'SELECT id,request_id,from_on,through_on,total_cents,sha256,issued_at FROM bm_estimates WHERE client_id=? ORDER BY issued_at DESC,id',clientId)
+ const estimates=await rows(db,'SELECT id,request_id,from_on,through_on,total_cents,sha256,issued_at,delivery_method FROM bm_estimates WHERE client_id=? ORDER BY issued_at DESC,id',clientId)
  for(const e of estimates){
+  e.delivery=await one(db,'SELECT method,delivered_on,original_sha256,recorded_at,recorded_by FROM bm_estimate_deliveries WHERE estimate_id=?',e.id)
   // Invoice service dates use the same clinic-local calendar as the estimate.
   const visits=await rows(db,`SELECT i.amount_cents,a.start_at FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id WHERE i.client_id=? AND i.status='approved'`,clientId)
   const zone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
@@ -99,9 +111,28 @@ export async function estimateOriginal(db:D1Database,clientId:string,key:string)
  const row=await one(db,'SELECT pdf,sha256 FROM bm_estimates WHERE id=? AND client_id=?',key,clientId);insist(row,'estimate_not_found',404)
  return {bytes:new Uint8Array(row.pdf),name:'good-faith-estimate-'+key+'.pdf'}
 }
+export async function deliverEstimate(db:D1Database,who:Actor,input:Data){
+ owner(who);attested(input)
+ const estimate=await one(db,'SELECT * FROM bm_estimates WHERE id=?',text(input.id,'estimate',100));insist(estimate,'estimate_not_found',404)
+ insist(estimate.delivery_method==='paper','the_patient_requested_portal_delivery',409)
+ insist(['handed','mailed'].includes(input.method),'record_paper_handoff_or_mailing')
+ insist(input.sha256===estimate.sha256,'use_the_issued_original_pdf',409)
+ const on=day(input.deliveredOn,'delivered_on'),zone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
+ insist(on>=hostDateAt(new Date(estimate.issued_at),zone)&&on<=hostDateAt(new Date(),zone),'record_the_actual_delivery_date')
+ await commit(db,who,[guard(db,"EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action='estimate.downloaded')",estimate.id,who.email),
+ stmt(db,'INSERT INTO bm_estimate_deliveries(estimate_id,method,delivered_on,original_sha256,recorded_at,recorded_by) VALUES(?,?,?,?,?,?)',estimate.id,input.method,on,estimate.sha256,now(),who.email),audit(db,who,'estimate.paper_delivered',estimate.client_id,estimate.id,input.method+' original on '+on)])
+ return {id:estimate.id,method:input.method,deliveredOn:on}
+}
+export async function pendingEstimates(db:D1Database,who:Actor){
+ if(who.role!=='owner')return []
+ const pending=await rows(db,"SELECT r.id,r.client_id,r.appointment_id,r.due_on,r.delivery_method,c.first_name||' '||c.last_name AS patient FROM bm_estimate_requests r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL AND NOT EXISTS(SELECT 1 FROM bm_estimates e WHERE e.request_id=r.id) ORDER BY r.due_on,r.id")
+ if(pending.length)await commit(db,who,[...new Set(pending.map(r=>r.client_id))].map(key=>audit(db,who,'estimate.schedule_read',key)))
+ return pending
+}
 export async function estimateCommand(db:D1Database,who:Actor,name:string,input:Data){
  if(name==='estimate.request')return requestEstimate(db,who,input)
  if(name==='estimate.prepare'){if(!Array.isArray(input.lines))input.lines=Array.from({length:6},(_,i)=>({serviceId:input['estimate_service_'+i],quantity:input['estimate_quantity_'+i],code:input['estimate_code_'+i]})).filter(l=>l.serviceId);return prepareEstimate(db,who,input)}
+ if(name==='estimate.deliver')return deliverEstimate(db,who,input)
  if(name==='estimate.issue')return issueEstimate(db,who,input)
  insist(false,'unknown_command',404)
 }

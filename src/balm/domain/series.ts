@@ -1,3 +1,4 @@
+import { bookingCoverage } from '../payments/estimate-requests'
 import { cancellationStatements, getVisitPolicy } from '../scheduling/policy'
 // Recurring visits: one request books a whole series (e.g. twice a week for six
 // weeks). Every date is checked before anything is saved; a date that would
@@ -54,7 +55,7 @@ async function basis(db: D1Database, who: Actor, input: Data) {
     insist(weekdays.length === content.frequencyPerWeek, 'choose_the_plan_frequency_of_weekdays')
     await commit(db, who, [audit(db, who, 'plan.read', client.id as string, plan!.id as string)])
   }
-  return { zone: clinic.time_zone as string, practitioner, service, client, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time, ...(plan ? { planId: plan.id, planSha256: plan.content_sha256 } : {}) } }
+  return { coverage:bookingCoverage(input), zone: clinic.time_zone as string, practitioner, service, client, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time, ...(plan ? { planId: plan.id, planSha256: plan.content_sha256 } : {}) } }
 }
 
 async function check(db: D1Database, b: Awaited<ReturnType<typeof basis>>, list: { date: string; time: string; skip: boolean }[]) {
@@ -71,7 +72,7 @@ async function check(db: D1Database, b: Awaited<ReturnType<typeof basis>>, list:
 
 function summary(b: Awaited<ReturnType<typeof basis>>, occurrences: Occurrence[]) {
   return { clientId: b.client.id, client: `${b.client.first_name} ${b.client.last_name}`, practitionerId: b.practitioner.id, practitioner: b.practitioner.name, serviceId: b.service.id, service: b.service.name,
-    roomId: b.roomId, timeZone: b.zone, pattern: b.pattern, occurrences, conflicts: occurrences.filter(o => o.problem && !o.skip).length }
+    roomId: b.roomId, ...b.coverage, timeZone: b.zone, pattern: b.pattern, occurrences, conflicts: occurrences.filter(o => o.problem && !o.skip).length }
 }
 
 /** Every date of a series with its verdict; nothing is saved. */
@@ -101,7 +102,7 @@ export async function bookSeries(db: D1Database, who: Actor, input: Data) {
       seriesId, b.client.id, b.practitioner.id, b.service.id, b.roomId, JSON.stringify(b.pattern), JSON.stringify(skipped), new Date().toISOString(), who.email),
     // The intake link goes with the first visit only.
     ...(await Promise.all(kept.map(async (o, i) => appointmentStatements(db, who, { id: ids[i], clientId: b.client.id, practitionerId: b.practitioner.id, serviceId: b.service.id,
-      startAt: o.startAt, endAt: o.endAt, bookedVia: 'staff', tokenHash: i === 0 ? await sha256(token) : null, roomId: b.roomId, seriesId })))).flat(),
+      startAt: o.startAt, endAt: o.endAt, bookedVia: 'staff', tokenHash: i === 0 ? await sha256(token) : null, roomId: b.roomId, seriesId, ...b.coverage, timeZone:b.zone })))).flat(),
     ...medicare,
     audit(db, who, 'series.booked', b.client.id as string, seriesId, `${kept.length} visits, ${skipped.length} skipped`),
   ])

@@ -59,3 +59,13 @@ Each approved invoice has a **Superbill (PDF)** under **Superbills** in the pati
 - the charges, the amount paid and the balance.
 
 Record the codes in the patient's file under **Visit codes**, for example `97161 GP, 97110 GP x2` and `M25.561, M54.50`. When the visit's signed treatment note billed CPT units, the superbill uses those instead. Until the NPI, the tax ID, a diagnosis and a CPT code are all present, the file names what is missing instead of offering the PDF.
+
+## Good Faith Estimates
+
+At scheduling, ask whether the patient is insured and will submit a claim. An explicit uninsured or self-pay answer opens an estimate request; the owner sees its federal due date on the schedule until the estimate is issued. Unknown coverage stays unknown. Existing API callers that omit coverage also remain unknown.
+
+In the patient file’s **Good Faith Estimates**, the owner records the patient’s requested written delivery method, chooses a plan or referral containing diagnosis codes and lists each expected service’s CPT or HCPCS code and quantity. Current cash fees supply the amounts. Preparation and issuance refuse missing codes, and the exact reviewed digest must still match the source records and fees.
+
+Choose the patient portal, or paper. For paper, download and print the fixed original PDF, hand it over or mail it as the patient requested, then record the actual date and method. Balm sends nothing automatically and never treats issuing a paper original as completed delivery. The signed-in portal keeps the same original in either case.
+
+This is still a partial GFE workflow: availability notices, biller/reception preparation, superseding estimates, a six-year destruction floor, and co-provider estimates/AEOBs remain unimplemented. Retain issued estimates outside any earlier destruction approval until the six-year protection ships. Email delivery stays PAY-009 and needs consent.

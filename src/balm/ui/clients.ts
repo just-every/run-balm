@@ -1,3 +1,4 @@
+import { coverageFields } from './estimates'
 import { estimatesPanel } from './estimates'
 import { unitMethodLabel } from '../insurance/unit-method'
 import { accountEntriesPanel } from './account-entries'
@@ -58,7 +59,7 @@ function appointments(s: any, f: any, notice: any) {
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name])) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))
     + (rows(s, 'rooms').length ? select('roomId', 'Room', [['', 'No room'], ...rows(s, 'rooms').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][], '', '') : '')
     + (rows(s, 'equipment').length ? select('equipmentId', 'Equipment', [['', 'No equipment'], ...rows(s, 'equipment').filter(r => r.active === undefined || r.active).map(r => [r.id, r.name])] as [unknown, unknown][], '', '') : '')
-    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}): any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>` + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Book appointment')}</details>`
+    + `<div class="pair">${field('date', 'Date', '', 'date', 'required')}${field('time', 'Start time', '', 'time', 'required step="300"')}</div><p class="help">In the clinic's time zone (${h(s.settings.time_zone)}): any start time in 5-minute steps inside the practitioner's hours. Online booking offers patients quarter-hour times.</p>` + coverageFields() + check('acknowledgeMedicareOverlap', 'Book anyway if this overlaps another Medicare patient with this practitioner (one-on-one timed codes cannot be billed for both over the same minutes; overlapping Medicare treatment bills as group therapy, 97150). Your name is kept on both visits.', ''), 'Book appointment')}</details>`
     + `<details${result(notice)?.preview ? ' open' : ''}><summary>Book recurring visits</summary>${seriesForm(s, path, { clientId: f.client.id, plans: f.plans })}</details>`
     + (f.client.email ? `<details><summary>Add to the waitlist</summary>${waitlistForm(s, path, hidden('clientId', f.client.id))}</details>` : '') : ''
   return panel('Appointments', seriesResult(s, notice, path) + (list || empty('No appointments yet.')) + book)

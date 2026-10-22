@@ -14,6 +14,7 @@ export const custody = [
   {"table":"bm_estimate_requests","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_estimate_drafts","client":false,"links":[["request_id","bm_estimate_requests","id"]]},
   {"table":"bm_estimates","client":true,"links":[["request_id","bm_estimate_requests","id"],["draft_id","bm_estimate_drafts","id"]]},
+  {"table":"bm_estimate_deliveries","client":false,"links":[["estimate_id","bm_estimates","id"]]},
   {"table":"bm_account_entries","client":true,"links":[["client_id","bm_clients","id"],["invoice_id","bm_invoices","id"]]},
   {"table":"bm_account_postings","client":false,"links":[["entry_id","bm_account_entries","id"]]},
   {"table":"bm_card_payments","client":true,"links":[["invoice_id","bm_invoices","id"],["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
