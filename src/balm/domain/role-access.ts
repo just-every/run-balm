@@ -1,9 +1,19 @@
 import { audit, commit, guard, human, id, insist, need, now, one, rows, stmt, text, type Actor, type Data, type StaffKind } from './model'
 import { reportRange } from '../reports/range'
+import { template } from '../charting/templates'
+import { type Charge } from '../charting/cpt'
 
 export const supervised = (who: Actor) => ['assistant','student','fellow'].includes(who.staffKind ?? '')
 export const biller = (who: Actor) => who.role !== 'owner' && who.staffKind === 'biller'
 export const manager = (who: Actor) => who.role !== 'owner' && who.staffKind === 'location_manager'
+export const evaluationCodes = new Set(['97161','97162','97163','97164','97165','97166','97167','97168','92521','92522','92523','92524','92610'])
+
+/** Assistants document daily treatment only; a role change cannot revive a prohibited draft. */
+export function assistantNote(who: Actor, key: unknown, charges: Charge[]) {
+ if (who.staffKind !== 'assistant') return
+ insist(template(key)?.kind === 'daily', 'assistants_write_daily_notes_only', 403)
+ insist(charges.every(c => !evaluationCodes.has(c.code)), 'assistants_cannot_charge_evaluation_codes', 403)
+}
 const billingWrites = new Set(['invoice.prepare','invoice.approve','payment.record','pay.entry.prepare','pay.entry.approve','pay.link.create','pay.copay.save','pay.invoice.charge','pay.card.remove','pay.statements.save','pay.reminders.save','pay.reminders.stop','pay.plan.create','pay.plan.stop',
  'insurance.policy.save','insurance.authorization.save','insurance.eligibility.prepare','insurance.eligibility.submit','insurance.eligibility.import','insurance.eligibility.record','insurance.claim.prepare','insurance.claim.correct','insurance.claim.scrub','insurance.batch.prepare','insurance.batch.submit','insurance.acknowledgment.import','insurance.remittance.import','insurance.medicare.save','insurance.medicare.recognized.save'])
 const traineeWrites = new Set(['note.check','note.write','note.amend','note.measure','note.measure_remove','note.submit'])

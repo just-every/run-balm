@@ -9,8 +9,9 @@ import { audit, guard, id, now, one, stmt, type Actor, type Data } from './model
 export async function attendanceStatements(db: D1Database, who: Actor, visit: Data) {
   const statements: D1PreparedStatement[] = [], at = now()
   const existingNote = await one(db, 'SELECT id FROM bm_notes WHERE appointment_id=?', visit.id)
-  if (!existingNote) {
-    const service = (await one(db, 'SELECT note_template FROM bm_services WHERE id=?', visit.service_id))!
+  const staff = await one(db, 'SELECT kind FROM bm_staff_access WHERE staff_id=?', visit.practitioner_id)
+  const service = (await one(db, 'SELECT note_template FROM bm_services WHERE id=?', visit.service_id))!
+  if (!existingNote && (staff?.kind !== 'assistant' || template(service.note_template)?.kind === 'daily')) {
     const t = template(service.note_template), noteId = id()
     statements.push(
       guard(db, 'NOT EXISTS(SELECT 1 FROM bm_notes WHERE appointment_id=?)', visit.id),

@@ -1,3 +1,4 @@
+import { evaluationCodes } from '../domain/role-access'
 import { defensibility } from './defensibility'
 import { alertBadges } from './alerts'
 import { noteMeasures, progressChanges } from './measures'
@@ -11,11 +12,11 @@ import { clinician, empty, entry, field, form, h, hidden, panel, stamp, status, 
 const draftForm = (s: any, command: string, path: string, body: string, button: string) => form(command, path, body, button).replace('<form ', `<form autocomplete="off" data-actor-id="${h(s.actor.id)}" `)
 
 const CHARGE_ROWS = 6
-const templateChoices = (current: string) => `<option value="">Free-text note</option>${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${templates.filter(t => t.discipline === d).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
-export const templateSelect = (name: string, label: string, current: string) => `<label>${h(label)}<select name="${h(name)}">${templateChoices(current)}</select></label>`
+const templateChoices = (current: string, dailyOnly = false) => ` ${dailyOnly ? '' : '<option value="">Free-text note</option>'}${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${templates.filter(t => t.discipline === d && (!dailyOnly || t.kind === 'daily')).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
+export const templateSelect = (name: string, label: string, current: string, dailyOnly = false) => `<label>${h(label)}<select name="${h(name)}">${templateChoices(current, dailyOnly)}</select></label>`
 
-function chargeRows(charges: any[]) {
-  const options = (value: string) => `<option value="">No code</option>${codes.map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
+function chargeRows(charges: any[], assistant = false) {
+  const options = (value: string) => `<option value="">No code</option>${codes.filter(c => !assistant || !evaluationCodes.has(c.code)).map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
   return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}`).join('')}</fieldset>`
 }
 
@@ -55,7 +56,7 @@ function noteEntry(s: any, f: any, n: any) {
   let actions = ''
   if (n.mine && n.status !== 'signed' && !n.pending) {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
-    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
+    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges, s.actor.staffKind === 'assistant') + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
@@ -83,16 +84,17 @@ function compose(s: any, f: any, ask: any) {
   const started = mine.filter((a: any) => Date.parse(a.start_at) <= Date.now()), upcoming = mine.filter((a: any) => Date.parse(a.start_at) > Date.now())
   const suggested = visit ?? started[0] ?? upcoming[upcoming.length - 1]
   const visitDate = (a: any) => usDate(a.start_at, zoneOf(s))
-  const chosen = visit ? (ask.template ?? visit.note_template ?? '') : ''
+  const assistant = s.actor.staffKind === 'assistant'
+  const chosen = visit ? (ask.template ?? (assistant && template(visit.note_template)?.kind !== 'daily' ? 'pt.daily' : visit.note_template) ?? '') : ''
   const t = template(chosen)
   const start = `<form method="get" action="${h(path)}"><label>Visit<select name="compose" required>${mine.map((a: any) => `<option value="${h(a.id)}"${a.id === suggested?.id ? ' selected' : ''}>${h(a.service)} · ${h(visitDate(a))} · ${h(a.status)}</option>`).join('')}</select></label>`
-    + `${visit ? templateSelect('template', 'Template', chosen) : '<p class="help">The note starts from the template set on the visit’s service; you can choose another next.</p>'}<button type="submit" class="secondary">${visit ? 'Use this template' : 'Start a note'}</button></form>`
+    + `${visit ? templateSelect('template', 'Template', chosen, assistant) : '<p class="help">The note starts from the template set on the visit’s service; you can choose another next.</p>'}<button type="submit" class="secondary">${visit ? 'Use this template' : 'Start a note'}</button></form>`
   if (!visit) return `<details><summary>Write a note</summary>${start}</details>`
-  const scribe = !t ? '' : s.scribe?.ready
+  const scribe = !t || ['assistant','student','fellow'].includes(s.actor.staffKind) ? '' : s.scribe?.ready
     ? `<details open><summary>Draft with the scribe</summary>${form('note.scribe', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t.key) + textarea('dictation', 'Dictation or bullet points for this visit', '', 'required maxlength="20000" placeholder="Pt reports... Ther ex 23 min: ... Manual 10 min: ... Plan: ..."') + '<p class="help">The scribe drafts the sections and CPT minutes from what you write here, using this clinic’s own AI model. You review and sign; it never signs.</p>', 'Draft the note')}</details>`
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
   const body = t ? sectionFields(t, { goals: carriedGoals(f) }) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
-  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([]) + documentationFields({}, s.staff), 'Save draft')
+  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([], assistant) + documentationFields({}, s.staff), 'Save draft')
   return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 

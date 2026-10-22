@@ -2,7 +2,7 @@
 // typed name and credentials; the signature records the time and the SHA-256 of
 // what was signed, and the database refuses any later change to a signed note
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
-import { supervised } from './role-access'
+import { assistantNote, supervised } from './role-access'
 import { licensedSql, pendingSubmission, supervisorFor } from './supervision'
 import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
@@ -55,6 +55,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   }
   const latest = (await one(db, 'SELECT * FROM bm_note_revisions WHERE note_id=? ORDER BY number DESC LIMIT 1', note.id))!
   insist(input.revision !== undefined && Number(input.revision) === latest.number, 'note_changed_reload', 409)
+  if (mode !== 'cosign') assistantNote(who, note.template, JSON.parse(latest.charges as string || '[]'))
   const t = template(note.template), sections = latest.sections ? JSON.parse(latest.sections as string) : null
   if (t) {
     const blank = t.sections.find(s => s.required && !sections.find((x: Data) => x.id === s.id)?.text)

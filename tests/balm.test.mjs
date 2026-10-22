@@ -449,8 +449,23 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
   const trainee=await h.staff(kind,kind,{supervisorId:priya.id})
   await h.cmd('hours.save',{practitionerId:trainee.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
   const ownVisit=await pastVisit(h,patient.id,trainee,service.id)
-  const draft=await h.cmd('note.write',{clientId:patient.id,appointmentId:ownVisit,body:kind+' draft'},trainee.cookie)
-  await h.cmd('note.amend',{id:draft.id,revision:1,body:kind+' revised draft'},trainee.cookie)
+  const sections={subjective:'Daily symptoms',objective:'Skilled treatment',assessment:'Response to treatment',goals:'Progress',plan:'Continue daily treatment'}
+  if(kind==='assistant') {
+   const beforeNotes=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes
+   for(const template of ['pt.evaluation','ot.evaluation','slp.evaluation','pt.progress','ot.progress','slp.progress','pt.discharge','ot.discharge','slp.discharge',''])
+    await h.cmd('note.write',{clientId:patient.id,appointmentId:ownVisit,template,body:'Prohibited clinical draft'},trainee.cookie,403)
+   for(const code of ['97161','97162','97163','97164','97165','97166','97167','97168','92521','92522','92523','92524','92610'])
+    await h.cmd('note.write',{clientId:patient.id,appointmentId:ownVisit,template:'pt.daily',sections,charges:[{code}]},trainee.cookie,403)
+   assert.deepEqual((await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes,beforeNotes,'prohibited drafts and charges are unwritten')
+   await h.cmd('plan.send',{clientId:patient.id},trainee.cookie,403)
+  }
+  const draft=await h.cmd('note.write',{clientId:patient.id,appointmentId:ownVisit,...(kind==='assistant'?{template:'pt.daily',sections}:{body:kind+' draft'})},trainee.cookie)
+  if(kind==='assistant') {
+   await h.cmd('note.amend',{id:draft.id,revision:1,sections,charges:[{code:'97164'}]},trainee.cookie,403)
+   const unchanged=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes.find(n=>n.id===draft.id)
+   assert.equal(unchanged.revisions[0].number,1);assert.deepEqual(unchanged.revisions[0].charges,[])
+  }
+  await h.cmd('note.amend',{id:draft.id,revision:1,...(kind==='assistant'?{sections}:{body:kind+' revised draft'})},trainee.cookie)
   for(const name of ['note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
   await h.cmd('note.submit',{id:draft.id,revision:2,signature:kind,credentials:kind==='assistant'?'PTA':kind==='fellow'?'CF-SLP':'SPT',attest:true},trainee.cookie)
   assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===draft.id))
@@ -462,6 +477,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  }
  const audit=(await h.send('/api/balm/access-refusals',undefined,h.owner)).value
  for(const member of [biller,manager]) assert.ok(audit.some(a=>a.actor_email===member.email && a.actor_role===member.role))
+ assert.ok(audit.filter(a=>a.actor_role==='assistant' && a.detail==='POST /api/balm/command').length>=24,'each assistant template/code refusal is audited')
  assert.ok(audit.some(a=>a.actor_role==='student'));assert.ok(audit.some(a=>a.actor_role==='assistant'));assert.ok(audit.some(a=>a.actor_role==='fellow'))
  await h.cmd('staff.save',{id:biller.id,name:'Billing',email:biller.email,role:'biller',active:false})
  await h.state(biller.cookie,403)

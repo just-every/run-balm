@@ -1,3 +1,4 @@
+import { assistantNote } from './role-access'
 import { pendingSubmission, supervisorReadSql } from './supervision'
 import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // Notes keep immutable revisions, as Willow keeps document versions
@@ -88,6 +89,7 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   const starter = appointment ? await one(db, `SELECT n.id FROM bm_notes n WHERE n.appointment_id=? AND n.author_id=? AND n.signed_at IS NULL
     AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=n.id)=0`, appointment.id, author) : null
   const content = written(input, t), noteId = (starter?.id as string) ?? id()
+  assistantNote(who, t?.key, content.charges)
   const diagnoses = await diagnosisGuards(db, appointment?.id, content.charges)
   await commit(db, who, [
     ...diagnoses,
@@ -127,6 +129,7 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
     const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
     insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
     const content = written(input, template(note.template))
+    assistantNote(who, note.template, content.charges)
     const diagnoses = await diagnosisGuards(db, note.appointment_id, content.charges)
     await commit(db, who, [
       ...diagnoses,
