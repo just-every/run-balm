@@ -21,7 +21,7 @@ import { dragScript } from './drag'
 import { schedule, scheduleTop } from './schedule'
 import { icon } from './icons'
 import { lockup, shell, tabsFor } from './shell'
-import { desk, h, rows, zoneOf } from './shared'
+import { desk, h, rows, stamp, zoneOf } from './shared'
 import { style } from './style'
 import { waitlist } from './waitlist'
 import { browserZoneScript, timeZoneStep } from './time-zone'
@@ -63,7 +63,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const book = !zoneUnset && allowed && current !== '/app' && (desk(state) || state.actor.staffId) && rows(state, 'services').some(x => x.active) ? `<a class="button new" href="/app#book">${icon('plus')}Book a visit</a>` : ''
   const top = zoneUnset ? '<div class="crumb"><strong>First run</strong></div>' : current === '/app' && allowed && state.calendar ? scheduleTop(state)
     : `<div class="crumb">${file ? `<a href="/app/clients">Clients</a>${icon('chevron')}<strong>${h(title)}</strong>` : `<strong>${h(title)}</strong>`}</div><span class="grow"></span>${book}`
-  const queue = (state.coSignQueue ?? []).length ? `<section class="panel full"><h2>Notes awaiting your co-signature</h2>${state.coSignQueue.map((n:any)=>`<p><a href="/app/clients/${h(n.client_id)}#note-${h(n.note_id)}">${h(n.client)} · ${h(n.author)} · revision ${h(n.revision)}</a></p>`).join('')}</section>` : ''
+  const queue = (state.coSignQueue ?? []).length ? `<section class="panel full"><h2>Notes awaiting your co-signature</h2>${state.coSignQueue.map((n:any)=>`<p><a href="/app/clients/${h(n.client_id)}#note-${h(n.note_id)}">${h(n.client)} · ${h(n.author)} · revision ${h(n.revision)}</a> · ${n.due_at ? (n.overdue ? '<strong>Overdue</strong> · ' : 'Due · ')+stamp(state,n.due_at) : 'State deadline not recorded'}</p>`).join('')}</section>` : ''
   const notices = queue + `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
   const body = shell(state, { tabs, section, zoneUnset, top, content: notices + (current === '/app' && allowed && !zoneUnset ? recoveryStrip(state) : '') + content })
   return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)

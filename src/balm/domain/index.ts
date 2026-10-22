@@ -1,4 +1,4 @@
-import { coSignQueue, returnNote } from './supervision'
+import { coSignQueue, returnNote, saveSupervisionDeadline } from './supervision'
 import { saveLocation, locateRoom, locateHours } from './role-access'
 import { saveBalanceAccess } from './balance-access'
 import { saveHoliday } from './holidays'
@@ -26,6 +26,7 @@ export const preparations = ['invoice.prepare', 'reminder.prepare', 'intake.prep
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {
+  'supervision.deadline.save': saveSupervisionDeadline,
   'insurance.supervision.save': async (db,who,input)=>{
     insist(who.role==='owner','only_the_owner_sets_payer_rules',403)
     insist([true,false,'true','false'].includes(input.billSupervisor),'invalid_supervisor_billing')
@@ -95,5 +96,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, hourLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, supervisionDeadlines: owner ? await rows(db,'SELECT * FROM bm_supervision_deadlines ORDER BY staff_id') : [], coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, hourLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

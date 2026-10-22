@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict'
+import {mkdir} from 'node:fs/promises'
+import {chromium} from '@playwright/test'
+
+/** Optional viewport receipts on real Worker pages; identities are synthetic test sign-ins. */
+export async function viewportProof(h,scenes){
+ if(!process.env.BALM_UI_SCREENSHOTS)return
+ await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+ const browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})
+ try{
+  const context=await browser.newContext({ignoreHTTPSErrors:true})
+  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
+  await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+  const page=await context.newPage()
+  for(const {name,path,cookie,selector,open} of scenes){
+   await context.clearCookies()
+   if(cookie){const [key,...value]=cookie.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])}
+   const response=await page.goto(h.origin+path)
+   assert.equal(response.status(),200,name)
+   if(open)await page.getByText(open,{exact:true}).first().click()
+   for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000})
+    if(selector)await page.locator(selector).first().scrollIntoViewIfNeeded()
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
+    await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
+   }
+  }
+ }finally{await browser.close()}
+}

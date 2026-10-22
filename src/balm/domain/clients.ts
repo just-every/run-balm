@@ -1,4 +1,4 @@
-import { supervisorReadSql } from './supervision'
+import { supervisorReadSql, supervisionPlans } from './supervision'
 import { phoneNumber } from './us-clinic'
 // Client-file access adapted from Satchel's matter membership (src/satchel/matters.ts,
 // just-every/run-satchel @ 2d460e4): the owner and reception see every file, a
@@ -107,7 +107,8 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   const notes = await notesFor(db, who, client.id as string)
   // REF-003: a visit's notes (and their measures) follow the visit's episode.
   for (const n of notes ?? []) (n as Data).episodeId = n.appointmentId ? episodes.of('visit', n.appointmentId as string) : episodes.of('note', n.id as string)
-  const plans = teamOnly ? [] : await plansFor(db, who, client.id as string)
+  const governing = teamOnly && !access.all ? await supervisionPlans(db,who,client.id as string) : []
+  const plans = teamOnly ? governing.length ? (await plansFor(db,who,client.id as string)).filter(p=>governing.includes(p.id as string)) : [] : await plansFor(db, who, client.id as string)
   for (const p of plans) (p as Data).episodeId = episodes.of('plan', p.id as string)
   const authorizations = teamOnly || who.role === 'agent' ? null : await authorizationsFor(db, client.id as string)
   const invoices = all ? await invoicesFor(db, client.id as string) : null

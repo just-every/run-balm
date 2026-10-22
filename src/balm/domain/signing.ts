@@ -3,7 +3,7 @@
 // what was signed, and the database refuses any later change to a signed note
 // (migrations/core/0017_balm_charting.sql). Later changes are signed addenda.
 import { assistantNote, supervised } from './role-access'
-import { licensedSql, pendingSubmission, supervisorFor } from './supervision'
+import { licensedSql, pendingSubmission, submissionContext, supervisorFor } from './supervision'
 import { documentationAlerts } from '../charting/compliance'
 import { template } from '../charting/templates'
 import { diagnosisGuards } from './notes'
@@ -78,11 +78,11 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   const authorDigest = await signedDigest(note, latest, sections, by, signedAt)
   const digest = pending ? await sha256(JSON.stringify({supervisor:authorDigest,author:pending.sha256,submission:pending.id,supervisionGiven:supervision})) : authorDigest
   if (mode === 'submit') {
-    const submissionId=id()
+    const submissionId=id(),context=await submissionContext(db,note,input)
     await commit(db,who,[guard(db,licensedSql,supervisor,note.author_id),
       guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)',note.id,latest.number),
       guard(db,'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL)',note.id),
-      stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256,author_kind,author_discipline) VALUES(?,?,?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest,who.staffKind,staff.discipline),
+      stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256,author_kind,author_discipline,plan_id,due_at,deadline_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest,who.staffKind,staff.discipline,context.planId,context.dueAt,context.basis),
       audit(db,who,'note.submitted',note.client_id as string,note.id as string,`revision ${latest.number}`)])
     return {id:note.id,status:'awaiting_cosignature',revision:latest.number}
   }

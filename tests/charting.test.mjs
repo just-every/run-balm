@@ -713,11 +713,25 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-supervision-model'})
  const authorReview=await h.cmd('note.check',{id:note.id,revision:1},student.cookie)
  assert.ok(authorReview.rules.some(r=>r.id==='role.supervision'))
+ const deadlineInput={staffId:student.id,state:'TX',hours:1,source:'Synthetic reviewed state co-signature deadline'}
+ await h.cmd('supervision.deadline.save',deadlineInput,student.cookie,403)
+ await h.cmd('supervision.deadline.save',deadlineInput)
+ const planVisit=await pastVisit(h,patient.id,cover,service.id,h.owner,8)
+ const plan=await h.cmd('plan.send',{clientId:patient.id,diagnoses:'M25.561',shortTermGoals:'Synthetic governing goal',longTermGoals:'Synthetic long-term goal',frequencyPerWeek:1,durationWeeks:2,interventions:'Synthetic governing intervention',startDate:new Date().toISOString().slice(0,10),physicianName:'Synthetic Physician',physicianEmail:'synthetic-balm-1@example.test',signature:'Cover',credentials:'PT',attest:true},cover.cookie)
  const signature={id:note.id,revision:1,signature:'Student',credentials:'SPT',attest:true}
  await h.cmd('note.submit',{...signature,signature:'Another Person'},student.cookie,400)
+ if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'CHART-008-submission',path:'/app/clients/'+patient.id,cookie:student.cookie,selector:'select[name=planId]',open:'Review and sign'}])}
  await h.cmd('note.submit',signature,student.cookie)
- assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===note.id))
+ const queued=(await h.state(priya.cookie)).coSignQueue.find(n=>n.note_id===note.id)
+ assert.ok(queued);assert.equal(queued.overdue,true);assert.equal(queued.deadlineRule.state,'TX')
+ assert.equal(queued.due_at,new Date(Date.parse((await h.state()).appointments.find(a=>a.id===visit).end_at)+3600000).toISOString())
  let file=(await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value
+ assert.equal(file.plans.length,1);assert.equal(file.plans[0].id,plan.id);assert.equal(file.plans[0].content.shortTermGoals,'Synthetic governing goal')
+ if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[
+  {name:'CHART-008-deadlines',path:'/app/clinic',cookie:h.owner,selector:'form[action*="supervision.deadline.save"]'},
+  {name:'CHART-008-overdue',path:'/app',cookie:priya.cookie,selector:'text=Notes awaiting your co-signature'},
+  {name:'CHART-008-plan',path:'/app/clients/'+patient.id,cookie:priya.cookie,selector:'#plans'}
+ ])}
  assert.equal(file.notes[0].canCosign,true);assert.equal(file.intake?.length,0);assert.equal(file.appointments.length,0)
  const supervisorReview=await h.cmd('note.check',{id:note.id,revision:1},priya.cookie)
  assert.ok(supervisorReview.rules.some(r=>r.id==='role.supervision'))
@@ -779,5 +793,5 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
   }
  }
  const audit=(await h.db.prepare('SELECT action,actor_email FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
- for(const action of ['note.submitted','note.returned','note.signed','note.read','note.break_glass_read']) assert.ok(audit.some(a=>a.action===action),action)
-},{outbound:supervisionModelEdge().outbound}))
+ for(const action of ['plan.read','note.submitted','note.returned','note.signed','note.read','note.break_glass_read']) assert.ok(audit.some(a=>a.action===action),action)
+},{outbound:supervisionModelEdge().outbound,browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
