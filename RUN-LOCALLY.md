@@ -79,7 +79,7 @@ packages from its store.
 After `RER_READY`, a seed with dev identity prints `RER_SIGNED_IN EMAIL`
 and `RER_OPEN URL`: open that URL on this computer and the app opens signed in
 as the owner, at `/setup` until first-run is finished. Legacy `rer dev --login`
-uses the same automatic sign-in. Treat `RER_OPEN` as a credential; do not share it.
+uses the same automatic sign-in. Treat `RER_OPEN` as a credential; do not share it. Staff security still requires a separate authenticator step before setup or patient records. On first entry, set up the authenticator, verify its code, save the one-use recovery codes privately and select Open Balm. Later sessions verify a fresh code (or one unused recovery code); the owner link never bypasses this step. The default idle timeout is 15 minutes. Restored installations enroll fresh authenticators.
 Until first-run completion is stored durably, app routes send the signed-in owner
 to `/setup`; signed-out visitors sign in and return there. Once complete,
 `/setup` opens the app or settings.
