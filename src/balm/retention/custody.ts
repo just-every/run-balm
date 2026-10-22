@@ -64,6 +64,8 @@ export const custody = [
   {"table":"bm_movein_insurance","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_movein_notes","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_notes","client":true,"links":[["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
+  {"table":"bm_assistant_signed_notes","client":false,"links":[["note_id","bm_notes","id"]]},
+  {"table":"bm_assistant_supervision","client":false,"links":[["note_id","bm_assistant_signed_notes","note_id"]]},
   {"table":"bm_note_submissions","client":false,"links":[["note_id","bm_notes","id"]]},
   {"table":"bm_note_reviews","client":false,"links":[["submission_id","bm_note_submissions","id"]]},
   {"table":"bm_note_checks","client":false,"links":[["note_id","bm_notes","id"]]},

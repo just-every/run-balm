@@ -17,6 +17,7 @@ async function snapshot(db:D1Database,clientId:string,ids:string[],payerId:strin
   for(const note of signed){
    note.addenda=await rows(db,'SELECT body,signer_name,signer_credentials,written_at,sha256 FROM bm_note_addenda WHERE note_id=? ORDER BY written_at,id',note.id)
    note.authorSignatures=await rows(db,`SELECT s.author_name,s.author_credentials,s.submitted_at,s.sha256,r.supervision_given FROM bm_note_submissions s JOIN bm_note_reviews r ON r.submission_id=s.id AND r.decision='cosigned' WHERE s.note_id=? ORDER BY s.revision`,note.id)
+   note.assistantSupervision=await one(db,'SELECT supervisor_name,supervisor_credentials,supervision_given,attested_at,sha256 FROM bm_assistant_supervision WHERE note_id=?',note.id)
    notes.push({...note,visitAt:visit.start_at})
   }
  }
@@ -25,7 +26,7 @@ async function snapshot(db:D1Database,clientId:string,ids:string[],payerId:strin
 function document(payload:Data){
  const blocks:Block[]=[{kind:'facts',rows:[['Patient',payload.patient],['Requested by payer',payload.payer],['Purpose',payload.purpose],['Payer request reference',payload.reference]]}]
  for(const n of payload.notes){
-  blocks.push({kind:'heading',text:n.visitAt+' · '+(n.template||'Treatment note')},{kind:'notes',lines:n.sections?JSON.parse(n.sections).flatMap((s:Data)=>[s.label,s.text]):[n.body]},{kind:'notes',lines:['Signed by '+n.signer_name+', '+n.signer_credentials+' at '+n.signed_at,'Signature digest '+n.signed_sha256,...n.authorSignatures.map((s:Data)=>'Author '+s.author_name+', '+s.author_credentials+' at '+s.submitted_at+' · '+s.sha256),...n.addenda.flatMap((a:Data)=>['Addendum by '+a.signer_name+' at '+a.written_at,a.body])]})
+  blocks.push({kind:'heading',text:n.visitAt+' · '+(n.template||'Treatment note')},{kind:'notes',lines:n.sections?JSON.parse(n.sections).flatMap((s:Data)=>[s.label,s.text]):[n.body]},{kind:'notes',lines:['Signed by '+n.signer_name+', '+n.signer_credentials+' at '+n.signed_at,'Signature digest '+n.signed_sha256,...(n.assistantSupervision?['Supervision '+n.assistantSupervision.supervision_given+' attested by '+n.assistantSupervision.supervisor_name+', '+n.assistantSupervision.supervisor_credentials+' at '+n.assistantSupervision.attested_at,'Supervision digest '+n.assistantSupervision.sha256]:[]),...n.authorSignatures.map((s:Data)=>'Author '+s.author_name+', '+s.author_credentials+' at '+s.submitted_at+' · '+s.sha256),...n.addenda.flatMap((a:Data)=>['Addendum by '+a.signer_name+' at '+a.written_at,a.body])]})
  }
  return pdf({header:'Clinical records for payer request',title:'Approved note release',blocks})
 }

@@ -15,6 +15,8 @@ export async function coSignQueue(db:D1Database,who:Actor) {
  FROM bm_note_submissions s JOIN bm_notes n ON n.id=s.note_id JOIN bm_staff p ON p.id=n.author_id JOIN bm_clients c ON c.id=n.client_id
  WHERE s.supervisor_id=? AND n.signed_at IS NULL AND NOT EXISTS(SELECT 1 FROM bm_note_reviews r WHERE r.submission_id=s.id) ORDER BY s.submitted_at,s.id`,practitionerId(who))
  for(const item of queue){item.overdue=!!item.due_at&&Date.parse(item.due_at)<Date.now();item.deadlineRule=JSON.parse(item.deadline_basis);delete item.deadline_basis}
+ const assistants=await rows(db,`SELECT n.id AS note_id,n.signed_revision AS revision,n.signed_at AS submitted_at,n.client_id,p.name AS author,c.first_name||' '||c.last_name AS client FROM bm_assistant_signed_notes a JOIN bm_notes n ON n.id=a.note_id JOIN bm_staff p ON p.id=n.author_id JOIN bm_clients c ON c.id=n.client_id WHERE a.supervisor_id=? AND NOT EXISTS(SELECT 1 FROM bm_assistant_supervision v WHERE v.note_id=n.id)`,practitionerId(who))
+ queue.push(...assistants.map(a=>({...a,kind:'supervision_details',due_at:null,overdue:false})))
  await commit(db,who,queue.map(s=>audit(db,who,'supervision.queue_read',s.client_id,s.note_id)))
  return queue
 }
@@ -28,7 +30,7 @@ export async function returnNote(db:D1Database,who:Actor,input:Data) {
 }
 
 /** A returned draft grants no continuing chart access; care-team grants remain separate. */
-export const supervisorReadSql=(noteAlias:string)=>`EXISTS(SELECT 1 FROM bm_note_submissions u LEFT JOIN bm_note_reviews v ON v.submission_id=u.id WHERE u.note_id=${noteAlias}.id AND u.supervisor_id=? AND (v.decision IS NULL OR v.decision='cosigned'))`
+export const supervisorReadSql=(noteAlias:string)=>`EXISTS(SELECT 1 FROM bm_staff named WHERE named.id=? AND (EXISTS(SELECT 1 FROM bm_note_submissions u LEFT JOIN bm_note_reviews v ON v.submission_id=u.id WHERE u.note_id=${noteAlias}.id AND u.supervisor_id=named.id AND (v.decision IS NULL OR v.decision='cosigned')) OR EXISTS(SELECT 1 FROM bm_assistant_signed_notes a WHERE a.note_id=${noteAlias}.id AND a.supervisor_id=named.id)))`
 
 /** Owner-entered state rule; an unset rule is visible, never guessed from an address. */
 export async function saveSupervisionDeadline(db:D1Database,who:Actor,input:Data){
@@ -54,5 +56,6 @@ export async function submissionContext(db:D1Database,note:Data,input:Data){
 export async function supervisionPlans(db:D1Database,who:Actor,clientId:string){
  const list=await rows(db,`SELECT DISTINCT s.plan_id FROM bm_note_submissions s JOIN bm_notes n ON n.id=s.note_id
  LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE n.client_id=? AND s.supervisor_id=? AND s.plan_id IS NOT NULL AND (r.decision IS NULL OR r.decision='cosigned')`,clientId,practitionerId(who)??'')
- return list.map(p=>p.plan_id as string)
+ const daily=await rows(db,'SELECT a.plan_id FROM bm_assistant_signed_notes a JOIN bm_notes n ON n.id=a.note_id WHERE n.client_id=? AND a.supervisor_id=? AND a.plan_id IS NOT NULL',clientId,practitionerId(who)??'')
+ return [...new Set([...list,...daily].map(p=>p.plan_id as string))]
 }

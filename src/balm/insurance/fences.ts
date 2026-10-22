@@ -7,6 +7,7 @@ import type { ClaimSnapshot } from './types'
 export function claimFactGuards(db:D1Database,claim:Data,s:ClaimSnapshot) {
   const b=s.basis!
   return [
+    ...(b.assistantSupervisionCount!==undefined?[guard(db,'(SELECT COUNT(*) FROM bm_assistant_supervision s JOIN bm_notes n ON n.id=s.note_id WHERE n.appointment_id=?)=?',claim.appointment_id,b.assistantSupervisionCount)]:[]),
     ...(b.renderingStaffId ? [guard(db,'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=? AND active=1 AND erased_at IS NULL)',b.renderingStaffId,b.renderingStaffVersion)] : []),
     ...(s.payer.medicare?[
       b.medicareVersion===null?guard(db,'NOT EXISTS(SELECT 1 FROM bm_medicare_years WHERE client_id=? AND year=? AND therapy_group=?)',claim.client_id,s.kx.year,s.kx.group):guard(db,'EXISTS(SELECT 1 FROM bm_medicare_years WHERE client_id=? AND year=? AND therapy_group=? AND version=?)',claim.client_id,s.kx.year,s.kx.group,b.medicareVersion),

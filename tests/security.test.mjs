@@ -282,6 +282,6 @@ test('SEC-001: every staff job needs an independent second step; owner device re
   assert.equal((await h.state()).clients.some(c=>['Unproved','Revoked'].includes(c.first_name)),false)
   const audit=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'session.%'").all()).results
   for(const action of ['session.second_step_verified','session.idle_expired','session.remotely_revoked','session.policy_saved'])assert.ok(audit.some(a=>a.action===action),action)
-  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-devices-policy',path:'/auth/security',cookie:h.owner}])}
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-devices',path:'/auth/security',cookie:h.owner},{name:'SEC-001-policy',path:'/auth/security',cookie:h.owner,selector:'form[action="/auth/security/policy"]'}])}
  }finally{await h.close()}
 })

@@ -409,6 +409,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  await h.finishSetup()
  const {service,practitioners:[priya,other]}=await clinic(h,['Priya','Other'])
  const biller=await h.staff('Billing','biller')
+ const releaseReception=await h.staff('ReleaseReception','reception')
  const location=await h.cmd('location.save',{name:'North clinic'}),south=await h.cmd('location.save',{name:'South clinic'})
  const northRoom=await h.cmd('room.save',{name:'North room'}),southRoom=await h.cmd('room.save',{name:'South room'})
  await h.cmd('room.location',{roomId:northRoom.id,locationId:location.id})
@@ -446,11 +447,11 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  await h.cmd('note_release.approve',{id:release.id,sha256:release.sha256,attest:true})
  assert.equal((await h.send(releasePath,undefined,biller.cookie)).text,originalRelease.text)
  assert.equal((await h.send(releasePath,undefined,priya.cookie)).status,403)
+ assert.equal((await h.send(releasePath,undefined,releaseReception.cookie)).status,403)
+ await h.cmd('note_release.prepare',{clientId:patient.id},releaseReception.cookie,403)
  assert.equal((await h.send(releasePath,undefined,manager.cookie)).status,403)
  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'ROLE-002-release-owner',path:'/app/clients/'+patient.id,cookie:h.owner,selector:'#payer-releases'},{name:'ROLE-002-release-biller',path:'/app/clients/'+patient.id,cookie:biller.cookie,selector:'#payer-releases'}])}
- await h.cmd('note_release.revoke',{id:release.id})
- assert.equal((await h.send(releasePath,undefined,biller.cookie)).status,403)
- const noWrites=['staff.save','location.save','room.location','client.save','appointment.book','appointment.attend','note.write','note.sign','note.cosign','note.check','care_team.grant','chart.break_glass','insurance.settings.save','insurance.payer.save','insurance.claim.necessity','backup.now','retention.destroy','unknown.future.command']
+ const noWrites=['note_release.approve','note_release.revoke','assistant_daily.save','note.supervision','staff.save','location.save','room.location','client.save','appointment.book','appointment.attend','note.write','note.sign','note.cosign','note.check','care_team.grant','chart.break_glass','insurance.settings.save','insurance.payer.save','insurance.claim.necessity','backup.now','retention.destroy','unknown.future.command']
  const before=await h.state()
  for(const name of noWrites) await h.cmd(name,{},biller.cookie,403)
  const after=await h.state()
@@ -461,7 +462,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  assert.equal((await h.send('/api/balm/reports/location?locationId='+south.id,undefined,manager.cookie)).value.name,'North clinic')
  for(const path of ['/app','/app/reports']) assert.equal((await h.send(path,undefined,manager.cookie)).status,200)
  for(const path of ['/app/clients','/app/clients/'+patient.id,'/api/balm/reports/financial','/app/insurance']) assert.equal((await h.send(path,undefined,manager.cookie)).status,403,path)
- for(const name of ['client.save','invoice.prepare','location.save','unknown.future.command']) await h.cmd(name,{},manager.cookie,403)
+ for(const name of ['client.save','invoice.prepare','location.save','note_release.prepare','assistant_daily.save','unknown.future.command']) await h.cmd(name,{},manager.cookie,403)
  const southVisit=(await h.state()).appointments.find(a=>a.client_id===hidden.id).id
  const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10),tomorrow=new Date(Date.now()+2*86400000+10*3600000).toISOString().slice(0,10)
  const booking={clientId:patient.id,practitionerId:priya.id,serviceId:service.id,roomId:northRoom.id,date:tomorrow,time:'14:00'}
@@ -503,15 +504,17 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
    assert.equal(unchanged.revisions[0].number,1);assert.deepEqual(unchanged.revisions[0].charges,[])
   }
   await h.cmd('note.amend',{id:draft.id,revision:1,...(kind==='assistant'?{sections}:{body:kind+' revised draft'})},trainee.cookie)
-  for(const name of ['note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
+  for(const name of ['note_release.prepare','note_release.approve','note_release.revoke','note.supervision','assistant_daily.save','note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
   await h.cmd('note.submit',{id:draft.id,revision:2,signature:kind,credentials:kind==='assistant'?'PTA':kind==='fellow'?'CF-SLP':'SPT',attest:true},trainee.cookie)
   assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===draft.id))
   await h.cmd('note.cosign',{id:draft.id,revision:2,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
   const coSigned=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes.find(n=>n.id===draft.id)
   assert.equal(coSigned.signature.name,'Priya');assert.equal(coSigned.submissions[0].author_name,kind)
   assert.equal((await h.send('/api/balm/clients/'+hidden.id,undefined,trainee.cookie)).status,404)
-  for(const path of ['/app/clinic','/api/balm/reports/financial','/api/balm/chart-documents/missing']) assert.equal((await h.send(path,undefined,trainee.cookie)).status,403)
+  for(const path of [releasePath,'/app/clinic','/api/balm/reports/financial','/api/balm/chart-documents/missing']) assert.equal((await h.send(path,undefined,trainee.cookie)).status,403)
  }
+ await h.cmd('note_release.revoke',{id:release.id})
+ assert.equal((await h.send(releasePath,undefined,biller.cookie)).status,403)
  const audit=(await h.send('/api/balm/access-refusals',undefined,h.owner)).value
  for(const member of [biller,manager]) assert.ok(audit.some(a=>a.actor_email===member.email && a.actor_role===member.role))
  assert.ok(audit.filter(a=>a.actor_role==='assistant' && a.detail==='POST /api/balm/command').length>=24,'each assistant template/code refusal is audited')

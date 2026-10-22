@@ -127,7 +127,7 @@ async function handleAuthResponse(request: Request, original: Bindings): Promise
 }
 
 export async function authResponse(request: Request, original: Bindings): Promise<Response | null> {
- const secured=await securityResponse(request,runtimeBindings(original),operatorAuth(runtimeBindings(original)))
+ const secured=await securityResponse(request,runtimeBindings(original),()=>operatorAuth(runtimeBindings(original)))
  if(secured)return rejectedResponse(request,secured)
  const response = await handleAuthResponse(request, original)
  return response ? rejectedResponse(request, response) : null

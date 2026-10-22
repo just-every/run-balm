@@ -97,7 +97,7 @@ async function settings(env:Bindings,session:Data){
  const policy=await one(env.DB,'SELECT * FROM bm_staff_security_policy WHERE id=1')
  const owner=session.operator.role==='owner'
  const sessions=await rows(env.DB,`SELECT s.id,o.email,s.kind,s.created_at,s.expires_at,p.last_seen_at,p.device,p.verified_at FROM oa_sessions s JOIN oa_operators o ON o.id=s.operator_id LEFT JOIN bm_staff_session_proofs p ON p.session_id=s.id WHERE s.revoked_at IS NULL AND s.expires_at>? AND o.status='active' AND s.operator_version=o.version AND (?=1 OR s.operator_id=?) ORDER BY s.created_at DESC,s.id`,Date.now(),owner?1:0,session.operator.id)
- return {owner,policy,sessions,currentSessionId:sid(session),enrolled:!!await one(env.DB,'SELECT 1 FROM bm_staff_factors WHERE operator_id=?',session.operator.id)}
+ return {timeZone:(await one(env.DB,'SELECT time_zone FROM bm_settings WHERE id=1'))?.time_zone||'UTC',owner,policy,sessions,currentSessionId:sid(session),enrolled:!!await one(env.DB,'SELECT 1 FROM bm_staff_factors WHERE operator_id=?',session.operator.id)}
 }
 function codeForm(action:string){return `<form method="post" action="/auth/security/${action}">${field('code','Authenticator or one-use recovery code','','text','required maxlength="80" autocomplete="one-time-code"')}<button>Verify second step</button></form>`}
 async function screen(auth:Data,env:Bindings,session:Data,notice='',extra=''){
@@ -105,7 +105,7 @@ async function screen(auth:Data,env:Bindings,session:Data,notice='',extra=''){
  let content=notice?`<p role="status">${h(notice)}</p>`:''
  content+=extra||(proof?'<p>Your second step is complete on this device.</p>':data.enrolled?'<p>Enter your authenticator code to open clinic records. Email-link sign-in alone does not open patient information.</p>'+codeForm('verify'):'<p>Set up an authenticator before opening clinic records. Each staff member uses their own authenticator.</p><form method="post" action="/auth/security/enroll"><button>Set up authenticator</button></form>')
  if(proof){
-  content+='<h2>Sessions and devices</h2>'+data.sessions.map(s=>`<p>${h(s.email)} · ${h(s.device??'Second step not completed')} · ${h(s.kind)}${s.id===data.currentSessionId?' · this device':''}<br>Last activity: ${h(s.last_seen_at?new Date(s.last_seen_at).toISOString():'Not verified')}</p>${data.owner?`<form method="post" action="/auth/security/revoke">${hidden('sessionId',s.id)}<button class="secondary">Sign out this device</button></form>`:''}`).join('')
+  content+='<h2>Sessions and devices</h2>'+data.sessions.map(s=>`<p>${h(s.email)} · ${h(s.device??'Second step not completed')} · ${h(s.kind)}${s.id===data.currentSessionId?' · this device':''}<br>Last activity: ${h(s.last_seen_at?new Intl.DateTimeFormat('en-US',{timeZone:data.timeZone,dateStyle:'medium',timeStyle:'short'}).format(new Date(s.last_seen_at)):'Not verified')}</p>${data.owner?`<form method="post" action="/auth/security/revoke">${hidden('sessionId',s.id)}<button class="secondary">Sign out this device</button></form>`:''}`).join('')
   if(data.owner)content+=`<h2>Clinic session policy</h2><p>Every staff role that reads patient information must complete a second step. This cannot be disabled. Requiring it clinic-wide also covers other invited accounts.</p><form method="post" action="/auth/security/policy"><label class="check"><input name="requireAll" type="checkbox" value="on" ${data.policy?.require_all?'checked':''}>Require a second step for every account</label>${field('idleMinutes','Idle timeout in minutes',data.policy?.idle_minutes,'number','required min="1" max="120"')}<button>Save session policy</button></form>`
   content+='<p><a href="/app">Open Balm</a></p>'
  }
@@ -113,13 +113,14 @@ async function screen(auth:Data,env:Bindings,session:Data,notice='',extra=''){
  return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Staff security',content})
 }
 /** Uses the established native identity; never trusts a claimed email or role in an MFA form. */
-export async function securityResponse(request:Request,env:Bindings,auth:Data):Promise<Response|null>{
- let currentSession:Data|null=null
+export async function securityResponse(request:Request,env:Bindings,createAuth:()=>Data):Promise<Response|null>{
+ let currentSession:Data|null=null,auth:Data|null=null
  const path=new URL(request.url).pathname,owns=path==='/auth/security'||path.startsWith('/auth/security/')
  const publicAuth=new Set(['/auth/bootstrap','/auth/magic-link','/auth/confirm','/auth/signout','/auth/one-click','/auth/review-session','/auth/owner-signin'])
  const protectedPath=path==='/setup'||path==='/app'||path.startsWith('/app/')||(path.startsWith('/auth/')&&!owns&&!publicAuth.has(path)&&!path.startsWith('/auth/oidc/')&&!path.startsWith('/auth/dev/')&&!path.startsWith('/auth/local/')&&path!=='/auth/dependencies/setup')
  if(!owns&&!protectedPath)return null
  try{
+  auth=createAuth()
   const session=await auth.getSession(request);currentSession=session
   if(!session)return owns?json({error:'sign_in_required'},401):null
   if(!owns){await requireSecondStep(env,request,session);return null}
@@ -157,7 +158,7 @@ export async function securityResponse(request:Request,env:Bindings,auth:Data):P
   const e=error as {status?:number;code?:string},status=e.status??503,code=e.code??'staff_security_unavailable'
   if(!owns&&(path==='/app'||path.startsWith('/app/')||path==='/setup'))return see(code==='second_step_required'?'/auth/security':'/signin')
   if(owns&&[401,429].includes(status))await env.DB.batch([audit(env.DB,{email:'staff sign-in',role:'system'},'session.second_step_refused',null,null,code)])
-  if(owns&&isForm(request)&&currentSession){
+  if(owns&&isForm(request)&&currentSession&&auth){
    const message=code==='second_step_rate_limited'?'Too many attempts. Wait five minutes before trying again.':code==='session_idle_expired'?'This device was idle too long. Sign in again with a new email link.':code==='second_step_refused'?'That code did not verify. Use a fresh authenticator code or an unused recovery code.':'The change could not be completed. Check your sign-in and try again.'
    return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Check your sign-in',content:'<p role="alert">'+h(message)+'</p><p><a href="/auth/security">Back to staff security</a></p><p><a href="/signin">Sign in again</a></p>',status})
   }

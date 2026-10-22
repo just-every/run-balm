@@ -35,13 +35,13 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores and respects erasure', { timeout: 240_000 }, async () => {
+async function archiveFixture(){
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
     for (const path of [source,restored,erased,refused]) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:2e6 })
-    const webhookKey='whsec_'+randomBytes(32).toString('base64')
+    const webhookKey='whsec_'+Buffer.from('synthetic-balm-1').toString('base64')
     h=await harness({root:source,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
@@ -84,10 +84,17 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
     await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',retentionVisit).run()
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer'),again=join(temporary,'again.rer')
+    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}
+  }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
+}
+const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
+test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
+  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}=await archiveFixture()
+  try{
+    const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
     const bytes=await readFile(old,'utf8');for(const kept of ['Thanksgiving clinic closure','Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
-    const rows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
+    const rows=archiveRows
     assert.ok(rows(bytes).length>0)
     const corrupt=join(temporary,'corrupt.rer');await writeFile(corrupt,bytes.replace('Restored treatment note','Changed treatment note'),{mode:0o600})
     // Each pair owns independent stores. Keep all CLI cases with at most two children.
@@ -99,30 +106,8 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
         await command(source,['import','--input',old,'--yes','--no-queue'],4)
       })(),
     ])
-    await Promise.all([
-      command(restored,['export','--output',again,'--no-queue']),
-      (async()=>{
-        h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
-        await command(source,['export','--output',beforeDestruction,'--no-queue'])
-        h=await harness({root:source,...identity})
-        const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
-        await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
-        await h.cmd('retention.save',{state:'AZ'},ownerCookie)
-        const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
-        await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
-        await h.close();h=null
-        await command(source,['export','--output',later,'--no-queue'])
-      })(),
-    ])
-    assert.deepEqual(rows(await readFile(again,'utf8')),rows(bytes))
-    await Promise.all([
-      command(refused,['import','--input',old,'--journal',later,'--yes','--no-queue'],4),
-      command(erased,['import','--input',later,'--yes','--no-queue']),
-    ])
-    // This archive was made after ordinary erasure, so only HIPAA-002's later
-    // destruction can cause this refusal; the empty store remains unchanged.
-    await command(refused,['import','--input',beforeDestruction,'--journal',later,'--yes','--no-queue'],4)
+    await command(restored,['export','--output',again,'--no-queue'])
+    assert.deepEqual(archiveRows(await readFile(again,'utf8')),archiveRows(bytes))
     const restoredClinic=await harness({root:restored,...identity})
     try {
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
@@ -154,13 +139,38 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 HIPAA-002 COMM-001 SCHED-003 SCHED-009
       const original=await restoredClinic.mf.dispatchFetch(restoredClinic.origin+search.value.entries[0].url,{headers:{cookie}})
       assert.deepEqual(Buffer.from(await original.arrayBuffer()),mriReport())
     }finally{await restoredClinic.close()}
+  }finally{await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
+
+test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary erasure and later destruction resurrection', {timeout:240_000},async()=>{
+  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}=await archiveFixture()
+  let h
+  try{
+    const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')
+    await command(source,['export','--output',old,'--no-queue'])
+        h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
+        await command(source,['export','--output',beforeDestruction,'--no-queue'])
+        h=await harness({root:source,...identity})
+        const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
+        await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
+        await h.cmd('retention.save',{state:'AZ'},ownerCookie)
+        const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
+        await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
+        await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
+        await h.close();h=null
+        await command(source,['export','--output',later,'--no-queue'])
+    await Promise.all([
+      command(refused,['import','--input',old,'--journal',later,'--yes','--no-queue'],4),
+      command(erased,['import','--input',later,'--yes','--no-queue']),
+    ])
+    // This archive was made after ordinary erasure, so only HIPAA-002's later
+    // destruction can cause this refusal; the empty store remains unchanged.
+    await command(refused,['import','--input',beforeDestruction,'--journal',later,'--yes','--no-queue'],4)
     const proxy=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try { assert.equal((await proxy.env.DB.prepare('SELECT first_name FROM bm_clients WHERE id=?').bind(p.id).first()).first_name,'Erased');assert.equal((await proxy.env.DB.prepare('SELECT COUNT(*) n FROM bm_clients WHERE id=?').bind(retentionPatient.id).first()).n,0,'HIPAA-002 destroyed patient cannot return in a later restored archive') }
     finally { await proxy.dispose() }
-  // macOS can add .DS_Store during removal; only filesystem cleanup is retried.
-  } finally { if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100}) }
+  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
-
 
 test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archive with signed units and fixed invoice bytes', { timeout: 120_000 }, async () => {
   const temporary=await mkdtemp(join(tmpdir(),'balm-tie-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
@@ -363,6 +373,13 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('supervision.deadline.save',{staffId:student.id,state:'TX',hours:24,source:'Synthetic reviewed state deadline'})
   await h.cmd('note.submit',{id:note.id,revision:1,signature:'ArchiveStudent',credentials:'SPT',attest:true},student.cookie)
   await h.cmd('note.cosign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
+  const assistant=await h.staff('ArchiveAssistant','assistant',{discipline:'pt',supervisorId:priya.id,credentials:'PTA'})
+  await h.cmd('hours.save',{practitionerId:assistant.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
+  const dailyVisit=await pastVisit(h,patient.id,assistant,service.id,h.owner,4)
+  const dailyNote=await h.cmd('note.write',{clientId:patient.id,appointmentId:dailyVisit,template:'pt.daily',sections:{subjective:'Synthetic daily history',objective:'Synthetic skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},assistant.cookie)
+  const dailyRule=await h.cmd('assistant_daily.save',{staffId:assistant.id,state:'TX',startsOn:'2020-01-01',endsOn:'2099-12-31',stateSource:'Synthetic reviewed state rule',payerSource:'Synthetic cash daily-signing permission',attest:true})
+  await h.cmd('note.sign',{id:dailyNote.id,revision:1,ruleId:dailyRule.id,signature:'ArchiveAssistant',credentials:'PTA',attest:true},assistant.cookie)
+  await h.cmd('note.supervision',{id:dailyNote.id,signature:'Priya',credentials:'PT',supervisionGiven:'on_site',attest:true},priya.cookie)
   const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
   const request=await h.cmd('estimate.request',{clientId:patient.id,coverageKind:'self_pay',coverageAttestation:'Patient elected self-pay',deliveryMethod:'paper',attest:true})
   const referral=await h.cmd('case.open',{clientId:patient.id,receivedOn:today,referringFirst:'Synthetic',referringLast:'Referrer',diagnosis:'M25.561 knee pain'})
@@ -394,6 +411,8 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
   assert.equal(file.status,200,file.text)
   const fixed=file.value.notes.find(n=>n.id===note.id)
+  const restoredDaily=file.value.notes.find(n=>n.id===dailyNote.id)
+  assert.equal(restoredDaily.signature.name,'ArchiveAssistant');assert.equal(restoredDaily.assistantDaily.rule.id,dailyRule.id);assert.equal(restoredDaily.assistantDaily.endorsement.supervisor_name,'Priya')
   assert.ok(fixed.submissions[0].due_at);assert.equal(JSON.parse(fixed.submissions[0].deadline_basis).state,'TX')
   assert.equal((await h.send(releasePath,undefined,owner)).text,releaseOriginal)
   assert.ok(file.value.noteReleases.find(r=>r.id===release.id).approved_at)

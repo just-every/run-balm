@@ -159,11 +159,14 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
   return Promise.all(notes.map(async n => {
     const reviewOnly = !access.all && n.author_id !== author
     const submitted = reviewOnly ? await rows(db,`SELECT s.revision FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND s.supervisor_id=? AND (r.decision IS NULL OR r.decision='cosigned')`,n.id,author ?? '') : []
+    const daily=await one(db,'SELECT * FROM bm_assistant_signed_notes WHERE note_id=?',n.id)
+    const endorsement=daily?await one(db,'SELECT * FROM bm_assistant_supervision WHERE note_id=?',n.id):null
+    if(reviewOnly&&daily?.supervisor_id===author)submitted.push({revision:n.signed_revision})
     const own = revisions.filter(r => r.note_id === n.id && (!reviewOnly || submitted.some(s=>s.revision===r.number))).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
     const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
     const submissions = await rows(db,`SELECT s.*,r.decision,r.reason,r.supervision_given FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND (? OR s.supervisor_id=?) ORDER BY s.submitted_at DESC`,n.id,reviewOnly?0:1,author ?? '')
     const pending = submissions.find(s=>!s.decision)
-    return { supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
+    return { assistantDaily:daily?{rule:JSON.parse(daily.rule_snapshot),endorsement}:null, canRecordSupervision:daily?.supervisor_id===author&&!endorsement, supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],

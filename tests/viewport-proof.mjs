@@ -11,6 +11,7 @@ export async function viewportProof(h,scenes){
   const context=await browser.newContext({ignoreHTTPSErrors:true})
   for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
   await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+  await context.route('**/brand/mark.svg',r=>r.fulfill({path:'public/brand/mark.svg',contentType:'image/svg+xml'}))
   const page=await context.newPage()
   for(const {name,path,cookie,selector,open} of scenes){
    await context.clearCookies()

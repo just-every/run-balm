@@ -22,7 +22,7 @@ export function roleCommand(who: Actor, name: string) {
  if (who.role === 'owner' || name === 'session.signout') return
  if (manager(who)) insist(['appointment.book','appointment.move','appointment.cancel','pay.checkin'].includes(name), 'location_manager_action_refused', 403)
  if (biller(who)) insist(billingWrites.has(name), 'biller_action_refused', 403)
- if (supervised(who)) insist(traineeWrites.has(name), 'supervised_staff_draft_only', 403)
+ if (supervised(who)) insist(traineeWrites.has(name)||who.staffKind==='assistant'&&name==='note.sign', 'supervised_staff_draft_only', 403)
 }
 export function roleRead(who: Actor, path: string) {
  if (who.role === 'owner') return

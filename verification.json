@@ -35,11 +35,27 @@
       ]
     },
     {
-      "name": "portability",
+      "name": "portability-core",
       "browser": false,
       "hosted": false,
       "commands": [
-        "pnpm run test:archive"
+        "node --test --test-concurrency=1 --test-name-pattern=\"public CLI archive round trip|public CLI erasure journals|recorded diagnoses\" tests/archive.test.mjs"
+      ]
+    },
+    {
+      "name": "portability-backups",
+      "browser": false,
+      "hosted": false,
+      "commands": [
+        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-004 automatic\" tests/archive.test.mjs"
+      ]
+    },
+    {
+      "name": "portability-roles",
+      "browser": false,
+      "hosted": false,
+      "commands": [
+        "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs\" tests/archive.test.mjs"
       ]
     },
     {

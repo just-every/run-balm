@@ -1,3 +1,4 @@
+import {dailySignature} from './assistant-daily'
 // Review and sign: the author signs the exact revision they reviewed with their
 // typed name and credentials; the signature records the time and the SHA-256 of
 // what was signed, and the database refuses any later change to a signed note
@@ -36,7 +37,7 @@ export const signedDigest = (note: Data, revision: Data, sections: unknown, by: 
 
 export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'author' | 'submit' | 'cosign' = 'author') {
   human(who)
-  insist(mode !== 'author' || !supervised(who), 'submit_to_your_supervisor', 403)
+  insist(mode !== 'author' || !supervised(who) || who.staffKind==='assistant'&&input.ruleId, 'submit_to_your_supervisor', 403)
   let note: Data, staff: Data
   const pending = mode === 'cosign' ? await one(db,`SELECT s.* FROM bm_note_submissions s WHERE s.note_id=? AND NOT EXISTS(SELECT 1 FROM bm_note_reviews r WHERE r.submission_id=s.id AND r.decision='returned') ORDER BY s.revision DESC LIMIT 1`,text(input.id,'note',100)) : null
   if (mode === 'cosign') {
@@ -67,6 +68,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   const missing = alerts.find(a => a.blocking)
   insist(!missing, missing?.message ?? 'complete_required_documentation')
   const basis = await primaryUnitMethod(db, note.client_id as string, (visit?.start_at ?? note.created_at) as string)
+  const independent=mode==='author'&&who.staffKind==='assistant'?await dailySignature(db,who,note,input,basis.payerId):[]
   const billing = payerBilling(JSON.parse(latest.charges as string || '[]'), basis.method, basis.fixedUnitMinutes)
   if ('cmsTie' in billing && billing.cmsTie && !billing.cmsTie.resolved) {
     insist(false, `Choose exactly ${billing.cmsTie.units} tied CMS code${billing.cmsTie.units === 1 ? '' : 's'} before signing: ${billing.cmsTie.codes.join(', ')}`)
@@ -88,7 +90,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   }
   if (pending) insist(pending.revision===latest.number,'note_changed_reload',409)
   await commit(db, who, [
-    ...diagnoses,
+    ...diagnoses,...independent,
     ...(pending ? [guard(db,licensedSql,practitionerId(who),note.author_id),stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by,supervision_given) VALUES(?,'cosigned','',?,?,?)",pending.id,signedAt,who.email,supervision)] : []),
     ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),
