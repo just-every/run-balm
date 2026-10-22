@@ -1,3 +1,4 @@
+import {requireSecondStep} from './security/second-step'
 // Adapted from Strap's native invitations and owner-bound preparation keys
 // (src/strap/credentials.ts, just-every/run-strap @ 92c3892).
 import { operatorAuth, type Bindings } from '../auth.server'
@@ -17,7 +18,8 @@ export async function principal(request: Request, env: Bindings, agent = false):
   }
   const session = await operatorAuth(env).getSession(request)
   if (!session) fail('sign_in_required', 401)
-  return actor(env.DB, session!.operator.id)
+  await requireSecondStep(env,request,session!)
+  return {...await actor(env.DB, session!.operator.id),sessionId:session!.id}
 }
 
 export async function agentKeys(env: Bindings, who: Actor) {

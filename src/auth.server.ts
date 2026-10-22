@@ -1,3 +1,4 @@
+import {securityResponse} from './balm/security/second-step'
 import { rejectedResponse } from './base/rejected-response'
 import { createDependencies } from './modules/dependencies/index.mjs'
 import { createIdpOwnerClaimHandler, createOwnerClaimHandler } from './modules/owner-claim/index.mjs'
@@ -126,6 +127,8 @@ async function handleAuthResponse(request: Request, original: Bindings): Promise
 }
 
 export async function authResponse(request: Request, original: Bindings): Promise<Response | null> {
+ const secured=await securityResponse(request,runtimeBindings(original),operatorAuth(runtimeBindings(original)))
+ if(secured)return rejectedResponse(request,secured)
  const response = await handleAuthResponse(request, original)
  return response ? rejectedResponse(request, response) : null
 }

@@ -389,6 +389,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await command(source,['export','--output',archive,'--no-queue'])
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,auth,owner:ownerSession})
+  for(const table of ['bm_staff_factors','bm_staff_factor_pending','bm_staff_recovery','bm_staff_session_proofs'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table).first()).n,0,'SEC-001 credentials and proofs never travel in an archive')
   const owner=await h.signIn(auth.OWNER_EMAIL),cookie=await h.signIn('archivestudent@clinic.example')
   const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
   assert.equal(file.status,200,file.text)

@@ -216,3 +216,72 @@ test('SEC-002: portal notices conceal address/email refusal, confirmation races 
     await assertPrivateStorage(local, [], [edgeAddress(4000)])
   } finally { await local.close() }
 })
+
+test('SEC-001: every staff job needs an independent second step; owner device revocation, one-use recovery and idle timeout deny the next request', {timeout:120000}, async()=>{
+ const h=await harness({autoMfa:false,browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ const {authenticatorCode}=await import('./staff-second-step.mjs')
+ try{
+  await h.state(h.owner,401)
+  assert.equal((await h.send('/app',undefined,h.owner)).headers.get('location'),'/auth/security')
+  assert.equal((await h.send('/auth/operators',undefined,h.owner)).status,401)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-enrollment',path:'/auth/security',cookie:h.owner}])}
+  const activate=async cookie=>{
+   const pending=await h.send('/auth/security/enroll',{},cookie);assert.equal(pending.status,200)
+   const active=await h.send('/auth/security/activate',{code:authenticatorCode(pending.value.secret)},cookie)
+   assert.equal(active.status,200,'a real independently calculated authenticator code activates the factor')
+   const sealed=(await h.db.prepare('SELECT sealed_seed FROM bm_staff_factors ORDER BY created_at DESC LIMIT 1').first()).sealed_seed
+   assert.ok(!sealed.includes(pending.value.secret),'only ciphertext is stored')
+   return {secret:pending.value.secret,codes:active.value.recoveryCodes}
+  }
+  const ownerFactor=await activate(h.owner)
+  await h.finishSetup()
+  await h.cmd('settings.save',{clinicName:'Synthetic secure clinic',timeZone:'America/New_York',taxId:'12-3456789',address:'100 Main St'})
+  assert.equal((await h.send('/auth/security/verify',{code:authenticatorCode(ownerFactor.secret)},h.owner)).status,401,'a consumed authenticator time step cannot be replayed')
+  const location=await h.cmd('location.save',{name:'Synthetic secure location'})
+  const supervisor=await h.staff('SecureSupervisor','supervisor',{discipline:'pt',credentials:'PT'})
+  const staff=[supervisor]
+  for(const kind of ['practitioner','reception','biller','assistant','student','fellow','location_manager'])staff.push(await h.staff('Secure'+kind,kind,{discipline:'pt',supervisorId:supervisor.id,locationId:location.id}))
+  for(const person of staff){
+   await h.state(person.cookie,401)
+   await h.cmd('client.save',{firstName:'Unproved',lastName:'Session'},person.cookie,401)
+   await activate(person.cookie)
+   await h.state(person.cookie)
+   assert.equal((await h.send('/auth/security/policy',{idleMinutes:1,requireAll:true},person.cookie)).status,403)
+  }
+  const factorCount=(await h.db.prepare('SELECT COUNT(*) n FROM bm_staff_factors').first()).n
+  assert.equal((await h.send('/auth/security/enroll',{},h.owner,{origin:'https://foreign.example'})).status,403)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_staff_factors').first()).n,factorCount)
+  const another=await h.signIn(h.auth.OWNER_EMAIL)
+  await h.state(another,401)
+  assert.equal((await h.send('/auth/security/verify',{code:ownerFactor.codes[0]},another)).status,200)
+  const anotherState=await h.send('/auth/security',undefined,another,{accept:'application/json'})
+  assert.equal(anotherState.status,200)
+  const device=anotherState.value.currentSessionId
+  const list=await h.send('/auth/security',undefined,h.owner,{accept:'application/json'})
+  assert.ok(list.value.sessions.some(s=>s.id===device&&s.verified_at))
+  assert.equal(list.value.policy.idle_minutes,15)
+  assert.equal((await h.send('/auth/security/revoke',{sessionId:device},h.owner)).status,200)
+  await h.state(another,401)
+  await h.cmd('client.save',{firstName:'Revoked',lastName:'Session'},another,401)
+  const third=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.equal((await h.send('/auth/security/verify',{code:ownerFactor.codes[0]},third)).status,401,'one-use recovery cannot be replayed on another device')
+  assert.equal((await h.send('/auth/security/verify',{code:ownerFactor.codes[1]},third)).status,200)
+  assert.equal((await h.send('/auth/security/policy',{idleMinutes:1,requireAll:true},h.owner)).status,200)
+  const current=await h.send('/auth/security',undefined,third,{accept:'application/json'})
+  // Fixture ages only this device's activity; no product clock or timeout bypass exists.
+  if(process.env.BALM_REAL_IDLE==='1'){
+   await new Promise(resolve=>setTimeout(resolve,30000));await h.state()
+   await new Promise(resolve=>setTimeout(resolve,32000))
+  }else await h.db.prepare('UPDATE bm_staff_session_proofs SET last_seen_at=? WHERE session_id=?').bind(Date.now()-61000,current.value.currentSessionId).run()
+  await h.state(third,401)
+  assert.equal((await h.send('/auth/security/verify',{code:ownerFactor.codes[2]},third)).status,401,'an idle device needs a fresh email sign-in as well as the second step')
+  const limited=await h.signIn(staff[2].email)
+  let refusal
+  for(let i=0;i<6;i++)refusal=await h.send('/auth/security/verify',{code:'invalid'},limited)
+  assert.equal(refusal.status,429)
+  assert.equal((await h.state()).clients.some(c=>['Unproved','Revoked'].includes(c.first_name)),false)
+  const audit=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'session.%'").all()).results
+  for(const action of ['session.second_step_verified','session.idle_expired','session.remotely_revoked','session.policy_saved'])assert.ok(audit.some(a=>a.action===action),action)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-devices-policy',path:'/auth/security',cookie:h.owner}])}
+ }finally{await h.close()}
+})

@@ -1,3 +1,4 @@
+import {authorizeTestSession} from './staff-second-step.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
 import { randomBytes } from 'node:crypto'
@@ -44,6 +45,7 @@ export async function harness(options = {}) {
     const bootstrap = options.owner || options.unclaimed ? null : await send('/auth/bootstrap', { token: auth.SETUP_TOKEN, displayName: 'Jordan Clinic' })
     if (bootstrap) assert.equal(bootstrap.status, 303, bootstrap.text)
     const owner = options.owner ?? bootstrap?.cookie
+    if(bootstrap&&options.autoMfa!==false)await authorizeTestSession(send,owner,auth.OWNER_EMAIL,auth.SESSION_SECRET+':'+(options.root??'memory'))
     const cmd = async (name, input, cookie = owner, status = 200, headers = {}) => {
       const r = await send('/api/balm/command', { name, input }, cookie, headers)
       assert.equal(r.status, status, `${name}: ${JSON.stringify(r.value)}`)
@@ -55,7 +57,7 @@ export async function harness(options = {}) {
       assert.ok(message, 'sign-in or invitation submitted to the mail provider')
       const token = new URL(message.text.match(/https?:\/\/[^\s]+\/auth\/confirm\?token=[^\s]+/)[0]).searchParams.get('token')
       const r = await send('/auth/confirm', { token })
-      assert.equal(r.status, 303, JSON.stringify(r.value)); return r.cookie
+      assert.equal(r.status, 303, JSON.stringify(r.value)); if(options.autoMfa!==false)await authorizeTestSession(send,r.cookie,email,auth.SESSION_SECRET+':'+(options.root??'memory')); return r.cookie
     }
     // Staff sign in through real native invitations.
     const staff = async (name, role = 'practitioner', extra = {}) => {
