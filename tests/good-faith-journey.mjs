@@ -112,27 +112,14 @@ export async function goodFaithJourney(h){
  assert.equal(unknown.status,303,unknown.text)
  assert.ok(!(await h.state()).pendingEstimates.some(r=>r.patient==='Unknown Lee'),'unknown coverage never becomes self-pay')
  if(process.env.BALM_UI_SCREENSHOTS){
-  const {chromium}=await import('@playwright/test'),{mkdir}=await import('node:fs/promises')
-  await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
-  const browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})
-  try{
-   const context=await browser.newContext({ignoreHTTPSErrors:true})
-   await context.route('**/rer-theme.css',r=>r.fulfill({path:'public/rer-theme.css',contentType:'text/css'}))
-   await context.route('**/fonts/fonts.css',r=>r.fulfill({path:'public/fonts/fonts.css',contentType:'text/css'}))
-   await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
-   const page=await context.newPage()
-   for(const [name,path,cookie] of [['booking','/book',null],['portal','/portal/home',portal],['schedule','/app',h.owner],['preparation','/app/clients/'+patient.id,reception.cookie],['issuance','/app/clients/'+patient.id,h.owner]]){
-    await context.clearCookies()
-    if(cookie){const [key,...value]=cookie.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])}
-    await page.goto(h.origin+path)
-    if(path.includes('/clients/'))await page.locator('#estimates').scrollIntoViewIfNeeded()
-    for(const width of [1440,390]){
-     await page.setViewportSize({width,height:1000})
-     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
-     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/PAY-007-'+name+'-'+width+'.png'})
-    }
-   }
-  }finally{await browser.close()}
+  const {viewportProof}=await import('./viewport-proof.mjs')
+  await viewportProof(h,[
+   {name:'PAY-007-booking',path:'/book'},
+   {name:'PAY-007-portal',path:'/portal/home',cookie:portal},
+   {name:'PAY-007-schedule',path:'/app',cookie:h.owner},
+   {name:'PAY-007-preparation',path:'/app/clients/'+patient.id,cookie:reception.cookie,selector:'#estimates'},
+   {name:'PAY-007-issuance',path:'/app/clients/'+patient.id,cookie:h.owner,selector:'#estimates'}
+  ])
  }
  const audit=(await h.db.prepare('SELECT action FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['estimate.requested','estimate.prepared','estimate.issued','estimate.downloaded','estimate.paper_delivered'])assert.ok(audit.some(a=>a.action===action),action)
