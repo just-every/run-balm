@@ -50,5 +50,10 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     const clock = (await one(db,"SELECT date('now') AS today"))!.today
     if (eligibleAfter >= clock) reasons.push('retention_period_not_complete')
   }
+  const estimate = await one(db,"SELECT MAX(date(issued_at,'+6 years')) AS until FROM bm_estimates WHERE client_id=?",client.id)
+  if(estimate?.until){
+    eligibleAfter=[eligibleAfter??'',estimate.until].sort().at(-1)!
+    if(estimate.until >= new Date().toISOString().slice(0,10))reasons.push('good_faith_estimate_six_year_retention')
+  }
   return { eligible: !reasons.length, reasons, lastTreatment, minor, eligibleAfter, holds, policy: applied }
 }

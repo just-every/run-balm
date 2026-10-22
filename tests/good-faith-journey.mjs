@@ -13,6 +13,7 @@ export async function goodFaithJourney(h){
  await h.finishSetup()
  const {service,practitioners:[priya,other]}=await clinic(h,['Priya','Other'])
  const reception=await h.staff('EstimateDesk','reception')
+ const biller=await h.staff('EstimateBiller','biller')
  const patient=await h.cmd('client.save',{firstName:'Maya',lastName:'Estimate',dateOfBirth:'1988-04-02',email:'estimate@patient.example'})
  const otherPatient=await h.cmd('client.save',{firstName:'Other',lastName:'Estimate',email:'other-estimate@patient.example'})
  const today=new Date(Date.now()+10*3600000).toISOString().slice(0,10)
@@ -24,7 +25,7 @@ export async function goodFaithJourney(h){
   const deliveryMethod=days===12?'portal':'paper'
   const appointment=days===null?null:await h.cmd('appointment.book',{clientId:patient.id,practitionerId:priya.id,serviceId:service.id,date:ahead(today,days),time:'10:00',coverageChoice:'self_pay',deliveryMethod})
   const input={clientId:patient.id,appointmentId:appointment?.appointmentId,coverageKind:'self_pay',coverageAttestation:'Patient explicitly elected self-pay for the anticipated course',deliveryMethod,attest:true}
-  for(const cookie of [reception.cookie,priya.cookie])await h.cmd('estimate.request',input,cookie,403)
+  await h.cmd('estimate.request',input,priya.cookie,403)
   const pending=appointment?(await h.state()).pendingEstimates.find(r=>r.appointment_id===appointment.appointmentId):null
   const request=appointment?{id:pending.id,dueOn:pending.due_on}:await h.cmd('estimate.request',input)
   const schedule=await h.send('/app',undefined,h.owner)
@@ -58,6 +59,31 @@ export async function goodFaithJourney(h){
  const portal=await portalLogin(h,'estimate@patient.example'),unrelated=await portalLogin(h,'other-estimate@patient.example')
  const home=await h.send('/portal/home',undefined,portal);assert.equal(home.status,200)
  for(const doc of originals){assert.ok(home.text.includes('/portal/estimates/'+doc.id+'.pdf'));assert.equal((await h.send('/portal/estimates/'+doc.id+'.pdf',undefined,portal)).text,doc.text);assert.equal((await h.send('/portal/estimates/'+doc.id+'.pdf',undefined,unrelated)).status,404)}
+ for(const path of ['/book','/portal/home','/app']){
+  const page=await h.send(path,undefined,path==='/portal/home'?portal:h.owner)
+  assert.match(page.text,/right to a Good Faith Estimate/)
+ }
+ const original=originals[1],future=await h.cmd('appointment.book',{clientId:patient.id,practitionerId:priya.id,serviceId:service.id,date:ahead(today,16),time:'11:00'})
+ const replacementInput={clientId:patient.id,appointmentId:future.appointmentId,supersedesId:original.id,changeReason:'Patient and clinician agreed to revised treatment',coverageKind:'self_pay',coverageAttestation:'Patient confirmed the self-pay choice',deliveryMethod:'portal',attest:true}
+ const replacement=await h.cmd('estimate.request',replacementInput,reception.cookie)
+ await h.cmd('estimate.request',replacementInput,biller.cookie,409)
+ const replacementDraft=await h.cmd('estimate.prepare',{requestId:replacement.id,planId:plan.id,fromOn:today,throughOn:ahead(today,20),lines:[{serviceId:service.id,quantity:1,code:'97161'}],attest:true},biller.cookie)
+ for(const cookie of [reception.cookie,biller.cookie]){
+  const staffFile=(await h.send('/api/balm/clients/'+patient.id,undefined,cookie)).value
+  assert.ok(staffFile.estimates.drafts.some(d=>d.id===replacementDraft.id))
+  await h.cmd('estimate.issue',{id:replacementDraft.id,sha256:replacementDraft.sha256,attest:true},cookie,403)
+ }
+ const replaced=await h.cmd('estimate.issue',{id:replacementDraft.id,sha256:replacementDraft.sha256,attest:true})
+ assert.equal((await h.send('/api/balm/estimates/'+original.id+'.pdf',undefined,h.owner)).text,original.text)
+ const updated=await h.send('/portal/estimates/'+replaced.id+'.pdf',undefined,portal)
+ assert.match(updated.text,/Replaces estimate/);assert.ok(updated.text.includes(original.id))
+ assert.equal((await h.send('/portal/estimates/'+replaced.id+'.pdf',undefined,unrelated)).status,404)
+ const recent=await pastVisit(h,patient.id,priya,service.id,h.owner,6)
+ await h.cmd('estimate.request',{...replacementInput,supersedesId:replaced.id,appointmentId:recent},h.owner,409)
+ // Even a state/practice policy cannot erase an original in its federal six-year period.
+ await h.cmd('retention.save',{state:'AZ',adultYears:6,minorYears:6,payerYears:0,majorityAge:18})
+ assert.ok((await file()).retention.reasons.includes('good_faith_estimate_six_year_retention'))
+ await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
  // A later price or name edit cannot change an issued original.
  await h.cmd('service.save',{id:service.id,name:'Updated evaluation',priceCents:12000})
  for(const doc of originals)assert.equal((await h.send('/api/balm/estimates/'+doc.id+'.pdf',undefined,h.owner)).text,doc.text)
@@ -68,12 +94,12 @@ export async function goodFaithJourney(h){
  await h.cmd('appointment.attend',{id:visit})
  const invoice=await h.cmd('invoice.prepare',{appointmentId:visit,amountCents:49499})
  await h.cmd('invoice.approve',{id:invoice.id})
- assert.equal((await file()).estimates.issued[0].disputeFlag,false,'$399.99 over does not flag')
+ assert.equal((await file()).estimates.issued.find(e=>e.id===originals[0].id).disputeFlag,false,'$399.99 over does not flag')
  const another=await pastVisit(h,patient.id,priya,service.id,h.owner,4)
  await h.cmd('appointment.attend',{id:another})
  const oneCent=await h.cmd('invoice.prepare',{appointmentId:another,amountCents:1})
  await h.cmd('invoice.approve',{id:oneCent.id})
- assert.equal((await file()).estimates.issued[0].disputeFlag,true,'exactly $400 above flags')
+ assert.equal((await file()).estimates.issued.find(e=>e.id===originals[0].id).disputeFlag,true,'exactly $400 above flags')
  // An uncoded referral cannot be used to issue a misleading estimate.
  const uncoded=await h.cmd('case.open',{clientId:patient.id,receivedOn:today,referringFirst:'Synthetic',referringLast:'Referrer',diagnosis:'Knee pain'})
  await h.cmd('estimate.prepare',{requestId:staleRequest.id,referralId:uncoded.id,fromOn:today,throughOn:ahead(today,20),lines:[{serviceId:service.id,quantity:1,code:'97161'}],attest:true},h.owner,400)
@@ -85,6 +111,29 @@ export async function goodFaithJourney(h){
  const unknown=await bookOnline(h,service.id,other.id,open[4],{firstName:'Unknown',email:'synthetic-balm-unknown@patient.example',coverageChoice:'unknown'})
  assert.equal(unknown.status,303,unknown.text)
  assert.ok(!(await h.state()).pendingEstimates.some(r=>r.patient==='Unknown Lee'),'unknown coverage never becomes self-pay')
+ if(process.env.BALM_UI_SCREENSHOTS){
+  const {chromium}=await import('@playwright/test'),{mkdir}=await import('node:fs/promises')
+  await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+  const browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})
+  try{
+   const context=await browser.newContext({ignoreHTTPSErrors:true})
+   await context.route('**/rer-theme.css',r=>r.fulfill({path:'public/rer-theme.css',contentType:'text/css'}))
+   await context.route('**/fonts/fonts.css',r=>r.fulfill({path:'public/fonts/fonts.css',contentType:'text/css'}))
+   await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+   const page=await context.newPage()
+   for(const [name,path,cookie] of [['booking','/book',null],['portal','/portal/home',portal],['schedule','/app',h.owner],['preparation','/app/clients/'+patient.id,reception.cookie],['issuance','/app/clients/'+patient.id,h.owner]]){
+    await context.clearCookies()
+    if(cookie){const [key,...value]=cookie.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])}
+    await page.goto(h.origin+path)
+    if(path.includes('/clients/'))await page.locator('#estimates').scrollIntoViewIfNeeded()
+    for(const width of [1440,390]){
+     await page.setViewportSize({width,height:1000})
+     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
+     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/PAY-007-'+name+'-'+width+'.png'})
+    }
+   }
+  }finally{await browser.close()}
+ }
  const audit=(await h.db.prepare('SELECT action FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['estimate.requested','estimate.prepared','estimate.issued','estimate.downloaded','estimate.paper_delivered'])assert.ok(audit.some(a=>a.action===action),action)
  return {patient,service,requests,originals,portal}
@@ -92,6 +141,6 @@ export async function goodFaithJourney(h){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
  assert.equal(execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),'','timing journey requires a clean committed candidate')
- await run(goodFaithJourney)
- console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c24-gfe-'+head)
+ await run(goodFaithJourney,{browserHttps:true})
+ console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c28-gfe-'+head)
 }

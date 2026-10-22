@@ -14,7 +14,7 @@ export function assistantNote(who: Actor, key: unknown, charges: Charge[]) {
  insist(template(key)?.kind === 'daily', 'assistants_write_daily_notes_only', 403)
  insist(charges.every(c => !evaluationCodes.has(c.code)), 'assistants_cannot_charge_evaluation_codes', 403)
 }
-const billingWrites = new Set(['invoice.prepare','invoice.approve','payment.record','pay.entry.prepare','pay.entry.approve','pay.link.create','pay.copay.save','pay.invoice.charge','pay.card.remove','pay.statements.save','pay.reminders.save','pay.reminders.stop','pay.plan.create','pay.plan.stop',
+const billingWrites = new Set(['estimate.request','estimate.prepare','invoice.prepare','invoice.approve','payment.record','pay.entry.prepare','pay.entry.approve','pay.link.create','pay.copay.save','pay.invoice.charge','pay.card.remove','pay.statements.save','pay.reminders.save','pay.reminders.stop','pay.plan.create','pay.plan.stop',
  'insurance.policy.save','insurance.authorization.save','insurance.eligibility.prepare','insurance.eligibility.submit','insurance.eligibility.import','insurance.eligibility.record','insurance.claim.prepare','insurance.claim.correct','insurance.claim.scrub','insurance.batch.prepare','insurance.batch.submit','insurance.acknowledgment.import','insurance.remittance.import','insurance.medicare.save','insurance.medicare.recognized.save'])
 const traineeWrites = new Set(['note.check','note.write','note.amend','note.measure','note.measure_remove','note.submit'])
 /** The narrower job is enforced before dispatch, including commands added later. */

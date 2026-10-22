@@ -1,5 +1,5 @@
 // The two pages a client sees: online booking and the private intake link.
-import { coverageFields } from './estimates'
+import { coverageFields, estimateNotice } from './estimates'
 import { localTime } from '../domain/invoices'
 import { h, money, usDate } from './shared'
 import { frequency } from './plans'
@@ -44,7 +44,7 @@ export function bookPage(d: any) {
     <label class="trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
     <label class="check"><input type="checkbox" name="privacy" value="on" required${typed.privacy === 'on' ? ' checked' : ''}><span>I agree that ${h(d.clinic.clinic_name)} keeps my details and health information in its own clinic records to provide my care.</span></label>
     <button type="submit">Book this appointment</button></form><p class="help">Next you will get a private link to your intake form.</p></section>` : ''
-  return `<h1>Book an appointment</h1><p>New and returning clients can book online. Use the same name, date of birth and email to continue your existing patient file. New clients complete intake before their first visit.</p>${chooser}${times}${details}`
+  return `${estimateNotice}<h1>Book an appointment</h1><p>New and returning clients can book online. Use the same name, date of birth and email to continue your existing patient file. New clients complete intake before their first visit.</p>${chooser}${times}${details}`
 }
 
 function question(q: any) {

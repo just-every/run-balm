@@ -3,14 +3,16 @@ import { estimateDue } from './estimate-requests'
 import { hostDateAt } from '../availability/timezone'
 import { clientVisible } from '../domain/clients'
 import { audit,commit,day,guard,human,id,insist,integer,need,now,one,rows,sha256,stmt,text,type Actor,type Data } from '../domain/model'
-import { addBusinessDays,businessDistance } from './estimate-days'
+import { addBusinessDays,businessDay,businessDistance } from './estimate-days'
 import { pdf } from './pdf'
 import { dollars } from '../domain/invoices'
 
+function previousBusinessDay(date:string){let d=date;do{d=new Date(Date.parse(d+'T12:00:00Z')-86400000).toISOString().slice(0,10)}while(!businessDay(d));return d}
 const owner=(who:Actor)=>{human(who);insist(who.role==='owner','only_the_owner_issues_estimates',403)}
+const preparer=(who:Actor)=>{human(who);need(who,'owner','reception')}
 const attested=(input:Data)=>insist(input.attest===true||input.attest==='on','confirm_the_estimate')
 export async function requestEstimate(db:D1Database,who:Actor,input:Data){
- owner(who);attested(input)
+ preparer(who);attested(input)
  const client=await clientVisible(db,who,input.clientId),kind=text(input.coverageKind,'coverage_kind',20)
  insist(['uninsured','self_pay'].includes(kind),'record_uninsured_or_patient_elected_self_pay')
  const attestation=text(input.coverageAttestation,'coverage_attestation',500),at=now()
@@ -20,10 +22,19 @@ export async function requestEstimate(db:D1Database,who:Actor,input:Data){
  const booked=visit?hostDateAt(new Date(visit.created_at),clinic.time_zone):today
  const lead=visit?businessDistance(booked,hostDateAt(new Date(visit.start_at),clinic.time_zone)):null
  // A late office request cannot reset the original booking's deadline.
- const dueOn=estimateDue(booked,visit?hostDateAt(new Date(visit.start_at),clinic.time_zone):null),key=id()
+ let dueOn=estimateDue(booked,visit?hostDateAt(new Date(visit.start_at),clinic.time_zone):null)
+ const key=id(),supersedes=input.supersedesId?await one(db,'SELECT * FROM bm_estimates WHERE id=? AND client_id=?',text(input.supersedesId,'original_estimate',100),client.id):null
+ insist(!input.supersedesId||supersedes,'original_estimate_not_found',404)
+ const reason=supersedes?text(input.changeReason,'care_change_reason',500):null
+ if(supersedes){
+  insist(visit,'choose_the_next_visit_for_changed_care')
+  const start=hostDateAt(new Date(visit.start_at),clinic.time_zone)
+  dueOn=previousBusinessDay(start)
+  insist(today<=dueOn,'changed_care_needs_an_estimate_at_least_one_business_day_before_the_visit',409)
+ }
  const delivery=text(input.deliveryMethod,'requested_delivery_method',20);insist(['portal','paper'].includes(delivery),'choose_portal_or_paper_delivery')
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',client.id),
- stmt(db,'INSERT INTO bm_estimate_requests(id,client_id,appointment_id,coverage_kind,coverage_attestation,requested_at,due_on,created_by,delivery_method) VALUES(?,?,?,?,?,?,?,?,?)',key,client.id,visit?.id??null,kind,attestation,at,dueOn,who.email,delivery),audit(db,who,'estimate.requested',client.id,key)])
+ stmt(db,'INSERT INTO bm_estimate_requests(id,client_id,appointment_id,coverage_kind,coverage_attestation,requested_at,due_on,created_by,delivery_method,supersedes_id,change_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',key,client.id,visit?.id??null,kind,attestation,at,dueOn,who.email,delivery,supersedes?.id??null,reason),audit(db,who,'estimate.requested',client.id,key)])
  return {id:key,dueOn,leadBusinessDays:lead}
 }
 async function facts(db:D1Database,request:Data,input:Data){
@@ -55,11 +66,11 @@ async function facts(db:D1Database,request:Data,input:Data){
  const visits=lines.reduce((sum,line)=>sum+line.quantity,0)
  if(planContent)insist(visits===Number(planContent.frequencyPerWeek)*Number(planContent.durationWeeks),'estimate_visits_must_match_the_plan_of_care')
  const total=lines.reduce((sum,line)=>sum+line.totalCents,0);insist(Number.isSafeInteger(total)&&total<=1_000_000_000,'estimate_total_too_large')
- const payload={requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,referralId:referral?.id??null,diagnosisCodes,deliveryMethod:request.delivery_method,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,totalCents:total}
+ const payload={supersedesId:request.supersedes_id??null,changeReason:request.change_reason??null,requestId:request.id,coverageKind:request.coverage_kind,requestedAt:request.requested_at,dueOn:request.due_on,client:{id:client.id,name:client.first_name+' '+client.last_name,dob:client.date_of_birth},clinic:{name:clinic.clinic_name,address:clinic.address,taxId:clinic.abn,npi:clinic.practice_npi},planId:plan?.id??null,referralId:referral?.id??null,diagnosisCodes,deliveryMethod:request.delivery_method,anticipatedPlan:!plan,fromOn:from,throughOn:through,lines,totalCents:total}
  return {payload,basis:{clientVersion:client.version,clinicVersion:clinic.version,services:versions,planDigest:plan?.content_sha256??null,referralVersion:referral?.version??null}}
 }
 export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
- owner(who);attested(input)
+ preparer(who);attested(input)
  const request=await one(db,'SELECT * FROM bm_estimate_requests WHERE id=?',text(input.requestId,'estimate_request',100));insist(request,'estimate_request_not_found',404)
  insist(!await one(db,'SELECT 1 FROM bm_estimates WHERE request_id=?',request.id),'estimate_already_issued',409)
  const value=await facts(db,request,input),digest=await sha256(JSON.stringify(value)),key=id()
@@ -67,7 +78,7 @@ export async function prepareEstimate(db:D1Database,who:Actor,input:Data){
  return {id:key,sha256:digest,...value.payload}
 }
 function document(value:Data,key:string,at:string){
- return pdf({header:value.clinic.name,title:'Good Faith Estimate',blocks:[{kind:'facts',rows:[['Estimate',key],['Patient',value.client.name],['Date of birth',value.client.dob??'Not recorded'],['Provider',value.clinic.name],['Provider NPI',value.clinic.npi||'Not yet assigned'],['Tax ID',value.clinic.taxId],['Provider address',value.clinic.address],['Requested',value.requestedAt.slice(0,10)],['Issued',at.slice(0,10)],['Due by',value.dueOn],['Expected care dates',value.fromOn+' through '+value.throughOn],['Coverage',value.coverageKind==='self_pay'?'Patient elected self-pay':'Uninsured'],['Care plan',value.planId?'Recorded plan of care':'Anticipated course from referral'],['Diagnosis codes',value.diagnosisCodes.join(', ')],['Requested delivery',value.deliveryMethod==='paper'?'Paper original':'Patient portal']]},
+ return pdf({header:value.clinic.name,title:'Good Faith Estimate',blocks:[{kind:'facts',rows:[['Estimate',key],...(value.supersedesId?[['Replaces estimate',String(value.supersedesId)],['Change in care',String(value.changeReason)]] as [string,string][]:[]),['Patient',value.client.name],['Date of birth',value.client.dob??'Not recorded'],['Provider',value.clinic.name],['Provider NPI',value.clinic.npi||'Not yet assigned'],['Tax ID',value.clinic.taxId],['Provider address',value.clinic.address],['Requested',value.requestedAt.slice(0,10)],['Issued',at.slice(0,10)],['Due by',value.dueOn],['Expected care dates',value.fromOn+' through '+value.throughOn],['Coverage',value.coverageKind==='self_pay'?'Patient elected self-pay':'Uninsured'],['Care plan',value.planId?'Recorded plan of care':'Anticipated course from referral'],['Diagnosis codes',value.diagnosisCodes.join(', ')],['Requested delivery',value.deliveryMethod==='paper'?'Paper original':'Patient portal']]},
  {kind:'table',columns:[{label:'Expected service',width:4},{label:'Code',width:1},{label:'Visits',width:1,right:true},{label:'Each',width:1.5,right:true},{label:'Expected charge',width:2,right:true}],rows:value.lines.map((l:Data)=>[l.name,l.code,String(l.quantity),dollars(l.unitCents),dollars(l.totalCents)]),totals:[['Total expected charges',dollars(value.totalCents)]]},
  {kind:'notes',lines:['This is an estimate of expected charges, not a contract or a requirement to receive care. Actual care may differ. This estimate covers this practice only; other providers or facilities give their own estimates. Unexpected services may be billed separately. No other provider services are included in this estimate.',
  'You may ask for a corrected or updated estimate. Keep a copy of this estimate. If billed charges from this provider are at least $400 above its estimate, you may be eligible for the federal patient-provider dispute resolution process. Start that process within 120 calendar days of the date on the initial bill. Starting a dispute does not affect the quality of care you receive.',
@@ -81,6 +92,11 @@ export async function issueEstimate(db:D1Database,who:Actor,input:Data){
  const current=await facts(db,request,payload)
  insist(await sha256(JSON.stringify(current))===draft.sha256,'estimate_facts_changed_prepare_again',409)
  const key=id(),at=now(),bytes=document(payload,key,at)
+ if(payload.supersedesId){
+  const zone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
+  const visit=await one(db,"SELECT start_at FROM bm_appointments WHERE id=? AND status='booked'",request.appointment_id)
+  insist(visit&&hostDateAt(new Date(at),zone)<=request.due_on&&addBusinessDays(hostDateAt(new Date(at),zone),1)<=hostDateAt(new Date(visit.start_at),zone),'changed_care_needs_an_estimate_at_least_one_business_day_before_the_visit',409)
+ }
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND erased_at IS NULL)',request.client_id,basis.clientVersion),guard(db,'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)',basis.clinicVersion),
  ...basis.services.map((s:Data)=>guard(db,'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=? AND active=1)',s.id,s.version)),
  ...(payload.referralId?[guard(db,'EXISTS(SELECT 1 FROM bm_referrals WHERE id=? AND client_id=? AND version=?)',payload.referralId,request.client_id,basis.referralVersion)]:[]),
@@ -89,7 +105,7 @@ export async function issueEstimate(db:D1Database,who:Actor,input:Data){
  return {id:key,issuedAt:at,dueOn:request.due_on,totalCents:payload.totalCents}
 }
 export async function estimatesFor(db:D1Database,clientId:string){
- const estimates=await rows(db,'SELECT id,request_id,from_on,through_on,total_cents,sha256,issued_at,delivery_method FROM bm_estimates WHERE client_id=? ORDER BY issued_at DESC,id',clientId)
+ const estimates=await rows(db,'SELECT e.id,e.request_id,e.from_on,e.through_on,e.total_cents,e.sha256,e.issued_at,e.delivery_method,r.supersedes_id,r.change_reason FROM bm_estimates e JOIN bm_estimate_requests r ON r.id=e.request_id WHERE e.client_id=? ORDER BY e.issued_at DESC,e.id',clientId)
  for(const e of estimates){
   e.delivery=await one(db,'SELECT method,delivered_on,original_sha256,recorded_at,recorded_by FROM bm_estimate_deliveries WHERE estimate_id=?',e.id)
   // Invoice service dates use the same clinic-local calendar as the estimate.
@@ -103,7 +119,7 @@ export async function estimatesFor(db:D1Database,clientId:string){
 export async function estimateFile(db:D1Database,who:Actor,clientId:string){
  if(who.role!=='owner'&&who.staffRole!=='reception')return null
  const issued=await estimatesFor(db,clientId),requests=await rows(db,'SELECT r.*,e.id AS issued_id FROM bm_estimate_requests r LEFT JOIN bm_estimates e ON e.request_id=r.id WHERE r.client_id=? ORDER BY r.requested_at DESC',clientId)
- const drafts=who.role==='owner'?(await rows(db,'SELECT d.* FROM bm_estimate_drafts d JOIN bm_estimate_requests r ON r.id=d.request_id WHERE r.client_id=?',clientId)).map(d=>({...d,payload:JSON.parse(d.payload)})):[]
+ const drafts=(who.role==='owner'||who.staffRole==='reception')?(await rows(db,'SELECT d.* FROM bm_estimate_drafts d JOIN bm_estimate_requests r ON r.id=d.request_id WHERE r.client_id=?',clientId)).map(d=>({...d,payload:JSON.parse(d.payload)})):[]
  if(requests.length||issued.length||drafts.length)await commit(db,who,[audit(db,who,'estimate.file_read',clientId)])
  return {issued,requests,drafts}
 }
@@ -124,7 +140,7 @@ export async function deliverEstimate(db:D1Database,who:Actor,input:Data){
  return {id:estimate.id,method:input.method,deliveredOn:on}
 }
 export async function pendingEstimates(db:D1Database,who:Actor){
- if(who.role!=='owner')return []
+ if(who.role!=='owner'&&who.staffRole!=='reception')return []
  const pending=await rows(db,"SELECT r.id,r.client_id,r.appointment_id,r.due_on,r.delivery_method,c.first_name||' '||c.last_name AS patient FROM bm_estimate_requests r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL AND NOT EXISTS(SELECT 1 FROM bm_estimates e WHERE e.request_id=r.id) ORDER BY r.due_on,r.id")
  if(pending.length)await commit(db,who,[...new Set(pending.map(r=>r.client_id))].map(key=>audit(db,who,'estimate.schedule_read',key)))
  return pending
