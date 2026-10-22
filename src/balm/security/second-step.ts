@@ -1,26 +1,14 @@
 import {seal,unseal} from '../scribe/seal'
-import {audit,commit,guard,insist,integer,one,rows,sha256,stmt,text,type Data} from '../domain/model'
+import {audit,commit,guard,insist,integer,one,stmt,text,type Data} from '../domain/model'
 import {actor} from '../domain/model'
-import {h,field,hidden} from '../ui/shared'
+import {h} from '../ui/shared'
+import {base32,matchedStep} from './authenticator'
+import {recoverySet,recoveryDigest} from './recovery'
+import {securityScreen,securitySettings,codeForm} from './screen'
 // @ts-expect-error The shared auth frame has no TypeScript declarations.
 import {pageResponse} from '../../modules/operator-auth/page.mjs'
 import type {Bindings} from '../../auth.server'
 
-const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-const base32=(bytes:Uint8Array)=>{let n=0,bits=0,out='';for(const b of bytes){n=(n<<8)|b;bits+=8;while(bits>=5){bits-=5;out+=alphabet[(n>>>bits)&31]}}if(bits)out+=alphabet[(n<<(5-bits))&31];return out}
-function decode(value:string){let n=0,bits=0,out:number[]=[];for(const c of value){const i=alphabet.indexOf(c);insist(i>=0,'invalid_authenticator_secret');n=(n<<5)|i;bits+=5;if(bits>=8){bits-=8;out.push((n>>>bits)&255)}}return new Uint8Array(out)}
-async function totp(seed:string,step:number){
- const bytes=new Uint8Array(8);new DataView(bytes.buffer).setBigUint64(0,BigInt(step))
- const key=await crypto.subtle.importKey('raw',decode(seed),{name:'HMAC',hash:'SHA-1'},false,['sign'])
- const mac=new Uint8Array(await crypto.subtle.sign('HMAC',key,bytes)),offset=mac[19]&15
- return String((new DataView(mac.buffer).getUint32(offset)&0x7fffffff)%1000000).padStart(6,'0')
-}
-async function matchedStep(seed:string,code:string){
- if(!/^\d{6}$/.test(code))return null
- const current=Math.floor(Date.now()/30000)
- for(const step of [current,current-1,current+1])if(await totp(seed,step)===code)return step
- return null
-}
 const privateHeaders={'cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff','x-frame-options':'DENY'}
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:privateHeaders})
 const see=(location:string)=>new Response(null,{status:303,headers:{...privateHeaders,location}})
@@ -69,11 +57,11 @@ async function activate(env:Bindings,request:Request,session:Data,input:Data){
  const secret=await unseal(env.SESSION_SECRET,purpose(session.operator.id),pending.sealed_seed)
  insist(secret,'authenticator_unavailable',409)
  const step=await matchedStep(secret,String(input.code??''));insist(step!==null,'second_step_refused',401)
- const recoveryCodes=Array.from({length:10},()=>base32(crypto.getRandomValues(new Uint8Array(16))))
+ const {recoveryCodes,salt,statements}=await recoverySet(env.DB,session.operator.id)
  await env.DB.batch([
   guard(env.DB,'EXISTS(SELECT 1 FROM bm_staff_factor_pending WHERE session_id=? AND sealed_seed=? AND expires_at>?)',sid(session),pending.sealed_seed,Date.now()),
-  stmt(env.DB,'INSERT INTO bm_staff_factors(operator_id,sealed_seed,last_step,created_at) VALUES(?,?,?,?)',session.operator.id,pending.sealed_seed,step,Date.now()),
-  ...await Promise.all(recoveryCodes.map(async code=>stmt(env.DB,'INSERT INTO bm_staff_recovery(operator_id,code_hash) VALUES(?,?)',session.operator.id,await sha256('balm-recovery:'+session.operator.id+':'+code)))),
+  stmt(env.DB,'INSERT INTO bm_staff_factors(operator_id,sealed_seed,last_step,created_at,recovery_salt) VALUES(?,?,?,?,?)',session.operator.id,pending.sealed_seed,step,Date.now(),salt),
+  ...statements,
   ...await proofStatements(env,request,session),stmt(env.DB,'DELETE FROM bm_staff_factor_pending WHERE operator_id=?',session.operator.id),stmt(env.DB,'DELETE FROM bm_assert')
  ])
  return {verified:true,recoveryCodes}
@@ -84,33 +72,15 @@ async function verify(env:Bindings,request:Request,session:Data,input:Data){
  insist(factor,'set_up_an_authenticator_first',409)
  const seed=await unseal(env.SESSION_SECRET,purpose(session.operator.id),factor.sealed_seed);insist(seed,'authenticator_unavailable',409)
  const code=String(input.code??'').replace(/\s/g,''),step=await matchedStep(seed,code)
- const digest=await sha256('balm-recovery:'+session.operator.id+':'+code)
+ const digest=await recoveryDigest(factor.recovery_salt,code)
  const recovery=await one(env.DB,'SELECT 1 FROM bm_staff_recovery WHERE operator_id=? AND code_hash=? AND used_at IS NULL',session.operator.id,digest)
  insist(step!==null&&step>factor.last_step||recovery,'second_step_refused',401)
  await env.DB.batch([
   ...(recovery?[stmt(env.DB,'UPDATE bm_staff_recovery SET used_at=? WHERE operator_id=? AND code_hash=? AND used_at IS NULL',Date.now(),session.operator.id,digest)]:[stmt(env.DB,'UPDATE bm_staff_factors SET last_step=? WHERE operator_id=? AND last_step<?',step,session.operator.id,step)]),guard(env.DB,'changes()=1'),
+  ...(recovery?[audit(env.DB,{email:session.operator.email,role:session.operator.role},'session.recovery_used',null,session.operator.id)]:[]),
   ...await proofStatements(env,request,session),stmt(env.DB,'DELETE FROM bm_assert')
  ])
  return {verified:true}
-}
-async function settings(env:Bindings,session:Data){
- const policy=await one(env.DB,'SELECT * FROM bm_staff_security_policy WHERE id=1')
- const owner=session.operator.role==='owner'
- const sessions=await rows(env.DB,`SELECT s.id,o.email,s.kind,s.created_at,s.expires_at,p.last_seen_at,p.device,p.verified_at FROM oa_sessions s JOIN oa_operators o ON o.id=s.operator_id LEFT JOIN bm_staff_session_proofs p ON p.session_id=s.id WHERE s.revoked_at IS NULL AND s.expires_at>? AND o.status='active' AND s.operator_version=o.version AND (?=1 OR s.operator_id=?) ORDER BY s.created_at DESC,s.id`,Date.now(),owner?1:0,session.operator.id)
- return {timeZone:(await one(env.DB,'SELECT time_zone FROM bm_settings WHERE id=1'))?.time_zone||'UTC',owner,policy,sessions,currentSessionId:sid(session),enrolled:!!await one(env.DB,'SELECT 1 FROM bm_staff_factors WHERE operator_id=?',session.operator.id)}
-}
-function codeForm(action:string){return `<form method="post" action="/auth/security/${action}">${field('code','Authenticator or one-use recovery code','','text','required maxlength="80" autocomplete="one-time-code"')}<button>Verify second step</button></form>`}
-async function screen(auth:Data,env:Bindings,session:Data,notice='',extra=''){
- const data=await settings(env,session),proof=await one(env.DB,'SELECT 1 FROM bm_staff_session_proofs WHERE session_id=?',sid(session))
- let content=notice?`<p role="status">${h(notice)}</p>`:''
- content+=extra||(proof?'<p>Your second step is complete on this device.</p>':data.enrolled?'<p>Enter your authenticator code to open clinic records. Email-link sign-in alone does not open patient information.</p>'+codeForm('verify'):'<p>Set up an authenticator before opening clinic records. Each staff member uses their own authenticator.</p><form method="post" action="/auth/security/enroll"><button>Set up authenticator</button></form>')
- if(proof){
-  content+='<h2>Sessions and devices</h2>'+data.sessions.map(s=>`<p>${h(s.email)} · ${h(s.device??'Second step not completed')} · ${h(s.kind)}${s.id===data.currentSessionId?' · this device':''}<br>Last activity: ${h(s.last_seen_at?new Intl.DateTimeFormat('en-US',{timeZone:data.timeZone,dateStyle:'medium',timeStyle:'short'}).format(new Date(s.last_seen_at)):'Not verified')}</p>${data.owner?`<form method="post" action="/auth/security/revoke">${hidden('sessionId',s.id)}<button class="secondary">Sign out this device</button></form>`:''}`).join('')
-  if(data.owner)content+=`<h2>Clinic session policy</h2><p>Every staff role that reads patient information must complete a second step. This cannot be disabled. Requiring it clinic-wide also covers other invited accounts.</p><form method="post" action="/auth/security/policy"><label class="check"><input name="requireAll" type="checkbox" value="on" ${data.policy?.require_all?'checked':''}>Require a second step for every account</label>${field('idleMinutes','Idle timeout in minutes',data.policy?.idle_minutes,'number','required min="1" max="120"')}<button>Save session policy</button></form>`
-  content+='<p><a href="/app">Open Balm</a></p>'
- }
- content+='<form method="post" action="/auth/signout"><button class="secondary">Sign out</button></form>'
- return pageResponse({branding:auth.presentation,title:'Staff security · Balm',heading:'Staff security',content,referrer:'strict-origin'})
 }
 /** Uses the established native identity; never trusts a claimed email or role in an MFA form. */
 export async function securityResponse(request:Request,env:Bindings,createAuth:()=>Data):Promise<Response|null>{
@@ -127,7 +97,7 @@ export async function securityResponse(request:Request,env:Bindings,createAuth:(
   insist(new URL(request.url).origin===env.AUTH_ORIGIN,'invalid_origin',403)
   await expireIdle(env,session)
   if(request.method==='GET'){
-   if(path==='/auth/security')return /application\/json/.test(request.headers.get('accept')??'')?(await requireSecondStep(env,request,session),json(await settings(env,session))):screen(auth,env,session)
+   if(path==='/auth/security')return /application\/json/.test(request.headers.get('accept')??'')?(await requireSecondStep(env,request,session),json(await securitySettings(env,session))):securityScreen(auth,env,session)
    return json({error:'not_found'},404)
   }
   insist(request.method==='POST'&&request.headers.get('origin')===env.AUTH_ORIGIN&&request.headers.get('sec-fetch-site')!=='cross-site','invalid_origin',403)
@@ -136,11 +106,23 @@ export async function securityResponse(request:Request,env:Bindings,createAuth:(
   if(path==='/auth/security/enroll'){
    const result=await enroll(env,session)
    if(!isForm(request))return json(result)
-   return screen(auth,env,session,'Add this secret to your authenticator, then verify a code.',`<p data-mfa-secret><code>${h(result.secret)}</code></p><p>Setup expires in ten minutes. Keep this secret private.</p>${codeForm('activate')}`)
+   return securityScreen(auth,env,session,'Add this secret to your authenticator, then verify a code.',`<p data-mfa-secret><code>${h(result.secret)}</code></p><p>Setup expires in ten minutes. Keep this secret private.</p>${codeForm('activate')}`)
   }
   if(path==='/auth/security/activate'){
    const result=await activate(env,request,session,input)
-   return isForm(request)?screen(auth,env,session,'Save these one-use recovery codes privately. They are shown once.',`<div data-mfa-secret>${result.recoveryCodes.map(code=>'<p><code>'+h(code)+'</code></p>').join('')}</div>`):json(result)
+   return isForm(request)?securityScreen(auth,env,session,'Save these one-use recovery codes privately. They are shown once.',`<div data-mfa-secret>${result.recoveryCodes.map(code=>'<p><code>'+h(code)+'</code></p>').join('')}</div>`):json(result)
+  }
+  if(path==='/auth/security/recoveries'){
+   await requireSecondStep(env,request,session);await reserveAttempt(env,session)
+   const factor=await one(env.DB,'SELECT * FROM bm_staff_factors WHERE operator_id=?',session.operator.id)
+   insist(factor,'set_up_an_authenticator_first',409)
+   const seed=await unseal(env.SESSION_SECRET,purpose(session.operator.id),factor.sealed_seed);insist(seed,'authenticator_unavailable',409)
+   const step=await matchedStep(seed,String(input.code??''));insist(step!==null&&step>factor.last_step,'second_step_refused',401)
+   const {recoveryCodes,salt,statements}=await recoverySet(env.DB,session.operator.id)
+   await env.DB.batch([stmt(env.DB,'UPDATE bm_staff_factors SET last_step=?,recovery_salt=? WHERE operator_id=? AND last_step<?',step,salt,session.operator.id,step),guard(env.DB,'changes()=1'),
+    stmt(env.DB,'DELETE FROM bm_staff_recovery WHERE operator_id=?',session.operator.id),...statements,
+    ...await proofStatements(env,request,session),audit(env.DB,{email:session.operator.email,role:session.operator.role},'session.recovery_regenerated',null,session.operator.id),stmt(env.DB,'DELETE FROM bm_assert')])
+   return isForm(request)?securityScreen(auth,env,session,'The old recovery codes no longer work. Save these new codes privately; they are shown once.',`<div data-mfa-secret>${recoveryCodes.map(code=>'<p><code>'+h(code)+'</code></p>').join('')}</div>`):json({recoveryCodes})
   }
   if(path==='/auth/security/verify'){const result=await verify(env,request,session,input);return isForm(request)?see('/app'):json(result)}
   await requireSecondStep(env,request,session)

@@ -225,8 +225,9 @@ test('SEC-001: every staff job needs an independent second step; owner device re
   assert.equal((await h.send('/app',undefined,h.owner)).headers.get('location'),'/auth/security')
   assert.equal((await h.send('/auth/operators',undefined,h.owner)).status,401)
   if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-enrollment',path:'/auth/security',cookie:h.owner}])}
-  const activate=async cookie=>{
+  const activate=async (cookie,email)=>{
    const pending=await h.send('/auth/security/enroll',{},cookie);assert.equal(pending.status,200)
+   if(email){const other=await h.signIn(email);assert.equal((await h.send('/auth/security/activate',{code:authenticatorCode(pending.value.secret)},other)).status,409,'enrollment is bound to its initiating session')}
    const active=await h.send('/auth/security/activate',{code:authenticatorCode(pending.value.secret)},cookie)
    assert.equal(active.status,200,'a real independently calculated authenticator code activates the factor')
    const sealed=(await h.db.prepare('SELECT sealed_seed FROM bm_staff_factors ORDER BY created_at DESC LIMIT 1').first()).sealed_seed
@@ -244,7 +245,7 @@ test('SEC-001: every staff job needs an independent second step; owner device re
   for(const person of staff){
    await h.state(person.cookie,401)
    await h.cmd('client.save',{firstName:'Unproved',lastName:'Session'},person.cookie,401)
-   await activate(person.cookie)
+   await activate(person.cookie,person.email)
    await h.state(person.cookie)
    assert.equal((await h.send('/auth/security/policy',{idleMinutes:1,requireAll:true},person.cookie)).status,403)
   }
@@ -285,3 +286,47 @@ test('SEC-001: every staff job needs an independent second step; owner device re
   if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'SEC-001-devices',path:'/auth/security',cookie:h.owner},{name:'SEC-001-policy',path:'/auth/security',cookie:h.owner,selector:'form[action="/auth/security/policy"]'}])}
  }finally{await h.close()}
 })
+
+test('SEC-001: staff regenerates a private recovery set, old codes are invalidated and every use is audited and shown at the next sign-in', {timeout:120000}, async()=>{
+ const h=await harness({autoMfa:false})
+ const {authenticatorCode}=await import('./staff-second-step.mjs')
+ try{
+  const pending=await h.send('/auth/security/enroll',{},h.owner)
+  assert.equal(pending.status,200)
+  const other=await h.signIn(h.auth.OWNER_EMAIL)
+  const active=await h.send('/auth/security/activate',{code:authenticatorCode(pending.value.secret)},h.owner)
+  assert.equal(active.status,200)
+  assert.equal(active.value.recoveryCodes.length,10)
+  assert.equal(new Set(active.value.recoveryCodes).size,10)
+  assert.equal((await h.send('/auth/security/recoveries',{code:active.value.recoveryCodes[0]},other)).status,401,'email sign-in cannot regenerate or bypass the second step')
+  const factor=await h.db.prepare('SELECT * FROM bm_staff_factors').first()
+  const stored=(await h.db.prepare('SELECT code_hash FROM bm_staff_recovery').all()).results
+  for(const code of active.value.recoveryCodes){
+   assert.ok(stored.some(row=>row.code_hash===createHash('sha256').update('balm-recovery:'+factor.recovery_salt+':'+code).digest('hex')),'only a salted hash is persisted')
+   assert.ok(!JSON.stringify(stored).includes(code))
+  }
+  const regenerated=await h.send('/auth/security/recoveries',{code:authenticatorCode(pending.value.secret,Date.now()+30000)},h.owner)
+  assert.equal(regenerated.status,200,regenerated.text)
+  assert.equal(regenerated.value.recoveryCodes.length,10)
+  const page=await h.send('/auth/security',undefined,h.owner)
+  assert.equal(page.status,200,page.text)
+  for(const code of [...active.value.recoveryCodes,...regenerated.value.recoveryCodes])assert.ok(!page.text.includes(code),'no later read returns recovery codes')
+  assert.equal((await h.send('/auth/security/verify',{code:active.value.recoveryCodes[0]},other)).status,401,'regeneration invalidates the whole previous set')
+  const mailCount=h.mail.length
+  assert.equal((await h.send('/auth/security/verify',{code:regenerated.value.recoveryCodes[0]},other)).status,200)
+  assert.equal(h.mail.length,mailCount,'recovery sends no outbound notice')
+  const next=await h.signIn(h.auth.OWNER_EMAIL)
+  await h.state(next,401)
+  const notice=await h.send('/auth/security',undefined,next)
+  assert.equal(notice.status,200)
+  assert.match(notice.text,/aria-label="Recovery code use"/)
+  const stranger=await h.send('/auth/security')
+  assert.equal(stranger.status,401,'recovery use is private to the signed-in identity')
+  assert.equal((await h.send('/auth/security/verify',{code:regenerated.value.recoveryCodes[0]},next)).status,401,'a recovery code is usable only once')
+  const events=(await h.db.prepare("SELECT action,detail FROM bm_audit WHERE action IN ('session.recovery_used','session.recovery_regenerated')").all()).results
+  assert.deepEqual(events.map(e=>e.action).sort(),['session.recovery_regenerated','session.recovery_used'])
+  for(const code of regenerated.value.recoveryCodes)assert.ok(!JSON.stringify(events).includes(code),'audit never contains credentials')
+ }finally{await h.close()}
+})
+
+test('SEC-001: federation preserves live Balm roles and independent factors', {timeout:120000}, async()=>{const {federatedStaffJourney}=await import('./federated-staff.mjs');await federatedStaffJourney()})
