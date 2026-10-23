@@ -527,7 +527,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
       const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
-      if(eob)return payerEobDownload(env.DB,who,eob[1])
+      if(eob)return await payerEobDownload(env.DB,who,eob[1])
       const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])

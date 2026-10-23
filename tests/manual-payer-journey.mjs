@@ -65,7 +65,7 @@ export async function manualPayerJourney(h) {
  const csv=await h.send('/api/balm/reports/financial/deposits.csv?from='+today+'&to='+today,undefined,biller.cookie)
  assert.ok(csv.text.split('\r\n').some(row=>row.includes('"synthetic-balm-10","121.00","121.00","0.00","0.00","0.00","1.00","20.00"')))
  for(const cookie of [h.owner,biller.cookie])assert.equal((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie)).text,payerEobPdf.toString())
- for(const cookie of ['',priya.cookie,reception.cookie,portal])assert.ok([401,403].includes((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie)).status))
+ for(const [label,cookie] of [['signed out',''],['clinician',priya.cookie],['reception',reception.cookie],['patient',portal]]){const response=await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie);assert.ok([401,403].includes(response.status),label+' EOB refusal: '+response.status)}
  await command('insurance.payer_line.add',{batchId:batch.id,kind:'interest',amountCents:1,reason:'Attempt after closing'},409)
  await command('insurance.payer_batch.prepare',{payerId:payer.id,reference:'synthetic-balm-10',depositOn:today,amountCents:12100},409)
  const portions=await create('synthetic-balm-11',9500)
