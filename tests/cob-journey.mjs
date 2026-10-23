@@ -10,26 +10,28 @@ const era=(claim,payer,lines,{status='1',forward,trace='synthetic-balm-20'}={})=
  for(const l of lines){parts.push(`SVC*HC:${l.code}:GP*${l.charge/100}*${l.paid/100}**${l.units}`);if(l.co)parts.push(`CAS*CO*45*${l.co/100}`);if(l.pr)parts.push(`CAS*PR*3*${l.pr/100}`)}
  return [...parts,`SE*${parts.length+1}*0001`].join('~')+'~'
 }
-export async function cobJourney(h,output) {
+export async function cobJourney(h,output,hooks={}) {
  await h.finishSetup()
  const {service,practitioners:[priya]}=await clinic(h)
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
  await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
  await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'SYNTHETIC',contactName:'Clinic billing',contactPhone:'5125550100'})
  const biller=await h.staff('CobBiller','biller'),reception=await h.staff('CobReception','reception')
+ const payerNames={1:'Blue Cedar Health',2:'Harbor Mutual',3:'Valley Benefits',4:'Medicare'}
  const payer=async(n,unitMethod='cms',medicare=false)=>{
-  const saved=await h.cmd('insurance.payer.save',{name:`Synthetic payer ${n}`,payerId:`9999${n}`,receiverId:`PAYER${n}`,unitMethod,medicare,fees:[{code:'97110',cents:3500},{code:'97140',cents:2500}]})
+  const saved=await h.cmd('insurance.payer.save',{name:payerNames[n],payerId:`9999${n}`,receiverId:`PAYER${n}`,unitMethod,medicare,fees:[{code:'97110',cents:3500},{code:'97140',cents:2500}]})
   await h.cmd('insurance.enrollment.save',{payerId:saved.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
-  return {...saved,name:`Synthetic payer ${n}`,code:`9999${n}`}
+  return {...saved,name:payerNames[n],code:`9999${n}`,medicare}
  }
  const primary=await payer(1),secondary=await payer(2,'ama'),tertiary=await payer(3,'ama'),medicare=await payer(4,'cms',true)
  await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,publishedOn:`${year-1}-10-30`,source:'CMS synthetic-year threshold fixture'})
  const command=(name,input,status=200)=>h.cmd(name,input,biller.cookie,status)
  let visitNumber=0
  const prepare=async(label,payers)=>{
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:label,dateOfBirth:'1988-04-02'})
+  const names={CommercialCob:['Maya','Lee'],Crossover:['Elena','Harris'],PaperCob:['Jordan','Rivera']}[label]
+  const patient=await h.cmd('client.save',{firstName:names[0],lastName:names[1],dateOfBirth:'1988-04-02'})
   const policies=[]
-  for(const [n,p] of payers.entries())policies.push(await command('insurance.policy.save',{clientId:patient.id,payerId:p.id,memberId:`synthetic-balm-${n+1}`,priority:n+1,relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage}))
+  for(const [n,p] of payers.entries())policies.push(await command('insurance.policy.save',{clientId:patient.id,payerId:p.id,memberId:`synthetic-balm-${n+1}`,planName:payers[0].medicare&&n===1?'Medigap Plan G':'',priority:n+1,relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage}))
   const appointmentId=await pastVisit(h,patient.id,priya,service.id,h.owner,2+visitNumber++),serviceDate=await visitDate(h,appointmentId)
   await h.cmd('appointment.attend',{id:appointmentId})
   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId,body:'Synthetic therapy visit with skilled progression.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
@@ -49,6 +51,7 @@ export async function cobJourney(h,output) {
  await command('insurance.remittance.import',{payerId:primary.id,x12:era(c.claim,primary,primaryLines)})
  assert.equal((await file(c)).billing.ledger.patientBalanceCents,0)
  assert.equal((await file(c)).billing.ledger.insurancePendingCents,500)
+ await hooks.held?.({h,c,biller})
  await command('payment.record',{invoiceId:c.invoice.id,amountCents:100,reference:'synthetic-balm-21'},409)
  assert.ok((await close()).claims.some(q=>q.clientId===c.patient.id&&q.kind==='unsent_next_payer'))
  const next=await command('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policies[1].id})
@@ -70,6 +73,7 @@ export async function cobJourney(h,output) {
  await command('insurance.remittance.import',{payerId:tertiary.id,x12:era(third,tertiary,tertiaryLines,{status:'3',trace:'synthetic-balm-23'})})
  assert.equal((await file(c)).billing.ledger.patientBalanceCents,100)
  assert.equal((await file(c)).billing.ledger.insurancePendingCents,0)
+ await hooks.released?.({h,c,biller})
  const crossed=await prepare('Crossover',[medicare,secondary]);await submit(crossed.claim)
  for(const status of ['19','20','21']){
   const bad=era(crossed.claim,medicare,primaryLines,{status,forward:{...secondary,code:'00000'},trace:'synthetic-balm-'+status})
@@ -89,11 +93,12 @@ export async function cobJourney(h,output) {
  assert.equal((await file(manual)).billing.ledger.patientBalanceCents,0)
  const paperClaim=await command('insurance.claim.prepare',{appointmentId:manual.appointmentId,policyId:manual.policies[1].id})
  assert.equal(paperClaim.status,'ready',JSON.stringify(paperClaim.errors))
- const packet=await command('insurance.cob.paper.prepare',{claimId:paperClaim.id,attachment:'data:application/pdf;base64,'+payerEobPdf.toString('base64'),attachmentName:'synthetic-primary-eob.pdf',attest:true})
+ const packet=hooks.paperPrepare?await hooks.paperPrepare({h,manual,paperClaim,biller,eob:payerEobPdf}):await command('insurance.cob.paper.prepare',{claimId:paperClaim.id,attachment:'data:application/pdf;base64,'+payerEobPdf.toString('base64'),attachmentName:'synthetic-primary-eob.pdf',attest:true})
  const printed=await h.send('/api/balm/insurance/paper/'+packet.id,undefined,biller.cookie);assert.equal(printed.status,200);assert.match(printed.text,/CMS-1500/)
  const eob=await h.send('/api/balm/insurance/paper-eob/'+packet.id,undefined,biller.cookie);assert.equal(eob.status,200);assert.equal(Buffer.from(eob.text).subarray(0,5).toString(),'%PDF-')
  assert.ok((await close()).claims.some(q=>q.id===paperClaim.id),'Printing remains unsent')
- await command('insurance.cob.paper.submit',{id:packet.id,reference:'synthetic-balm-28',attest:true})
+ if(hooks.paperSubmit)await hooks.paperSubmit({h,manual,paperClaim,biller,packet})
+ else await command('insurance.cob.paper.submit',{id:packet.id,reference:'synthetic-balm-28',attest:true})
  assert.ok(!(await close()).claims.some(q=>q.id===paperClaim.id))
  if(output){await mkdir(output,{recursive:true});await writeFile(output+'/secondary.x12',x12);await writeFile(output+'/tertiary.x12',x123)}
  return {biller,c,crossed,manual,paperClaim,packet}
