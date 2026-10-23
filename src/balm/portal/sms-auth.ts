@@ -15,7 +15,7 @@ export async function requestSmsCode(env:Bindings,request:Request,phoneInput:unk
  const patient=patients[0],code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),at=now()
  await commit(env.DB,null,[guard(env.DB,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND phone=? AND erased_at IS NULL) AND (SELECT COUNT(*) FROM bm_clients WHERE phone=? AND erased_at IS NULL)=1',patient.id,patient.version,phone,phone),
   stmt(env.DB,'UPDATE bm_portal_sms_codes SET revoked_at=? WHERE client_id=? AND used_at IS NULL AND revoked_at IS NULL',at,patient.id),
-  stmt(env.DB,'INSERT INTO bm_portal_sms_codes(id,client_id,client_version,code_hash,created_at,expires_at) VALUES(?,?,?,?,?,?)',key,patient.id,patient.version,await hash(env,key,code),at,new Date(Date.now()+5*60000).toISOString())])
+  stmt(env.DB,'INSERT INTO bm_portal_sms_codes(id,client_id,client_version,code_hash,created_at,expires_at) VALUES(?,?,?,?,?,?)',key,patient.id,patient.version,await hash(env,key,code),at,new Date(Date.parse(at)+5*60000).toISOString())])
  try{await smsSender(env)!.send({to:phone,body:`Your private portal sign-in code is ${code}. It expires in five minutes. Do not share this code. If you did not request it, ignore this text.`})}
  catch{await stmt(env.DB,'UPDATE bm_portal_sms_codes SET revoked_at=? WHERE id=?',now(),key).run()}
  return notice
