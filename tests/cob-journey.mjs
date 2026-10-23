@@ -5,7 +5,7 @@ import {clinic,pastVisit,visitDate} from './clinic.mjs'
 import {payerEobPdf} from './manual-payer-journey.mjs'
 const year=new Date().getUTCFullYear(),coverage={startsOn:`${year-1}-01-01`,endsOn:`${year+1}-12-31`}
 const era=(claim,payer,lines,{status='1',forward,trace='synthetic-balm-20'}={})=>{
- const total=key=>lines.reduce((t,l)=>t+l[key],0),parts=[`ST*835*0001*005010X221A1`,`BPR*I*${total('paid')/100}*C*CHK************20261020`,`TRN*1*${trace}*1234567890`,`N1*PR*${payer.name}*XV*${payer.code}`,`N1*PE*SYNTHETIC CLINIC*XX*1234567893`,`CLP*${claim.id}*${status}*${total('charge')/100}*${total('paid')/100}*${total('pr')/100}*CI*${trace}-control`]
+ const total=key=>lines.reduce((t,l)=>t+l[key],0),parts=[`ST*835*0001*005010X221A1`,`BPR*I*${total('paid')/100}*C*CHK************${claim.snapshot.serviceDate.replace(/-/g,'')}`,`TRN*1*${trace}*1234567890`,`N1*PR*${payer.name}*XV*${payer.code}`,`N1*PE*SYNTHETIC CLINIC*XX*1234567893`,`CLP*${claim.id}*${status}*${total('charge')/100}*${total('paid')/100}*${total('pr')/100}*CI*${trace}-control`]
  if(forward)parts.push(`NM1*TT*2*${forward.name}*****PI*${forward.code}`)
  for(const l of lines){parts.push(`SVC*HC:${l.code}:GP*${l.charge/100}*${l.paid/100}**${l.units}`);if(l.co)parts.push(`CAS*CO*45*${l.co/100}`);if(l.pr)parts.push(`CAS*PR*3*${l.pr/100}`)}
  return [...parts,`SE*${parts.length+1}*0001`].join('~')+'~'
@@ -25,11 +25,12 @@ export async function cobJourney(h,output) {
  const primary=await payer(1),secondary=await payer(2,'ama'),tertiary=await payer(3,'ama'),medicare=await payer(4,'cms',true)
  await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,publishedOn:`${year-1}-10-30`,source:'CMS synthetic-year threshold fixture'})
  const command=(name,input,status=200)=>h.cmd(name,input,biller.cookie,status)
+ let visitNumber=0
  const prepare=async(label,payers)=>{
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:label,dateOfBirth:'1988-04-02'})
   const policies=[]
   for(const [n,p] of payers.entries())policies.push(await command('insurance.policy.save',{clientId:patient.id,payerId:p.id,memberId:`synthetic-balm-${n+1}`,priority:n+1,relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage}))
-  const appointmentId=await pastVisit(h,patient.id,priya,service.id),serviceDate=await visitDate(h,appointmentId)
+  const appointmentId=await pastVisit(h,patient.id,priya,service.id,h.owner,2+visitNumber++),serviceDate=await visitDate(h,appointmentId)
   await h.cmd('appointment.attend',{id:appointmentId})
   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId,body:'Synthetic therapy visit with skilled progression.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
@@ -58,7 +59,7 @@ export async function cobJourney(h,output) {
  await command('insurance.batch.submit',{id:nextBatch.id})
  assert.ok(!(await close()).claims.some(q=>q.id===next.id))
  const x12=exported.text
- assert.match(x12,/SBR\*S\*/);assert.match(x12,/AMT\*D\*10.00/);assert.match(x12,/SVD\*99991\*10.00\*HC:97140:GP\*\*1/);assert.match(x12,/DTP\*573\*D8\*20261020/)
+ assert.match(x12,/SBR\*S\*/);assert.match(x12,/AMT\*D\*10.00/);assert.match(x12,/SVD\*99991\*10.00\*HC:97140:GP\*\*1/);assert.ok(x12.includes('DTP*573*D8*'+c.serviceDate.replace(/-/g,'')))
  const secondaryLines=[{code:'97110',charge:3500,paid:100,co:3300,pr:100,units:1},{code:'97140',charge:2500,paid:200,co:2200,pr:100,units:1}]
  await command('insurance.remittance.import',{payerId:secondary.id,x12:era(next,secondary,secondaryLines,{status:'2',trace:'synthetic-balm-22'})})
  assert.equal((await file(c)).billing.ledger.patientBalanceCents,0)
