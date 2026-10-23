@@ -29,7 +29,11 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
     // reductions on paid claims settle the invoice; PR remains for the patient.
     let writeoff=r.status==='4'?0:co
     const open=await one(db,`SELECT i.amount_cents-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id) AS cents FROM bm_invoices i WHERE i.id=? AND i.status='approved'`,claim.invoice_id)
-    if(stage&&stage.priority>1&&open)writeoff=r.status==='4'?0:Math.max(0,Number(open.cents)-r.paidCents-r.prCents)
+    if(stage&&stage.priority>1&&open){
+      writeoff=r.status==='4'?0:Math.min(co,Math.max(0,Number(open.cents)-r.paidCents-r.prCents))
+      insist(status!=='paid'||Number(open.cents)-r.paidCents-writeoff===r.prCents,'secondary_EOB_does_not_reconcile_remaining_invoice_responsibility',409)
+    }
+    insist(stage?.priority!==1||!r.adjustments.some(a=>a.group==='OA'||a.group==='PI'),'primary_remittance_adjustment_group_not_supported')
     insist(open&&r.paidCents+writeoff<=open.cents,'remittance_would_overpost_invoice_import_nothing',409)
     const errors=status==='denied'||status==='partial'?r.adjustments.filter(a=>a.group==='CO').map(a=>({code:'carc_'+a.reason,field:'claim',message:`${adjustmentLabel(a.group,a.reason)}. ${r.remarks.map(remarkLabel).join('; ')} ${denialNextStep(a.reason)}`})):[]
     statements.push(

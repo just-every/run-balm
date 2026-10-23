@@ -10,7 +10,7 @@ export async function manualCob(db:D1Database,claim:Data,batch:Data,payments:Dat
  const paid=payments.reduce((t,l)=>t+l.paid_cents,0),pr=payments.reduce((t,l)=>t+l.pr_cents,0),denied=payments.some(l=>l.adjudication==='denied')
  let reduction=payments.reduce((t,l)=>t+l.adjustment_cents,0)
  if(stage.priority>1){
-  reduction=denied?0:Math.max(0,open-paid-pr)
+  reduction=denied?0:Math.min(reduction,Math.max(0,open-paid-pr))
   let left=reduction
   for(const l of payments){const amount=Math.min(left,l.adjustment_cents);left-=amount;statements.push(stmt(db,'INSERT INTO bm_cob_manual_reductions(line_id,amount_cents) VALUES(?,?)',l.id,amount))}
  }
