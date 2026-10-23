@@ -1,12 +1,13 @@
 import { actor, human, insist, type Actor, type Data } from '../domain/model'
 import { codeSetStatus, searchCodes, saveSynonym } from './catalog'
-import { importLicensedCpt, updateCodes } from './load'
+import { importLicensedCpt, updateCodes, continueCodeImport } from './load'
 export { codeSetStatus, releaseAt, billableDiagnosis, searchCodes } from './catalog'
 export { validateCoding, codingGuards, distinctServices, distinctModifiers, type CodingInput, type DistinctService } from './edits'
 export { templateCodeContext } from './review'
 export { sourcePages } from './sources'
 export async function codeSetCommand(db:D1Database,initial:Actor,name:string,input:Data) {
   human(initial);const who={...await actor(db,initial.id),sessionId:initial.sessionId}
+  if(name==='codes.update.continue')return continueCodeImport(db,who,input)
   if(name==='codes.update')return updateCodes(db,who,input)
   if(name==='codes.cpt.import')return importLicensedCpt(db,who,input)
   if(name==='codes.search')return searchCodes(db,who,input)

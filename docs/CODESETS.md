@@ -42,7 +42,21 @@ For example, October 2026 HCPCS is `https://www.cms.gov/files/zip/october-2026-a
 
 MUE public files do not provide individual effective/deletion columns. Balm records each row's release effective date and chooses the complete snapshot for the service date; a removed row is absent from the later snapshot. MAI 1 is checked per line. MAI 2 and 3 total the code across the patient's same-day claims for the rendering practitioner. MAI 2 is absolute; an MAI 3 excess is a review finding, never automatically cleared by a modifier. Published MUEs do not disclose every CMS edit, so a local scrub cannot guarantee payer acceptance.
 
-A successful update reports added, removed and changed rows. Running the same update again rechecks the official bytes and returns `duplicate: true, changed: false` without adding rows, releases or audit entries. Replacements with different bytes create a separate completed version and retain earlier records. Do not schedule automatic updates without the owner's authorization. A large complete NCCI import performs bounded sequential D1 writes; run one update at a time and keep the request connected until its completion receipt. Failed attempts remain visible as incomplete records.
+## Large updates and explicit continuation
+
+An update does bounded work per request: at most 64 guarded write batches, each code-row batch holding at most 500 rows. Large releases return `status: "incomplete"`, their `id`, current file and row cursor, saved row count, compressed-file hashes and a `continue` command. Run the returned command explicitly using the same signed-in owner, for example:
+
+```json
+{"name":"codes.update.continue","input":{"resumeId":"THE_RETURNED_ID"}}
+```
+
+`codes.update` with only `resumeId` is the same continuation door. `batchLimit` may reduce a request's work from 64 to any positive smaller number. Balm does not automatically retry an interrupted request. Repeating an explicit continuation reads the committed cursor; racing continuations cannot insert the same rows twice. After a lost response, continue that ID rather than starting a second import. A completed ID returns its saved completion receipt.
+
+The first request pins the official listing, URLs, release dates and owner's license acknowledgment. Each downloaded archive is SHA-256 identified before staging in private D1 BLOB chunks of at most 512,000 bytes; later requests cannot replace its manifest or submit parsed rows. One archive, at most 64 MB, is downloaded or decoded at a time. A staged archive is re-read with its hash checked; rows before the saved cursor are skipped. ZIP decoding still must reach its final expanded-size and CRC checks for every part. A late checksum failure keeps the entire release unavailable, including rows already staged from earlier parts. Correct the source and start a new import when the pinned bytes are invalid; continuation never substitutes different bytes.
+
+Only the final guarded publication makes the complete release available to billing. It retains the original archive hashes and manifest and deletes temporary compressed chunks atomically. Licensed CPT uploads use the same durable path, privately gzip-staged in the first request; continuations need no second upload. The original licensed-file SHA-256 and compressed archive SHA-256 remain in the completion manifest. CPT input is limited to 20 MB of UTF-8 text.
+
+A successful update reports added, removed and changed rows. Running the same update again rechecks the official bytes and returns `duplicate: true, changed: false` without adding rows, releases or audit entries. Replacements with different bytes create a separate completed version and retain earlier records. Do not schedule automatic updates without the owner's authorization. A large complete NCCI import uses the explicit continuation receipts above; run one import at a time until its completion receipt. Failed attempts remain visible as incomplete records.
 
 ## CPT licensing
 
