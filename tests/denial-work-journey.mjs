@@ -61,6 +61,7 @@ export async function denialWorkJourney(options={}) {
     await billing('insurance.remittance.import', { payerId: payer.id, x12: era(original.id, date, false) })
     const denied = (await work()).queue.find(c => c.id === original.id)
     assert.equal(denied.status, 'denied'); assert.equal(denied.open_cents, 9500)
+    assert.equal(denied.deadlines.find(d => d.kind === 'correction').completed, false, 'an original submission does not complete a correction')
     assert.match(denied.next, /KX/); assert.ok(denied.deadlines.every(d => d.dueOn === null && d.unknown))
     const rule = { payerId: payer.id, kind: 'initial', basis: 'service_date', days: 90, effectiveFrom: date, source: 'synthetic-balm-1 documented payer instruction, section 2' }
     await h.cmd('insurance.filing.save', rule, reception.cookie, 403)

@@ -114,7 +114,7 @@ export async function claimWork(db: D1Database, initial: Actor, input: Data = {}
       const anchor = rule?.basis === 'service_date' ? c.service_date : adjudication?.adjudicationOn ?? null
       const dueOn = rule && anchor ? datePlus(anchor, Number(rule.days)) : null
       const completed = kind === 'initial' ? actionHistory.some(a => a.action === 'insurance.claim_submitted')
-        : kind === 'correction' ? actionHistory.some(a => a.claim_id === c.id && a.action === 'insurance.claim_submitted')
+        : kind === 'correction' ? !!c.replaces_id && actionHistory.some(a => a.claim_id === c.id && a.action === 'insurance.claim_submitted')
         : (externalActions.get(familyKey(c)) ?? []).some(e => e.kind === 'appeal_sent' && e.claim_id === c.id)
       return { kind, rule: rule ?? null, dueOn, completed, adjudication: adjudication ?? null, overdue: !completed && !!dueOn && dueOn < today,
         unknown: !rule ? 'No payer filing instruction recorded.' : !anchor ? 'Payer adjudication date must be recorded before this deadline can be calculated.' : null }
