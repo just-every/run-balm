@@ -33,7 +33,7 @@ export function releaseSpec(input:Data):ReleaseSpec {
 /** Verify that every supplied source is actually linked by CMS, including its
  * AMA license interstitial. Download URLs are never accepted from arbitrary hosts. */
 export async function verifyCmsListing(spec:ReleaseSpec, fetcher:typeof fetch=fetch) {
-  const response=await fetcher(spec.sourcePage,{redirect:'error'});insist(response.ok,'cms_release_page_unavailable',424)
+  const response=await fetcher(spec.sourcePage,{redirect:'manual'});insist(response.ok,'cms_release_page_unavailable',424)
   const html=await response.text()
   for(const file of spec.files){const url=new URL(file.url);insist(html.includes(url.pathname)||html.includes(encodeURIComponent(url.pathname)),'file_is_not_in_the_cms_published_release_page')}
 }

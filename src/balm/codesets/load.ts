@@ -20,7 +20,7 @@ export async function updateCodes(db:D1Database,who:Actor,input:Data,fetcher:typ
   const installed=await rows(db,"SELECT id,files,row_count,sha256 FROM bm_code_releases WHERE kind=? AND effective_on=? AND status='ready' ORDER BY completed_at DESC",spec.kind,spec.effectiveOn)
   if(installed.length){
     const observed=[]
-    for(const file of spec.files){const response=await fetcher(file.url,{redirect:'error'});insist(response.ok,'cms_release_download_failed',424);const bytes=new Uint8Array(await response.arrayBuffer());insist(bytes.length<=64_000_000,'cms_archive_too_large_for_this_update',413);const digest=await hashBytes(bytes);insist(!file.sha256||file.sha256===digest,'cms_file_digest_does_not_match_release_not_published',409);observed.push({url:file.url,sha256:digest})}
+    for(const file of spec.files){const response=await fetcher(file.url,{redirect:'manual'});insist(response.ok,'cms_release_download_failed',424);const bytes=new Uint8Array(await response.arrayBuffer());insist(bytes.length<=64_000_000,'cms_archive_too_large_for_this_update',413);const digest=await hashBytes(bytes);insist(!file.sha256||file.sha256===digest,'cms_file_digest_does_not_match_release_not_published',409);observed.push({url:file.url,sha256:digest})}
     const digest=await sha256(JSON.stringify(observed)),same=installed.find(r=>r.sha256===digest)
     if(same)return {id:same.id,duplicate:true,changed:false,rows:same.row_count}
   }
@@ -29,7 +29,7 @@ export async function updateCodes(db:D1Database,who:Actor,input:Data,fetcher:typ
   const hashes:{url:string;sha256:string}[]=[],counts={rows:0}
   try {
     for(const file of spec.files){
-      const response=await fetcher(file.url,{redirect:'error'});insist(response.ok,'cms_release_download_failed',424)
+      const response=await fetcher(file.url,{redirect:'manual'});insist(response.ok,'cms_release_download_failed',424)
       insist(Number(response.headers.get('content-length')??0)<=64_000_000,'cms_archive_too_large_for_this_update',413)
       const bytes=new Uint8Array(await response.arrayBuffer());insist(bytes.length<=64_000_000,'cms_archive_too_large_for_this_update',413)
       const digest=await hashBytes(bytes);insist(!file.sha256||file.sha256===digest,'cms_file_digest_does_not_match_release_not_published',409)
