@@ -1,7 +1,7 @@
 import {audit,commit,guard,id,insist,now,one,rows,stmt,type Actor,type Data} from '../domain/model'
 import {claimFor,clientGuard,yes} from './access'
 import {adjustmentLabel,denialNextStep,remarkLabel} from './codes'
-import {payerBatch} from './manual-payers'
+import {payerBatch,payerAuthority} from './manual-payers'
 
 /** One atomic close: no money, claim, or report changes on a refused balance. */
 export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
@@ -36,6 +36,6 @@ export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
    stmt(db,'UPDATE bm_claims SET status=?,errors=?,payer_control=?,updated_at=?,version=version+1 WHERE id=? AND version=?',status,JSON.stringify(errors),control,at,claim.id,claim.version),guard(db,'changes()=1'),
    stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'paper_eob',JSON.stringify({batchId:batch.id,lines:items.map(l=>({...l,adjustments:JSON.parse(l.adjustments),remarks:JSON.parse(l.remarks)}))}),at),audit(db,who,'insurance.remittance_posted',claim.client_id,claim.id))
  }
- await commit(db,who,statements)
+ await commit(db,who,[payerAuthority(db,who),...statements])
  return {id:batch.id,status:'closed',depositCents:paid+interest-recouped,paidCents:paid,interestCents:interest,recoupedCents:recouped}
 }
