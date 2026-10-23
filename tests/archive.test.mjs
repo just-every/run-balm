@@ -65,7 +65,7 @@ async function archiveFixture(){
     const runoutCsv=`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-221,${maya.id},${payer.id},synthetic-balm-222,synthetic-balm-223,2026-01-01,10.00,10.00,open\n`
     const runoutInput={source:'synthetic-balm-220',csv:runoutCsv},runoutPreview=await h.cmd('insurance.runout.preview',runoutInput)
     await h.cmd('insurance.runout.apply',{...runoutInput,fingerprint:runoutPreview.fingerprint,expectedBalanceCents:1000})
-    await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:'ST*835*0001*005010X221A1~BPR*I*5*C*CHK************20261023~TRN*1*synthetic-balm-224*1234567890~N1*PR*ARCHIVE*XV*ARCHIVE~CLP*synthetic-balm-222*1*10*5*0*CI*synthetic-balm-223~CAS*CO*45*5~SE*8*0001~'})
+    await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:'ST*835*0001*005010X221A1~BPR*I*5*C*CHK************20261023~TRN*1*synthetic-balm-224*1234567890~N1*PR*ARCHIVE*XV*ARCHIVE~CLP*synthetic-balm-222*1*10*5*0*CI*synthetic-balm-223~CAS*CO*45*5~SE*7*0001~'})
 
     const visit=await pastVisit(h,maya.id,priya,service.id,h.owner,2,{coverageChoice:'self_pay',deliveryMethod:'portal'})
     await h.cmd('appointment.attend',{id:visit})

@@ -63,7 +63,7 @@ export async function matchMigrated(db:D1Database,payerId:string,r:RemitClaim){
 }
 export function runoutPosting(db:D1Database,who:Actor,claim:Data,r:RemitClaim,importId:string){
  insist(r.chargeCents===claim.billed_cents,'migrated_remittance_charge_mismatch',409)
- const co=r.status==='4'?0:r.adjustments.filter(a=>a.group==='CO').reduce((sum,a)=>sum+a.amountCents,0)
+ const co=r.status==='4'?0:r.adjustments.filter(a=>a.group==='CO'&&['45','253'].includes(a.reason)).reduce((sum,a)=>sum+a.amountCents,0)
  insist(!r.adjustments.some(a=>a.group==='OA'||a.group==='PI'),'migrated_adjustment_group_requires_review')
  const reduction=r.paidCents+co;insist(reduction<=claim.balance_cents,'migrated_remittance_would_overpost',409)
  const status=r.status==='4'?'denied':claim.balance_cents===reduction?'paid':'partial',at=now()
