@@ -1,3 +1,6 @@
+import { distinctServiceFields } from './distinct-services'
+import { clinicalCodePicker } from './code-sets'
+import { hostDateAt } from '../availability/timezone'
 import { clinicalFields, clinicalSummary, composeCarry } from './clinical-fields'
 import { evaluationCodes } from '../domain/role-access'
 import { defensibility } from './defensibility'
@@ -59,7 +62,7 @@ function noteEntry(s: any, f: any, n: any) {
   let actions = ''
   if (n.mine && n.status !== 'signed' && !n.pending) {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
-    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(latest.clinical) : '') + chargeRows(latest.charges, s.actor.staffKind === 'assistant', n.billingCodeCatalog ?? f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
+    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + clinicalCodePicker(s,{targetName:t?.sections.some((x:any)=>x.id==='diagnosis')?'section_diagnosis':'body',date:hostDateAt(new Date(n.visitAt),zoneOf(s))}) + distinctServiceFields(latest.clinical?.distinctServices) + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(latest.clinical) : '') + chargeRows(latest.charges, s.actor.staffKind === 'assistant', n.billingCodeCatalog ?? f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
@@ -99,7 +102,7 @@ function compose(s: any, f: any, ask: any) {
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
   const carry = composeCarry(f, visit, t)
   const body = t ? sectionFields(t, carry.sections) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
-  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(carry.clinical) : '') + chargeRows([], assistant, f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields({}, s.staff), 'Save draft')
+  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + clinicalCodePicker(s,{targetName:t?.sections.some((x:any)=>x.id==='diagnosis')?'section_diagnosis':'body',date:hostDateAt(new Date(visit.start_at),zoneOf(s))}) + distinctServiceFields() + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(carry.clinical) : '') + chargeRows([], assistant, f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields({}, s.staff), 'Save draft')
   return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 

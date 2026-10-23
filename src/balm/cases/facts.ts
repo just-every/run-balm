@@ -48,7 +48,7 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
     referral, client: client!, policy, eligibility: latest, clinic: clinic!, zone, today: hostDateAt(new Date(), zone),
     authorizations: policy ? auths.filter(a => a.policy_id === policy.id) : [],
     visits: caseVisits, notes: notes.filter(n => ids.has(n.appointment_id)), invoices: invoices.filter(i => ids.has(i.appointment_id)),
-    claims: claims.filter(c => ids.has(c.appointment_id) && (!policy || c.policy_id === policy.id)).map(c => ({ ...c, errors: JSON.parse(c.errors), snapshot: JSON.parse(c.snapshot), adjustments: c.adjustments ? JSON.parse(c.adjustments) : null })),
+    claims: claims.filter(c => ids.has(c.appointment_id) && (!policy || c.policy_id === policy.id)).map(c => ({ ...c, errors: JSON.parse(c.errors), snapshot: (()=>{const s=JSON.parse(c.snapshot);delete s.distinctServices;if(s.coding){delete s.coding.priorContext;s.coding.proposals=(s.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}return s})(), adjustments: c.adjustments ? JSON.parse(c.adjustments) : null })),
     intakeAt: intake?.at as string | null ?? null, balanceCents: money.patientBalanceCents, lastStatementAt: statement?.at as string | null ?? null, done, drafts,
   }
 }

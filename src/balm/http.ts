@@ -1,3 +1,6 @@
+import { codeSetCommand, codeSetStatus } from './codesets'
+import { resolveChargeCatalog } from './codesets/charge-catalog'
+import { codesetFormInput } from './ui/code-sets'
 import {cobPaperDownload} from './insurance/cob-paper'
 import {claimWork} from './insurance/claim-work'
 import {aeobCommand,aeobsFor,aeobOriginal} from './payments/aeobs'
@@ -86,7 +89,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -97,7 +100,9 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   if (file.careAccess.teamOnly) return { ...file, chartHistory: await fileHistory(env.DB, who, file, zone, historyInput) }
   const cancellations = (await env.DB.prepare('SELECT * FROM bm_visit_cancellations WHERE appointment_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(file.appointments.map(a => a.id))).all<any>()).results
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
-  const enriched = { ...file, noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const composeVisit = file.appointments.find(a=>a.id===historyInput.compose)
+  const composedDate = composeVisit ? hostDateAt(new Date(composeVisit.start_at as string),zone) : undefined
+  const enriched = { ...file, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -140,6 +145,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name.startsWith('codes.'))return codeSetCommand(env.DB,who,name,codesetFormInput(input))
   if(name==='insurance.payer_line.add')input=manualPayerForm(input)
   if(name.startsWith('note_release.'))return releaseCommand(env.DB,who,name,input)
   if(name.startsWith('estimate.aeob.'))return aeobCommand(env.DB,who,name,input)
@@ -233,15 +239,16 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
 }
 
 async function inputBody(request: Request): Promise<Record<string, unknown>> {
-  const moving = new URL(request.url).searchParams.get('name')?.startsWith('movein.')
-  const limit = moving ? 40_000_000 : 7_100_000
+  const actionName = new URL(request.url).searchParams.get('name') ?? ''
+  const moving = actionName.startsWith('movein.'), licensed = actionName === 'codes.cpt.import'
+  const limit = moving ? 40_000_000 : licensed ? 22_000_000 : 7_100_000
   // An uploaded file (Move in) arrives as its text, with its name beside it.
   if (request.headers.get('content-type')?.includes('multipart/form-data')) {
     if (Number(request.headers.get('content-length') ?? 0) > limit) fail('request_too_large', 413)
     const input: Record<string, unknown> = {}
     for (const [key, value] of await request.formData()) {
       if (typeof value === 'string') { input[key] = value; continue }
-      if (value.size > (moving ? 20_000_000 : 1_000_000)) fail(moving ? 'This file is larger than 20 MB. Download patient lists in smaller date ranges.' : 'The file is larger than 1 MB.', 413)
+      if (value.size > (moving || licensed ? 20_000_000 : 1_000_000)) fail(moving || licensed ? 'This file is larger than 20 MB. Use a smaller reviewed export.' : 'The file is larger than 1 MB.', 413)
       if (value.size) {
         if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
         else if (key === 'abnDocument') {
@@ -260,10 +267,13 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
     return input
   }
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).length > limit) fail('request_too_large', 413)
+  const rawSize=new TextEncoder().encode(raw).length
+  const commandJson=new URL(request.url).pathname==='/api/balm/command'&&request.headers.get('content-type')?.includes('application/json')
+  if (rawSize > (commandJson?22_000_000:limit)) fail('request_too_large', 413)
   if (request.headers.get('content-type')?.includes('application/json')) {
     let input; try { input = JSON.parse(raw) } catch { fail('invalid_json') }
     if (!input || Array.isArray(input) || typeof input !== 'object') fail('expected_an_object')
+    if(commandJson&&rawSize>7_100_000&&input.name!=='codes.cpt.import')fail('request_too_large',413)
     return input
   }
   if (!request.headers.get('content-type')?.includes('application/x-www-form-urlencoded')) fail('use_json_or_a_form', 415)
@@ -587,7 +597,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal'].includes(name)) {
+        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people

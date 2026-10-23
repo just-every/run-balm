@@ -1,4 +1,5 @@
-import { cpt } from '../charting/cpt'
+import { noteChargeCatalog } from '../codesets/charge-catalog'
+import { chargeCode } from '../charting/cpt'
 import { noteTemplate } from '../charting/template-catalog'
 import { validateClinical } from '../charting/clinical-validation'
 import {dailySignature} from './assistant-daily'
@@ -64,8 +65,13 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   if (t) {
     validateClinical(t, latest, sections ?? [])
   } else insist(String(latest.body).trim(), 'note_is_empty')
-  for (const charge of JSON.parse(latest.charges as string || '[]')) {
-    if (cpt(charge.code)?.timed) insist(charge.minutes > 0, `Record minutes for intervention ${charge.code} before signing.`)
+  const catalog=await noteChargeCatalog(db,note.appointment_id)
+  const signedCharges=JSON.parse(latest.charges as string || '[]')
+  for(const attestation of JSON.parse(latest.clinical || '{}').distinctServices ?? [])insist(signedCharges.some((c:Data)=>c.code===attestation.code1)&&signedCharges.some((c:Data)=>c.code===attestation.code2),'attested_services_must_be_in_this_note')
+  for (const charge of signedCharges) {
+    const current=catalog.items.find(c=>c.code===charge.code)
+    insist(current && current.timed===chargeCode(charge).timed,'review_this_charge_against_the_service_dates_licensed_cpt_release',409)
+    if (chargeCode(charge).timed) insist(charge.minutes > 0, `Record minutes for intervention ${charge.code} before signing.`)
   }
   const requiredVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_payer_documentation')
   const policyVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_policies')
@@ -86,7 +92,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   const digest = pending ? await sha256(JSON.stringify({supervisor:authorDigest,author:pending.sha256,submission:pending.id,supervisionGiven:supervision})) : authorDigest
   if (mode === 'submit') {
     const submissionId=id(),context=await submissionContext(db,note,input)
-    await commit(db,who,[guard(db,licensedSql,supervisor,note.author_id),
+    await commit(db,who,[catalog.guard,guard(db,licensedSql,supervisor,note.author_id),
       guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>?)',note.id,latest.number),
       guard(db,'EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND signed_at IS NULL)',note.id),
       stmt(db,'INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256,author_kind,author_discipline,plan_id,due_at,deadline_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',submissionId,note.id,latest.number,supervisor,by.name,by.credentials,signedAt,digest,who.staffKind,staff.discipline,context.planId,context.dueAt,context.basis),
@@ -95,7 +101,7 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   }
   if (pending) insist(pending.revision===latest.number,'note_changed_reload',409)
   await commit(db, who, [
-    ...diagnoses,...independent,
+    catalog.guard,...diagnoses,...independent,
     ...(pending ? [guard(db,licensedSql,practitionerId(who),note.author_id),stmt(db,"INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by,supervision_given) VALUES(?,'cosigned','',?,?,?)",pending.id,signedAt,who.email,supervision)] : []),
     ...(basis.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', basis.payerId, basis.payerVersion)] : []),
     guard(db, '(SELECT COALESCE(SUM(version),0) FROM bm_payer_documentation)=?', requiredVersion!.total),

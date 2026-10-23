@@ -1,3 +1,4 @@
+import { batchCodeGuards } from './batch-coding'
 import {cobState} from './cob'
 import {biller} from '../domain/role-access'
 import {manualPayerState} from './manual-payers'
@@ -10,7 +11,7 @@ import type { InsuranceEnv } from './types'
 
 export function claimView(c:Data,who:Actor) {
   const s=JSON.parse(c.snapshot),clinical=who.role==='owner'||who.staffRole==='practitioner'
-  if(!clinical){delete s.medicalNecessity;for(const service of Object.values(s.medicareServices??{}) as Data[])delete service.assistantBasis}
+  if(!clinical){delete s.distinctServices;if(s.coding){delete s.coding.priorContext;s.coding.proposals=(s.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}delete s.medicalNecessity;for(const service of Object.values(s.medicareServices??{}) as Data[])delete service.assistantBasis}
   const errors=JSON.parse(c.errors)
   const result:Data={...c,snapshot:s,errors,reason:errors.map((e:Data)=>e.message).join(' '),codes:errors.map((e:Data)=>e.code),nextStep:['denied','partial'].includes(c.status)?'Review payer reasons, then correct and resubmit or draft an appeal.':c.status==='rejected'?'Correct the rejected fields and resubmit.':c.status==='draft'?'Fix scrubber errors before batching.':null}
   if(!clinical){delete result.medical_necessity;delete result.appeal}
@@ -81,6 +82,7 @@ export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:stri
   insist(kind==='837P','insurance_download_kind_invalid',404)
   const batch=await one(db,'SELECT * FROM bm_claim_batches WHERE id=?',id);insist(batch,'insurance_batch_not_found',404)
   const claims=await rows(db,'SELECT c.id,c.client_id FROM bm_claims c JOIN bm_claim_batch_items b ON b.claim_id=c.id WHERE b.batch_id=?',id)
-  await commit(db,who,[...claims.map(c=>guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',c.client_id)),stmt(db,"UPDATE bm_claim_batches SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),...claims.flatMap(c=>[stmt(db,"UPDATE bm_claims SET status='exported',version=version+1,updated_at=? WHERE id=? AND status='batched'",now(),c.id),audit(db,who,'insurance.837_exported',c.client_id,c.id)])])
+  const coding=await batchCodeGuards(db,id)
+  await commit(db,who,[...coding,...claims.map(c=>guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',c.client_id)),stmt(db,"UPDATE bm_claim_batches SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),...claims.flatMap(c=>[stmt(db,"UPDATE bm_claims SET status='exported',version=version+1,updated_at=? WHERE id=? AND status='batched'",now(),c.id),audit(db,who,'insurance.837_exported',c.client_id,c.id)])])
   return {filename:`claims-${id}.837p.x12`,contentType:'application/EDI-X12',body:batch.body as string}
 }

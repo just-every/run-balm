@@ -99,7 +99,7 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   const starter = appointment ? await one(db, `SELECT n.id FROM bm_notes n WHERE n.appointment_id=? AND n.author_id=? AND n.signed_at IS NULL
     AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=n.id)=0`, appointment.id, author) : null
   const carry = t ? await carryForward(db, who, client.id as string, appointment?.id ?? null, t) : { sections: {}, clinical: emptyClinical(), guards: [] }
-  const clinical = clinicalInput(input, carry.clinical)
+  const clinical = clinicalInput(input, { ...carry.clinical, distinctServices:[] }, who)
   const given = input.sections && typeof input.sections === 'object' ? input.sections : {}
   const inherited = { ...carry.sections, ...given }
   for (const section of t?.sections ?? []) if (input['section_' + section.id] !== undefined) inherited[section.id] = input['section_' + section.id]
@@ -147,7 +147,7 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
     const previous = await one(db, 'SELECT clinical FROM bm_note_revisions WHERE note_id=? AND number=?', note.id, latest)
     const definition = latest === 0 && !note.template_snapshot ? await resolveTemplate(db,note.template) : noteTemplate(note)
     const carry = latest === 0 && definition ? await carryForward(db,who,note.client_id,note.appointment_id,definition) : { sections: {}, clinical: emptyClinical(), guards: [] }
-    const clinical = clinicalInput(input, previous?.clinical ? JSON.parse(previous.clinical) : carry.clinical)
+    const clinical = clinicalInput(input, previous?.clinical ? JSON.parse(previous.clinical) : { ...carry.clinical, distinctServices:[] }, who)
     const catalog = await noteChargeCatalog(db, note.appointment_id)
     const content = written({ ...input, clinical }, definition, catalog.items)
     assistantNote(who, definition ? `${definition.discipline}.${definition.kind}` : note.template, content.charges)
@@ -192,9 +192,10 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
       own[0].clinical = carry.clinical
     }
     const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
+    const billingCodeCatalog = (await noteChargeCatalog(db,n.appointment_id)).items
     const submissions = await rows(db,`SELECT s.*,r.decision,r.reason,r.supervision_given FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND (? OR s.supervisor_id=?) ORDER BY s.submitted_at DESC`,n.id,reviewOnly?0:1,author ?? '')
     const pending = submissions.find(s=>!s.decision)
-    return { assistantDaily:daily?{rule:JSON.parse(daily.rule_snapshot),endorsement}:null, canRecordSupervision:daily?.supervisor_id===author&&!endorsement, supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
+    return { billingCodeCatalog, assistantDaily:daily?{rule:JSON.parse(daily.rule_snapshot),endorsement}:null, canRecordSupervision:daily?.supervisor_id===author&&!endorsement, supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
       templateDefinition: definition, template: n.template, title: definition?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],

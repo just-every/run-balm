@@ -40,8 +40,8 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
     audit(db,who,replaces?'insurance.claim_corrected':'insurance.claim_prepared',replaces?.client_id??(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,key),
     ...(replaces?[stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),replaces.id,'corrected',JSON.stringify({replacementId:key}),at)]:[])
   ])
-  const visible=JSON.parse(JSON.stringify(facts));if(who.role!=='owner'&&who.staffRole!=='practitioner'){delete visible.medicalNecessity;for(const service of Object.values(visible.medicareServices??{}) as Data[])delete service.assistantBasis}
-  return {id:key,status:errors.length?'draft':'ready',errors,proposals:facts.coding?.proposals??[],amountCents:cents,snapshot:visible}
+  const visible=JSON.parse(JSON.stringify(facts));if(who.role!=='owner'&&who.staffRole!=='practitioner'){delete visible.distinctServices;if(visible.coding){delete visible.coding.priorContext;visible.coding.proposals=(visible.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}delete visible.medicalNecessity;for(const service of Object.values(visible.medicareServices??{}) as Data[])delete service.assistantBasis}
+  return {id:key,status:errors.length?'draft':'ready',errors,proposals:visible.coding?.proposals??[],amountCents:cents,snapshot:visible}
 }
 export async function correctClaim(db:D1Database,who:Actor,input:Data) {
   const prior=await claimFor(db,who,input.id)
@@ -55,7 +55,7 @@ export async function scrubStoredClaim(db:D1Database,who:Actor,input:Data) {
   insist(['draft','ready'].includes(claim.status),'only_unbatched_claims_can_change',409)
   const snapshot=await refreshClaimFacts(db,who,claim),errors=scrubClaim(snapshot),status=errors.length?'draft':'ready'
   await commit(db,who,[...claimFactGuards(db,claim,snapshot),stmt(db,'UPDATE bm_claims SET snapshot=?,errors=?,status=?,updated_at=?,version=version+1 WHERE id=? AND version=?',JSON.stringify(snapshot),JSON.stringify(errors),status,now(),claim.id,claim.version),guard(db,'changes()=1'),audit(db,who,'insurance.claim_scrubbed',claim.client_id,claim.id)])
-  return {id:claim.id,status,errors,proposals:snapshot.coding?.proposals??[]}
+  return {id:claim.id,status,errors,proposals:(snapshot.coding?.proposals??[]).map(p=>who.role==='owner'||who.staffRole==='practitioner'?p:{code:p.code,modifier:p.modifier,version:p.version})}
 }
 export async function documentNecessity(db:D1Database,who:Actor,input:Data) {
   insist(who.role==='owner'||who.staffRole==='practitioner','medical_necessity_is_clinical',403)

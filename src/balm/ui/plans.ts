@@ -1,3 +1,4 @@
+import { clinicalCodePicker } from './code-sets'
 import { episodeField } from './episodes'
 // Plan of care on a client file: its physician signature status and dates for
 // everyone who opens the file, its content for the owner and practitioners, and
@@ -48,7 +49,7 @@ function writePlan(s: any, f: any) {
   const weekly = Array.from({ length: 7 }, (_, n) => `<option value="${n + 1}"${n === 1 ? ' selected' : ''}>${n + 1} ${n ? 'times' : 'time'} a week</option>`).join('')
   return `<details><summary>Write a plan of care</summary>${form('plan.send', `/app/clients/${f.client.id}`, hidden('clientId', f.client.id) + hidden('noteId', evaluation?.id ?? '') + episodeField(f)
     + (evaluation ? '<p class="help">Diagnoses and goals are filled from your signed evaluation; edit them as needed.</p>' : '')
-    + textarea('diagnoses', 'Diagnoses (ICD-10)', part('diagnosis'), 'required maxlength="2000"') + textarea('shortTermGoals', 'Short-term goals', part('goals'), 'required maxlength="4000"')
+    + textarea('diagnoses', 'Diagnoses (ICD-10)', part('diagnosis'), 'required maxlength="2000"') + clinicalCodePicker(s,{targetName:'diagnoses',date:today,dateField:'startDate'}) + textarea('shortTermGoals', 'Short-term goals', part('goals'), 'required maxlength="4000"')
     + textarea('longTermGoals', 'Long-term goals', '', 'required maxlength="4000"')
     + `<div class="pair"><label>Frequency<select name="frequencyPerWeek" required>${weekly}</select></label>${field('durationWeeks', 'Duration (weeks)', 6, 'number', 'required min="1" max="52" step="1"')}</div>`
     + field('startDate', 'Start of care', today, 'date', 'required') + textarea('interventions', 'Planned interventions', '', 'required maxlength="2000" placeholder="Therapeutic exercise (97110), manual therapy (97140), gait training (97116), home exercise program"')

@@ -1,3 +1,4 @@
+import { codeSetPickerScript } from './code-sets'
 import { locationPage } from './location'
 import { noteDraftScript } from './note-drafts'
 import branding from '../../branding.json'
@@ -66,7 +67,7 @@ export async function renderApp(state: any, path: string, notice: Notice = {}, f
   const queue = (state.coSignQueue ?? []).length ? `<section class="panel full"><h2>Notes awaiting your co-signature</h2>${state.coSignQueue.map((n:any)=>`<p><a href="/app/clients/${h(n.client_id)}#note-${h(n.note_id)}">${h(n.client)} · ${h(n.author)} · revision ${h(n.revision)}</a>${n.kind==='supervision_details'?' · supervision details needed':''} · ${n.due_at ? (n.overdue ? '<strong>Overdue</strong> · ' : 'Due · ')+stamp(state,n.due_at) : 'State deadline not recorded'}</p>`).join('')}</section>` : ''
   const notices = queue + `${notice.error ? `<div class="notice error" role="alert">${h(notice.error)}</div>` : ''}${notice.message ? `<div class="notice" role="status">${h(notice.message)}</div>` : ''}${insuranceBookingNotice(notice, path)}`
   const body = shell(state, { tabs, section, zoneUnset, top, content: notices + (current === '/app' && allowed && !zoneUnset ? recoveryStrip(state) : '') + content })
-  return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)
+  return documentFor(`${title} · ${branding.name}`, body, allowed || zoneUnset ? status : 403, zoneUnset ? browserZoneScript : !allowed ? '' : current === '/app' ? dragScript + ';' + copyScript : current.startsWith('/app/clients/') ? copyScript + ';' + noteDraftScript + ';' + codeSetPickerScript : current === '/app/agent' ? copyScript : current === '/app/clinic' ? browserZoneScript : '', '', '', allowed && !zoneUnset && !!file)
 }
 
 export async function renderPublic(kind: 'book' | 'consent' | 'intake' | 'offer' | 'pay' | 'plan' | 'visit' | 'messages' | 'missing' | 'local-link' | 'refused', data: any, status = 200): Promise<Response> {

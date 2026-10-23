@@ -1,3 +1,4 @@
+import { codeBatch, batchCodeGuards } from './batch-coding'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { refreshClaimFacts } from './claims'
 import { claimFactGuards } from './fences'
@@ -33,6 +34,7 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
     claims.push({...claim,facts})
   }
   insist(new Set(claims.map(c=>c.appointment_id)).size===claims.length,'a_batch_cannot_bill_the_same_visit_twice',409)
+  await codeBatch(db,claims)
   const payer=claims[0].facts.payer.id
   insist(claims.every(c=>c.facts.payer.id===payer&&JSON.stringify(c.facts.billing)===JSON.stringify(claims[0].facts.billing)),'batch_requires_one_payer_and_billing_identity')
   const key=id(),body=professionalBatch(claims.map(c=>({id:c.id,snapshot:c.facts})),key),hash=await sha256(body),at=now()
@@ -47,7 +49,8 @@ export async function submitBatch(env:InsuranceEnv,who:Actor,input:Data) {
   insist(['prepared','exported'].includes(batch.status),'batch_already_submitted_or_outcome_uncertain',409)
   const claims=await rows(db,'SELECT c.id,c.client_id,c.status FROM bm_claims c JOIN bm_claim_batch_items b ON b.claim_id=c.id WHERE b.batch_id=?',batch.id)
   insist(claims.length && claims.every(c=>['batched','exported'].includes(c.status)),'payer_response_already_received_do_not_submit_again',409)
-  await commit(db,who,[...claims.map(c=>guard(db,"EXISTS(SELECT 1 FROM bm_claims WHERE id=? AND status IN ('batched','exported'))",c.id)),stmt(db,"UPDATE bm_claim_batches SET status='sending',version=version+1 WHERE id=? AND version=?",batch.id,batch.version),guard(db,'changes()=1'),...claims.map(c=>audit(db,who,'insurance.submission_started',c.client_id,c.id))])
+  const coding=await batchCodeGuards(db,batch.id)
+  await commit(db,who,[...coding,...claims.map(c=>guard(db,"EXISTS(SELECT 1 FROM bm_claims WHERE id=? AND status IN ('batched','exported'))",c.id)),stmt(db,"UPDATE bm_claim_batches SET status='sending',version=version+1 WHERE id=? AND version=?",batch.id,batch.version),guard(db,'changes()=1'),...claims.map(c=>audit(db,who,'insurance.submission_started',c.client_id,c.id))])
   let result
   try{result=await insuranceAdapter(env).submit({kind:'837P',id:batch.id,body:batch.body,sha256:batch.sha256})}
   catch(error){await commit(db,who,[stmt(db,"UPDATE bm_claim_batches SET status='uncertain',version=version+1 WHERE id=? AND status='sending'",batch.id),...claims.map(c=>audit(db,who,'insurance.submission_uncertain',c.client_id,c.id))]);throw error}

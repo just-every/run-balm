@@ -2,7 +2,7 @@ import { actor, human, insist, type Actor, type Data } from '../domain/model'
 import { codeSetStatus, searchCodes, saveSynonym } from './catalog'
 import { importLicensedCpt, updateCodes } from './load'
 export { codeSetStatus, releaseAt, billableDiagnosis, searchCodes } from './catalog'
-export { validateCoding, codingGuard, distinctServices, distinctModifiers, type CodingInput, type DistinctService } from './edits'
+export { validateCoding, codingGuards, distinctServices, distinctModifiers, type CodingInput, type DistinctService } from './edits'
 export { templateCodeContext } from './review'
 export { sourcePages } from './sources'
 export async function codeSetCommand(db:D1Database,initial:Actor,name:string,input:Data) {

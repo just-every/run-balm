@@ -20,6 +20,7 @@ const traineeWrites = new Set(['note.check','note.write','note.amend','note.meas
 /** The narrower job is enforced before dispatch, including commands added later. */
 export function roleCommand(who: Actor, name: string) {
  if (who.role === 'owner' || name === 'session.signout') return
+ if(name==='codes.search'&&!manager(who))return
  if (manager(who)) insist(['appointment.book','appointment.move','appointment.cancel','pay.checkin'].includes(name), 'location_manager_action_refused', 403)
  if (biller(who)) insist(billingWrites.has(name), 'biller_action_refused', 403)
  if (supervised(who)) insist(traineeWrites.has(name)||who.staffKind==='assistant'&&name==='note.sign', 'supervised_staff_draft_only', 403)

@@ -1,3 +1,4 @@
+import { priorServices, priorContextGuard, type PriorContext } from './same-day'
 import { guard, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { billableDiagnosis, releaseAt } from './catalog'
 import { normalizeCode } from './types'
@@ -18,7 +19,7 @@ export function distinctServices(who:Actor,input:unknown):DistinctService[] {
   })
 }
 export type CodingLine={code:string;units:number;modifiers:string[]}
-export type CodingInput={date:string;diagnoses:string[];lines:CodingLine[];attestations?:DistinctService[];clientId?:string;renderingNpi?:string;invoiceId?:string}
+export type CodingInput={date:string;diagnoses:string[];lines:CodingLine[];attestations?:DistinctService[];clientId?:string;renderingNpi?:string;invoiceId?:string;batchPeers?:{invoiceId:string;lines:CodingLine[]}[]}
 export type CodingIssue={code:string;field:string;message:string;releaseId?:string;version?:string;children?:Data[];source?:string}
 export async function validateCoding(db:D1Database,input:CodingInput) {
   insist(Array.isArray(input.lines)&&input.lines.length>0&&input.lines.length<=100&&input.lines.every(l=>Number.isSafeInteger(l.units)&&l.units>0&&Array.isArray(l.modifiers)),'invalid_claim_coding_lines')
@@ -48,11 +49,12 @@ export async function validateCoding(db:D1Database,input:CodingInput) {
       issues.push({code:pair.modifier===0?'ncci_modifier_not_permitted':applied&&!attestation?'ncci_distinct_attestation_required':'ncci_ptp',field:'lines',message:`NCCI practitioner ${ptp.version}: ${pair.code} / ${pair.code2} is edited (${pair.effective_on}${pair.deleted_on?' to '+pair.deleted_on:''}). ${pair.modifier===0?'This edit does not allow a modifier.':attestation?'Review and apply the attested modifier to the second service.':'The clinician must document distinct services in the signed note before a 59 or X modifier is proposed.'}`,releaseId:ptp.id,version:ptp.version,source:ptp.source_page})
     }
   }
+  let priorContext:PriorContext|undefined
   if(mue){
     // MAI 2/3 applies to the same beneficiary, rendering practitioner and date,
     // including already sent claims. MAI 1 applies to each submitted line.
-    const prior: CodingLine[]=[]
-    if(input.clientId&&input.renderingNpi){const claims=await rows(db,`SELECT c.snapshot FROM bm_claims c WHERE c.client_id=? AND c.service_date=? AND json_extract(c.snapshot,'$.rendering.npi')=? AND c.invoice_id<>? AND c.status IN ('batched','exported','submitted','accepted','paid','partial','denied')`,input.clientId,input.date,input.renderingNpi,input.invoiceId??'');for(const c of claims)prior.push(...JSON.parse(c.snapshot).lines)}
+    const prior: CodingLine[]=(input.batchPeers??[]).flatMap(p=>p.lines)
+    if(input.clientId&&input.renderingNpi){const existing=await priorServices(db,{clientId:input.clientId,date:input.date,renderingNpi:input.renderingNpi,excludeInvoices:[...new Set([input.invoiceId??'',...(input.batchPeers??[]).map(p=>p.invoiceId)])].sort()});prior.push(...existing.lines);priorContext=existing.context}
     const edits=await rows(db,'SELECT * FROM bm_code_items WHERE release_id=? AND code IN (SELECT value FROM json_each(?))',mue.id,json)
     for(const edit of edits){
       const own=lines.filter(l=>l.code===edit.code),total=own.reduce((t,l)=>t+l.units,0)+prior.filter(l=>normalizeCode(l.code)===edit.code).reduce((t,l)=>t+l.units,0)
@@ -60,8 +62,8 @@ export async function validateCoding(db:D1Database,input:CodingInput) {
       if(exceeds)issues.push({code:'ncci_mue',field:'lines',message:`NCCI practitioner MUE ${mue.version}: ${edit.code} exceeds ${edit.max_units} units (${edit.adjudication===1?'per claim line':'for this patient, practitioner and service date'}; MAI ${edit.adjudication}). ${edit.adjudication===2?'This is an absolute date-of-service edit.':'Review the clinical documentation and applicable CMS review process; a modifier does not automatically clear this finding.'}`,releaseId:mue.id,version:mue.version,source:mue.source_page})
     }
   }
-  return {issues,proposals,releases,epoch}
+  return {issues,proposals,releases,epoch,...(priorContext?{priorContext}:{})}
 }
 /** Include this in the same batch as claim preparation/export/submission. A new
  * release during scrubbing requires rechecking instead of sending stale facts. */
-export const codingGuard=(db:D1Database,result:{epoch:number})=>guard(db,'(SELECT version FROM bm_code_epoch WHERE id=1)=?',result.epoch)
+export const codingGuards=(db:D1Database,result:{epoch:number;priorContext?:PriorContext})=>[guard(db,'(SELECT version FROM bm_code_epoch WHERE id=1)=?',result.epoch),...(result.priorContext?[priorContextGuard(db,result.priorContext)]:[])]

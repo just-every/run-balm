@@ -1,3 +1,4 @@
+import { distinctServiceSummary } from './distinct-services'
 import { field, h, hidden, select, textarea } from './shared'
 import type { Clinical } from '../charting/clinical-input'
 import { emptyClinical } from '../charting/clinical-input'
@@ -15,7 +16,7 @@ export function flowsheetSummary(c: Clinical) {
 }
 export function clinicalSummary(c: Clinical | null) {
   if (!c) return ''
-  return `${c.goals.length ? `<h4>Goals and status</h4><dl>${c.goals.map(g => `<dt>${h(g.term === 'short' ? 'Short-term' : 'Long-term')} · ${h(g.text)}</dt><dd>${h(g.target)} · ${h(g.deadline)} · <strong>${h(statuses.find(s=>s[0]===g.status)?.[1] ?? g.status)}</strong></dd>`).join('')}</dl>` : ''}${c.precautions ? `<h4>Precautions</h4><p>${h(c.precautions)}</p>` : ''}${flowsheetSummary(c)}`
+  return `${c.goals.length ? `<h4>Goals and status</h4><dl>${c.goals.map(g => `<dt>${h(g.term === 'short' ? 'Short-term' : 'Long-term')} · ${h(g.text)}</dt><dd>${h(g.target)} · ${h(g.deadline)} · <strong>${h(statuses.find(s=>s[0]===g.status)?.[1] ?? g.status)}</strong></dd>`).join('')}</dl>` : ''}${c.precautions ? `<h4>Precautions</h4><p>${h(c.precautions)}</p>` : ''}${flowsheetSummary(c)}${distinctServiceSummary(c.distinctServices)}`
 }
 /** Preview only from notes already authorized and audited in the client file. */
 export function composeCarry(f: any, visit: any, t: any) {
@@ -26,7 +27,7 @@ export function composeCarry(f: any, visit: any, t: any) {
   const clinical: Clinical = JSON.parse(JSON.stringify(revision.clinical ?? emptyClinical()))
   const map = new Map(clinical.flowsheet.map(m=>[[m.kind,m.name.toLowerCase(),m.side,m.unit].join('|'),m]))
   for (const m of previous.measures.filter((m:any)=>m.kind==='flowsheet')) map.set([m.kind,m.name.toLowerCase(),m.side,m.unit].join('|'),m)
-  clinical.flowsheet = [...map.values()]; clinical.sourceNoteId = previous.id
+  clinical.flowsheet = [...map.values()]; clinical.sourceNoteId = previous.id; clinical.distinctServices=[]
   const sections = Object.fromEntries((revision.sections ?? []).filter((s:any)=>['diagnosis','goals','plan','frequency','duration','planned_interventions'].includes(s.id)).map((s:any)=>[s.id,s.text]))
   return { sections, clinical }
 }

@@ -69,14 +69,14 @@ export function ownerClinicalCodesPanel(s:any,notice:any={}) {
   const inventory=items.length?`<ul data-code-status>${items.map(item=>`<li><strong>${h(names[item.kind]??item.kind)}</strong> · ${status(item.missing?'Missing':item.stale?'Update due':'Current')}${item.release?`<br>${h(item.release.version)} · effective ${h(item.release.effective_on)} · ${h(item.release.row_count)} rows · next scheduled ${h(item.release.next_due_on)}`:''}${item.message?`<p class="help">${h(item.message)}</p>`:''}${item.incomplete?.length?'<p class="notice">An incomplete import is retained for review and is not used for billing.</p>':''}</li>`).join('')}</ul>`:'<p>No code-set status has been loaded.</p>'
   const synonym=`<details data-code-synonym><summary>Add a search synonym</summary><p>A synonym helps staff find an official code. It does not make a header billable.</p>${form('codes.synonym.save',path,select('kind','Code set',searchable,'icd10')+field('code','Official code','','text','required maxlength="10"')+field('term','Search word or phrase','','text','required maxlength="200"'),'Save search synonym')}</details>`
   const search=`<details data-code-search-form><summary>Search installed codes</summary>${form('codes.search',path,select('kind','Code set',searchable,'icd10')+field('date','Date of service','','date','required')+field('query','Code, words or synonym','','search','required maxlength="200"'),'Search codes')}</details>`
-  return panel('Clinical billing codes',codeSetResult(notice)+inventory+'<p>Code releases are chosen by the visit’s date of service. Update complete CMS releases and keep licensed CPT data private. <a href="https://run-balm.com/docs/codesets">Code-set update and licensing guide</a>.</p>'+['icd10','hcpcs','ptp','mue'].map(updateForm).join('')+cptForm()+synonym+search,'full','clinical-codes')
+  return panel('Clinical billing codes',codeSetResult(notice)+inventory+'<p>Code releases are chosen by the visit’s date of service. Update complete CMS releases and keep licensed CPT data private.</p>'+['icd10','hcpcs','ptp','mue'].map(updateForm).join('')+cptForm()+synonym+search,'full','clinical-codes')
 }
 
 /** Embed inside the existing clinical note/plan form, never as a nested form. */
-export function clinicalCodePicker(s:any,options:{targetName:string;date:string;kind?:'icd10'|'hcpcs'|'cpt';label?:string}) {
+export function clinicalCodePicker(s:any,options:{targetName:string;date:string;kind?:'icd10'|'hcpcs'|'cpt';label?:string;dateField?:string}) {
   if(s.actor?.role!=='owner'&&s.actor?.staffRole!=='practitioner')return ''
   const kind=options.kind??'icd10'
-  return `<fieldset data-code-picker data-code-kind="${h(kind)}" data-code-target="${h(options.targetName)}" data-code-date="${h(options.date)}"><legend>${h(options.label??'Find a billable diagnosis')}</legend><label>Code, words or synonym<input type="search" data-code-query maxlength="200"></label><button type="button" data-code-find>Find codes</button><p class="help">Uses the release for ${h(options.date)}. Review a code before adding it; diagnosis headers cannot be selected.</p><p role="status" aria-live="polite" data-code-feedback></p><ul data-code-choices></ul></fieldset>`
+  return `<fieldset data-code-picker data-code-kind="${h(kind)}" data-code-target="${h(options.targetName)}" data-code-date="${h(options.date)}" data-code-date-field="${h(options.dateField??'')}"><legend>${h(options.label??'Find a billable diagnosis')}</legend><label>Code, words or synonym<input type="search" data-code-query maxlength="200"></label><button type="button" data-code-find>Find codes</button><p class="help">Uses the release for ${h(options.date)}. Review a code before adding it; diagnosis headers cannot be selected.</p><p role="status" aria-live="polite" data-code-feedback></p><ul data-code-choices></ul></fieldset>`
 }
 
 export const codeSetPickerScript=`(() => {
@@ -87,7 +87,7 @@ export const codeSetPickerScript=`(() => {
       const value=prefix||query.value.trim();if(!value){feedback.textContent='Enter a code, word or synonym.';return}
       const current=++generation;find.disabled=true;feedback.textContent='Searching the installed release…';list.replaceChildren()
       try {
-        const response=await fetch('/api/balm/command',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({name:'codes.search',input:{kind:picker.dataset.codeKind,date:picker.dataset.codeDate,query:value}})})
+        const response=await fetch('/api/balm/command',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({name:'codes.search',input:{kind:picker.dataset.codeKind,date:picker.dataset.codeDateField?(picker.closest('form')?.elements.namedItem(picker.dataset.codeDateField)?.value||picker.dataset.codeDate):picker.dataset.codeDate,query:value}})})
         const body=await response.json();if(current!==generation)return
         if(!response.ok)throw new Error(body.error||body.code||'Code search failed. Check your sign-in and try again.')
         const result=body.result;feedback.textContent=result.version+' · '+result.date

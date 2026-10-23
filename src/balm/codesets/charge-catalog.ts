@@ -7,6 +7,7 @@ import { releaseAt } from './catalog'
  * An empty catalog is useful for an honest setup screen, never for charging. */
 export async function resolveChargeCatalog(db: D1Database, date?: string): Promise<Code[]> {
   const settings = date ? null : await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1')
+  if(!date&&!settings?.time_zone)return []
   const on = day(date ?? hostDateAt(new Date(), String(settings!.time_zone)), 'date_of_service')
   const release = await releaseAt(db, 'cpt', on)
   if (!release) return []

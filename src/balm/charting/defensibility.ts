@@ -1,3 +1,4 @@
+import { noteCodeContext } from './codeset-review'
 import { pendingSubmission } from '../domain/supervision'
 import type { Bindings } from '../../auth.server'
 import { hostDateAt } from '../availability/timezone'
@@ -18,7 +19,7 @@ const cmsRules: ReviewRule[] = [
   { id: 'cms.plan', title: 'CMS Benefit Policy Manual ch. 15 §220.1.2–220.1.3', source: benefit, rule: 'Therapy must follow a plan of care meeting applicable certification requirements.' },
 ]
 async function context(db: D1Database, noteId: string, who: Actor) {
-  const note = await one(db, 'SELECT n.*,r.number,r.body,r.sections,r.charges,r.documentation FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.id=? ORDER BY r.number DESC LIMIT 1', noteId)
+  const note = await one(db, 'SELECT n.*,r.number,r.body,r.sections,r.charges,r.documentation,r.clinical FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.id=? ORDER BY r.number DESC LIMIT 1', noteId)
   const submission=note ? await pendingSubmission(db,note.id) : null
   insist(note && (note.author_id === practitionerId(who) || submission?.supervisor_id === practitionerId(who)), 'note_not_found', 404)
   insist(!note.signed_at, 'check_an_unsigned_note', 409)
@@ -43,15 +44,17 @@ async function context(db: D1Database, noteId: string, who: Actor) {
   if (supervision && ['assistant','student','fellow'].includes(supervision.kind)) rules.push({id:'role.supervision',title:'Clinic supervision and co-signature policy',source:'/app/clinic',rule:'This author documents under a named licensed supervisor. Students and fellows require co-signature. An assistant may finalize only a daily note under a matching explicit owner-recorded state/payer rule; otherwise co-signature is required. Evaluation notes/codes remain prohibited for assistants. The named therapist must record actual supervision before claiming; payer-recorded billability/minimum/rendering rules still apply.'})
   for(const p of payers)rules.push({ id:p===payer?'payer.configuration':'payer.configuration.'+p.policy_id, title: `${p.name}: clinic-recorded documentation rules v${p.documentation_version}, unit method v${p.version}`, source: '/app/clinic#documentation', rule: `${p===payer?'':`Applies to priority ${p.priority}, policy ${p.policy_id} v${p.policy_version}. `}Configured unit method: ${unitMethodLabel(p.fixed_unit_minutes != null ? 'fixed' : p.unit_method, p.fixed_unit_minutes)}. Required elements: ${(JSON.parse(p.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
   if(payers.length>1)rules.push({id:'cob.billing',title:'Clinic coordination-of-benefits billing rules',source:'/app/insurance#cob',rule:'Review each covering payer separately. Secondary and tertiary claims re-apply their own configured unit method to the note minutes, retaining earlier payers’ original per-code adjudication and units. Compare each payer’s billed units with the documented skilled minutes; do not add units across payer claims or apply one payer’s documentation requirements to another.'})
+  const codeContext=await noteCodeContext(db,note,date,billedLines(JSON.parse(note.charges??'[]'),payer?.unit_method??(payer?null:'cms'),payer?.fixed_unit_minutes))
+  rules.push(...codeContext.rules)
   const rawPlan = plan ? JSON.parse(plan.content) : null
   const planContent = rawPlan ? Object.fromEntries(['diagnoses', 'shortTermGoals', 'longTermGoals', 'frequencyPerWeek', 'durationWeeks', 'interventions', 'startDate', 'certifiedThrough'].map(k => [k, rawPlan[k]])) : null
-  const facts = { note: { template: note.template, revision: note.number, body: note.body, sections: JSON.parse(note.sections ?? 'null'), documentation: JSON.parse(note.documentation ?? '{}') },
+  const facts = { codeContext, note: { template: note.template, revision: note.number, body: note.body, sections: JSON.parse(note.sections ?? 'null'), documentation: JSON.parse(note.documentation ?? '{}') },
     charges: JSON.parse(note.charges ?? '[]'), billed: billedLines(JSON.parse(note.charges ?? '[]'), payer?.unit_method ?? (payer ? null : 'cms'), payer?.fixed_unit_minutes),
     plan: plan ? { content: planContent, status: plan.status } : null,
     payer: payer ? { name: payer.name, medicare: !!payer.medicare, method: payer.fixed_unit_minutes != null ? 'fixed' : payer.unit_method, fixedUnitMinutes: payer.fixed_unit_minutes } : null,
     serviceDate:date,payers:payers.map(p=>({policyId:p.policy_id,priority:p.priority,policyVersion:p.policy_version,startsOn:p.starts_on,endsOn:p.ends_on,payerId:p.id,name:p.name,medicare:!!p.medicare,payerVersion:p.version,documentationVersion:p.documentation_version,required:JSON.parse(p.required),method:p.fixed_unit_minutes!=null?'fixed':p.unit_method,fixedUnitMinutes:p.fixed_unit_minutes,billed:billedLines(JSON.parse(note.charges??'[]'),p.unit_method,p.fixed_unit_minutes)})),
     supervision: supervision ?? null, alerts: await documentationAlerts(db, visit.id, note, note.template), rules }
-  return { note, visit, payer, payers, date, plan, rules, facts, digest: await sha256(JSON.stringify(facts)), evidence: note.body + '\n' + JSON.stringify({ charges: facts.charges, documentation: facts.note.documentation, plan: facts.plan, alerts: facts.alerts }) }
+  return { note, visit, payer, payers, date, plan, rules, facts, digest: await sha256(JSON.stringify(facts)), evidence: note.body + '\n' + JSON.stringify({ codeContext, charges: facts.charges, documentation: facts.note.documentation, plan: facts.plan, alerts: facts.alerts }) }
 }
 
 /** A native clinician asks about their own draft, under the existing scribe and BALM-001 fences. */

@@ -19,7 +19,7 @@ export async function carryForward(db: D1Database, who: Actor, clientId: string,
   const sourceMeasures = await rows(db, "SELECT kind,name,side,value,unit,sets,reps FROM bm_measures WHERE note_id=? AND kind='flowsheet' ORDER BY recorded_at,id", previous.id)
   const values = new Map<string,Flow>()
   for (const flow of [...clinical.flowsheet, ...sourceMeasures as Flow[]]) values.set([flow.kind,flow.name.toLowerCase(),flow.side,flow.unit].join('|'), flow)
-  clinical.flowsheet = [...values.values()]; clinical.sourceNoteId = previous.id
+  clinical.flowsheet = [...values.values()]; clinical.sourceNoteId = previous.id; clinical.distinctServices=[]
   const guards = [
     guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)', clientId),
     guard(db, `EXISTS(SELECT 1 FROM bm_episode_records WHERE record_kind='visit' AND record_id=? AND episode_id=?) AND EXISTS(SELECT 1 FROM bm_episode_records WHERE record_kind='visit' AND record_id=? AND episode_id=?)`, appointmentId,target.episode_id,previous.appointment_id,target.episode_id),
