@@ -10,7 +10,7 @@ export function serviceAvailability(x:any,s:any){
 }
 function locationFields(s:any,l?:any){
  const hours=JSON.parse(l?.hours??'[]')
- return (l?hidden('id',l.id):'')+field('name','Location name',l?.name??'','text','required maxlength="100"')+timeZoneField({time_zone:l?.time_zone||s.settings.time_zone,time_zone_chosen:1}).replace('id="zone-note"','')+hidden('hoursForm','on')
+ return (l?hidden('id',l.id):'')+field('name','Location name',l?.name??'','text','required maxlength="100"')+timeZoneField({time_zone:l?.time_zone||s.settings.time_zone,time_zone_chosen:1}).replace('id="zone-note"','').replace('Every time Balm shows is in','Public booking times for this location are in')+hidden('hoursForm','on')
  +[1,2,3,4,5,6,0].map(d=>hoursDay(d,hours.filter((w:any)=>w.weekday===d).map((w:any)=>({start_minute:w.startMinute,end_minute:w.endMinute})),!l)).join('')
  +'<p class="help">Hours and practitioner weekly clock times use this location’s time zone. Existing visits keep their exact moments when rules change. The staff calendar and staff booking forms stay in the clinic’s time zone. Assign a room below before offering this location.</p>'
 }
