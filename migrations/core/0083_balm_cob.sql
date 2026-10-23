@@ -29,17 +29,23 @@ CREATE TRIGGER bm_cob_decisions_kept BEFORE DELETE ON bm_cob_patient_decisions W
 -- Existing claims keep their originals. Older EOBs without line dates cannot be
 -- sent onward until the biller records the original line adjudication facts.
 INSERT INTO bm_cob_stages(invoice_id,policy_id,priority,state,claim_id,updated_at)
- SELECT q.invoice_id,p.id,p.priority,CASE WHEN q.policy_id=p.id AND q.status IN ('paid','partial') THEN 'adjudicated' WHEN q.policy_id=p.id THEN 'sent' ELSE 'waiting' END,
- CASE WHEN q.policy_id=p.id THEN q.id END,q.updated_at
- FROM bm_claims q JOIN bm_policies p ON p.client_id=q.client_id AND p.starts_on<=q.service_date AND (p.ends_on='' OR p.ends_on IS NULL OR p.ends_on>=q.service_date)
- WHERE q.status<>'corrected' GROUP BY q.invoice_id,p.priority;
+ SELECT v.invoice_id,p.id,p.priority,
+ COALESCE((SELECT CASE WHEN q.status IN ('paid','partial') THEN 'adjudicated' WHEN q.status IN ('draft','ready','batched','exported') THEN 'unsent' WHEN q.status='denied' THEN 'denied' ELSE 'sent' END
+  FROM bm_claims q WHERE q.invoice_id=v.invoice_id AND q.policy_id=p.id AND q.status<>'corrected' ORDER BY q.created_at DESC,q.id DESC LIMIT 1),'waiting'),
+ (SELECT q.id FROM bm_claims q WHERE q.invoice_id=v.invoice_id AND q.policy_id=p.id AND q.status<>'corrected' ORDER BY q.created_at DESC,q.id DESC LIMIT 1),
+ (SELECT MAX(q.updated_at) FROM bm_claims q WHERE q.invoice_id=v.invoice_id)
+ FROM (SELECT DISTINCT invoice_id,client_id,service_date FROM bm_claims WHERE status<>'corrected') v
+ JOIN bm_policies p ON p.client_id=v.client_id AND p.starts_on<=v.service_date AND (p.ends_on='' OR p.ends_on IS NULL OR p.ends_on>=v.service_date)
+ WHERE NOT EXISTS(SELECT 1 FROM bm_policies x WHERE x.client_id=v.client_id AND x.starts_on<=v.service_date AND (x.ends_on='' OR x.ends_on IS NULL OR x.ends_on>=v.service_date) GROUP BY x.priority HAVING COUNT(*)>1);
 CREATE VIEW bm_invoice_insurance_hold AS
  SELECT i.id AS invoice_id,
  COALESCE((SELECT y.name FROM bm_cob_stages s JOIN bm_policies p ON p.id=s.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE s.invoice_id=i.id AND s.state<>'adjudicated' ORDER BY s.priority LIMIT 1),
- (SELECT y.name FROM bm_claims c JOIN bm_policies p ON p.id=c.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial') LIMIT 1)) AS payer
+ (SELECT y.name FROM bm_claims c JOIN bm_policies p ON p.id=c.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial') LIMIT 1),'COB policy order needs review') AS payer
  FROM bm_invoices i WHERE NOT EXISTS(SELECT 1 FROM bm_cob_patient_decisions d WHERE d.invoice_id=i.id)
  AND (EXISTS(SELECT 1 FROM bm_cob_stages s WHERE s.invoice_id=i.id AND s.state<>'adjudicated')
- OR EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial')));
+ OR EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial'))
+ OR EXISTS(SELECT 1 FROM bm_claims q JOIN bm_policies p ON p.client_id=q.client_id AND p.starts_on<=q.service_date AND (p.ends_on='' OR p.ends_on IS NULL OR p.ends_on>=q.service_date)
+ WHERE q.invoice_id=i.id AND q.status<>'corrected' GROUP BY q.service_date,p.priority HAVING COUNT(DISTINCT p.id)>1));
 ALTER TABLE bm_payer_payment_lines ADD COLUMN procedure_code TEXT NOT NULL DEFAULT '';
 ALTER TABLE bm_payer_payment_lines ADD COLUMN procedure_modifiers TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(procedure_modifiers));
 ALTER TABLE bm_payer_payment_lines ADD COLUMN paid_units INTEGER;
