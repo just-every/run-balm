@@ -19,7 +19,7 @@ export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
   insist(JSON.parse(claim.snapshot).payer.id===batch.payer_id,'payer_does_not_match_claim')
   insist(!['draft','ready','corrected'].includes(claim.status),'claim_state_changed_refresh',409)
   insist(!takeback||!payments.length,'recoupment_must_name_a_different_claim_from_those_paid')
-  const prior=await one(db,`SELECT COALESCE(SUM(amount_cents),0) AS cents FROM bm_invoice_payments WHERE invoice_id=? AND (reference LIKE ? OR reference LIKE ?)`,claim.invoice_id,'era:'+batch.payer_id+':%','payer:'+batch.payer_id+':%')
+  const prior=await one(db,`SELECT COALESCE(SUM(amount_cents),0) AS cents FROM bm_invoice_payments WHERE invoice_id=? AND (instr(reference,?)=1 OR instr(reference,?)=1)`,claim.invoice_id,'era:'+batch.payer_id+':','payer:'+batch.payer_id+':')
   insist(takeback<=Number(prior!.cents),'recoupment_exceeds_payer_money_post_nothing',409)
   const open=await one(db,`SELECT i.amount_cents-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id) AS cents FROM bm_invoices i WHERE id=? AND status='approved'`,claim.invoice_id)
   const reducing=payments.reduce((t,l)=>t+l.paid_cents+l.adjustment_cents,0),billed=payments.reduce((t,l)=>t+l.billed_cents,0),pr=payments.reduce((t,l)=>t+l.pr_cents,0)
@@ -32,7 +32,7 @@ export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
   statements.push(clientGuard(db,who,claim.client_id),guard(db,`EXISTS(SELECT 1 FROM bm_invoices i WHERE i.id=? AND i.status='approved' AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)+(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id))`,claim.invoice_id),
    // The signed view includes this close inside this transaction. Net payer cash
    // must stay nonnegative even if two different takebacks race.
-   guard(db,`(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=? AND (reference LIKE ? OR reference LIKE ?))>=0`,claim.invoice_id,'era:'+batch.payer_id+':%','payer:'+batch.payer_id+':%'),
+   guard(db,`(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=? AND (instr(reference,?)=1 OR instr(reference,?)=1))>=0`,claim.invoice_id,'era:'+batch.payer_id+':','payer:'+batch.payer_id+':'),
    stmt(db,'UPDATE bm_claims SET status=?,errors=?,payer_control=?,updated_at=?,version=version+1 WHERE id=? AND version=?',status,JSON.stringify(errors),control,at,claim.id,claim.version),guard(db,'changes()=1'),
    stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'paper_eob',JSON.stringify({batchId:batch.id,lines:items.map(l=>({...l,adjustments:JSON.parse(l.adjustments),remarks:JSON.parse(l.remarks)}))}),at),audit(db,who,'insurance.remittance_posted',claim.client_id,claim.id))
  }

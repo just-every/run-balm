@@ -440,7 +440,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
  } finally {await h?.close();await rm(temporary,{recursive:true,force:true})}
 })
 
-test('INS-012: CLI archive restores fixed manual EOB batches, signed recoupments and deposit arithmetic', {timeout:240000},async()=>{
+test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches, signed recoupments and deposit arithmetic', {timeout:240000},async()=>{
  const {manualPayerJourney,payerEobPdf}=await import('./manual-payer-journey.mjs')
  const temporary=await mkdtemp(join(tmpdir(),'balm-payer-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h

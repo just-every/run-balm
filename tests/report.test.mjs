@@ -165,7 +165,7 @@ test('REPORT-002: charges, payments, adjustments, A/R aging by payer and patient
   assert.deepEqual([summary.charges_usd,summary.payments_usd,summary.adjustments_usd,summary.collections_per_visit_usd,summary.ar_usd,summary.days_in_ar],['285.00','95.00','20.00','31.67','170.00','35.8'])
   assert.deepEqual((await csv('aging-payer'))[1],['Aetna','95.00','0.00','0.00','0.00','0.00','95.00'])
   assert.deepEqual((await csv('aging-patient'))[1],['Noah Kim','0.00','75.00','0.00','0.00','0.00','75.00'])
-  const deposits=await csv('deposits');assert.equal(deposits.length,5);assert.deepEqual(deposits[2].slice(1),['ERA · Aetna','EFTPAID001','60.00','60.00','0.00','0.00','0.00']);assert.deepEqual(deposits[4].slice(3),['95.00','95.00','0.00','0.00','0.00'])
+  const deposits=await csv('deposits');assert.equal(deposits.length,5);assert.deepEqual(deposits[2].slice(1),['ERA · Aetna','EFTPAID001','60.00','60.00','0.00','0.00','0.00','0.00','0.00']);assert.deepEqual(deposits[4].slice(3),['95.00','95.00','0.00','0.00','0.00','0.00','0.00'])
   assert.match((await h.send('/app/reports?'+query,undefined,h.owner)).text,/id="report-deposits"/)
   for(const cookie of [(await h.staff('Rosa','reception')).cookie,priya.cookie])assert.equal((await h.send('/api/balm/reports/financial',undefined,cookie)).status,403)
  },{auth:{BALM_INSURANCE_ADAPTER_URL:'https://gateway.example/submit',BALM_INSURANCE_ADAPTER_TOKEN:'fixture-gateway-key'},outbound:async request=>request.url==='https://gateway.example/submit'?Response.json({status:'submitted',reference:'fixture-batch-accepted'}):stripe.handler(request)})
