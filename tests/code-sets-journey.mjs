@@ -80,6 +80,13 @@ export async function codeSetJourney(h,edge,scrub){
  assert.ok(nonoverride.errors.some(e=>e.code==='ncci_modifier_not_permitted'))
  const units=await scrub({date:'2026-10-01',diagnoses:base.diagnoses,lines:[{code:'97110',units:3,modifiers:[]}]})
  assert.ok(units.errors.some(e=>e.code==='ncci_mue'&&e.message.includes('MAI 2')))
+ const sameDay=await scrub({date:'2026-10-01',diagnoses:base.diagnoses,visits:[{lines:[{code:'97110',units:1,modifiers:[]}]},{lines:[{code:'97110',units:2,modifiers:[]}]}]})
+ assert.ok(sameDay.every(c=>c.status==='ready'),JSON.stringify(sameDay.map(c=>c.errors)))
+ const combined=await h.cmd('insurance.batch.prepare',{claimIds:sameDay.map(c=>c.id)},h.owner,409)
+ assert.match(combined.code,/MUE/,'the same-day batch cannot split three units across two otherwise valid claims')
+ await h.cmd('insurance.batch.prepare',{claimIds:[sameDay[0].id]})
+ const remaining=await h.cmd('insurance.claim.scrub',{id:sameDay[1].id})
+ assert.ok(remaining.errors.some(e=>e.code==='ncci_mue'),'a separately batched service counts on the next claim')
  await chargeCatalogJourney(h)
 }
 
