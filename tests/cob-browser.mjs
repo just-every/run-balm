@@ -80,6 +80,7 @@ try{
   await page.goto(h.origin+'/api/balm/insurance/paper/'+data.packet.id,{waitUntil:'networkidle'})
   assert.match(await page.textContent('body'),/CMS-1500/)
   await page.screenshot({path:output+`/cms1500-${width}.png`,fullPage:false})
+  if(width===1440){await page.pdf({path:output+'/cms1500-print.pdf',format:'Letter',preferCSSPageSize:true,printBackground:true})}
  }
  console.log('INS-013 forms and 1440/390 browser journey passed HEAD='+head)
 }finally{await browser?.close();await h.close()}
