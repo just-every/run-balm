@@ -832,7 +832,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  await h.cmd('assistant_daily.revoke',{id:rule.id})
  assert.ok(!(await h.state(daily.cookie)).assistantDailyRules.some(r=>r.id===rule.id))
  const laterDailyVisit=await pastVisit(h,dailyPatient.id,daily,service.id,h.owner,4)
- const laterDaily=await h.cmd('note.write',{clientId:dailyPatient.id,appointmentId:laterDailyVisit,template:'pt.daily',sections:{subjective:'Later history',objective:'Later skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},daily.cookie)
+ const laterDaily=await h.cmd('note.write',{...chartFixture(),clientId:dailyPatient.id,appointmentId:laterDailyVisit,template:'pt.daily',sections:{...chartFixture().sections,subjective:'Later history',objective:'Later skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},daily.cookie)
  await h.cmd('note.sign',{...ownSignature,id:laterDaily.id,ruleId:rule.id},daily.cookie,403)
  assert.equal((await h.send('/api/balm/clients/'+dailyPatient.id,undefined,h.owner)).value.notes.find(n=>n.id===dailyNote.id).signature.sha256,signedDaily.signature.sha256)
  const audit=(await h.db.prepare('SELECT action,actor_email FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
