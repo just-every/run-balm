@@ -52,7 +52,9 @@ function fixes(e: any, c: any): [string, string][] {
 export function claimErrors(c: any) {
   if (!c.errors?.length) return ''
   const held = c.status === 'draft' ? '<p class="help">Fix each item below, then press “Check the claim again” in the patient file.</p>' : ''
-  return `${held}<ul class="insurance-errors">${c.errors.map((e: any) => `<li>${reasonHtml(e)}${fixes(e, c).map(([href, text]) => ` <a href="${h(href)}">${h(text)}</a>`).join(' ·')}</li>`).join('')}</ul>`
+  const proposals=c.snapshot?.coding?.proposals??[]
+  const proposed=proposals.length&&c.errors.some((e:any)=>e.code==='ncci_ptp')?`<section data-code-proposals><h4>Modifier proposals for review</h4><p>The signed note records distinct services. Review the edit and apply a modifier only if appropriate; Balm has not applied it.</p><ul>${proposals.map((p:any)=>`<li>${h(p.code)} · modifier ${h(p.modifier)} · NCCI ${h(p.version)}</li>`).join('')}</ul><a href="/app/clients/${h(c.client_id)}#codes-${h(c.appointment_id)}">Review the visit’s procedure codes</a></section>`:''
+  return `${held}<ul class="insurance-errors">${c.errors.map((e: any) => `<li>${reasonHtml(e)}${e.children?.length?`<ul data-billable-children>${e.children.map((child:any)=>`<li>${h(child.code)} · ${h(child.description)}</li>`).join('')}</ul>`:''}${fixes(e, c).map(([href, text]) => ` <a href="${h(href)}">${h(text)}</a>`).join(' ·')}</li>`).join('')}</ul>${proposed}`
 }
 /** Where the payer's files go: an 835 moves claims to paid or denied, a 277CA to received or rejected. */
 export function payerFileUploads(payers: any[], path: string) {
