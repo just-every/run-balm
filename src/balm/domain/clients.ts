@@ -128,10 +128,14 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   // CHART-005: series and progress changes are built only from the notes this reader reaches.
   const measures = notes ? seriesByEpisode(notes) : null
   const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => ['progress','reevaluation','discharge'].includes(n.templateDefinition?.kind ?? '')).map(n => [n.id, changesInEpisode(measures, n)])) : null
-  const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
+  // CHART-013 care-team and emergency readers see only the episodes holding the notes (and, under break glass, documents) they read.
+  const reached = teamOnly ? new Set([...(notes ?? []).map(n => (n as Data).episodeId as string),
+    ...(access.breakGlass ? (await rows(db, 'SELECT id FROM bm_chart_documents WHERE client_id=?', client.id)).map(d => episodes.of('document', d.id as string)) : [])]) : null
+  const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures }).filter(e => !reached || reached.has(e.id))
   const referrals = teamOnly || who.role === 'agent' ? null : await referralsFor(db, client.id as string, (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string)
   const supervisionOnly = teamOnly && !access.all
-  const visibleClient: Data = supervisionOnly ? {id:client.id,first_name:client.first_name,last_name:client.last_name} : { ...client }
+  // Note access alone names the patient; it carries none of their contact or demographic details.
+  const visibleClient: Data = teamOnly ? {id:client.id,first_name:client.first_name,last_name:client.last_name} : { ...client }
   if (!all) delete visibleClient.copay_cents
   return { clinicalTemplates: notes ? await templateCatalog(db) : [], client: visibleClient, careAccess: { ...access, teamOnly, supervisionOnly },  appointments: visibleAppointments, episodes: supervisionOnly ? [] : episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }

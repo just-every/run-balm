@@ -848,3 +848,25 @@ test('CHART-002: PT, OT and SLP complete signed episodes, carry only earlier epi
   const { customizedTemplateJourney } = await import('./chart-template-journey.mjs')
   await customizedTemplateJourney(h)
 },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
+
+test('a care-team or emergency reader gets the patient’s name and the episodes of the notes they read, nothing more of the file', () => run(async h => {
+  await h.finishSetup()
+  const { service, practitioners: [priya, sam, lee] } = await clinic(h, ['Priya', 'Sam', 'Lee'])
+  const patient = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1984-05-06', email: 'marisol@patient.example', phone: '(312) 555-0142' })
+  const earlier = await h.cmd('episode.open', { clientId: patient.id, title: 'Pelvic floor', start: 'direct_access' })
+  await h.cmd('episode.close', { id: earlier.id, reason: 'Discharged to a home program' })
+  const knee = await h.cmd('episode.open', { clientId: patient.id, title: 'Right knee', start: 'direct_access' })
+  const visit = await pastVisit(h, patient.id, priya, service.id, h.owner, 2, { episodeId: knee.id })
+  const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Synthetic covering note: right knee effusion.' }, priya.cookie)
+  await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
+  await h.cmd('care_team.grant', { clientId: patient.id, practitionerId: sam.id })
+  await h.cmd('chart.break_glass', { clientId: patient.id, reason: 'Covering Priya; patient called about knee swelling.' }, lee.cookie)
+  for (const reader of [sam, lee]) {
+    const read = await h.send('/api/balm/clients/' + patient.id, undefined, reader.cookie)
+    assert.equal(read.status, 200)
+    assert.deepEqual(read.value.client, { id: patient.id, first_name: 'Marisol', last_name: 'Diaz' })
+    assert.deepEqual(read.value.notes.map(n => n.id), [note.id])
+    assert.deepEqual(read.value.episodes.filter(e => e.id).map(e => e.title), ['Right knee'])
+    for (const other of ['1984-05-06', 'marisol@patient.example', '5550142', 'Pelvic floor', 'Discharged to a home program']) assert.ok(!read.text.includes(other), 'the note access opens no other part of the file')
+  }
+}))
