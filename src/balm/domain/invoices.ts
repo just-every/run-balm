@@ -106,7 +106,7 @@ export async function voidInvoice(db: D1Database, who: Actor, input: Data) {
   const invoice = await one(db, 'SELECT * FROM bm_invoices WHERE id=?', text(input.id, 'id', 100))
   insist(invoice && invoice.status !== 'void', 'invoice_not_found', 404)
   // Each reason an invoice cannot be voided is named; only a lost race is a conflict.
-  const held = await one(db, 'SELECT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AS paid,EXISTS(SELECT 1 FROM bm_invoice_adjustments WHERE invoice_id=?) AS adjusted', invoice.id, invoice.id)
+  const held = await one(db, 'SELECT EXISTS(SELECT 1 FROM bm_invoice_payments WHERE invoice_id=?) AS paid,EXISTS(SELECT 1 FROM bm_invoice_adjustments WHERE invoice_id=?) AS adjusted', invoice.id, invoice.id)
   insist(!held?.paid, 'invoice_has_payments', 409)
   insist(!held?.adjusted, 'invoice_has_insurance_payments', 409)
   const claims = await rows(db, "SELECT id,status,version FROM bm_claims WHERE invoice_id=? AND status<>'corrected'", invoice.id)
@@ -114,7 +114,7 @@ export async function voidInvoice(db: D1Database, who: Actor, input: Data) {
   // A claim that was never batched is withdrawn with its invoice, so the visit can be invoiced and claimed again.
   const at = now(), reason = text(input.reason, 'reason', 300)
   await commit(db, who, [
-    guard(db, "NOT EXISTS(SELECT 1 FROM bm_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoice_adjustments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_claims WHERE invoice_id=? AND status NOT IN ('draft','ready','corrected'))", invoice.id, invoice.id, invoice.id),
+    guard(db, "NOT EXISTS(SELECT 1 FROM bm_invoice_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoice_adjustments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_claims WHERE invoice_id=? AND status NOT IN ('draft','ready','corrected'))", invoice.id, invoice.id, invoice.id),
     ...claims.flatMap(c => [
       stmt(db, "UPDATE bm_claims SET status='corrected',updated_at=?,version=version+1 WHERE id=? AND version=?", at, c.id, c.version), guard(db, 'changes()=1'),
       stmt(db, 'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)', id(), c.id, 'withdrawn', JSON.stringify({ invoiceId: invoice.id, reason }), at),
@@ -131,11 +131,11 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
   const invoice = await one(db, "SELECT * FROM bm_invoices WHERE id=? AND status='approved'", text(input.invoiceId, 'invoice', 100))
   insist(invoice, 'approved_invoice_not_found', 404)
   const amount = integer(input.amountCents, 'amount_cents', 1, 10_000_000), reference = text(input.reference, 'reference', 120), paymentId = id()
-  insist(!await one(db, 'SELECT 1 FROM bm_payments WHERE reference=? UNION ALL SELECT 1 FROM bm_account_entries WHERE reference=?', reference, reference), 'payment_reference_used', 409)
+  insist(!await one(db, 'SELECT 1 FROM bm_invoice_payments WHERE reference=? UNION ALL SELECT 1 FROM bm_account_entries WHERE reference=?', reference, reference), 'payment_reference_used', 409)
   await commit(db, who, [
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE reference=?)', reference),
     stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)', paymentId, invoice.id, amount, reference, who.email, now()),
-    guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
+    guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
     audit(db, who, 'payment.recorded', invoice.client_id as string, paymentId, `${amount} cents`),
   ])
   return { id: paymentId, invoiceId: invoice.id, amountCents: amount }
@@ -143,8 +143,8 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
 
 export async function invoicesFor(db: D1Database, clientId?: string) {
   const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,
-    (SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
-  const payments = await rows(db, `SELECT * FROM bm_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
+    (SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
+  const payments = await rows(db, `SELECT * FROM bm_invoice_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
   return list.map(i => ({ ...i, snapshot: JSON.parse(i.snapshot as string), payments: payments.filter(p => p.invoice_id === i.id) }) as Data)
 }
 

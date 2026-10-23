@@ -10,7 +10,7 @@ export function allocateExternalCredit(db: D1Database, credit: Data, invoices: D
     statements.push(stmt(db, `INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at,account_entry_id)
       VALUES(?,?,?,?,?,?,?)`, id(), invoice.id, take, `external:${credit.id}:${invoice.id}`, 'Approved external credit', now(), credit.id),
     guard(db, `EXISTS(SELECT 1 FROM bm_invoices i WHERE i.id=? AND i.client_id=? AND i.status='approved'
-      AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=i.id)
+      AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)
        +(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id))`, invoice.id, credit.client_id))
   }
   statements.push(guard(db, 'EXISTS(SELECT 1 FROM bm_credit_balances WHERE id=? AND remaining_cents>=0)', credit.id))

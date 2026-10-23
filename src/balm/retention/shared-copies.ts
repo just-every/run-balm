@@ -6,11 +6,13 @@ export async function sharedCopies(db: D1Database, found: Inventory, clientId: s
   const terms = imported.map(t=>`(r.target_table='${t}' AND r.target_id IN (SELECT id FROM ${t} WHERE rowid IN (SELECT value FROM json_each(?))))`)
   const matches = await rows(db,`SELECT r.rowid rid,r.job_id FROM bm_movein_records r WHERE ${terms.join(' OR ')}`, ...imported.map(t=>JSON.stringify(found[t]??[])))
   const batches = await rows(db,'SELECT DISTINCT batch_id FROM bm_claim_batch_items WHERE claim_id IN (SELECT id FROM bm_claims WHERE client_id=?)',clientId)
-  return { moveinRecords: matches.map(r=>r.rid), moveinJobs:[...new Set(matches.map(r=>r.job_id))], claimBatches:batches.map(r=>r.batch_id) }
+  const manualBatches=await rows(db,'SELECT DISTINCT batch_id FROM bm_payer_payment_lines WHERE client_id=?',clientId)
+  return {payerBatches:manualBatches.map(b=>b.batch_id), moveinRecords: matches.map(r=>r.rid), moveinJobs:[...new Set(matches.map(r=>r.job_id))], claimBatches:batches.map(r=>r.batch_id) }
 }
 /** Shared raw originals are withdrawn in full; other patients' native records remain. */
 export function purgeCopies(db: D1Database, clientId: string, copies: Awaited<ReturnType<typeof sharedCopies>>) {
   return [
+    stmt(db,'DELETE FROM bm_payer_eobs WHERE batch_id IN (SELECT value FROM json_each(?))',JSON.stringify(copies.payerBatches)),
     stmt(db,`DELETE FROM rer_mail_event_states WHERE EXISTS(SELECT 1 FROM bm_mail_attempts a WHERE a.client_id=?
       AND a.provider=rer_mail_event_states.provider AND a.tenant_id=rer_mail_event_states.tenant_id AND a.event_namespace=rer_mail_event_states.event_namespace
       AND a.recipient=rer_mail_event_states.recipient AND (a.provider_message_id=rer_mail_event_states.provider_message_id

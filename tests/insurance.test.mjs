@@ -462,3 +462,5 @@ test('CHART-006 selected diagnoses follow signed procedures into claims and fixe
     assert.deepEqual(signed.revisions[0].charges, charges, 'the signed code identities survive subsequent visit edits')
   })
 })
+
+test('INS-012: balanced manual EOB batches post group checks, CARC/PR, interest and recoupments once into statements and deposits',async()=>{const {manualPayerJourney}=await import('./manual-payer-journey.mjs');await run(manualPayerJourney)})

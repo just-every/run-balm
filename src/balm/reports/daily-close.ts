@@ -70,7 +70,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       ORDER BY json_extract(p.content,'$.startDate') DESC,p.created_at DESC,p.id DESC`, date, cutoff),
     stmt(db, `SELECT i.id,i.appointment_id,i.client_id,i.status,i.amount_cents,a.start_at,c.first_name||' '||c.last_name AS client,
       EXISTS(SELECT 1 FROM bm_claims q WHERE q.invoice_id=i.id AND q.status<>'corrected' AND julianday(q.created_at)<julianday(?)) AS has_claim,
-      (SELECT COALESCE(SUM(p.amount_cents),0) FROM bm_payments p WHERE p.invoice_id=i.id AND p.reference NOT LIKE 'era:%'
+      (SELECT COALESCE(SUM(p.amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id AND p.reference NOT LIKE 'era:%'
         AND NOT EXISTS(SELECT 1 FROM bm_card_payments cp WHERE cp.id=p.card_payment_id AND cp.kind='copay' AND cp.appointment_id=i.appointment_id) AND julianday(p.recorded_at)<julianday(?)) AS patient_paid_cents
       FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_clients c ON c.id=i.client_id
       WHERE i.status<>'void' AND julianday(a.start_at)<julianday(?) AND julianday(i.prepared_at)<julianday(?) ORDER BY a.start_at,i.id`, cutoff, cutoff, cutoff, cutoff),

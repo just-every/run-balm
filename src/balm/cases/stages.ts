@@ -28,7 +28,7 @@ export const cite = {
   visit: (f: CaseFacts, v: any): Citation => ({ kind: 'visit', label: `Visit ${usDay(v.start_at, f.zone)}: ${v.service} with ${v.practitioner}, ${v.status}`, href: file(f, `visit-${v.id}`) }),
   note: (f: CaseFacts, n: any): Citation => ({ kind: 'note', label: `${template(n.template)?.title ?? 'Treatment note'} ${n.signed_at ? `signed ${usDay(n.signed_at, f.zone)} by ${n.signer_name}${n.signer_credentials ? ', ' + n.signer_credentials : ''}` : 'not signed'}`, href: file(f, `note-${n.id}`) }),
   claim: (f: CaseFacts, c: any): Citation => ({ kind: 'claim', label: `Claim for ${usDay(c.service_date, f.zone)}, ${dollars(c.amount_cents)}, ${c.status}${c.payer_control ? `, payer control ${c.payer_control}` : ''}`, href: file(f, `claim-${c.id}`) }),
-  era: (f: CaseFacts, c: any): Citation => ({ kind: 'era', label: `ERA ${c.era_trace} posted ${usDay(c.era_at, f.zone)}: paid ${dollars(c.paid_cents)}, patient ${dollars(c.pr_cents)}${(c.adjustments?.adjustments ?? []).map((a: any) => `, ${a.group}-${a.reason}`).join('')}${(c.adjustments?.remarks ?? []).map((r: string) => `, ${r}`).join('')}`, href: file(f, `claim-${c.id}`) }),
+  era: (f: CaseFacts, c: any): Citation => ({ kind: 'era', label: `${c.remittance_kind??'ERA'} ${c.era_trace} posted ${usDay(c.era_at, f.zone)}: paid ${dollars(c.paid_cents)}, patient ${dollars(c.pr_cents)}${(c.adjustments?.adjustments ?? []).map((a: any) => `, ${a.group}-${a.reason}`).join('')}${(c.adjustments?.remarks ?? []).map((r: string) => `, ${r}`).join('')}`, href: file(f, `claim-${c.id}`) }),
   statement: (f: CaseFacts): Citation => ({ kind: 'statement', label: `Statement: patient balance ${dollars(f.balanceCents)}`, href: file(f, 'billing') }),
 }
 

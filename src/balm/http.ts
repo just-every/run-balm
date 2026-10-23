@@ -61,7 +61,9 @@ import { agentOpenApi } from './agent-openapi'
 import { insuranceCommand, insuranceState, insuranceFile, insuranceDownload, bookingWarnings } from './insurance'
 import { DomainError, human, insist, need, one, sha256 } from './domain/model'
 import { daySheetCsv, daySheetHtml } from './ui/day-sheet'
-import { clinicAttachment, linkAttachment } from './messages/attachments'
+import {payerEobDownload} from './insurance/manual-payers'
+import {manualPayerForm} from './insurance/manual-payer-forms'
+import { clinicAttachment, linkAttachment, uploadField } from './messages/attachments'
 import { parseMessageInput } from './messages/input'
 import { messageCommand, messageFile, patientMessages, patientSend } from './messages'
 import { reminderSettings, reminderCommand, reminderHistory } from './reminders/settings'
@@ -135,6 +137,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name==='insurance.payer_line.add')input=manualPayerForm(input)
   if(name.startsWith('note_release.'))return releaseCommand(env.DB,who,name,input)
   if(name.startsWith('estimate.aeob.'))return aeobCommand(env.DB,who,name,input)
   if(name==='estimate.prepare'&&input.contributorsForm==='on')input.contributors=estimateContributorsFromForm(input)
@@ -237,7 +240,8 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > (moving ? 20_000_000 : 1_000_000)) fail(moving ? 'This file is larger than 20 MB. Download patient lists in smaller date ranges.' : 'The file is larger than 1 MB.', 413)
       if (value.size) {
-        if (key === 'abnDocument') {
+        if(key==='attachment'&&new URL(request.url).searchParams.get('name')==='insurance.payer_eob.attach'){Object.assign(input,await uploadField(value))}
+        else if (key === 'abnDocument') {
           if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
           const bytes = new Uint8Array(await value.arrayBuffer())
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -522,6 +526,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
+      const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
+      if(eob)return payerEobDownload(env.DB,who,eob[1])
       const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])

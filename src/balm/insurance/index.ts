@@ -9,6 +9,8 @@ import { correctClaim, documentNecessity, draftAppeal, prepareClaim, scrubStored
 import { prepareBatch, submitBatch } from './batches'
 import { importAcknowledgment } from './acknowledgments'
 import { importRemittance } from './remittances'
+import {draftPayerBatch,addPayerLine,removePayerLine,attachPayerEob} from './manual-payers'
+import {closePayerBatch} from './manual-payer-posting'
 import type { InsuranceEnv } from './types'
 export { insuranceFile, insuranceState, insuranceDownload } from './views'
 export { bookingWarnings } from './authorization'
@@ -42,6 +44,11 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.batch.prepare':return prepareBatch(db,who,input)
     case 'insurance.batch.submit':return submitBatch(env,who,input)
     case 'insurance.acknowledgment.import':return importAcknowledgment(db,who,input)
+    case 'insurance.payer_batch.prepare':return draftPayerBatch(db,who,input)
+    case 'insurance.payer_line.add':return addPayerLine(db,who,input)
+    case 'insurance.payer_line.remove':return removePayerLine(db,who,input)
+    case 'insurance.payer_eob.attach':return attachPayerEob(db,who,input)
+    case 'insurance.payer_batch.close':return closePayerBatch(db,who,input)
     case 'insurance.remittance.import':return importRemittance(db,who,input)
     case 'insurance.denial.appeal':return draftAppeal(db,who,input)
   }

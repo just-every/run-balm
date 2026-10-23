@@ -14,7 +14,7 @@ const clinicFacts = (c: Data): [string, string][] => [['Clinic', c.clinic_name ?
 
 /** Everything a superbill shows for one approved invoice, and what is still missing. */
 export async function superbillFacts(db: D1Database, invoiceId: string) {
-  const invoice = await one(db, `SELECT i.*,a.practitioner_id,p.npi,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments x WHERE x.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents
+  const invoice = await one(db, `SELECT i.*,a.practitioner_id,p.npi,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments x WHERE x.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents
     FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_staff p ON p.id=a.practitioner_id WHERE i.id=? AND i.status='approved'`, invoiceId)
   insist(invoice, 'invoice_not_found', 404)
   const v = JSON.parse(invoice.snapshot as string), codes = (await visitCodes(db, { appointmentId: invoice.appointment_id as string }))[invoice.appointment_id as string]
@@ -74,7 +74,7 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
   const p = await one(db, `SELECT cp.*,c.first_name,c.last_name FROM bm_card_payments cp JOIN bm_clients c ON c.id=cp.client_id WHERE cp.id=? AND cp.status='succeeded'`, paymentId), clinic = await one(db, 'SELECT * FROM bm_settings WHERE id=1')
   if (!p) return externalReceipt(db, paymentId)
   insist(clinic, 'receipt_not_found', 404)
-  const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
+  const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_invoice_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
   const unapplied = (p.amount_cents as number) - (p.applied_cents as number), number = receiptNumber(p.receipt_number as number)
   const blocks: Block[] = [
     { kind: 'facts', rows: [...clinicFacts(clinic), ['Receipt', number], ['Date', usDate(p.succeeded_at as string, clinic.time_zone as string)], ['Patient', `${p.first_name} ${p.last_name}`],

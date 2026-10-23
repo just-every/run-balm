@@ -34,6 +34,7 @@ export const custody = [
   {"table":"bm_case_steps","client":false,"links":[["referral_id","bm_referrals","id"]]},
   {"table":"bm_chart_documents","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_claims","client":true,"links":[["invoice_id","bm_invoices","id"],["policy_id","bm_policies","id"],["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
+  {"table":"bm_payer_payment_lines","client":true,"links":[["claim_id","bm_claims","id"],["invoice_id","bm_invoices","id"]]},
   {"table":"bm_claim_batch_items","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_claim_events","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_client_alerts","client":true,"links":[["client_id","bm_clients","id"]]},

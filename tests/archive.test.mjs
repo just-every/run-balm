@@ -439,3 +439,28 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('note.sign',{id:note.id,revision:1,signature:'ArchiveStudent',attest:true},cookie,403)
  } finally {await h?.close();await rm(temporary,{recursive:true,force:true})}
 })
+
+test('INS-012: CLI archive restores fixed manual EOB batches, signed recoupments and deposit arithmetic', {timeout:240000},async()=>{
+ const {manualPayerJourney,payerEobPdf}=await import('./manual-payer-journey.mjs')
+ const temporary=await mkdtemp(join(tmpdir(),'balm-payer-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+  h=await harness({root:source})
+  const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
+  await h.close();h=null
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  const third=(await h.send('/api/balm/clients/'+result.claims[2].patient.id,undefined,owner)).value
+  assert.equal(third.billing.ledger.balanceCents,2000);assert.equal(third.billing.ledger.insurancePendingCents,2000)
+  const batch=(await h.state(owner)).insurance.manualPayers.find(b=>b.id===result.batch.id)
+  assert.equal(batch.status,'closed');assert.equal(batch.postedCents,12100)
+  assert.ok(batch.lines.some(l=>l.adjustments.some(a=>a.group==='CO'&&a.reason==='45')))
+  assert.equal((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,owner)).text,payerEobPdf.toString())
+  const report=(await h.send('/api/balm/reports/financial?from='+result.today+'&to='+result.today,undefined,owner)).value
+  assert.equal(report.deposits.rows.find(d=>d.reference==='synthetic-balm-10').receivedCents,12100)
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})

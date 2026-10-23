@@ -10,7 +10,7 @@ const groups: Record<string,string[]> = {
   'Invoices, payments, fees and billing codes':['invoices','payments','card_payments','visit_codes','visit_fees','movein_balances','account_entries','account_postings','patient_statements','aeob_sources','aeob_issues','estimate_requests','estimate_drafts','estimates','estimate_deliveries'],
   'Saved payment credentials and private payment links':['card_setups','cards','stripe_customers','pay_links'],
   'Payment plans and balance reminders':['payment_plans','plan_installments','balance_reminders','balance_notices','balance_review_queue'],
-  'Insurance coverage, claims and remittance detail':['policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],
+  'Insurance coverage, claims and remittance detail':['policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','payer_payment_lines','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],
   'Referrals and referral work':['referrals','case_drafts','case_steps'],
   'Portal access and sessions':['portal_links','portal_sessions'],
   'Reminders, follow-ups and delivery history':['mail_attempts','mail_attempt_visits','mail_reply_links','visit_reminders','visit_reply_links','followups','followup_attempts'],

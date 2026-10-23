@@ -30,6 +30,16 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
     rows(db, 'SELECT * FROM bm_case_drafts WHERE referral_id=?', referral.id),
     one(db, 'SELECT MIN(received_on) AS on_ FROM bm_referrals WHERE client_id=? AND received_on>? ', clientId, referral.received_on),
   ])
+  for(const claim of claims){
+    const manual=await rows(db,`SELECT l.*,b.reference,b.closed_at FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id WHERE l.claim_id=? AND b.status='closed' ORDER BY b.closed_at,l.id`,claim.id)
+    if(manual.length){
+      claim.paid_cents=Number(claim.paid_cents??0)+manual.reduce((sum,l)=>sum+(l.kind==='recoupment'?-l.amount_cents:l.paid_cents),0)
+      claim.pr_cents=Number(claim.pr_cents??0)+manual.reduce((sum,l)=>sum+l.pr_cents,0)
+      const prior=claim.adjustments?JSON.parse(claim.adjustments):{adjustments:[],remarks:[]}
+      claim.adjustments=JSON.stringify({adjustments:[...prior.adjustments,...manual.flatMap(l=>JSON.parse(l.adjustments))],remarks:[...prior.remarks,...manual.flatMap(l=>JSON.parse(l.remarks))]})
+      claim.era_trace=manual.at(-1)!.reference;claim.era_at=manual.at(-1)!.closed_at;claim.remittance_kind='Paper EOB'
+    }
+  }
   const zone = clinic!.time_zone as string, until = next?.on_ as string | null
   const inCase = (iso: string) => { const d = hostDateAt(new Date(iso), zone); return d >= referral.received_on && (!until || d < until) }
   const caseVisits = visits.filter(v => inCase(v.start_at)), ids = new Set(caseVisits.map(v => v.id))

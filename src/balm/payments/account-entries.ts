@@ -39,7 +39,7 @@ export async function prepareAccountEntry(db: D1Database, who: Actor, input: Dat
     prepared_by: who.email, prepared_at: now() }
   await validateTarget(db, e)
   const digest = await sha256(JSON.stringify(basis(e)))
-  await commit(db, who, [guard(db, 'NOT EXISTS(SELECT 1 FROM bm_payments WHERE reference=?)', e.reference),
+  await commit(db, who, [guard(db, 'NOT EXISTS(SELECT 1 FROM bm_invoice_payments WHERE reference=?)', e.reference),
     stmt(db, `INSERT INTO bm_account_entries(id,client_id,invoice_id,credit_id,kind,amount_cents,reason,reference,occurred_on,prepared_by,prepared_at,sha256)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, ...Object.values(e), digest), audit(db, who, 'account_entry.prepared', String(client.id), e.id, kind)])
   return { ...basis(e), sha256: digest }
@@ -58,7 +58,7 @@ export async function approveAccountEntry(db: D1Database, who: Actor, input: Dat
   const statements = [stmt(db, 'INSERT INTO bm_account_postings(entry_id,approved_by,posted_at,sha256,receipt_base64) VALUES(?,?,?,?,?)', e.id, who.email, at, e.sha256, receipt)]
   if (e.invoice_id) statements.push(guard(db, `EXISTS(SELECT 1 FROM bm_invoices i WHERE i.id=? AND i.client_id=? AND i.status='approved'
     AND NOT EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial'))
-    AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=i.id)
+    AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)
       +(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id))`, e.invoice_id, e.client_id))
   if (e.kind === 'credit') statements.push(...allocateExternalCredit(db, e, await openInvoices(db, e.client_id), e.amount_cents).statements)
   if (e.kind === 'refund') statements.push(guard(db, 'EXISTS(SELECT 1 FROM bm_credit_balances WHERE id=? AND client_id=? AND remaining_cents>=0)', e.credit_id, e.client_id))

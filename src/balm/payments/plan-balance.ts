@@ -4,7 +4,7 @@ import { one } from '../domain/model'
 // reservations. This same expression fences each reservation inside its batch.
 export const availableBalanceSql = `MAX(0,
  (SELECT COALESCE(SUM(MAX(0,i.amount_cents
-   -COALESCE((SELECT SUM(p.amount_cents) FROM bm_payments p WHERE p.invoice_id=i.id),0)
+   -COALESCE((SELECT SUM(p.amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)
    -COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0))),0)
  FROM bm_invoices i WHERE i.client_id=? AND i.status='approved'
  AND NOT EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial')))
