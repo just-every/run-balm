@@ -41,6 +41,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   if (!client.date_of_birth) reasons.push('date_of_birth_required')
   if (!lastTreatment) reasons.push('last_treatment_unknown')
   if (holds.length) reasons.push('legal_hold')
+  if (await one(db,'SELECT id FROM bm_record_requests WHERE client_id=? AND released_at IS NULL',client.id)) reasons.push('patient_record_request_pending')
   let eligibleAfter: string | null = null, minor = false
   if (applied && client.date_of_birth && lastTreatment && firstTreatment) {
     const majority = anniversary(client.date_of_birth,applied.majority)

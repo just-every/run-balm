@@ -1,3 +1,6 @@
+import { portalLogin } from './portal-billing.mjs'
+import { viewportProof } from './viewport-proof.mjs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { harness } from './harness.mjs'
@@ -179,4 +182,69 @@ test('PORTAL-003 CHART-009: a clinician assigns an illustrated home exercise, th
     for (const action of ['exercise.assigned', 'exercise.seen', 'exercise.done', 'exercise.adherence_read']) assert.ok(audit.some(a => a.action === action), action)
     assert.ok(!JSON.stringify(audit).includes('Straighten your knee'))
   } finally { await h.close() }
+})
+
+
+test('patient record requests keep a 30-day deadline, release exact reviewed originals, and isolate every download', {timeout:120_000}, async () => {
+  const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+  try {
+    await h.finishSetup()
+    const {service,practitioners:[priya]}=await clinic(h)
+    const desk=await h.staff('Rosa','reception')
+    const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-03-07',email:'marisol@patient.example'})
+    const other=await h.cmd('client.save',{firstName:'Una',lastName:'Other',email:'una@patient.example'})
+    const visit=await pastVisit(h,patient.id,priya,service.id)
+    await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Patient record narrative: knee improving.'},priya.cookie)
+    const patientCookie=await portalLogin(h,'marisol@patient.example'),otherCookie=await portalLogin(h,'una@patient.example')
+    assert.equal((await h.form('/portal/action',{name:'record.request',clientId:other.id},patientCookie)).status,303)
+    assert.equal((await h.form('/portal/action',{name:'record.request'},patientCookie)).status,303)
+    let state=await h.state(), request=state.recordRequests.find(r=>r.client_id===patient.id)
+    assert.equal(state.recordRequests.length,1,'repeat request reuses the outstanding request')
+    assert.equal(Date.parse(request.due_at)-Date.parse(request.requested_at),30*86400_000)
+    assert.equal((await h.state(desk.cookie)).recordRequests.length,0)
+    assert.match((await h.send('/app',undefined,h.owner)).text,/Patient record requests/)
+    assert.ok(!(await h.send('/app',undefined,desk.cookie)).text.includes('Patient record requests'))
+    await h.cmd('record.prepare',{id:request.id},priya.cookie,403)
+    await h.cmd('record.prepare',{id:request.id},desk.cookie,403)
+    const prepared=await h.cmd('record.prepare',{id:request.id})
+    assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,patientCookie)).status,404)
+    const pdf=await h.send('/api/balm/records/'+prepared.packageId+'.pdf',undefined,h.owner)
+    assert.equal(pdf.status,200,pdf.text);assert.match(pdf.text,/^%PDF/);assert.match(pdf.text,/Patient record narrative/)
+    const fhir=await h.send('/api/balm/records/'+prepared.packageId+'.json',undefined,h.owner)
+    assert.equal(fhir.status,200,fhir.text);assert.equal(fhir.headers.get('cache-control'),'no-store')
+    assert.match(fhir.headers.get('content-type'),/application\/fhir\+json/)
+    assert.equal(fhir.value.resourceType,'Bundle')
+    assert.deepEqual(fhir.value.entry.filter(e=>e.resource.resourceType==='Patient').map(e=>e.resource.id),[patient.id])
+    assert.ok(!fhir.text.includes('una@patient.example')&&!fhir.text.includes('token_hash')&&!fhir.text.includes('SESSION_SECRET'))
+    const note=fhir.value.entry.find(e=>e.resource.type?.coding?.some(c=>c.code==='11506-3'))
+    assert.match(Buffer.from(note.resource.content[0].attachment.data,'base64').toString(),/knee improving/)
+    assert.equal((await h.send('/api/balm/records/'+prepared.packageId+'.json',undefined,priya.cookie)).status,403)
+    await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:prepared.sha256},h.owner,400)
+    await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:'0'.repeat(64),confirm:true},h.owner,409)
+    await viewportProof(h,[{name:'record-requested',path:'/portal/home',cookie:patientCookie,selector:'#records'},
+      {name:'record-review',path:'/app',cookie:h.owner,selector:'#record-requests',tooltips:['Previous day','Next day']}])
+    await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:prepared.sha256,confirm:true})
+    assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,otherCookie)).status,404)
+    assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,h.owner)).status,303)
+    for(const [extension,original] of [['pdf',pdf],['json',fhir]]) {
+      const downloaded=await h.send('/portal/records/'+request.id+'.'+extension,undefined,patientCookie)
+      assert.equal(downloaded.status,200);assert.equal(downloaded.text,original.text)
+      assert.equal(downloaded.headers.get('cache-control'),'no-store')
+    }
+    // A later clinical change never alters the released originals.
+    await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Later record update.'},priya.cookie)
+    assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,patientCookie)).text,fhir.text)
+    await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:prepared.sha256,confirm:true},h.owner,409)
+    await assert.rejects(h.db.prepare("UPDATE bm_record_parts SET content='changed' WHERE package_id=?").bind(prepared.packageId).run())
+    await assert.rejects(h.db.prepare('DELETE FROM bm_record_requests WHERE id=?').bind(request.id).run())
+    const released=(await h.state()).recordRequests[0]
+    assert.ok(released.released_at);assert.equal(released.package_id,prepared.packageId)
+    await viewportProof(h,[{name:'record-released',path:'/portal/home',cookie:patientCookie,selector:'#records'}])
+    if(process.env.BALM_RECORD_EXPORT){await mkdir(process.env.BALM_RECORD_EXPORT,{recursive:true});await writeFile(process.env.BALM_RECORD_EXPORT+'/record.json',fhir.text);await writeFile(process.env.BALM_RECORD_EXPORT+'/record.pdf',Buffer.from(pdf.text,'binary'))}
+    const events=(await h.db.prepare("SELECT action,detail FROM bm_audit WHERE client_id=? AND action LIKE 'record.%'").bind(patient.id).all()).results
+    for(const name of ['record.requested','record.prepared','record.released','record.downloaded'])assert.ok(events.some(r=>r.action===name),name)
+    assert.ok(!JSON.stringify(events).includes('knee improving'))
+    await h.cmd('client.save',{id:patient.id,firstName:'Marisol',lastName:'Diaz',email:'new@patient.example'})
+    assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,patientCookie)).status,303,'a changed identity revokes access to prior releases')
+  } finally {await h.close()}
 })
