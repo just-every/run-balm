@@ -194,9 +194,14 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-03-07',email:'marisol@patient.example'})
     const other=await h.cmd('client.save',{firstName:'Una',lastName:'Other',email:'una@patient.example'})
     const visit=await pastVisit(h,patient.id,priya,service.id)
+    await h.cmd('appointment.attend',{id:visit},priya.cookie)
+    await h.cmd('pay.codes.save',{appointmentId:visit,cpt:'97110 GP x1',icd10:'M25.561'},priya.cookie)
     const noteDraft=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Patient record narrative: earlier unsigned observations.'},priya.cookie)
     await h.cmd('note.amend',{id:noteDraft.id,revision:1,body:'Patient record narrative: knee improving.'},priya.cookie)
     await h.cmd('note.sign',{id:noteDraft.id,revision:2,signature:'Priya',credentials:'PT, DPT',attest:true},priya.cookie)
+    await h.cmd('message.send',{clientId:patient.id,body:'Record export keeps the secure patient message.',delivery:'shown'},h.owner)
+    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jEAAAAABJRU5ErkJggg=='
+    await h.cmd('exercise.assign',{clientId:patient.id,title:'Record exercise',sets:1,reps:'5',instructions:'Readable instructions without image bytes.',image:png},priya.cookie)
     const patientCookie=await portalLogin(h,'marisol@patient.example'),otherCookie=await portalLogin(h,'una@patient.example')
     assert.equal((await h.form('/portal/action',{name:'record.request',clientId:other.id},patientCookie)).status,303)
     assert.equal((await h.form('/portal/action',{name:'record.request'},patientCookie)).status,303)
@@ -216,7 +221,13 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     assert.equal(fhir.status,200,fhir.text);assert.equal(fhir.headers.get('cache-control'),'no-store')
     assert.match(fhir.headers.get('content-type'),/application\/fhir\+json/)
     assert.equal(fhir.value.resourceType,'Bundle')
+    assert.ok(fhir.value.entry.some(e=>e.resource.resourceType==='Encounter'&&e.resource.status==='unknown'))
+    assert.ok(fhir.value.entry.some(e=>e.resource.resourceType==='Practitioner'))
+    assert.ok(fhir.value.entry.some(e=>e.resource.resourceType==='Condition'&&e.resource.code.coding.some(c=>c.code==='M25.561')))
     assert.deepEqual(fhir.value.entry.filter(e=>e.resource.resourceType==='Patient').map(e=>e.resource.id),[patient.id])
+    assert.ok(fhir.value.entry.some(e=>e.resource.content?.some(c=>c.attachment.contentType==='image/png'&&c.attachment.data===png.split(',')[1])))
+    assert.ok(fhir.value.entry.some(e=>e.resource.type?.text==='Secure messages'))
+    assert.ok(!pdf.text.includes(png.split(',')[1]),'image bytes are attachments, never a printed base64 word')
     assert.ok(!fhir.text.includes('una@patient.example')&&!fhir.text.includes('token_hash')&&!fhir.text.includes('SESSION_SECRET'))
     const note=fhir.value.entry.find(e=>e.resource.type?.coding?.some(c=>c.code==='11506-3'))
     const noteRecords=fhir.value.entry.filter(e=>e.resource.type?.coding?.some(c=>c.code==='11506-3')).map(e=>e.resource)
@@ -245,6 +256,8 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     await assert.rejects(h.db.prepare('DELETE FROM bm_record_requests WHERE id=?').bind(request.id).run())
     const released=(await h.state()).recordRequests[0]
     assert.ok(released.released_at);assert.equal(released.package_id,prepared.packageId)
+    const queueAfterRelease=(await h.send('/app',undefined,h.owner)).text
+    assert.match(queueAfterRelease,/does not establish fulfillment of the complete-record request/)
     await viewportProof(h,[{name:'record-released',path:'/portal/home',cookie:patientCookie,selector:'#records'}])
     if(process.env.BALM_RECORD_EXPORT){await mkdir(process.env.BALM_RECORD_EXPORT,{recursive:true});await writeFile(process.env.BALM_RECORD_EXPORT+'/record.json',fhir.text);await writeFile(process.env.BALM_RECORD_EXPORT+'/record.pdf',Buffer.from(pdf.text,'binary'))}
     const events=(await h.db.prepare("SELECT action,detail FROM bm_audit WHERE client_id=? AND action LIKE 'record.%'").bind(patient.id).all()).results

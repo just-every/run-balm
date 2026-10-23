@@ -491,7 +491,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     who = await principal(request, env, isAgent)
     if(isAgent){
       const scopeRead=path.match(/^\/api\/balm\/agent\/(appointments|patients|charges|payments)$/)
-      if(scopeRead&&request.method==='GET')return json(await scopedRead(env.DB,who,scopeRead[1]))
+      if(scopeRead&&request.method==='GET')return json(await scopedRead(env.DB,who,scopeRead[1],Object.fromEntries(url.searchParams)))
       if(path==='/api/balm/agent/context'&&request.method==='GET')requireScope(who,'context.read')
       else if(path!=='/api/balm/agent/command')fail('key_scope_refused',403)
     }
