@@ -12,7 +12,7 @@ export async function cobFacts(db:D1Database,policy:Data,invoice:Data) {
  const stages=await rows(db,`SELECT s.*,a.id AS adjudication_id,a.detail FROM bm_cob_stages s LEFT JOIN bm_cob_adjudications a ON a.invoice_id=s.invoice_id AND a.policy_id=s.policy_id AND a.id=(SELECT z.id FROM bm_cob_adjudications z WHERE z.invoice_id=s.invoice_id AND z.policy_id=s.policy_id ORDER BY z.recorded_at DESC,z.rowid DESC LIMIT 1) WHERE s.invoice_id=? AND s.priority<? ORDER BY s.priority`,invoice.id,policy.priority)
  insist(stages.length===policy.priority-1&&stages.every(s=>s.state==='adjudicated'&&s.adjudication_id),'prior_payers_must_adjudicate_before_preparing_next_claim',409)
  const prior=stages.map(s=>JSON.parse(s.detail) as CobPrior)
- insist(prior.every(p=>p.lines.length&&p.lines.every(l=>l.adjudicatedOn&&l.units!==null)),'record_each_prior_EOB_line_units_and_adjudication_date_before_next_claim',409)
+ insist(prior.every(p=>p.lines.length&&p.lines.every(l=>l.code&&l.adjudicatedOn&&l.units!==null)),'record_each_prior_EOB_line_units_and_adjudication_date_before_next_claim',409)
  return {priority:policy.priority,prior,primaryUnits:prior[0].lines.map(l=>({code:l.code,units:l.units!}))}
 }
 export async function stageForClaim(db:D1Database,claim:Data) {

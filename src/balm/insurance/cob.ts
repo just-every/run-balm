@@ -31,7 +31,7 @@ export async function cobCommand(db:D1Database,initial:Actor,name:string,input:D
  if(name==='insurance.cob.wait.save') {
   const days=Number(input.waitDays),source=text(input.source,'payer_contract_or_owner_policy_source',1000)
   insist(Number.isInteger(days)&&days>=1&&days<=730,'COB_wait_must_be_1_to_730_days')
-  await commit(db,who,[guard(db,"?='owner'",who.role),stmt(db,'INSERT INTO bm_cob_wait_settings(id,wait_days,source,recorded_by,recorded_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wait_days=excluded.wait_days,source=excluded.source,recorded_by=excluded.recorded_by,recorded_at=excluded.recorded_at',days,source,who.email,now()),audit(db,who,'insurance.cob_wait_configured')])
+  await commit(db,who,[guard(db,"?='owner'",who.role),stmt(db,'INSERT INTO bm_cob_wait_settings(id,wait_days,source,recorded_by,recorded_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wait_days=excluded.wait_days,source=excluded.source,recorded_by=excluded.recorded_by,recorded_at=excluded.recorded_at',days,source,who.email,now()),audit(db,who,'insurance.cob_wait_configured',null)])
   return {waitDays:days,source}
  }
  if(name==='insurance.cob.patient.decide') {
