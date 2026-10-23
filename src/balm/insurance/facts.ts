@@ -1,6 +1,7 @@
 import { audit, commit, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
 import { policyFor } from './access'
+import { cobFacts } from './cob-stages'
 import { claimAuthorization, claimAuthorizations } from './claim-authorization'
 import { medicareSpending } from './medicare'
 import { applyMedicareServices } from './medicare-claim'
@@ -84,5 +85,6 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     basis:{assistantSupervisionCount:independent.filter(r=>r.supervision_given).length,...(renderingStaff ? {renderingStaffId:renderingStaff.id,renderingStaffVersion:renderingStaff.version} : {}),...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
     policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_allowance>auth.allowance_total,authorizationNotCovered:!!auth&&!authorizationCoversCodes(auth,billed.filter(l=>l.units>0).map(l=>l.code))
   }
+  value.cob=await cobFacts(db,policy,invoice)
   return applyMedicareServices(value)
 }

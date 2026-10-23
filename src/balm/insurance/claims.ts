@@ -1,5 +1,6 @@
 import { audit, commit, DomainError, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
 import { claimFor } from './access'
+import { stageSetup } from './cob-stages'
 import { claimFacts } from './facts'
 import { applyMedicareServices } from './medicare-claim'
 import { claimFactGuards } from './fences'
@@ -25,11 +26,15 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
   const cents=amount||facts.invoiceCents
   if(cents<=0&&facts.belowThresholdCodes?.length)throw new DomainError(errors.filter(e=>e.code==='timed_code_below_threshold').map(e=>e.message).join(' '),400,{scrubErrors:errors})
   insist(cents>0,'claim_amount_must_be_positive')
+  const policyClient=(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id
+  const stages=await stageSetup(db,{client_id:policyClient},facts)
   await commit(db,who,[
+    ...stages,
     ...claimFactGuards(db,{client_id:(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,policy_id:input.policyId,appointment_id:input.appointmentId},facts),
     guard(db,"EXISTS(SELECT 1 FROM bm_invoices WHERE id=? AND status='approved' AND amount_cents=?)",facts.invoiceId,facts.invoiceCents),
     ...(replaces?[stmt(db,"UPDATE bm_claims SET status='corrected',updated_at=?,version=version+1 WHERE id=? AND version=?",at,replaces.id,replaces.version),guard(db,'changes()=1')]:[]),
     stmt(db,`INSERT INTO bm_claims(id,client_id,appointment_id,policy_id,invoice_id,replaces_id,payer_control,snapshot,errors,status,amount_cents,therapy_group,service_date,medical_necessity,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,key,(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,input.appointmentId,input.policyId,facts.invoiceId,replaces?.id??null,replaces?.payer_control??'',JSON.stringify(facts),JSON.stringify(errors),errors.length?'draft':'ready',cents,facts.kx.group,facts.serviceDate,facts.medicalNecessity,who.email,at,at),
+    stmt(db,"UPDATE bm_cob_stages SET claim_id=?,state='unsent',updated_at=?,version=version+1 WHERE invoice_id=? AND policy_id=? AND state<>'crossover'",key,at,facts.invoiceId,input.policyId),guard(db,'changes()=1'),
     audit(db,who,replaces?'insurance.claim_corrected':'insurance.claim_prepared',replaces?.client_id??(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,key),
     ...(replaces?[stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),replaces.id,'corrected',JSON.stringify({replacementId:key}),at)]:[])
   ])

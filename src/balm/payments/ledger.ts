@@ -23,7 +23,7 @@ export type Line = { at: string; kind: 'charge' | 'payment' | 'card' | 'adjustme
 
 /** Open approved invoices of a client, oldest first, with what is still owed. */
 export async function openInvoices(db: D1Database, clientId: string) {
-  return (await rows(db, `SELECT i.id,i.number,i.amount_cents,i.appointment_id,i.approved_at,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents,EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial')) AS insurance_pending
+  return (await rows(db, `SELECT i.id,i.number,i.amount_cents,i.appointment_id,i.approved_at,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents,EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id) AS insurance_pending
     FROM bm_invoices i WHERE i.client_id=? AND i.status='approved' ORDER BY i.number`, clientId))
     .map(i => ({ ...i, open_cents: (i.amount_cents as number) - (i.paid_cents as number) - (i.adjusted_cents as number) }) as Data & { open_cents: number }).filter(i => i.open_cents > 0 && !i.insurance_pending)
 }
@@ -37,7 +37,7 @@ export async function ledger(db: D1Database, clientId: string) {
   const external = await rows(db, "SELECT * FROM bm_posted_account_entries WHERE client_id=? AND kind IN ('credit','refund') ORDER BY posted_at,id", clientId)
   const held = await rows(db, 'SELECT remaining_cents FROM bm_credit_balances WHERE client_id=?', clientId)
   const pending = await rows(db, `SELECT MAX(0,i.amount_cents-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id)-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id)) AS cents
-    FROM bm_invoices i WHERE i.client_id=? AND i.status='approved' AND EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial'))`, clientId)
+    FROM bm_invoices i WHERE i.client_id=? AND i.status='approved' AND EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)`, clientId)
   const insurancePendingCents = pending.reduce((sum, i) => sum + Number(i.cents), 0)
   const entries: Omit<Line, 'balanceCents'>[] = [
     ...invoices.map(i => { const v = JSON.parse(i.snapshot as string); return { at: i.approved_at as string, kind: 'charge' as const, description: `${v.serviceDate.split(',').slice(0, 3).join(',')} · ${v.service.name} · ${invoiceNumber(i.number as number)}`, chargeCents: i.amount_cents as number, paymentCents: 0, ref: i.id as string } }),

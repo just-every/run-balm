@@ -29,7 +29,7 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
     const errors=scrubClaim(facts)
     insist(claim.status==='ready'&&!errors.length,'fix_claim_scrubber_errors_before_batching',409)
     const policy=await one(db,'SELECT priority FROM bm_policies WHERE id=?',claim.policy_id)
-    insist(policy?.priority===1,'secondary_claims_are_not_supported_yet',409)
+    insist(policy?.priority===1||facts.cob,'prior_adjudication_required_for_next_payer',409)
     claims.push({...claim,facts})
   }
   insist(new Set(claims.map(c=>c.appointment_id)).size===claims.length,'a_batch_cannot_bill_the_same_visit_twice',409)
@@ -52,6 +52,6 @@ export async function submitBatch(env:InsuranceEnv,who:Actor,input:Data) {
   try{result=await insuranceAdapter(env).submit({kind:'837P',id:batch.id,body:batch.body,sha256:batch.sha256})}
   catch(error){await commit(db,who,[stmt(db,"UPDATE bm_claim_batches SET status='uncertain',version=version+1 WHERE id=? AND status='sending'",batch.id),...claims.map(c=>audit(db,who,'insurance.submission_uncertain',c.client_id,c.id))]);throw error}
   insist(result.status==='submitted','insurance_adapter_unavailable',409)
-  await commit(db,who,[stmt(db,"UPDATE bm_claim_batches SET status='submitted',reference=?,version=version+1 WHERE id=? AND status='sending'",result.reference,batch.id),guard(db,'changes()=1'),...claims.flatMap(c=>[stmt(db,"UPDATE bm_claims SET status='submitted',updated_at=?,version=version+1 WHERE id=? AND status IN ('batched','exported')",now(),c.id),audit(db,who,'insurance.claim_submitted',c.client_id,c.id)])])
+  await commit(db,who,[stmt(db,"UPDATE bm_claim_batches SET status='submitted',reference=?,version=version+1 WHERE id=? AND status='sending'",result.reference,batch.id),guard(db,'changes()=1'),...claims.flatMap(c=>[stmt(db,"UPDATE bm_cob_stages SET state='sent',updated_at=?,version=version+1 WHERE claim_id=? AND state='unsent'",now(),c.id),stmt(db,"UPDATE bm_claims SET status='submitted',updated_at=?,version=version+1 WHERE id=? AND status IN ('batched','exported')",now(),c.id),audit(db,who,'insurance.claim_submitted',c.client_id,c.id)])])
   return {id:batch.id,...result}
 }

@@ -22,5 +22,11 @@ export function manualLine(input:Data) {
  insist(adjudication!=='denied'||paidCents===0,'denied_line_cannot_include_payment')
  const remarks=(Array.isArray(input.remarks)?input.remarks:[]).map((r:unknown)=>text(r,'RARC',10))
  insist(remarks.length<=20&&remarks.every((r:string)=>/^[A-Z]\d{1,5}$/.test(r)),'invalid_RARC_code')
- return {kind,reason,billedCents,allowedCents,paidCents,prCents,adjustments,remarks,adjudication,adjustmentCents:adjudication==='denied'?0:payerAdjustments,payerControl:String(input.payerControl??'').trim().slice(0,100)}
+ const code=String(input.procedureCode??'').trim().toUpperCase(),date=String(input.adjudicatedOn??'').trim(),units=input.paidUnits==null||input.paidUnits===''?null:Number(input.paidUnits)
+ insist(!code||/^[A-Z0-9]{5}$/.test(code),'invalid_EOB_procedure_code')
+ insist(!date||/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date,'invalid_EOB_adjudication_date')
+ insist(units===null||Number.isFinite(units)&&units>=0,'invalid_EOB_paid_units')
+ const modifiers=Array.isArray(input.procedureModifiers)?input.procedureModifiers:String(input.procedureModifiers??'').split(/[ ,]+/).filter(Boolean)
+ insist(modifiers.length<=4&&modifiers.every((m:string)=>/^[A-Z0-9]{2}$/.test(m)),'invalid_EOB_modifiers')
+ return {kind,reason,procedureCode:code,procedureModifiers:modifiers,paidUnits:units,adjudicatedOn:date,billedCents,allowedCents,paidCents,prCents,adjustments,remarks,adjudication,adjustmentCents:adjudication==='denied'?0:payerAdjustments,payerControl:String(input.payerControl??'').trim().slice(0,100)}
 }

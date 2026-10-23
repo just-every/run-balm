@@ -1,9 +1,9 @@
+import { payerOrder, otherPayers, lineAdjudications } from './cob-x12'
 import { insist } from '../domain/model'
 import type { ClaimSnapshot } from './types'
 import { envelope, money, parties, segment as s, xdate } from './x12'
 
-/** 5010 professional, primary claims. Institutional/COB claims require other
- * loops and are refused by the preparation door instead of emitting guesses. */
+/** Professional 5010; COB preserves each earlier payer’s original adjudication. */
 export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],batchId:string) {
   insist(claims.length>0,'claim_batch_empty')
   const first=claims[0].snapshot,b=first.billing
@@ -15,7 +15,7 @@ export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],ba
   let hl=1
   for(const claim of claims) {
     const c=claim.snapshot,sub=++hl,self=c.subscriber.relationship==='18'
-    parts.push(s('HL',sub,1,22,self?0:1),s('SBR','P',self?'18':'',c.subscriber.group,'','','','','',c.payer.medicare?'MB':'CI'),
+    parts.push(s('HL',sub,1,22,self?0:1),s('SBR',payerOrder(c.cob?.priority??1),self?'18':'',c.subscriber.group,'','','','','',c.payer.medicare?'MB':'CI'),
       s('NM1','IL',1,c.subscriber.last,c.subscriber.first,'','','','MI',c.subscriber.memberId))
     if(self)parts.push(s('N3',c.address.street),s('N4',c.address.city,c.address.state,c.address.postal),s('DMG','D8',xdate(c.subscriber.dob),c.subscriber.sex))
     parts.push(s('NM1','PR',2,c.payer.name,'','','','','PI',c.payer.code))
@@ -28,8 +28,10 @@ export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],ba
     parts.push('HI*'+c.diagnoses.map((d,i)=>`${i===0?'ABK':'ABF'}:${d.replace('.','')}`).join('*'))
     if(c.referring)parts.push(s('NM1','DN',1,c.referring.last,c.referring.first,'','','','XX',c.referring.npi))
     parts.push(s('NM1','82',1,c.rendering.last,c.rendering.first,'','','','XX',c.rendering.npi),s('PRV','PE','PXC',c.rendering.taxonomy))
+    if(c.cob)parts.push(...otherPayers(c.cob.prior))
     c.lines.forEach((line,i)=>{
       parts.push(s('LX',i+1),`SV1*HC:${line.code}${line.modifiers.length?':'+line.modifiers.join(':'):''}*${money(line.amountCents)}*UN*${line.units}***${line.diagnosisPointers.join(':')}`,s('DTP','472','D8',xdate(c.serviceDate)),s('REF','6R',`${claim.id.replace(/-/g,'')}${i+1}`))
+      if(c.cob)parts.push(...lineAdjudications(c.cob.prior,line))
     })
   }
   return envelope('837','005010X222A1',config,parts)

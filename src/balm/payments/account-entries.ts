@@ -57,7 +57,7 @@ export async function approveAccountEntry(db: D1Database, who: Actor, input: Dat
   const at = now(), receipt = ['credit', 'refund'].includes(e.kind) ? await prepareExternalReceipt(db, e, who.email, at) : null
   const statements = [stmt(db, 'INSERT INTO bm_account_postings(entry_id,approved_by,posted_at,sha256,receipt_base64) VALUES(?,?,?,?,?)', e.id, who.email, at, e.sha256, receipt)]
   if (e.invoice_id) statements.push(guard(db, `EXISTS(SELECT 1 FROM bm_invoices i WHERE i.id=? AND i.client_id=? AND i.status='approved'
-    AND NOT EXISTS(SELECT 1 FROM bm_claims c WHERE c.invoice_id=i.id AND c.status NOT IN ('corrected','paid','partial'))
+    AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)
     AND i.amount_cents>=(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)
       +(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id))`, e.invoice_id, e.client_id))
   if (e.kind === 'credit') statements.push(...allocateExternalCredit(db, e, await openInvoices(db, e.client_id), e.amount_cents).statements)

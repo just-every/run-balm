@@ -27,8 +27,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   const before = (iso: unknown) => Date.parse(String(iso)) < Date.parse(r.end)
   const [invoices, payments, adjustments, cards, remittances, visits, accountEntries] = (await db.batch<Data>([
     db.prepare(`SELECT i.id,i.client_id,i.amount_cents,a.start_at,c.first_name||' '||c.last_name AS client,
-      (SELECT y.name FROM bm_claims q JOIN bm_policies p ON p.id=q.policy_id JOIN bm_payers y ON y.id=p.payer_id
-        WHERE q.invoice_id=i.id AND q.status NOT IN ('corrected','paid','partial') ORDER BY q.created_at DESC LIMIT 1) AS open_payer
+      (SELECT h.payer FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id) AS open_payer
       FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_clients c ON c.id=i.client_id WHERE i.status='approved'`),
     db.prepare('SELECT invoice_id,amount_cents,reference,recorded_at,card_payment_id,account_entry_id FROM bm_invoice_payments'),
     db.prepare('SELECT invoice_id,amount_cents,reason,recorded_at FROM bm_invoice_adjustments'),

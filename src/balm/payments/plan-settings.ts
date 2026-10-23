@@ -79,7 +79,7 @@ export async function balanceReview(db: D1Database, at = now()) {
   const aged = await rows(db, `SELECT c.id AS client_id,c.first_name,c.last_name,MIN(i.approved_at) AS oldest_at,
     SUM(MAX(0,i.amount_cents-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0))) AS balance_cents
     FROM bm_clients c JOIN bm_invoices i ON i.client_id=c.id WHERE c.erased_at IS NULL AND i.status='approved'
-    AND NOT EXISTS(SELECT 1 FROM bm_claims claim WHERE claim.invoice_id=i.id AND claim.status NOT IN ('corrected','paid','partial'))
+    AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)
     AND i.amount_cents>COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)+COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0)
     GROUP BY c.id HAVING julianday(?)-julianday(MIN(i.approved_at))>=?
       OR EXISTS(SELECT 1 FROM bm_balance_review_queue q WHERE q.client_id=c.id AND q.after_days=?) ORDER BY oldest_at`, at, afterDays, afterDays)

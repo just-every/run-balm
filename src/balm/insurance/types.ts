@@ -1,9 +1,11 @@
+import type { CobFacts } from './cob-types'
 import type { MedicareService } from './medicare-claim'
 import type { Bindings } from '../../auth.server'
 export type InsuranceEnv = Bindings & { BALM_INSURANCE_ADAPTER_URL?: string; BALM_INSURANCE_ADAPTER_TOKEN?: string }
 export type ScrubError = { code: string; field: string; message: string }
 export type ClaimLine = { code: string; minutes: number; units: number; modifiers: string[]; amountCents: number; allowedCents?:number; diagnosisPointers: number[] }
 export type ClaimSnapshot = {
+  cob?: CobFacts
   patient: { first: string; last: string; dob: string; sex: string }
   subscriber: { first: string; last: string; dob: string; sex: string; relationship: string; memberId: string; group: string }
   address: { street: string; city: string; state: string; postal: string }

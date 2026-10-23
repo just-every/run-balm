@@ -1,3 +1,4 @@
+import { rows } from '../domain/model'
 import { accountAuthorizations, authorizationCoversVisit, selectAuthorization, signedAuthorizationChargeSql } from '../insurance/authorization-accounting'
 import { datePlus, firstInstantOfHostDate, hostDateAt } from '../availability/timezone'
 import { dollars } from '../domain/invoices'
@@ -139,6 +140,13 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   }
 
   for (const claim of unsent) result.claims.push(item(claim, 'unsent_claim', `Claim ${claim.status === 'exported' ? 'exported; not sent by Balm' : claim.status === 'draft' ? 'needs fixes before sending' : claim.status === 'batched' ? 'batched; not sent' : 'ready; not sent'} · ${displayDate(claim.service_date)}`, `claim-${claim.id}`))
+  const nextPayers=await rows(db,`SELECT s.policy_id AS id,i.client_id,c.first_name||' '||c.last_name AS client,y.name AS payer,s.priority,
+    (SELECT q.service_date FROM bm_claims q WHERE q.invoice_id=i.id ORDER BY q.created_at LIMIT 1) AS service_date
+    FROM bm_cob_stages s JOIN bm_invoices i ON i.id=s.invoice_id JOIN bm_clients c ON c.id=i.client_id
+    JOIN bm_policies p ON p.id=s.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_appointments a ON a.id=i.appointment_id
+    WHERE s.priority>1 AND s.state='waiting' AND s.claim_id IS NULL AND i.status='approved' AND julianday(a.start_at)<julianday(?)
+    AND EXISTS(SELECT 1 FROM bm_cob_stages previous WHERE previous.invoice_id=s.invoice_id AND previous.priority=s.priority-1 AND previous.state='adjudicated')`,cutoff)
+  for(const stage of nextPayers)result.claims.push(item(stage,'unsent_next_payer',`${stage.priority===2?'Secondary':'Tertiary'} claim not prepared or sent · ${stage.payer} · ${displayDate(stage.service_date)}`,'insurance'))
   for (const invoice of invoices) if (invoice.status === 'approved' && !invoice.has_claim) {
     const serviceDate = hostDateAt(new Date(invoice.start_at), zone)
     if ((policiesByClient.get(invoice.client_id) ?? []).some(p => p.starts_on <= serviceDate && (!p.ends_on || p.ends_on >= serviceDate))) {
