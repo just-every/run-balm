@@ -3,7 +3,7 @@ import type { ClaimLine } from './types'
 import { insist } from '../domain/model'
 import { element, money, segment as s, xdate } from './x12'
 export const payerOrder=(priority:number)=>['','P','S','T'][priority]
-const cas=(adjustments:CobAdjustment[])=>adjustments.map(a=>s('CAS',a.group,a.reason,money(a.amountCents),a.quantity??''))
+const cas=(adjustments:CobAdjustment[])=>adjustments.map(a=>s('CAS',a.group,a.reason,money(a.amountCents),...(a.quantity===undefined?[]:[a.quantity])))
 export function otherPayers(prior:CobPrior[]) {
  return prior.flatMap(p=>[
   s('SBR',payerOrder(p.priority),p.subscriber.relationship,p.subscriber.group,'','','','','',p.payer.medicare?'MB':'CI'),

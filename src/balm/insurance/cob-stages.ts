@@ -2,7 +2,7 @@ import { guard, insist, one, rows, stmt, type Data } from '../domain/model'
 import type { ClaimSnapshot } from './types'
 import type { CobPrior } from './cob-types'
 
-export async function stageSetup(db:D1Database,claim:Data,snapshot:ClaimSnapshot) {
+export async function stageSetup(db:D1Database,claim:Data,snapshot:Pick<ClaimSnapshot,'invoiceId'|'serviceDate'>) {
  const policies=await rows(db,"SELECT id,priority FROM bm_policies WHERE client_id=? AND starts_on<=? AND (ends_on='' OR ends_on IS NULL OR ends_on>=?) ORDER BY priority",claim.client_id,snapshot.serviceDate,snapshot.serviceDate)
  insist(new Set(policies.map(p=>p.priority)).size===policies.length,'resolve_duplicate_COB_policy_priorities')
  return policies.flatMap(p=>[stmt(db,"INSERT INTO bm_cob_stages(invoice_id,policy_id,priority,state,updated_at) VALUES(?,?,?,'waiting',?) ON CONFLICT(invoice_id,policy_id) DO NOTHING",snapshot.invoiceId,p.id,p.priority,new Date().toISOString())])

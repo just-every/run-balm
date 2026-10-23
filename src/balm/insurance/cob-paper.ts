@@ -15,13 +15,13 @@ export async function preparePaper(db:D1Database,who:Actor,input:Data) {
  insist(JSON.stringify(await refreshClaimFacts(db,who,claim))===JSON.stringify(facts)&&!scrubClaim(facts).length,'refresh_and_review_claim_before_printing',409)
  const eob=await attachment(input);insist(eob&&yes(input.attest),'attach_primary_EOB_and_confirm_it_matches_this_patient')
  const key=id(),body=cms1500(facts,claim.id),hash=await sha256(body),at=now()
- await commit(db,who,[payerAuthority(db,who),...claimFactGuards(db,claim,facts),stmt(db,'INSERT INTO bm_cob_paper_packets(id,claim_id,body,sha256,eob_base64,eob_mime,eob_sha256,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',key,claim.id,body,hash,eob.content,eob.mime,eob.digest,who.email,at),audit(db,who,'insurance.paper_prepared',claim.client_id,claim.id)])
+ await commit(db,who,[payerAuthority(db,who),...claimFactGuards(db,claim,facts),stmt(db,'INSERT INTO bm_cob_paper_packets(id,claim_id,claim_version,body,sha256,eob_base64,eob_mime,eob_sha256,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',key,claim.id,claim.version,body,hash,eob.content,eob.mime,eob.digest,who.email,at),audit(db,who,'insurance.paper_prepared',claim.client_id,claim.id)])
  return {id:key,status:'prepared_not_sent',sha256:hash}
 }
 export async function submitPaper(db:D1Database,who:Actor,input:Data) {
  const packet=await one(db,'SELECT * FROM bm_cob_paper_packets WHERE id=?',text(input.id,'paper_packet',100));insist(packet,'paper_packet_not_found',404)
  const claim=await claimFor(db,who,packet.claim_id),reference=text(input.reference,'mail_or_payer_receipt_reference',150),at=now()
- insist(yes(input.attest)&&!packet.submitted_at&&claim.status==='ready','confirm_actual_submission_of_unsigned_paper_packet',409)
+ insist(yes(input.attest)&&!packet.submitted_at&&claim.status==='ready'&&claim.version===packet.claim_version,'confirm_actual_submission_of_unsigned_paper_packet',409)
  await commit(db,who,[payerAuthority(db,who),stmt(db,'UPDATE bm_cob_paper_packets SET submitted_at=?,submitted_by=?,reference=? WHERE id=? AND submitted_at IS NULL',at,who.email,reference,packet.id),guard(db,'changes()=1'),stmt(db,"UPDATE bm_claims SET status='submitted',updated_at=?,version=version+1 WHERE id=? AND status='ready' AND version=?",at,claim.id,claim.version),guard(db,'changes()=1'),stmt(db,"UPDATE bm_cob_stages SET state='sent',updated_at=?,version=version+1 WHERE invoice_id=? AND policy_id=? AND state='unsent'",at,claim.invoice_id,claim.policy_id),guard(db,'changes()=1'),stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'paper_submitted',JSON.stringify({packetId:packet.id,reference}),at),audit(db,who,'insurance.paper_submitted',claim.client_id,claim.id)])
  return {id:packet.id,status:'submitted',reference}
 }

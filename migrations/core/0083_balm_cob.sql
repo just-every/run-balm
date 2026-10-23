@@ -45,7 +45,7 @@ ALTER TABLE bm_payer_payment_lines ADD COLUMN procedure_modifiers TEXT NOT NULL 
 ALTER TABLE bm_payer_payment_lines ADD COLUMN paid_units INTEGER;
 ALTER TABLE bm_payer_payment_lines ADD COLUMN adjudicated_on TEXT NOT NULL DEFAULT '';
 CREATE TABLE bm_cob_paper_packets (
- id TEXT PRIMARY KEY, claim_id TEXT NOT NULL REFERENCES bm_claims(id), body TEXT NOT NULL, sha256 TEXT NOT NULL,
+ id TEXT PRIMARY KEY, claim_id TEXT NOT NULL REFERENCES bm_claims(id), claim_version INTEGER NOT NULL, body TEXT NOT NULL, sha256 TEXT NOT NULL,
  eob_base64 TEXT NOT NULL, eob_mime TEXT NOT NULL, eob_sha256 TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
  submitted_at TEXT, submitted_by TEXT, reference TEXT
 );
