@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 import { createHmac, randomBytes } from 'node:crypto'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -376,7 +377,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const assistant=await h.staff('ArchiveAssistant','assistant',{discipline:'pt',supervisorId:priya.id,credentials:'PTA'})
   await h.cmd('hours.save',{practitionerId:assistant.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
   const dailyVisit=await pastVisit(h,patient.id,assistant,service.id,h.owner,4)
-  const dailyNote=await h.cmd('note.write',{clientId:patient.id,appointmentId:dailyVisit,template:'pt.daily',sections:{subjective:'Synthetic daily history',objective:'Synthetic skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},assistant.cookie)
+  const dailyNote=await h.cmd('note.write',{clientId:patient.id,appointmentId:dailyVisit,template:'pt.daily',...chartFixture(),sections:{...chartFixture().sections,subjective:'Synthetic daily history',objective:'Synthetic skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},assistant.cookie)
   const dailyRule=await h.cmd('assistant_daily.save',{staffId:assistant.id,state:'TX',startsOn:'2020-01-01',endsOn:'2099-12-31',stateSource:'Synthetic reviewed state rule',payerSource:'Synthetic cash daily-signing permission',attest:true})
   await h.cmd('note.sign',{id:dailyNote.id,revision:1,ruleId:dailyRule.id,signature:'ArchiveAssistant',credentials:'PTA',attest:true},assistant.cookie)
   await h.cmd('note.supervision',{id:dailyNote.id,signature:'Priya',credentials:'PT',supervisionGiven:'on_site',attest:true},priya.cookie)

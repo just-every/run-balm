@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
@@ -357,7 +358,7 @@ test('COMM-004: configured consented sequences follow chart goals, share contact
     const noteClient = await h.cmd('client.save', { firstName: 'Maya', lastName: 'Lee', email: 'maya@patient.example' })
     const noteVisit = await pastVisit(h, noteClient.id, priya, service.id, h.owner, 8)
     const note = async kind => {
-      const n = await h.cmd('note.write', { clientId: noteClient.id, appointmentId: noteVisit, template: 'pt.' + kind, sections: { diagnosis: 'M25.561', reason: 'Goals met', subjective: 'Private narrative', objective: 'Private findings', assessment: 'Private assessment', goals: 'Private goals', plan: 'Private plan' } }, priya.cookie)
+      const n = await h.cmd('note.write', { clientId: noteClient.id, appointmentId: noteVisit, template: 'pt.' + kind, ...chartFixture(kind), charges: kind === 'evaluation' ? chartFixture(kind).charges : [], sections: { ...chartFixture(kind).sections, diagnosis: 'M25.561', reason: 'Goals met', subjective: 'Private narrative', objective: 'Private findings', assessment: 'Private assessment', goals: 'Private goals', plan: 'Private plan' } }, priya.cookie)
       return h.cmd('note.sign', { id: n.id, revision: 1, signature: 'Priya', credentials: 'PT, DPT', attest: true }, priya.cookie)
     }
     await enroll('welcome', noteClient)

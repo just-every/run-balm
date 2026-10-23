@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 // The tablet visit uses the production HTTP handlers, D1 and native sessions.
 // Only the mail provider is faked by the shared harness.
 import { test } from 'node:test'
@@ -7,7 +8,11 @@ import { chromium } from '@playwright/test'
 import { harness } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 
+const daily = chartFixture()
+const interventions = [{code:'97110',minutes:33,parameters:'Synthetic step-ups and balance work, 3 sets of 10 with verbal cues'}]
 const sections = {
+  diagnosis: daily.sections.diagnosis,
+  response: daily.sections.response,
   subjective: 'Walking confidence improved; no falls since the prior visit.',
   objective: 'Step-ups and balance work, 33 minutes; fewer verbal cues.',
   assessment: 'Improving gait stability and activity tolerance.',
@@ -59,6 +64,20 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     await page.getByRole('link',{name:'Open the note',exact:true}).click()
     let form = await openEditor(page)
     await fill(form, sections)
+    for (const [index,goal] of daily.clinical.goals.entries()) {
+      await form.getByText(`Goal ${index + 1}`,{exact:true}).click()
+      await form.locator(`[name=goal_${index}_term]`).selectOption(goal.term)
+      await form.locator(`[name=goal_${index}_text]`).fill(goal.text)
+      await form.locator(`[name=goal_${index}_target]`).fill(goal.target)
+      await form.locator(`[name=goal_${index}_deadline]`).fill(goal.deadline)
+      await form.locator(`[name=goal_${index}_status]`).selectOption(goal.status)
+    }
+    await form.locator('[name=precautions]').fill(daily.clinical.precautions)
+    await form.locator('[name=charge_code_0]').selectOption(interventions[0].code)
+    await form.locator('[name=charge_minutes_0]').fill(String(interventions[0].minutes))
+    await form.locator('[name=charge_parameters_0]').fill(interventions[0].parameters)
+    await form.locator('[name=totalTimedMinutes]').fill('33')
+    await form.locator('[name=totalTreatmentMinutes]').fill('33')
     await context.setOffline(true)
     await save(form)
     await state(form,'queued')
@@ -109,7 +128,7 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     await page.unroute('**/api/balm/command')
     // A newer clinical revision is never overwritten by a queued stale editor.
     form = await openEditor(page)
-    await h.cmd('note.amend',{id:note.id,revision:3,sections:{...improved,assessment:'Current review: independent gait on level surfaces.'}},h.owner)
+    await h.cmd('note.amend',{id:note.id,revision:3,clinical:daily.clinical,charges:interventions,totalTimedMinutes:33,totalTreatmentMinutes:33,sections:{...improved,assessment:'Current review: independent gait on level surfaces.'}},h.owner)
     await form.locator('[name=section_subjective]').fill('Unsaved stale editor text')
     await save(form);await state(form,'conflict')
     await capture(page,'mobile-conflict')

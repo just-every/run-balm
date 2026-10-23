@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -503,7 +504,7 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
    const unchanged=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.notes.find(n=>n.id===draft.id)
    assert.equal(unchanged.revisions[0].number,1);assert.deepEqual(unchanged.revisions[0].charges,[])
   }
-  await h.cmd('note.amend',{id:draft.id,revision:1,...(kind==='assistant'?{sections}:{body:kind+' revised draft'})},trainee.cookie)
+  await h.cmd('note.amend',{id:draft.id,revision:1,...(kind==='assistant'?{...chartFixture(),sections:{...chartFixture().sections,...sections}}:{body:kind+' revised draft'})},trainee.cookie)
   for(const name of ['note_release.prepare','note_release.approve','note_release.revoke','note.supervision','assistant_daily.save','note.sign','note.addendum','note.cosign','appointment.book','appointment.attend','client.save','pay.invoice.charge','chart.break_glass','agent.create','unknown.future.command']) await h.cmd(name,{},trainee.cookie,403)
   await h.cmd('note.submit',{id:draft.id,revision:2,signature:kind,credentials:kind==='assistant'?'PTA':kind==='fellow'?'CF-SLP':'SPT',attest:true},trainee.cookie)
   assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===draft.id))

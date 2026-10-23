@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {run} from './harness.mjs'
@@ -46,11 +47,11 @@ test('REPORT-001: a month of visits, plans, evaluations, utilization and payroll
  const visit=async(name,start)=>(await h.send('/api/balm/clients/'+client(name).id,undefined,h.owner)).value.appointments.find(a=>a.start_at.startsWith(start))
  const sections={subjective:'Knee pain after stairs.',objective:'Flexion 118 deg.',assessment:'Improving tolerance.',plan:'Progress step height.'}
  const sign=async(who,name,input)=>{const note=await h.cmd('note.write',input,who.cookie);await h.cmd('note.sign',{id:note.id,revision:1,signature:name,credentials:name==='Priya'?'PT':'OT',attest:true},who.cookie);return note}
- await sign(priya,'Priya',{clientId:client('Santos').id,appointmentId:(await visit('Santos',d(3))).id,template:'pt.evaluation',sections:{...sections,diagnosis:'M25.561',goals:'Walk stairs'}})
+ await sign(priya,'Priya',{clientId:client('Santos').id,appointmentId:(await visit('Santos',d(3))).id,template:'pt.evaluation',...chartFixture('evaluation'),sections:{...chartFixture('evaluation').sections,...sections,diagnosis:'M25.561',goals:'Walk stairs'}})
  await sign(priya,'Priya',{clientId:client('Reed').id,appointmentId:(await visit('Reed',d(4))).id,body:'Daily treatment; not an evaluation.'})
  await h.cmd('note.write',{clientId:client('Cruz').id,appointmentId:(await visit('Cruz',d(5))).id,template:'pt.evaluation',sections:{...sections,diagnosis:'M54.50',goals:'Lift safely'}},priya.cookie)// unsigned: not counted
- await sign(priya,'Priya',{clientId:client('Santos').id,appointmentId:(await visit('Santos',last)).id,template:'pt.evaluation',sections:{...sections,diagnosis:'M25.561',goals:'Walk stairs'}})// next month's visit: outside
- await sign(sam,'Sam',{clientId:client('Park').id,appointmentId:(await visit('Park',d(2))).id,template:'ot.evaluation',sections:{...sections,diagnosis:'M79.641',goals:'Grip a cup'}})
+ await sign(priya,'Priya',{clientId:client('Santos').id,appointmentId:(await visit('Santos',last)).id,template:'pt.evaluation',...chartFixture('evaluation'),sections:{...chartFixture('evaluation').sections,...sections,diagnosis:'M25.561',goals:'Walk stairs'}})// next month's visit: outside
+ await sign(sam,'Sam',{clientId:client('Park').id,appointmentId:(await visit('Park',d(2))).id,template:'ot.evaluation',...chartFixture('evaluation','ot'),sections:{...chartFixture('evaluation','ot').sections,...sections,diagnosis:'M79.641',goals:'Grip a cup'}})
  const plan=(clientId,startDate,frequencyPerWeek,durationWeeks)=>h.cmd('plan.send',{clientId,diagnoses:'M25.561',shortTermGoals:'Walk',longTermGoals:'Community walking',frequencyPerWeek,durationWeeks,interventions:'Therapeutic exercise',startDate,physicianName:'Dr Anika Patel',physicianEmail:'physician@clinic.example',signature:'Priya',credentials:'PT',attest:true},priya.cookie)
  await plan(client('Santos').id,d(1),2,2)// 4 planned, a1+a2 attended, nothing booked: dropped off
  await plan(client('Reed').id,d(2),1,2)// 2 planned, a3+a4 attended: completed
@@ -212,7 +213,7 @@ test('REF-001: three referrals entered with NPPES lookup, two scheduled and one 
   await h.cmd('appointment.book',{clientId:ana.id,practitionerId:sam.id,serviceId:service.id,date:later,time:'10:00'},reception.cookie)
   const benVisit=await pastVisit(h,ben.id,priya,service.id,reception.cookie,3)
   await h.cmd('appointment.attend',{id:benVisit},reception.cookie)
-  const evaluation=await h.cmd('note.write',{clientId:ben.id,appointmentId:benVisit,template:'pt.evaluation',sections:{subjective:'Low back pain 5/10.',objective:'Lumbar flexion limited.',assessment:'Mechanical low back pain.',plan:'Core program.',diagnosis:'M54.50',goals:'Lift 20 lb without pain'},totalTreatmentMinutes:40},priya.cookie)
+  const evaluation=await h.cmd('note.write',{clientId:ben.id,appointmentId:benVisit,template:'pt.evaluation',...chartFixture('evaluation'),charges:[{code:'97161',minutes:40,parameters:'Synthetic low-complexity evaluation of lumbar movement and function'}],sections:{...chartFixture('evaluation').sections,subjective:'Low back pain 5/10.',objective:'Lumbar flexion limited.',assessment:'Mechanical low back pain.',plan:'Core program.',diagnosis:'M54.50',goals:'Lift 20 lb without pain'},totalTreatmentMinutes:40},priya.cookie)
   await h.cmd('note.sign',{id:evaluation.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
   await h.cmd('episode.close',{id:benEpisode.id,reason:'Discharged after one visit'},reception.cookie)
   await h.cmd('referral.lost',{id:a.id,reason:'x'},reception.cookie,409)
@@ -257,7 +258,7 @@ test('ROLE-002 REPORT-001: owner reports and CSVs split room locations, explicit
  await h.cmd('episode.open',{clientId:patient.id,title:'Knee episode',start:'direct_access'})
  const v1=await pastVisit(h,patient.id,priya,service.id,h.owner,2,{roomId:nr.id}),v2=await pastVisit(h,other.id,sam,service.id,h.owner,4,{roomId:sr.id})
  for(const id of [v1,v2])await h.cmd('appointment.attend',{id})
- const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:v1,template:'pt.evaluation',sections:{subjective:'Synthetic symptom',objective:'Synthetic findings',assessment:'Synthetic assessment',goals:'Synthetic goal',plan:'Synthetic plan',diagnosis:'M25.561'}},priya.cookie)
+ const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:v1,template:'pt.evaluation',...chartFixture('evaluation'),sections:{...chartFixture('evaluation').sections,subjective:'Synthetic symptom',objective:'Synthetic findings',assessment:'Synthetic assessment',goals:'Synthetic goal',plan:'Synthetic plan',diagnosis:'M25.561'}},priya.cookie)
  await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
  const visit=(await h.state()).appointments.find(a=>a.id===v1),date=new Date(Date.parse(visit.start_at)+10*3600000).toISOString().slice(0,10)
  await h.cmd('plan.send',{clientId:patient.id,noteId:note.id,diagnoses:'M25.561',shortTermGoals:'Synthetic goal',longTermGoals:'Synthetic goal',frequencyPerWeek:1,durationWeeks:1,interventions:'Synthetic intervention',startDate:date,physicianName:'Synthetic Physician',physicianEmail:'physician@example.test',signature:'Priya',credentials:'PT',attest:true},priya.cookie)
