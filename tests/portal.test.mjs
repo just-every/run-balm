@@ -258,6 +258,9 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     assert.ok(released.released_at);assert.equal(released.package_id,prepared.packageId)
     const queueAfterRelease=(await h.send('/app',undefined,h.owner)).text
     assert.match(queueAfterRelease,/does not establish fulfillment of the complete-record request/)
+    const retained=await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)
+    assert.ok(retained.value.retention.reasons.includes('patient_record_request_pending'),'partial delivery cannot clear the preservation hold')
+    await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
     await viewportProof(h,[{name:'record-released',path:'/portal/home',cookie:patientCookie,selector:'#records'},
       {name:'record-partial-delivered',path:'/app',cookie:h.owner,selector:'#record-requests'}])
     if(process.env.BALM_RECORD_EXPORT){await mkdir(process.env.BALM_RECORD_EXPORT,{recursive:true});await writeFile(process.env.BALM_RECORD_EXPORT+'/record.json',fhir.text);await writeFile(process.env.BALM_RECORD_EXPORT+'/record.pdf',Buffer.from(pdf.text,'binary'))}
