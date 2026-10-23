@@ -441,6 +441,17 @@ test('a fresh licensed exercise library supports filtered search, atomic media C
   const portal=(await h.send('/portal/home',undefined,cookie)).text
   for(const e of selected){assert.ok(portal.includes(e.title));assert.ok(portal.includes(e.image))}
   assert.match(portal,/CC0-1.0/)
+  const dayNow=new Date(Date.now()+10*3600_000).toISOString().slice(0,10)
+  for(let offset=2;offset>=0;offset--){const day=new Date(Date.parse(dayNow+'T00:00:00Z')-offset*86400_000).toISOString().slice(0,10);assert.equal((await h.form('/portal/action',{name:'exercise.done',id:assigned.ids[0],day,pain:'2'},cookie)).status,303)}
+  const nextNote=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',body:'Next daily note reviews the assigned library program.'},priya.cookie)
+  const adherence=(await h.send('/app/clients/'+patient.id,undefined,priya.cookie)).text
+  assert.match(adherence,/3 sessions/);assert.ok(adherence.includes('note-'+nextNote.id))
+  if(process.env.BALM_RECORD_EXPORT){
+   const printed=await h.mf.dispatchFetch(h.origin+'/portal/program.pdf',{headers:{cookie}})
+   assert.equal(printed.status,200)
+   await mkdir(process.env.BALM_RECORD_EXPORT,{recursive:true})
+   await writeFile(process.env.BALM_RECORD_EXPORT+'/program.pdf',Buffer.from(await printed.arrayBuffer()))
+  }
   await h.form('/portal/action',{name:'language.choose',language:'es'},cookie)
   const spanish=(await h.send('/portal/home',undefined,cookie)).text
   assert.ok(spanish.includes(selected[0].titleEs)&&spanish.includes(selected[0].instructionsEs))
