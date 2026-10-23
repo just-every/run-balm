@@ -107,8 +107,8 @@ test('CODE-001: owner imports licensed data, saves synonyms, finds billable chil
  try{
   await h.finishSetup()
   const {clinic,pastVisit}=await import('./clinic.mjs')
-  const {service,practitioners:[clinician]}=await clinic(h,['synthetic-balm-90'])
-  const patient=await h.cmd('client.save',{firstName:'synthetic-balm-90',lastName:'synthetic-balm-91'})
+  const {service,practitioners:[clinician]}=await clinic(h,['Oliver Park'])
+  const patient=await h.cmd('client.save',{firstName:'Ava',lastName:'Sullivan'})
   const visit=await pastVisit(h,patient.id,clinician,service.id)
   await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',sections:[]},clinician.cookie)
   await codeSetsBrowserJourney(h,edge,{picker:{cookie:clinician.cookie,path:'/app/clients/'+patient.id,targetName:'section_diagnosis',open:'Edit draft'}})
@@ -119,7 +119,7 @@ test('CODE-001: owner imports licensed data, saves synonyms, finds billable chil
 test('CODE-001: first installation names missing releases and older public imports name overdue updates at desktop and phone widths',{skip:!process.env.BALM_UI_SCREENSHOTS},async()=>{
  const edge=codeSetEdge(),h=await harness({browserHttps:true,codeSetEdge:edge,codeSets:false})
  try{
-  await h.finishSetup();await h.cmd('settings.save',{clinicName:'synthetic-balm-92',timeZone:'Australia/Brisbane'})
+  await h.finishSetup();await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane'})
   await codeSetsMissingBrowser(h)
   await h.cmd('codes.update',{...edge.ptp[0],licenseAcknowledged:true,licenseBasis:'Synthetic test-only CMS/AMA license acknowledgment'})
   const {browser,page}=await browserContext(h)

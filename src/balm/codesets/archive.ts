@@ -22,7 +22,7 @@ export function zipMembers(bytes: Uint8Array): Member[] {
     insist(begin+size<=bytes.length,'truncated_zip_member')
     entries.push({name,async *chunks(){
       let stream:ReadableStream<Uint8Array>=new Blob([bytes.slice(begin,begin+size).buffer as ArrayBuffer]).stream()
-      if(method===8)stream=stream.pipeThrough(new DecompressionStream('deflate-raw')) as ReadableStream<Uint8Array>
+      if(method===8)stream=stream.pipeThrough(new DecompressionStream('deflate-raw') as unknown as TransformStream<Uint8Array,Uint8Array>) as ReadableStream<Uint8Array>
       const reader=stream.getReader(),decoder=new TextDecoder('windows-1252');let total=0,crc=0xffffffff
       try{for(;;){const {done,value}=await reader.read();if(done)break;total+=value.length;for(const byte of value)crc=crcTable[(crc^byte)&255]^(crc>>>8);insist(total<=expanded&&total<=200_000_000,'expanded_zip_size_mismatch');yield decoder.decode(value,{stream:true})}yield decoder.decode();insist(total===expanded,'expanded_zip_size_mismatch');insist(((crc^0xffffffff)>>>0)===expectedCrc,'zip_member_checksum_mismatch')}finally{await reader.cancel();reader.releaseLock()}
     }})

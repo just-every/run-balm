@@ -15,7 +15,7 @@ export async function codeBatch(db:D1Database,claims:CodedClaim[]) {
  * download/send. All guards run before any batch member changes state. */
 export async function batchCodeGuards(db:D1Database,batchId:string) {
  const stored=await rows(db,'SELECT c.* FROM bm_claims c JOIN bm_claim_batch_items b ON b.claim_id=c.id WHERE b.batch_id=? ORDER BY c.id',batchId)
- const claims=stored.map(c=>({...c,facts:JSON.parse(c.snapshot) as ClaimSnapshot}))
+ const claims:CodedClaim[]=stored.map(c=>({...c,facts:JSON.parse(c.snapshot) as ClaimSnapshot}))
  await codeBatch(db,claims)
  return claims.flatMap(c=>[guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',c.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_claims WHERE id=? AND version=?)',c.id,c.version),...(c.facts.coding?codingGuards(db,c.facts.coding):[])])
 }
