@@ -22,8 +22,8 @@ export function parseCpt(value: unknown) {
     let units = 1
     const modifiers: string[] = []
     for (const token of rest) {
-      const count = token.match(/^[X×](\d{1,2})$|^(\d{1,2})U?$/)
-      if (count) units = Number(count[1] ?? count[2])
+      const count = token.match(/^[X×](\d{1,2})$|^(\d{1,2})U$|^(\d)$/)
+      if (count) units = Number(count[1] ?? count[2] ?? count[3])
       else { insist(/^[A-Z0-9]{2}$/.test(token), `"${token}" in "${item}" is not a modifier or a unit count`); modifiers.push(token) }
     }
     insist(units >= 1 && units <= 99 && modifiers.length <= 4, `check the units and modifiers of "${item}"`)
