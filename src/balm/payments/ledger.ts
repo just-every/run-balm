@@ -62,6 +62,7 @@ export function postStatements(db: D1Database, payment: Data, open: Data[], amou
     const take = Math.min(left, invoice.open_cents)
     left -= take
     statements.push(
+      ...(payment.kind==='copay'?[]:[guard(db,'NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?)',invoice.id)]),
       stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at,card_payment_id) VALUES(?,?,?,?,?,?,?)',
         id(), invoice.id, take, `stripe:${payment.payment_intent}:${invoice.id}`, 'Stripe', now(), payment.id),
       guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id))
@@ -70,10 +71,10 @@ export function postStatements(db: D1Database, payment: Data, open: Data[], amou
 }
 
 /** On an invoice's approval: apply the patient's unposted card payments, this visit's copay first. */
-export async function creditStatements(db: D1Database, invoice: Data) {
+export async function creditStatements(db: D1Database, invoice: Data, insuranceHeld = false) {
   // A copay waits for its own visit's invoice; other credit applies to whichever invoice comes next.
-  const credits = await rows(db, `SELECT * FROM bm_card_payments WHERE client_id=? AND status='succeeded' AND applied_cents<amount_cents AND (kind<>'copay' OR appointment_id=?)
-    ORDER BY CASE WHEN appointment_id=? THEN 0 ELSE 1 END, succeeded_at`, invoice.client_id, invoice.appointment_id, invoice.appointment_id)
+  const credits = await rows(db, `SELECT * FROM bm_card_payments WHERE client_id=? AND status='succeeded' AND applied_cents<amount_cents AND (?=0 OR kind='copay') AND (kind<>'copay' OR appointment_id=?)
+    ORDER BY CASE WHEN appointment_id=? THEN 0 ELSE 1 END, succeeded_at`, invoice.client_id, insuranceHeld?1:0, invoice.appointment_id, invoice.appointment_id)
   const statements: D1PreparedStatement[] = []
   let open = invoice.amount_cents as number
   for (const c of credits) {
@@ -85,6 +86,6 @@ export async function creditStatements(db: D1Database, invoice: Data) {
       stmt(db, 'UPDATE bm_card_payments SET applied_cents=applied_cents+?,updated_at=? WHERE id=? AND applied_cents=?', take, now(), c.id, c.applied_cents),
       guard(db, 'changes()=1'))
   }
-  statements.push(...await externalCreditsForInvoice(db, invoice, open))
+  if(!insuranceHeld)statements.push(...await externalCreditsForInvoice(db, invoice, open))
   return statements
 }
