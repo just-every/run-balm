@@ -27,17 +27,18 @@ export async function cobJourney(h,output,hooks={}) {
  await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,publishedOn:`${year-1}-10-30`,source:'CMS synthetic-year threshold fixture'})
  const command=(name,input,status=200)=>h.cmd(name,input,biller.cookie,status)
  let visitNumber=0
- const prepare=async(label,payers)=>{
-  const names={CommercialCob:['Maya','Lee'],Crossover:['Elena','Harris'],PaperCob:['Jordan','Rivera']}[label]
+ const prepare=async(label,payers,choice={})=>{
+  const names={CommercialCob:['Maya','Lee'],Crossover:['Elena','Harris'],PaperCob:['Jordan','Rivera'],SelfPay:['Avery','Watson'],Waiting:['Liam','Chen']}[label]
   const patient=await h.cmd('client.save',{firstName:names[0],lastName:names[1],dateOfBirth:'1988-04-02'})
   const policies=[]
   for(const [n,p] of payers.entries())policies.push(await command('insurance.policy.save',{clientId:patient.id,payerId:p.id,memberId:`synthetic-balm-${n+1}`,planName:payers[0].medicare&&n===1?'Medigap Plan G':'',priority:n+1,relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage}))
-  const appointmentId=await pastVisit(h,patient.id,priya,service.id,h.owner,2+visitNumber++),serviceDate=await visitDate(h,appointmentId)
+  const appointmentId=await pastVisit(h,patient.id,priya,service.id,h.owner,2+visitNumber++,choice),serviceDate=await visitDate(h,appointmentId)
   await h.cmd('appointment.attend',{id:appointmentId})
   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId,body:'Synthetic therapy visit with skilled progression.',charges:[{code:'97110',minutes:8},{code:'97140',minutes:8,cmsTieChosen:true}]},priya.cookie)
   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
   await h.cmd('pay.codes.save',{appointmentId,icd10:'M25.561'})
   const invoice=await h.cmd('invoice.prepare',{appointmentId});await h.cmd('invoice.approve',{id:invoice.id})
+  if(choice.coverageChoice==='self_pay')return {patient,policies,appointmentId,serviceDate,invoice}
   const claim=await command('insurance.claim.prepare',{appointmentId,policyId:policies[0].id})
   assert.equal(claim.status,'ready',JSON.stringify(claim.errors))
   return {patient,policies,appointmentId,serviceDate,invoice,claim}
@@ -100,6 +101,19 @@ export async function cobJourney(h,output,hooks={}) {
  if(hooks.paperSubmit)await hooks.paperSubmit({h,manual,paperClaim,biller,packet})
  else await command('insurance.cob.paper.submit',{id:packet.id,reference:'synthetic-balm-28',attest:true})
  assert.ok(!(await close()).claims.some(q=>q.id===paperClaim.id))
+ const cash=await prepare('SelfPay',[primary],{coverageChoice:'self_pay',deliveryMethod:'portal'})
+ assert.equal((await file(cash)).billing.ledger.patientBalanceCents,cash.invoice.snapshot.amountCents,'the explicit self-pay choice does not open a payer hold')
+ const waiting=await prepare('Waiting',[primary,secondary])
+ await h.cmd('insurance.cob.wait.save',{waitDays:1,source:'Clinic owner reviewed payer contract: one elapsed day before a manual billing review.'})
+ const decision={invoiceId:waiting.invoice.id,reason:'Owner reviewed the remaining payer and authorizes patient billing after the configured wait.',attest:true}
+ await h.cmd('insurance.cob.patient.decide',decision,biller.cookie,403)
+ await h.cmd('insurance.cob.patient.decide',decision,h.owner,409)
+ assert.equal((await file(waiting)).billing.ledger.patientBalanceCents,0)
+ // Arrange elapsed time only; the policy and decision use their public doors.
+ await h.db.prepare('UPDATE bm_cob_stages SET updated_at=? WHERE invoice_id=?').bind(new Date(Date.now()-2*86400000).toISOString(),waiting.invoice.id).run()
+ await h.cmd('insurance.cob.patient.decide',decision)
+ assert.equal((await file(waiting)).billing.ledger.patientBalanceCents,waiting.invoice.snapshot.amountCents)
+ assert.ok((await h.cmd('insurance.cob.read',{})).stages.filter(s=>s.invoice_id===waiting.invoice.id).every(s=>s.decided_by))
  if(output){await mkdir(output,{recursive:true});await writeFile(output+'/secondary.x12',x12);await writeFile(output+'/tertiary.x12',x123)}
  return {biller,c,crossed,manual,paperClaim,packet}
 }
