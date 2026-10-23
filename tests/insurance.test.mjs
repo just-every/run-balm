@@ -252,6 +252,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
       assert.equal(draft.timedUnits, expectedUnits.reduce((a, b) => a + b, 0))
       assert.equal(draft.units, expectedUnits.reduce((a, b) => a + b, 0))
       assert.equal(draft.method, method)
+      if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'CHART-006-'+method+'-units',path:'/app/clients/'+patient.id,cookie:base.priya.cookie,selector:'#note-'+note.id+' .units'},{name:'CHART-006-'+method+'-edit',path:'/app/clients/'+patient.id,cookie:base.priya.cookie,open:'Edit draft',selector:'.charges'}])}
       // A covering secondary policy must not change the primary preview.
       await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: base.payer.id, priority: 2, memberId: method + '-secondary', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
       assert.deepEqual((await preview()).lines.map(l => l.units), expectedUnits)
@@ -353,6 +354,7 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     await h.cmd('invoice.approve', { id: zeroInvoice.id })
     const zeroClaim = await h.cmd('insurance.claim.prepare', { appointmentId: zeroVisit, policyId: fixedPolicy.id }, h.owner, 400)
     assert.equal((await patientFile(h, fixedPatient.id)).insurance.claims.length, 0, 'a zero-dollar bill is refused without inventing a claim charge')
+    if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'CHART-006-fixed-zero',path:'/app/clients/'+fixedPatient.id,cookie:base.priya.cookie,selector:'.units'}])}
     const thresholdErrors = zeroClaim.detail.scrubErrors.filter(e => e.code === 'timed_code_below_threshold')
     assert.deepEqual(thresholdErrors.map(e => e.field).sort(), ['lines.97110', 'lines.97140'])
     const authorization = await h.cmd('insurance.authorization.save', { policyId: fixedPolicy.id, number: 'FIXED-UNITS', ...coverage, allowanceKind: 'units', units: 5, unitsPerVisit: 2, lowRemainder: 2 })
@@ -393,7 +395,29 @@ test('CHART-006 primary slice: CMS, AMA and fixed-threshold note previews agree 
     await h.cmd('insurance.payer.save', { ...fixedInput, id: fixed.id, unitMethod: 'ama' })
     const amaAgain = (await patientFile(h, fixedPatient.id)).notes.find(n => n.id === fixedNote.id).billing
     assert.deepEqual(amaAgain.lines.map(l => l.units), [2, 2, 1], 'switching methods clears the old threshold')
-  })
+    // The clause's complete Medicare example: 38 timed minutes plus an untimed evaluation.
+    const medicare=await h.cmd('insurance.payer.save',{name:'Synthetic Medicare allocation',payerId:'SYNTHETIC38',receiverId:'SYNTHETIC38',medicare:true,unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97140',cents:2500},{code:'97161',cents:10000}]})
+    await h.cmd('insurance.enrollment.save',{payerId:medicare.id,practitionerId:base.priya.id,taxonomy:'225100000X',active:true})
+    await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,publishedOn:`${year-1}-10-30`,source:'CMS synthetic-year published threshold fixture'})
+    const patient38=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Medicare allocation',dateOfBirth:'1950-01-01'})
+    const policy38=await h.cmd('insurance.policy.save',{clientId:patient38.id,payerId:medicare.id,memberId:'synthetic-balm-38',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',...coverage})
+    const visit38=await pastVisit(h,patient38.id,base.priya,service.id,h.owner,19)
+    await h.cmd('appointment.attend',{id:visit38})
+    await h.cmd('pay.codes.save',{appointmentId:visit38,icd10:'M25.561, M54.50'})
+    const note38=await h.cmd('note.write',{clientId:patient38.id,appointmentId:visit38,body:'Synthetic documented skilled exercise, manual therapy and initial evaluation.',charges:[{code:'97110',minutes:23,diagnosisCodes:['M25.561']},{code:'97140',minutes:15,diagnosisCodes:['M54.50']},{code:'97161',minutes:0,diagnosisCodes:['M25.561']}]},base.priya.cookie)
+    const preview38=(await patientFile(h,patient38.id,base.priya.cookie)).notes.find(n=>n.id===note38.id).billing
+    assert.deepEqual([preview38.timedMinutes,preview38.timedUnits,preview38.units],[38,3,4])
+    assert.deepEqual(preview38.lines.map(l=>[l.code,l.units]),[['97110',2],['97140',1],['97161',1]])
+    await h.cmd('note.sign',{id:note38.id,revision:1,signature:'Priya Shah',attest:true},base.priya.cookie)
+    const invoice38=await h.cmd('invoice.prepare',{appointmentId:visit38});await h.cmd('invoice.approve',{id:invoice38.id})
+    const claim38=await h.cmd('insurance.claim.prepare',{appointmentId:visit38,policyId:policy38.id})
+    assert.equal(claim38.status,'ready',JSON.stringify(claim38.errors))
+    assert.deepEqual(claim38.snapshot.lines.map(l=>[l.code,l.units,l.modifiers,l.diagnosisPointers]),[['97110',2,['GP'],[1]],['97140',1,['GP'],[2]],['97161',1,['GP'],[1]]])
+    const batch38=await h.cmd('insurance.batch.prepare',{claimIds:[claim38.id]})
+    const x1238=await h.send('/api/balm/insurance/837P/'+batch38.id,undefined,h.owner)
+    for(const segment of [/SV1\*HC:97110:GP\*70.00\*UN\*2/,/SV1\*HC:97140:GP\*25.00\*UN\*1/,/SV1\*HC:97161:GP\*100.00\*UN\*1/])assert.match(x1238.text,segment)
+    if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'CHART-006-medicare-38',path:'/app/clients/'+patient38.id,cookie:base.priya.cookie,selector:'#note-'+note38.id},{name:'CHART-006-medicare-charge',path:'/app/clients/'+patient38.id,cookie:h.owner,selector:'#claim-'+claim38.id}])}
+  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
 })
 
 
