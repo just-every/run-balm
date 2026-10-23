@@ -1,3 +1,4 @@
+import {cobCommand} from './cob'
 import {claimWork,saveFilingRule,recordFilingDate,recordClaimAction} from './claim-work'
 import {biller} from '../domain/role-access'
 import { insist, type Actor, type Data } from '../domain/model'
@@ -23,6 +24,7 @@ export type { InsuranceEnv, ClaimSnapshot, ScrubError } from './types'
  * clinical assertions remain exclusive to clinicians and the clinic owner. */
 export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:string,input:Data) {
   insist(input&&typeof input==='object'&&!Array.isArray(input),'invalid_input')
+  if(name.startsWith('insurance.cob.'))return cobCommand(env.DB,initial,name,input)
   const clinical=['insurance.claim.necessity','insurance.denial.appeal','insurance.medicare.service.save'].includes(name)
   const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
   if(/^insurance\.payer_(batch|line|eob)\./.test(name))insist(who.role==='owner'||biller(who),'payer_batches_require_biller_or_owner',403)

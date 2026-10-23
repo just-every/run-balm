@@ -1,3 +1,4 @@
+import {cobPaperDownload} from './insurance/cob-paper'
 import {claimWork} from './insurance/claim-work'
 import {aeobCommand,aeobsFor,aeobOriginal} from './payments/aeobs'
 import {releaseCommand,releasesFor,releasePdf} from './domain/payer-note-releases'
@@ -242,7 +243,7 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > (moving ? 20_000_000 : 1_000_000)) fail(moving ? 'This file is larger than 20 MB. Download patient lists in smaller date ranges.' : 'The file is larger than 1 MB.', 413)
       if (value.size) {
-        if(key==='attachment'&&new URL(request.url).searchParams.get('name')==='insurance.payer_eob.attach'){Object.assign(input,await uploadField(value))}
+        if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
         else if (key === 'abnDocument') {
           if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
           const bytes = new Uint8Array(await value.arrayBuffer())
@@ -528,6 +529,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const download = await invoiceDownload(env.DB, who, invoice[1])
         return new Response(download.bytes, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${download.name}"`, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } })
       }
+      const paper=path.match(/^\/api\/balm\/insurance\/(paper|paper-eob)\/([\w-]+)$/)
+      if(paper)return await cobPaperDownload(env.DB,who,paper[2],paper[1]==='paper-eob')
       const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
       if(eob)return await payerEobDownload(env.DB,who,eob[1])
       const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)

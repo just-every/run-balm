@@ -1,3 +1,5 @@
+import {stageSetup} from '../insurance/cob-stages'
+import {hostDateAt} from '../availability/timezone'
 // Reviewed billing adapted from Satchel (src/satchel/billing.ts, just-every/run-satchel
 // @ 2d460e4): a preparation freezes a snapshot, a person approves that exact
 // snapshot, and approval fixes the number and the downloadable bytes forever.
@@ -87,6 +89,7 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
   const { row, value } = await snapshot(db, invoice.appointment_id as string, invoice.amount_cents as number)
   insist(row.status === 'attended' && JSON.stringify(value) === invoice.snapshot, 'invoice_facts_changed_prepare_again', 409)
   const number = ((await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_invoices'))?.n ?? 0) + 1
+  const cobSetup = await stageSetup(db,{client_id:invoice.client_id},{invoiceId:invoice.id as string,serviceDate:hostDateAt(new Date(row.start_at as string),row.time_zone as string)})
   const approvedAt = now(), bytes = artifact(number, value, approvedAt, row.time_zone as string)
   await commit(db, who, [
     stmt(db, "UPDATE bm_invoices SET status='approved',number=?,artifact=?,artifact_sha256=?,approved_by=?,approved_at=?,version=version+1 WHERE id=? AND status='draft' AND version=?",
@@ -95,7 +98,8 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
     ...await approvalStatements(db, who, 'invoice', invoice, invoice.snapshot as string),
     ...(value.timedUnitBasis?.payerId ? [guard(db, 'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)', value.timedUnitBasis.payerId, value.timedUnitBasis.payerVersion)] : []),
     // A copay taken at check-in, or credit paid ahead, is matched to the invoice now.
-    ...await creditStatements(db, invoice),
+    ...cobSetup,
+    ...await creditStatements(db, invoice, cobSetup.insuranceHeld),
     audit(db, who, 'invoice.approved', invoice.client_id as string, invoice.id as string, invoiceNumber(number)),
   ])
   return { id: invoice.id, number: invoiceNumber(number), status: 'approved' }
@@ -130,9 +134,11 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception'); human(who)
   const invoice = await one(db, "SELECT * FROM bm_invoices WHERE id=? AND status='approved'", text(input.invoiceId, 'invoice', 100))
   insist(invoice, 'approved_invoice_not_found', 404)
+  insist(!await one(db,'SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?',invoice.id),'patient_balance_waits_for_all_payers',409)
   const amount = integer(input.amountCents, 'amount_cents', 1, 10_000_000), reference = text(input.reference, 'reference', 120), paymentId = id()
   insist(!await one(db, 'SELECT 1 FROM bm_invoice_payments WHERE reference=? UNION ALL SELECT 1 FROM bm_account_entries WHERE reference=?', reference, reference), 'payment_reference_used', 409)
   await commit(db, who, [
+    guard(db,'NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?)',invoice.id),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE reference=?)', reference),
     stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)', paymentId, invoice.id, amount, reference, who.email, now()),
     guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),

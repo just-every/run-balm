@@ -1,3 +1,5 @@
+import {cobState} from './cob'
+import {biller} from '../domain/role-access'
 import {manualPayerState} from './manual-payers'
 import { audit, commit, guard, insist, now, one, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { insuranceActor, insuranceClient, clientGuard, claimFor } from './access'
@@ -38,7 +40,7 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
       e.benefits = JSON.stringify(benefits)
     }
   }
-  return {policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
+  return {cob:who.role==='owner'||biller(who)?await cobState(db,initial,clientId):null,policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
 }
 export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   const who=await insuranceActor(env.DB,initial),db=env.DB,desk=who.role==='owner'||who.staffRole==='reception'
@@ -58,7 +60,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
     const existing = await existingVisitWarnings(db, clientId)
     for(const v of visits.filter(v => v.client_id === clientId)) warnings[v.id] = existing[v.id] ?? []
   }
-  return {work:null,manualPayers:await manualPayerState(db,who),settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)

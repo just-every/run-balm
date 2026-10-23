@@ -5,8 +5,7 @@ export function preserveAccounting(db:D1Database,clientId:string,anonymousGroup:
   return [
     stmt(db,`INSERT INTO bm_destroyed_invoices(id,anonymous_group,amount_cents,start_at,open_payer)
       SELECT i.id,?,i.amount_cents,a.start_at,
-        (SELECT y.name FROM bm_claims q JOIN bm_policies p ON p.id=q.policy_id JOIN bm_payers y ON y.id=p.payer_id
-         WHERE q.invoice_id=i.id AND q.status NOT IN ('corrected','paid','partial') ORDER BY q.created_at DESC LIMIT 1)
+        (SELECT h.payer FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)
       FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id WHERE i.client_id=? AND i.status='approved'`,anonymousGroup,clientId),
     stmt(db,`INSERT INTO bm_destroyed_payments(id,invoice_id,amount_cents,recorded_at,kind,card_payment_id,remittance_id,account_entry_id)
       SELECT p.id,p.invoice_id,p.amount_cents,p.recorded_at,CASE WHEN p.account_entry_id IS NOT NULL THEN 'desk' WHEN p.reference LIKE 'era:%' OR p.reference LIKE 'payer:%' THEN 'insurance' WHEN p.card_payment_id IS NOT NULL THEN 'card' ELSE 'desk' END,
