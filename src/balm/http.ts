@@ -330,8 +330,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
         const booked = await bookOnline(env.DB, input)
         const intake = await bookedIntake(env.DB, booked.clientId, booked.appointmentId, booked.startAt, [booked.appointmentId])
-        const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt, undefined, [booked.appointmentId])
-          : await sendBooked(env, booked.clientId, booked.startAt, 1, [booked.appointmentId])
+        const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt, undefined, [booked.appointmentId], booked.email)
+          : await sendBooked(env, booked.clientId, booked.startAt, 1, [booked.appointmentId], booked.email)
         if (intake !== 'ask') return redirect('/book?booked=1&intake=' + intake)
         // Balm on this computer sends no email: the patient keeps this page's address instead.
         return redirect(`/intake/${booked.token}?booked=1&mail=${mail === 'sent' && env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1' ? 'local' : mail}`)

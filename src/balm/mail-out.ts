@@ -27,19 +27,19 @@ export async function send(env: Bindings, to: string | null | undefined, subject
 const clinicRow = (env: Bindings) => env.DB.prepare('SELECT clinic_name,time_zone FROM bm_settings WHERE id=1').first<{ clinic_name: string; time_zone: string }>()
 const link = (env: Bindings, path: string) => new URL(path, env.AUTH_ORIGIN).href
 
-/** The intake link for a booking. */
-export async function sendIntake(env: Bindings, clientId: string, token: string, startAt: string, opening = 'Your appointment is booked', appointmentIds: string[] = []): Promise<Delivery> {
+/** The intake link for a booking, to the file's address or `to`: the address a public booking typed, which a new file may hold back (bookOnline). */
+export async function sendIntake(env: Bindings, clientId: string, token: string, startAt: string, opening = 'Your appointment is booked', appointmentIds: string[] = [], to?: string): Promise<Delivery> {
   const row = await env.DB.prepare('SELECT c.email,c.first_name,s.clinic_name,s.time_zone FROM bm_clients c, bm_settings s WHERE c.id=?').bind(clientId).first<any>()
   if (!row) return 'no_email'
-  return submissionDelivery(await dispatchPatientMail(env, row.email, `Your appointment at ${row.clinic_name}: intake form`,
+  return submissionDelivery(await dispatchPatientMail(env, to ?? row.email, `Your appointment at ${row.clinic_name}: intake form`,
     `Hello ${row.first_name},\n\n${opening} for ${localTime(startAt, row.time_zone)}.\n\nPlease complete your intake form before your visit:\n${link(env, '/intake/' + token)}\n\nThis link is private to you.\n`, { clientId, appointmentIds, kind: 'intake' }))
 }
 
 /** A booking for a client whose intake is already on file or already asked for: the time only. */
-export async function sendBooked(env: Bindings, clientId: string, startAt: string, visits = 1, appointmentIds: string[] = []): Promise<Delivery> {
+export async function sendBooked(env: Bindings, clientId: string, startAt: string, visits = 1, appointmentIds: string[] = [], to?: string): Promise<Delivery> {
   const row = await env.DB.prepare('SELECT c.email,c.first_name,s.clinic_name,s.time_zone FROM bm_clients c, bm_settings s WHERE c.id=?').bind(clientId).first<any>()
   if (!row) return 'no_email'
-  return submissionDelivery(await dispatchPatientMail(env, row.email, `Your appointment at ${row.clinic_name}`,
+  return submissionDelivery(await dispatchPatientMail(env, to ?? row.email, `Your appointment at ${row.clinic_name}`,
     `Hello ${row.first_name},\n\n${visits === 1 ? 'Your appointment is booked' : `Your ${visits} appointments are booked. The first is`} for ${localTime(startAt, row.time_zone)}.\n\nNo new intake form is needed.\n`, { clientId, appointmentIds, kind: 'booking' }))
 }
 

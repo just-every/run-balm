@@ -205,6 +205,13 @@ export async function bookingClient(db: D1Database, who: Actor, key: unknown) {
   return { client, guards: await bookingScope(db, who, client.id as string) }
 }
 
+/** Upcoming visits booked online with one email, counting files that hold the address back. Binds email, email, now. */
+const upcomingOnline = `(SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE (lower(c.email)=? OR (a.booked_via='online' AND a.created_by=?)) AND a.status='booked' AND a.start_at>?)`
+/** A new online file takes an email or mobile number only when no other file, or guardian, signs in with it: nobody has proven
+ * it, and a second file would end that portal sign-in. The booking reads the same either way. Binds email x3, phone x2. */
+const unproven = `CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL) OR EXISTS(SELECT 1 FROM bm_guardian_grants WHERE email=? AND revoked_at IS NULL) THEN NULL ELSE ? END,
+  CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE phone=? AND erased_at IS NULL) THEN NULL ELSE ? END`
+
 /** Public online booking for a new client. Returns the one-time intake link token. */
 export async function bookOnline(db: D1Database, input: Data) {
   const unchanged = await selfServiceSnapshot(db)
@@ -221,7 +228,7 @@ export async function bookOnline(db: D1Database, input: Data) {
   insist(verdict.valid, 'slot_unavailable', 409)
   const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }
   insist(input.privacy === true || input.privacy === 'on' || input.privacy === 'yes', 'privacy_acknowledgement_required')
-  const pending = await one<{ n: number }>(db, `SELECT COUNT(*) AS n FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?`, client.email, now())
+  const pending = await one<{ n: number }>(db, `SELECT ${upcomingOnline} AS n`, client.email, client.email, now())
   insist((pending?.n ?? 0) < 3, 'too_many_online_bookings', 429)
   // An exact match on name, birth date and email continues that client's file.
   const matches = await rows(db, 'SELECT id FROM bm_clients WHERE erased_at IS NULL AND lower(first_name)=lower(?) AND lower(last_name)=lower(?) AND date_of_birth=? AND lower(email)=? LIMIT 2', client.firstName, client.lastName, client.dateOfBirth, client.email)
@@ -229,18 +236,15 @@ export async function bookOnline(db: D1Database, input: Data) {
   const existing = matches[0]
   // A returning patient adds a practitioner from the patient portal, where their email is proven.
   if (existing) insist(await one(db, 'SELECT 1 WHERE ' + inCare, existing.id, practitioner.id, existing.id), 'book_a_new_practitioner_from_the_patient_portal', 409)
-  // An address nobody has proven never starts a second file beside the patient who has it: they sign in to the portal.
-  const unclaimed = 'NOT EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL)'
-  if (!existing) insist(await one(db, 'SELECT 1 WHERE ' + unclaimed, client.email), 'this_email_is_already_on_a_patient_file', 409)
   if (double) insist(await patientFits(db, existing?.id as string ?? null, practitioner.id as string, service.id as string, start.toISOString(), end.toISOString()), 'slot_unavailable', 409)
   const eligibility = await checkSelfService(db, { clientId: existing?.id as string | undefined, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString() })
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
   await commit(db, null, [
     unchanged, ...eligibility.guards,
-    guard(db, `((SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?)<3)`, client.email, now()),
+    guard(db, `${upcomingOnline}<3`, client.email, client.email, now()),
     ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
-      guard(db, unclaimed, client.email),
-      stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
+      stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,${unproven},?,'online')`,
+        clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.email, client.email, client.phone, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),
     ...await appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }),

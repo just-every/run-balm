@@ -349,21 +349,35 @@ test('only the owner changes a sign-in email; a staff session keeps its own job'
   } finally { await h.close() }
 })
 
-test('a public booking cannot put a patient’s email on a second file or end their portal access', { timeout: 120_000 }, async () => {
-  const h = await harness()
+test('a public booking never ends another patient’s or guardian’s portal sign-in with a shared email or mobile number', { timeout: 120_000 }, async () => {
+  const texts = []
+  const h = await harness({ auth: { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'synthetic-balm-311', TWILIO_AUTH_TOKEN: 'synthetic-balm-312', TWILIO_FROM: '+13125550100' }, outbound: async request => {
+    texts.push(Object.fromEntries(new URLSearchParams(await request.text()))); return Response.json({ sid: 'synthetic-balm-313', status: 'queued' })
+  } })
   try {
     const { starts, booking } = await securityClinic(h)
-    const email = 'portal@patient.example'
-    await h.cmd('client.save', { firstName: 'Portal', lastName: 'Patient', dateOfBirth: '1975-09-12', email })
-    const cookie = await portalLogin(h, email)
-    assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200)
-    const before = await effects(h)
-    // Someone else's name and birth date with the patient's email.
-    const refused = await publicRequest(h, '/book', booking(starts[0], { email }))
-    assert.equal(refused.status, 409)
-    assert.match(refused.text, /patient portal/)
-    assert.deepEqual(await effects(h), before, 'no second file, visit, intake or email')
-    assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200, 'the patient stays signed in')
-    assert.equal((await h.send('/portal/home', undefined, await portalLogin(h, email))).status, 200, 'and can still sign in')
+    const email = 'portal@patient.example', mobile = '+13125550142', guardian = 'parent@family.example'
+    await h.cmd('client.save', { firstName: 'Portal', lastName: 'Patient', dateOfBirth: '1975-09-12', email, phone: mobile })
+    const child = await h.cmd('client.save', { firstName: 'Minor', lastName: 'Patient', dateOfBirth: '2015-04-03', email: 'minor@patient.example' })
+    await h.cmd('guardian.grant', { clientId: child.id, email: guardian, name: 'Alex Patient', relationship: 'parent', verification: 'Synthetic guardian authority checked.', verified: true })
+    const textSignIn = async () => {
+      const requested = await h.form('/portal/sms', { phone: mobile })
+      const confirmed = await h.send('/portal/sms/confirm', { id: requested.text.match(/name="id" value="([^"]+)"/)[1], code: texts.at(-1).Body.match(/code is (\d{6})/)[1] })
+      assert.equal(confirmed.status, 303, confirmed.text)
+      return confirmed.cookie
+    }
+    const signIns = async () => [await portalLogin(h, email), await textSignIn(), await portalLogin(h, guardian)]
+    const sessions = await signIns()
+    const book = (n, contact) => publicRequest(h, '/book', booking(starts[n], { firstName: 'Visitor' + n, dateOfBirth: '1990-01-0' + n, phone: '', ...contact }), { address: edgeAddress(40 + n) })
+    const reply = response => { assert.equal(response.status, 303, response.text); return response.location.replace(/^\/intake\/[\w-]+/, '') }
+    const fresh = reply(await book(1, { email: 'first@visitor.example', phone: '3125550177' }))
+    // Other people's names and birth dates with the patient's email, the patient's mobile and the guardian's email.
+    for (const [n, contact] of [[2, { email }], [3, { email: 'second@visitor.example', phone: mobile }], [4, { email: guardian }]]) {
+      assert.equal(reply(await book(n, contact)), fresh, 'the booking reads exactly like any new patient’s')
+    }
+    for (const cookie of sessions) assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200, 'every portal session stays signed in')
+    for (const cookie of await signIns()) assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200, 'and each person can still sign in')
+    const files = (await h.db.prepare("SELECT first_name,email,phone FROM bm_clients WHERE first_name LIKE 'Visitor%' ORDER BY first_name").all()).results
+    assert.deepEqual(files.map(f => [f.email, f.phone]), [['first@visitor.example', '+13125550177'], [null, null], ['second@visitor.example', null], [null, null]], 'an unproven booking never takes a contact someone signs in with')
   } finally { await h.close() }
 })
