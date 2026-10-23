@@ -35,7 +35,7 @@ const setup = async h => {
   // Exercise every downstream billing journey through a real biller session;
   // owner configuration and clinical attestations retain their existing actors.
   const biller=await h.staff('InsuranceBiller','biller'),nativeCommand=h.cmd
-  const ownerCommands=new Set(['insurance.settings.save','insurance.payer.save','insurance.enrollment.save','insurance.medicare.settings.save','insurance.supervision.save','insurance.claim.necessity','insurance.denial.appeal'])
+  const ownerCommands=new Set(['insurance.schedule.save','insurance.license.save','insurance.settings.save','insurance.payer.save','insurance.enrollment.save','insurance.medicare.settings.save','insurance.supervision.save','insurance.claim.necessity','insurance.denial.appeal'])
   h.cmd=(name,input,cookie,status,headers)=>nativeCommand(name,input,cookie ?? (name.startsWith('insurance.')&&!ownerCommands.has(name)?biller.cookie:h.owner),status,headers)
   return { patient, priya, payer, policy, appointmentId, serviceDate, invoice, biller }
 }
@@ -598,4 +598,65 @@ test('INS-005: referring NPI and dated 97140/97530 edit hold a claim until attes
 
   }finally{await browser?.close()}
  },{codeSetEdge:edge,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-96'},outbound:async()=>{throw Error('Scrubber must refuse before any payer request')}})
+})
+
+
+test('INS-001: dated plan contracts price service-date units and fees without rewriting issued documents; owner records provider licenses',async()=>{
+ await run(async h=>{
+  const c=await setup(h),state=await h.state(),service=state.services[0]
+  const second=await h.staff('synthetic-balm-101','practitioner',{discipline:'pt'})
+  await h.cmd('pay.npi.save',{staffId:second.id,npi:'1234567893'})
+  await h.cmd('insurance.enrollment.save',{payerId:c.payer.id,practitionerId:second.id,taxonomy:'225100000X',active:true})
+  const license={practitionerId:second.id,state:'TX',number:'synthetic-balm-102',startsOn:'2020-01-01',endsOn:'2030-12-31',source:'synthetic-balm-103 state board certificate'}
+  await h.cmd('insurance.license.save',license,c.biller.cookie,403)
+  await h.cmd('insurance.license.save',license)
+  const plan='synthetic-balm-104',day=c.serviceDate
+  const schedule={payerId:c.payer.id,planName:plan,effectiveOn:'2020-01-01',kind:'contracted',unitMethod:'ama',fees:[{code:'97110',cents:2100},{code:'97140',cents:1900}],source:'synthetic-balm-105 original plan contract'}
+  await h.cmd('insurance.schedule.save',schedule,c.biller.cookie,403)
+  await h.cmd('insurance.schedule.save',schedule)
+  const later=await h.cmd('insurance.schedule.save',{...schedule,effectiveOn:day,unitMethod:'fixed',fixedUnitMinutes:10,fees:[{code:'97110',cents:3000},{code:'97140',cents:2000}],source:'synthetic-balm-106 plan amendment'})
+  const oldDay=new Date(Date.parse(day+'T12:00:00Z')-5*86400000).toISOString().slice(0,10)
+  const bundle={provider:'cliniko',practitionerId:c.priya.id,serviceId:service.id,dateFormat:'MDY',files:[
+   {kind:'patients',name:'patients.csv',csv:'Patient ID,First Name,Last Name,Date of Birth\nsynthetic-balm-110,Synthetic,Dated plan,1980-01-01\n'},
+   {kind:'appointments',name:'appointments.csv',csv:`Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-111,synthetic-balm-110,${oldDay}T01:00:00+10:00,${oldDay}T01:45:00+10:00,booked\nsynthetic-balm-112,synthetic-balm-110,${day}T01:00:00+10:00,${day}T01:45:00+10:00,booked\n`}]}
+  const preview=await h.cmd('movein.preview',bundle);assert.equal(preview.canApply,true)
+  const moved=await h.cmd('movein.apply',{...bundle,fingerprint:preview.fingerprint,acceptanceReason:'Reviewed synthetic dated contract test appointments'})
+  const patient={id:moved.records.find(r=>r.target_table==='bm_clients').target_id}
+  const policy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:c.payer.id,planName:plan,memberId:'synthetic-balm-107',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',...coverage})
+  const make=async(hours,minutes)=>{
+   const visit=moved.records.find(r=>r.source_id===(hours===60?'synthetic-balm-111':'synthetic-balm-112')).target_id
+   await h.cmd('appointment.attend',{id:visit})
+   await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561'})
+   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic skilled care',charges:[{code:'97110',minutes},{code:'97140',minutes}]},c.priya.cookie)
+   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},c.priya.cookie)
+   const invoice=await h.cmd('invoice.prepare',{appointmentId:visit});await h.cmd('invoice.approve',{id:invoice.id})
+   const claim=await h.cmd('insurance.claim.prepare',{appointmentId:visit,policyId:policy.id})
+   return {visit,note,invoice,claim,date:await visitDate(h,visit)}
+  }
+  const old=await make(60,8),current=await make(5,20)
+  assert.ok(old.date<day)
+  assert.deepEqual(old.invoice.snapshot.procedures.map(l=>l.units),[1,1]);assert.equal(old.invoice.snapshot.amountCents,4000)
+  assert.deepEqual(current.claim.snapshot.lines.map(l=>l.units),[2,2]);assert.equal(current.invoice.snapshot.amountCents,10000)
+  assert.equal(current.invoice.snapshot.timedUnitBasis.schedule.id,later.id)
+  const auth=await h.cmd('insurance.authorization.save',{policyId:policy.id,number:'synthetic-balm-108',...coverage,allowanceKind:'units',units:8,unitsPerVisit:2,lowRemainder:2})
+  let file=await patientFile(h,patient.id)
+  assert.equal(file.insurance.authorizations.find(a=>a.id===auth.id).used_units,6)
+  assert.ok((await h.state()).dailyClose.authorizations.some(a=>a.clientId===patient.id&&a.kind==='low_authorization'))
+  const frozen=(await h.send('/api/balm/invoices/'+current.invoice.id+'.html',undefined,h.owner)).text
+  await h.cmd('insurance.schedule.save',{...schedule,effectiveOn:'2090-01-01',unitMethod:'cms',fees:[{code:'97110',cents:9000},{code:'97140',cents:9000}]})
+  const refreshed=await h.cmd('insurance.claim.scrub',{id:current.claim.id});assert.equal(refreshed.status,'ready')
+  file=await patientFile(h,patient.id,c.priya.cookie)
+  assert.deepEqual(file.notes.find(n=>n.id===current.note.id).billing.lines.map(l=>l.units),[2,2])
+  assert.equal((await h.send('/api/balm/invoices/'+current.invoice.id+'.html',undefined,h.owner)).text,frozen)
+  assert.equal((await h.state()).insurance.licenses[0].number,license.number)
+  assert.equal((await h.state(c.biller.cookie)).insurance.licenses.length,0)
+  if(process.env.BALM_UI_SCREENSHOTS){
+   const {viewportProof}=await import('./viewport-proof.mjs')
+   await viewportProof(h,[{name:'INS-001-dated-schedules',path:'/app/insurance',cookie:h.owner,selector:'#dated-billing',openSelector:'#dated-billing > summary',interact:async({page,width})=>{
+    const form=page.locator('#dated-billing form');await form.locator('[name=planName]').fill('synthetic-balm-'+width)
+    await form.locator('[name=effectiveOn]').fill('2026-01-01');await form.locator('[name=unitMethod]').selectOption('ama');await form.locator('[name=feeSchedule]').fill('97110 21.00\n97140 19.00');await form.locator('[name=source]').fill('synthetic-balm-109 browser contract')
+    await Promise.all([page.waitForNavigation(),form.getByRole('button',{name:'Record dated schedule',exact:true}).click()]);await page.locator('#dated-billing > summary').click()
+   }},{name:'INS-001-license',path:'/app/insurance',cookie:h.owner,selector:'#provider-licenses',openSelector:'#provider-licenses > summary'}])
+  }
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
 })

@@ -112,3 +112,10 @@ A self-hosted Balm connects to a clearinghouse through the practice’s own HTTP
 If a payer contract uses a fixed number of minutes per unit, choose **Fixed minutes per unit for each code** in its payer form and enter the positive whole-minute threshold. Balm counts only complete thresholds for each timed CPT separately; it never pools those minutes. Untimed codes still bill one unit. For example, at 15 minutes per unit, 8 minutes of 97110 and 8 of 97140 bill no timed units; the claim scrubber names both codes. Thirty minutes and 29 minutes bill two units and one unit.
 
 The note shows the current payer calculation. An approved invoice and its superbill keep the method, threshold and units used when issued, even after a payer edit. Authorization usage and daily close use the same calculation. Dated payer-setting history is not implemented yet. Medicare continues to require CMS total-time units.
+
+
+## Dated contracts and provider licenses
+
+In Insurance setup, open **Dated plans and fee schedules**. Record the contract source, effective date, complete CPT prices and timed-unit method. Copy a plan name exactly from the patient’s policy, or leave it blank for all plans. A plan revision takes priority over the payer baseline. Within each scope, contracted schedules take priority over standard, then the latest effective date applies. Existing payer setup remains the baseline until a dated revision covers the service. Record a later revision when the contract changes; issued invoices retain their original pricing and unit basis.
+
+**Provider licenses** records the practitioner, state, number, valid dates and source. Only the owner records and reads these facts. Balm labels them as owner-recorded; it does not check a licensing board.

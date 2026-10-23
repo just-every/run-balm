@@ -1,3 +1,4 @@
+import {saveBillingSchedule,saveProviderLicense} from './schedules'
 import {saveClaimRequirements} from './claim-requirements'
 import {cobCommand} from './cob'
 import {claimWork,saveFilingRule,recordFilingDate,recordClaimAction} from './claim-work'
@@ -36,6 +37,8 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.claim.action':return recordClaimAction(db,initial,input)
     case 'insurance.requirements.save':return saveClaimRequirements(db,who,input)
     case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
+    case 'insurance.schedule.save':return saveBillingSchedule(db,who,input)
+    case 'insurance.license.save':return saveProviderLicense(db,who,input)
     case 'insurance.payer.save':return savePayer(db,who,input)
     case 'insurance.enrollment.save':return saveEnrollment(db,who,input)
     case 'insurance.policy.save':return savePolicy(db,who,input)

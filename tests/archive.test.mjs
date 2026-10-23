@@ -48,6 +48,8 @@ async function archiveFixture(){
     const {service,practitioners:[priya]}=await clinic(h)
     await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
     const payer=await h.cmd('insurance.payer.save',{name:'Archive Health',payerId:'ARCHIVE',receiverId:'ARCHIVE',unitMethod:'fixed',fixedUnitMinutes:15})
+    await h.cmd('insurance.schedule.save',{payerId:payer.id,planName:'synthetic-balm-113',effectiveOn:'2090-01-01',kind:'contracted',unitMethod:'ama',fees:[{code:'97110',cents:3000}],source:'synthetic-balm-114 future contract'})
+    await h.cmd('insurance.license.save',{practitionerId:priya.id,state:'TX',number:'synthetic-balm-115',startsOn:'2020-01-01',endsOn:'2030-12-31',source:'synthetic-balm-116 board certificate'})
     const card='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V1sAAAAASUVORK5CYII='
     const insurance={insurancePayerId:payer.id,insuranceMemberId:'ARCHIVE-MEMBER',insuranceRelationship:'self',insurancePatientSex:'F',insuranceStartsOn:'2026-01-01',insuranceAddress:'200 Oak St',insuranceCity:'Austin',insuranceState:'TX',insurancePostalCode:'78701',insuranceFront:card,insuranceBack:card,identityPhoto:card}
     const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0])
@@ -117,6 +119,9 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
+      const setupState=(await restoredClinic.send('/api/balm/state',undefined,cookie)).value
+      assert.equal(setupState.insurance.schedules[0].source,'synthetic-balm-114 future contract')
+      assert.equal(setupState.insurance.licenses[0].number,'synthetic-balm-115')
       const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')
       await restoredClinic.cmd('note.amend',{id:checkedNote.id,revision:1,body:'Synthetic treatment after restore.',charges:[{code:'97110',minutes:30},{code:'97140',minutes:8}]},clinicianCookie)
       const restoredPreview=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===checkedNote.id).billing

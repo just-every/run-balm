@@ -1,3 +1,4 @@
+import {attachBillingSchedules} from './schedules'
 import { day, one, rows, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
 import type { BookingWarning } from './types'
@@ -15,7 +16,7 @@ export async function authorizationsFor(db: D1Database, clientId: string, exclud
     rows(db, `SELECT id,client_id,start_at,status,practitioner_id,${episodeOf('visit', 'bm_appointments.id')} FROM bm_appointments WHERE client_id=? AND status IN ('attended','booked')`, clientId),
     one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'), chargeFacts(db, clientId),
   ])
-  return accountAuthorizations(authorizations, visits.filter(v => v.id !== excludeAppointmentId), settings!.time_zone, charges)
+  return accountAuthorizations(await attachBillingSchedules(db,authorizations), visits.filter(v => v.id !== excludeAppointmentId), settings!.time_zone, charges)
 }
 
 /** Caller applies ordinary booking authority/audit; this helper returns no PHI.

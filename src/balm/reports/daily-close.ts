@@ -1,3 +1,4 @@
+import {attachBillingSchedules} from '../insurance/schedules'
 import { rows } from '../domain/model'
 import { accountAuthorizations, authorizationCoversVisit, selectAuthorization, signedAuthorizationChargeSql } from '../insurance/authorization-accounting'
 import { datePlus, firstInstantOfHostDate, hostDateAt } from '../availability/timezone'
@@ -156,7 +157,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
 
   // INS-003 uses the same pure allocation as patient files and booking. The
   // report's end-of-day cutoff excludes later signatures but keeps future reservations.
-  const accounted = accountAuthorizations(authorizations, visits, zone, chargeRows, cutoff)
+  const accounted = accountAuthorizations(await attachBillingSchedules(db,authorizations), visits, zone, chargeRows, cutoff)
   const authByClient = groupBy(accounted, 'client_id')
   const expiredWithBookings = new Set<string>()
   for (const visit of localVisits) {

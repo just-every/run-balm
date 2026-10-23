@@ -37,6 +37,26 @@ function payerForm(i: any, p?: any) {
     + input('receiverId', 'Interchange receiver ID (optional until sending is on)', p?.receiver_id, 'Only for electronic sending: your clearinghouse’s payer list or companion guide gives it. Until then claim files name the payer by its payer ID.', 'maxlength="15"'), p ? `Save ${p.name}` : 'Add payer'))
 }
 
+function datedBilling(i:any,payers:any[],staff:any[]){
+ if(!payers.length)return ''
+ const history=(i.schedules??[]).map((r:any)=>`<li>${h(payers.find((p:any)=>p.id===r.payer_id)?.name)} · ${h(r.plan_name||'All plans')} · ${h(r.effective_on)} · ${h(r.kind)} · ${h(r.unit_method||'Method missing')} ${h(r.fixed_unit_minutes??'')} · ${h(r.source)}</li>`).join('')
+ const licenses=(i.licenses??[]).map((l:any)=>`<li>${h(staff.find((p:any)=>p.id===l.practitioner_id)?.name)} · ${h(l.state)} ${h(l.number)} · ${h(l.starts_on)} to ${h(l.ends_on)} · ${h(l.source)}</li>`).join('')
+ return `<details id="dated-billing"><summary>Dated plans and fee schedules</summary><p>Record a complete revision from the payer contract. Exact plan names match the patient’s policy. A plan revision overrides the payer baseline; within each scope a contracted schedule takes priority over standard, then the latest effective date wins. Existing setup is the baseline until a dated revision applies. Revisions stay in history; record a later revision for a change.</p><ul>${history}</ul>`
+ +named(form('insurance.schedule.save',path,select('payerId','Payer',payers.map((p:any)=>[p.id,p.name]))
+ +input('planName','Plan name (blank for all plans)','','Copy the plan name exactly from the patient’s policy.')
+ +input('effectiveOn','Effective date','','The first service date covered by this contract revision.','','date')
+ +select('kind','Fee schedule type',[['contracted','Contracted'],['standard','Standard']])
+ +select('unitMethod','Timed-unit method',[['','Method not yet recorded'],['cms','CMS total-time'],['ama','AMA per-service'],['fixed','Fixed minutes per unit']])
+ +input('fixedUnitMinutes','Fixed minutes per unit','','Positive whole minutes from the contract; only for the fixed method.','min="1" step="1"','number')
+ +'<label>Complete fee schedule<textarea name="feeSchedule" rows="4" required></textarea><span class="hint">One CPT code and dollar price per unit on each line.</span></label>'
+ +input('source','Contract source','','Name the contract or provider manual, version and section.'),'Record dated schedule'))+'</details>'
+ +`<details id="provider-licenses"><summary>Provider licenses</summary><p>Owner-recorded license facts only; Balm does not verify licensure with a state board. Earlier records stay in history.</p><ul>${licenses}</ul>`
+ +named(form('insurance.license.save',path,select('practitionerId','Practitioner',staff.map((p:any)=>[p.id,p.name]))
+ +input('state','License state','','Two-letter state code.','maxlength="2"')+input('number','License number','','From the licensing board’s certificate.')
+ +input('startsOn','License starts','','First valid day.','','date')+input('endsOn','License expires','','Last valid day.','','date')
+ +input('source','License source','','Name the board and certificate or verification record.'),'Record provider license'))+'</details>'
+}
+
 function enrollment(i: any, payers: any[], staff: any[]) {
   if (!payers.length || !staff.length) return '<p>Add a payer here and a practitioner in <a href="/app/clinic">Clinic</a> first.</p>'
   const list = (i.enrollments ?? []).map((e: any) => `<li>${h(payers.find((p: any) => p.id === e.payer_id)?.name)} · ${h(staff.find((p: any) => p.id === e.practitioner_id)?.name)} · ${h(e.taxonomy)} · ${e.active ? 'active' : 'inactive'}</li>`).join('')
@@ -54,5 +74,5 @@ export function insuranceSettings(s: any) {
   return panel('Insurance setup', `<p>Three things to fill in once. Each field says where to find its value; the <a href="https://run-balm.com/docs/insurance">insurance setup guide</a> walks through them.</p>`
     + `<details id="billing"${i.settings ? '' : ' open'}><summary>1. Practice billing details ${done(!!i.settings)}</summary>${billing(st)}</details>`
     + `<details id="payers"${i.settings && !payers.length ? ' open' : ''}><summary>2. Payers you bill and your fee schedule ${done(payers.length > 0)}</summary>${payerList}<details${payers.length ? '' : ' open'}><summary>Add a payer</summary>${payerForm(i)}</details></details>`
-    + `<details id="enrollment"${payers.length && !(i.enrollments ?? []).length ? ' open' : ''}><summary>3. Provider enrollment ${done((i.enrollments ?? []).length > 0)}</summary><p class="help">Record each practitioner the payer has accepted (enrolled) to treat its members.</p>${enrollment(i, payers, staff)}</details>` + medicareSettings(s, path), 'full')
+    + `<details id="enrollment"${payers.length && !(i.enrollments ?? []).length ? ' open' : ''}><summary>3. Provider enrollment ${done((i.enrollments ?? []).length > 0)}</summary><p class="help">Record each practitioner the payer has accepted (enrolled) to treat its members.</p>${enrollment(i, payers, staff)}</details>` + datedBilling(i,payers,staff) + medicareSettings(s, path), 'full')
 }
