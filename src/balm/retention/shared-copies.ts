@@ -12,6 +12,7 @@ export async function sharedCopies(db: D1Database, found: Inventory, clientId: s
 /** Shared raw originals are withdrawn in full; other patients' native records remain. */
 export function purgeCopies(db: D1Database, clientId: string, copies: Awaited<ReturnType<typeof sharedCopies>>) {
   return [
+    stmt(db,'DELETE FROM bm_guardian_links WHERE email IN (SELECT email FROM bm_guardian_grants WHERE client_id=?)',clientId),
     stmt(db,'DELETE FROM bm_payer_eobs WHERE batch_id IN (SELECT value FROM json_each(?))',JSON.stringify(copies.payerBatches)),
     stmt(db,`DELETE FROM rer_mail_event_states WHERE EXISTS(SELECT 1 FROM bm_mail_attempts a WHERE a.client_id=?
       AND a.provider=rer_mail_event_states.provider AND a.tenant_id=rer_mail_event_states.tenant_id AND a.event_namespace=rer_mail_event_states.event_namespace

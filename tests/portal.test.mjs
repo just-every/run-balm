@@ -248,3 +248,209 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     assert.equal((await h.send('/portal/records/'+request.id+'.json',undefined,patientCookie)).status,303,'a changed identity revokes access to prior releases')
   } finally {await h.close()}
 })
+
+
+test('a verified guardian switches between two minors without seeing unrelated records and submitted insurance is audited without changing verified coverage', {timeout:120000}, async()=>{
+ const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ try{
+  await h.finishSetup()
+  const {service,practitioners:[priya]}=await clinic(h)
+  const child1=await h.cmd('client.save',{firstName:'Lucia',lastName:'Diaz',dateOfBirth:'2014-03-07',email:'lucia@patient.example'})
+  const child2=await h.cmd('client.save',{firstName:'Mateo',lastName:'Diaz',dateOfBirth:'2016-09-12',email:'mateo@patient.example'})
+  const foreign=await h.cmd('client.save',{firstName:'Una',lastName:'Other',dateOfBirth:'2015-01-01',email:'una@patient.example'})
+  const adult=await h.cmd('client.save',{firstName:'Adult',lastName:'Patient',dateOfBirth:'1980-01-01'})
+  for(const [i,child] of [child1,child2,foreign].entries()){
+   await pastVisit(h,child.id,priya,service.id,h.owner,2+i*3)
+   await h.cmd('exercise.assign',{clientId:child.id,title:child.id===child1.id?'Lucia home task':child.id===child2.id?'Mateo home task':'Unrelated private program',sets:1,reps:'5',instructions:'Follow the clinician instructions.'},priya.cookie)
+  }
+  const future=await h.cmd('appointment.book',{clientId:child1.id,practitionerId:priya.id,serviceId:service.id,date:new Date(Date.now()+2*86400_000+10*3600_000).toISOString().slice(0,10),time:'10:00'})
+  const grant={email:'guardian@family.example',name:'Alex Diaz',relationship:'parent',verification:'Synthetic guardian authority checked and confidential-care restrictions reviewed.',verified:true}
+  await h.cmd('guardian.grant',{...grant,clientId:child1.id},priya.cookie,403)
+  await h.cmd('guardian.grant',{...grant,clientId:child1.id,verified:false},h.owner,400)
+  await h.cmd('guardian.grant',{...grant,clientId:adult.id},h.owner,409)
+  const first=await h.cmd('guardian.grant',{...grant,clientId:child1.id})
+  await h.cmd('guardian.grant',{...grant,clientId:child2.id})
+  const cookie=await portalLogin(h,'guardian@family.example')
+  assert.equal((await h.send('/api/balm/state',undefined,cookie)).status,401)
+  assert.equal((await h.form('/portal/action',{name:'guardian.select',id:foreign.id},cookie)).status,404)
+  for(const child of [child1,child2]){
+   assert.equal((await h.form('/portal/action',{name:'guardian.select',id:child.id},cookie)).status,303)
+   const home=await h.send('/portal/home',undefined,cookie)
+   assert.equal(home.status,200,home.text)
+   assert.match(home.text,new RegExp(child.id===child1.id?'Lucia home task':'Mateo home task'))
+   assert.ok(!home.text.includes(child.id===child1.id?'Mateo home task':'Lucia home task'))
+   assert.ok(!home.text.includes('Unrelated private program')&&!home.text.includes('una@patient.example'))
+  }
+  await h.form('/portal/action',{name:'guardian.select',id:child1.id},cookie)
+  const opened=await h.form('/portal/action',{name:'intake.open',appointmentId:future.appointmentId},cookie)
+  assert.equal(opened.status,303)
+  const intake=await h.send(opened.location)
+  const accepted=Object.fromEntries([...intake.text.matchAll(/name="(consentVersion[^"]*)" value="([^"]+)"/g)].flatMap(([,name,value])=>[[name,value],[name.replace('Version','Accepted'),'on']]))
+  assert.equal((await h.form(opened.location,{formId:'intake-v1',q_reason:'Synthetic child intake',q_emergency:'Alex Diaz',q_consent:'yes',...accepted,signerName:'Alex Diaz',signerRelationship:'parent',signatureTyped:'Alex Diaz'})).status,303)
+  const updates={name:'profile.insurance',payer:'New synthetic plan',memberId:'MEM-CHILD-1',subscriber:'Alex Diaz',relationship:'child',group:'FAMILY',confirm:'on',clientId:foreign.id}
+  assert.equal((await h.form('/portal/action',updates,cookie)).status,303)
+  assert.equal((await h.form('/portal/action',{name:'profile.contact',email:'new-guardian@family.example',phone:'3125550104',confirm:'on'},cookie)).status,303)
+  const file=(await h.send('/api/balm/clients/'+child1.id,undefined,h.owner)).value
+  assert.equal(file.portalProfileChanges.length,2)
+  assert.equal(file.portalProfileChanges.find(r=>r.kind==='insurance').payload.memberId,'MEM-CHILD-1')
+  assert.equal(file.client.email,'lucia@patient.example','unverified contact submission cannot take over sign-in')
+  const policies=await h.db.prepare('SELECT COUNT(*) AS n FROM bm_policies WHERE client_id=?').bind(child1.id).first()
+  assert.equal(policies.n,0,'unverified coverage never mutates active payer policy')
+  assert.equal((await h.send('/api/balm/clients/'+foreign.id,undefined,h.owner)).value.portalProfileChanges.length,0)
+  const events=(await h.db.prepare("SELECT action,actor_role,detail FROM bm_audit WHERE client_id=?").bind(child1.id).all()).results
+  assert.ok(events.some(r=>r.action==='portal.insurance_update_submitted'&&r.actor_role==='guardian'))
+  assert.ok(!JSON.stringify(events).includes('MEM-CHILD-1'))
+  await viewportProof(h,[{name:'guardian-child-and-profile',path:'/portal/home',cookie,selector:'#children'},
+   {name:'guardian-insurance-update',path:'/portal/home',cookie,selector:'#profile',open:'Update insurance details'},
+   {name:'guardian-owner-grant',path:'/app/clients/'+child1.id,cookie:h.owner,open:'Grant verified guardian access',selector:'form[action*="guardian.grant"]'}])
+  await h.cmd('guardian.revoke',{id:first.id})
+  assert.equal((await h.send('/portal/home',undefined,cookie)).status,303)
+  const again=await portalLogin(h,'guardian@family.example')
+  assert.equal((await h.form('/portal/action',{name:'guardian.select',id:child1.id},again)).status,404)
+  assert.equal((await h.send('/portal/home',undefined,again)).status,200)
+  assert.equal((await h.form('/portal/signout',{},again)).status,303)
+  assert.equal((await h.send('/portal/home',undefined,again)).status,303)
+ }finally{await h.close()}
+})
+
+test('SMS portal codes are generic, hash-only, one-use credentials and never authenticate staff', {timeout:120000},async()=>{
+ const texts=[]
+ const h=await harness({auth:{SMS_PROVIDER:'twilio',TWILIO_ACCOUNT_SID:'synthetic-balm-301',TWILIO_AUTH_TOKEN:'synthetic-balm-302',TWILIO_FROM:'+13125550100'},outbound:async request=>{
+  assert.equal(request.url,'https://api.twilio.com/2010-04-01/Accounts/synthetic-balm-301/Messages.json')
+  assert.equal(request.headers.get('authorization'),'Basic '+Buffer.from('synthetic-balm-301:synthetic-balm-302').toString('base64'))
+  const message=new URLSearchParams(await request.text());texts.push(Object.fromEntries(message));return Response.json({sid:'synthetic-balm-303',status:'queued'})
+ }})
+ try{
+  await h.finishSetup()
+  await clinic(h)
+  const patient=await h.cmd('client.save',{firstName:'SMS',lastName:'Patient',dateOfBirth:'1980-01-01',phone:'3125550102'})
+  const unknown=await h.form('/portal/sms',{phone:'3125550199'})
+  assert.equal(unknown.status,200);assert.equal(texts.length,0)
+  const requested=await h.form('/portal/sms',{phone:'3125550102'})
+  assert.equal(requested.status,200);assert.match(requested.text,/If one patient file matches/)
+  assert.equal(texts.length,1)
+  const key=requested.text.match(/name="id" value="([^"]+)"/)[1],code=texts[0].Body.match(/code is (\d{6})/)[1]
+  const stored=await h.db.prepare('SELECT * FROM bm_portal_sms_codes WHERE id=?').bind(key).first()
+  assert.ok(stored.code_hash&&!JSON.stringify(stored).includes(code))
+  assert.equal(Date.parse(stored.expires_at)-Date.parse(stored.created_at),300000)
+  const wrong=code==='000000'?'000001':'000000'
+  assert.equal((await h.form('/portal/sms/confirm',{id:key,code:wrong})).status,410)
+  const result=await h.send('/portal/sms/confirm',{id:key,code})
+  assert.equal(result.status,303,result.text)
+  assert.equal((await h.form('/portal/sms/confirm',{id:key,code})).status,410)
+  assert.equal((await h.send('/portal/home',undefined,result.cookie)).status,200)
+  assert.equal((await h.send('/api/balm/state',undefined,result.cookie)).status,401)
+  await h.cmd('client.save',{id:patient.id,firstName:'SMS',lastName:'Patient',phone:'3125550103'})
+  assert.equal((await h.send('/portal/home',undefined,result.cookie)).status,303)
+  await h.cmd('client.save',{firstName:'Shared',lastName:'Phone',phone:'3125550103'})
+  await h.form('/portal/sms',{phone:'3125550103'})
+  assert.equal(texts.length,1,'shared numbers never choose or expose a patient')
+ }finally{await h.close()}
+})
+
+
+test('note-linked home programs retain hold dosage, three daily pain sessions and a patient-only printable copy', {timeout:120000},async()=>{
+ const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ try{
+  await h.finishSetup()
+  const {service,practitioners:[priya,other]}=await clinic(h,['Priya','Other'])
+  const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',email:'program@patient.example'})
+  const foreign=await h.cmd('client.save',{firstName:'Una',lastName:'Other',email:'foreign@patient.example'})
+  const visit=await pastVisit(h,patient.id,priya,service.id)
+  const foreignVisit=await pastVisit(h,foreign.id,other,service.id)
+  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Daily note assigning a home program.'},priya.cookie)
+  const foreignNote=await h.cmd('note.write',{clientId:foreign.id,appointmentId:foreignVisit,body:'Another patient note.'},other.cookie)
+  await h.cmd('exercise.assign',{clientId:patient.id,noteId:foreignNote.id,title:'Refused',sets:1,reps:'5',instructions:'Must not cross patient boundaries.'},priya.cookie,404)
+  const assignment=await h.cmd('exercise.assign',{clientId:patient.id,noteId:note.id,title:'Seated knee extension',sets:2,reps:'8',holdSeconds:3,frequency:'Once daily',instructions:'Sit with your back supported. Straighten your knee in a comfortable range, pause, then slowly lower.'},priya.cookie)
+  const cookie=await portalLogin(h,'program@patient.example'),foreignCookie=await portalLogin(h,'foreign@patient.example')
+  const today=new Date(Date.now()+10*3600_000).toISOString().slice(0,10)
+  for(let offset=2;offset>=0;offset--){
+   const day=new Date(Date.parse(today+'T00:00:00Z')-offset*86400_000).toISOString().slice(0,10)
+   assert.equal((await h.form('/portal/action',{name:'exercise.done',id:assignment.id,day,pain:String(offset+1)},cookie)).status,303)
+  }
+  assert.equal((await h.form('/portal/action',{name:'exercise.done',id:assignment.id,pain:'11'},cookie)).status,400)
+  assert.equal((await h.form('/portal/action',{name:'exercise.done',id:assignment.id,day:'2099-01-01',pain:'1'},cookie)).status,400)
+  const next=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Next note reviews home adherence.'},priya.cookie)
+  const file=(await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value
+  const exercise=file.homeExercises.find(e=>e.id===assignment.id)
+  assert.equal(exercise.sourceNoteId,note.id);assert.equal(exercise.holdSeconds,3)
+  assert.equal(exercise.sessions.length,3);assert.deepEqual(exercise.sessions.map(d=>d.pain),[3,2,1])
+  const nextPage=(await h.send('/app/clients/'+patient.id,undefined,priya.cookie)).text
+  assert.match(nextPage,/Home program adherence/);assert.match(nextPage,/3 sessions/)
+  const pdf=await h.send('/portal/program.pdf',undefined,cookie)
+  assert.equal(pdf.status,200);assert.match(pdf.text,/^%PDF/);assert.match(pdf.text,/Seated knee extension/);assert.match(pdf.text,/hold 3 seconds/)
+  assert.ok(!(await h.send('/portal/program.pdf',undefined,foreignCookie)).text.includes('Seated knee extension'))
+  await viewportProof(h,[{name:'program-pain-log',path:'/portal/home',cookie,selector:'#program'},
+   {name:'note-program-adherence',path:'/app/clients/'+patient.id,cookie:priya.cookie,selector:'#note-'+next.id}])
+ }finally{await h.close()}
+})
+
+
+test('the patient chooses a remembered Spanish portal interface without translating clinical content', {timeout:120000},async()=>{
+ const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ try{
+  await h.finishSetup()
+  const {service,practitioners:[priya]}=await clinic(h)
+  const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',email:'language@patient.example'})
+  await pastVisit(h,patient.id,priya,service.id)
+  await h.cmd('exercise.assign',{clientId:patient.id,title:'Clinician-authored title',sets:1,reps:'5',instructions:'Clinical wording is retained exactly as authored.'},priya.cookie)
+  const cookie=await portalLogin(h,'language@patient.example')
+  assert.equal((await h.form('/portal/action',{name:'language.choose',language:'es'},cookie)).status,303)
+  const page=await h.send('/portal/home',undefined,cookie)
+  assert.match(page.text,/<html lang="es">/);assert.match(page.text,/Programa de ejercicios en casa/)
+  assert.match(page.text,/Clinical wording is retained exactly as authored/)
+  assert.equal((await h.db.prepare('SELECT portal_language FROM bm_clients WHERE id=?').bind(patient.id).first()).portal_language,'es')
+  await viewportProof(h,[{name:'patient-spanish-home',path:'/portal/home',cookie,selector:'#program'},
+   {name:'patient-spanish-signin',path:'/portal?lang=es'}])
+  await h.form('/portal/action',{name:'language.choose',language:'en'},cookie)
+  await viewportProof(h,[{name:'patient-english-home',path:'/portal/home',cookie,selector:'#program'},{name:'patient-english-signin',path:'/portal'}])
+ }finally{await h.close()}
+})
+
+
+test('a fresh licensed exercise library supports filtered search, atomic media CSV import and five-exercise assignment from a daily note', {timeout:120000},async()=>{
+ const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ try{
+  await h.finishSetup()
+  const {service,practitioners:[priya]}=await clinic(h)
+  const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',email:'library@patient.example'})
+  const visit=await pastVisit(h,patient.id,priya,service.id)
+  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',body:'Daily note selects home program.'},priya.cookie)
+  const library=await h.send('/api/balm/exercises',undefined,priya.cookie)
+  assert.equal(library.status,200,library.text)
+  assert.equal(library.value.shippedCount,23);assert.deepEqual(library.value.counts,{pt:13,ot:5,slp:5})
+  assert.ok(library.value.exercises.every(e=>e.image.startsWith('data:image/svg+xml;base64,')&&e.license==='CC0-1.0'&&e.source&&e.instructionsEs&&e.titleEs))
+  const search=await h.send('/api/balm/exercises?q=resistance%20band&discipline=pt&region=shoulder',undefined,priya.cookie)
+  assert.equal(search.value.total,2)
+  assert.ok(search.value.exercises.every(e=>e.region==='shoulder'&&e.equipment==='resistance band'))
+  const selected=library.value.exercises.filter(e=>e.discipline==='pt').slice(0,5)
+  const assigned=await h.cmd('exercise.program.assign',{clientId:patient.id,noteId:note.id,exerciseIds:selected.map(e=>e.id)},priya.cookie)
+  assert.equal(assigned.ids.length,5)
+  const cookie=await portalLogin(h,'library@patient.example')
+  const portal=(await h.send('/portal/home',undefined,cookie)).text
+  for(const e of selected){assert.ok(portal.includes(e.title));assert.ok(portal.includes(e.image))}
+  assert.match(portal,/CC0-1.0/)
+  await h.form('/portal/action',{name:'language.choose',language:'es'},cookie)
+  const spanish=(await h.send('/portal/home',undefined,cookie)).text
+  assert.ok(spanish.includes(selected[0].titleEs)&&spanish.includes(selected[0].instructionsEs))
+  const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jEAAAAABJRU5ErkJggg=='
+  const columns='title,title_es,instructions,instructions_es,discipline,region,position,equipment,sets,reps,hold_seconds,frequency,media'
+  const csv=columns+'\n'+[1,2,3].map(i=>`Practice task ${i},Tarea de la clínica ${i},"Move slowly, then rest.",Muévase despacio y descanse.,ot,hand,seated,soft ball,1,5,0,Daily,task-${i}.png`).join('\n')
+  const media=Object.fromEntries([1,2,3].map(i=>['task-'+i+'.png',png]))
+  await h.cmd('exercise.library.import',{csv,media:{},rights:true},priya.cookie,400)
+  assert.equal((await h.send('/api/balm/exercises?q=Practice%20task',undefined,priya.cookie)).value.total,0,'a missing image refuses the complete batch')
+  // Exercise the same multipart door as the actual upload form.
+  const upload=new FormData();upload.set('csv',new File([csv],'practice.csv',{type:'text/csv'}));upload.set('rights','on')
+  for(let i=1;i<=3;i++)upload.set('media_'+i,new File([Buffer.from(png.split(',')[1],'base64')],'task-'+i+'.png',{type:'image/png'}))
+  const encoded=new Request(h.origin+'/app/action',{method:'POST',body:upload})
+  const response=await h.mf.dispatchFetch(h.origin+'/app/action?name=exercise.library.import&returnTo='+encodeURIComponent('/app/clients/'+patient.id),{method:'POST',headers:{origin:h.origin,cookie:priya.cookie,'content-type':encoded.headers.get('content-type')},body:new Uint8Array(await encoded.arrayBuffer()),redirect:'manual'})
+  assert.equal(response.status,303,await response.text())
+  const imported=await h.send('/api/balm/exercises?q=Practice%20task',undefined,priya.cookie)
+  assert.equal(imported.value.total,3);assert.ok(imported.value.exercises.every(e=>e.license.startsWith('Practice-owned')))
+  await h.cmd('exercise.library.import',{csv,media,rights:true},priya.cookie)
+  assert.equal((await h.send('/api/balm/exercises?q=Practice%20task',undefined,priya.cookie)).value.total,3,'repeat import keeps the original three exercises')
+  await viewportProof(h,[{name:'library-search-and-assignment',path:'/app/clients/'+patient.id+'?q=resistance%20band&discipline=pt&region=shoulder',cookie:priya.cookie,selector:'#exercise-library'},
+   {name:'library-csv-media-import',path:'/app/clients/'+patient.id,cookie:priya.cookie,open:'Import practice exercises with images',selector:'form[action*="exercise.library.import"]'},
+   {name:'library-patient-spanish',path:'/portal/home',cookie,selector:'#program'}])
+ }finally{await h.close()}
+})

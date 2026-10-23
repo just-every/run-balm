@@ -1,3 +1,4 @@
+import {consumeGuardianLink,guardianGuard,guardianPatient,requestGuardianLink} from './guardians'
 import { runtimeBindings, type Bindings } from '../../auth.server'
 import { audit, commit, DomainError, guard, id, insist, now, one, rows, sha256, stmt } from '../domain/model'
 import { send } from '../mail-out'
@@ -13,7 +14,7 @@ export const portalToken = () => btoa(String.fromCharCode(...crypto.getRandomVal
 const validToken = (token: unknown): token is string => typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token)
 const cookieName = (request: Request) => new URL(request.url).protocol === 'https:' ? '__Host-balm_patient' : 'balm_patient'
 const cookieValue = (request: Request) => (request.headers.get('cookie') ?? '').split(';').map(v => v.trim()).find(v => v.startsWith(cookieName(request) + '='))?.slice(cookieName(request).length + 1) ?? ''
-const cookie = (request: Request, value: string, seconds: number) => `${cookieName(request)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}; Expires=${new Date(seconds ? Date.now() + seconds * 1000 : 0).toUTCString()}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`
+export const portalCookie = (request: Request, value: string, seconds: number) => `${cookieName(request)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}; Expires=${new Date(seconds ? Date.now() + seconds * 1000 : 0).toUTCString()}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`
 function origin(env: Bindings, request: Request) {
   insist(request.method === 'POST' && request.headers.get('origin') === new URL(runtimeBindings(env).AUTH_ORIGIN).origin, 'cross_site_request_refused', 403)
 }
@@ -26,6 +27,7 @@ export async function requestPortalLink(env: Bindings, request: Request, emailIn
   // portalResponse has already taken the address allowance before reading the body.
   const allowed = await takeEmailRate(env, 'portal', email, 'signin')
   if (!allowed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return { notice: portalNotice }
+  if(await requestGuardianLink(env,request,email))return {notice:portalNotice}
   const clients = await rows<{ id: string; version: number }>(env.DB, 'SELECT id,version FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL LIMIT 2', email)
   if (clients.length !== 1) return { notice: portalNotice }
   const client = clients[0], value = portalToken(), linkId = id(), at = now()
@@ -44,31 +46,32 @@ export async function requestPortalLink(env: Bindings, request: Request, emailIn
 }
 
 export interface Patient {
+  guardianEmail?: string
   sessionId: string; clientId: string; clientVersion: number; email: string; firstName: string; lastName: string; expiresAt: string
 }
 const liveSession = `SELECT s.id AS sessionId,s.client_id AS clientId,s.client_version AS clientVersion,s.email,c.first_name AS firstName,c.last_name AS lastName,s.expires_at AS expiresAt
  FROM bm_portal_sessions s JOIN bm_clients c ON c.id=s.client_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?
- AND c.erased_at IS NULL AND c.version=s.client_version AND lower(c.email)=s.email
- AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=s.email AND erased_at IS NULL)=1`
+ AND c.erased_at IS NULL AND c.version=s.client_version AND ((s.method='email' AND lower(c.email)=s.email AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=s.email AND erased_at IS NULL)=1) OR (s.method='sms' AND c.phone=s.phone AND (SELECT COUNT(*) FROM bm_clients WHERE phone=s.phone AND erased_at IS NULL)=1))`
 
 /** The cookie cannot authenticate staff, and a staff session cannot authenticate a patient. */
 export async function portalPatient(db: D1Database, request: Request): Promise<Patient> {
   const token = cookieValue(request)
   insist(validToken(token), 'patient_sign_in_required', 401)
   const patient = await one<Patient>(db, liveSession, await sha256(token), now())
-  insist(patient, 'patient_sign_in_required', 401)
+  if(!patient)return guardianPatient(db,token)
   return patient
 }
-export const portalGuard = (db: D1Database, patient: Patient) => guard(db, `EXISTS(SELECT 1 FROM bm_portal_sessions s JOIN bm_clients c ON c.id=s.client_id
+export const portalGuard = (db: D1Database, patient: Patient) => patient.guardianEmail ? guardianGuard(db,patient) : guard(db, `EXISTS(SELECT 1 FROM bm_portal_sessions s JOIN bm_clients c ON c.id=s.client_id
  WHERE s.id=? AND s.client_id=? AND s.client_version=? AND s.revoked_at IS NULL AND s.expires_at>?
- AND c.erased_at IS NULL AND c.version=s.client_version AND lower(c.email)=s.email
- AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=s.email AND erased_at IS NULL)=1)`, patient.sessionId, patient.clientId, patient.clientVersion, now())
+ AND c.erased_at IS NULL AND c.version=s.client_version AND ((s.method='email' AND lower(c.email)=s.email AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=s.email AND erased_at IS NULL)=1) OR (s.method='sms' AND c.phone=s.phone AND (SELECT COUNT(*) FROM bm_clients WHERE phone=s.phone AND erased_at IS NULL)=1)))`, patient.sessionId, patient.clientId, patient.clientVersion, now())
 
 /** POST only: scanners visiting the emailed GET link do not consume the credential. */
 export async function consumePortalLink(env: Bindings, request: Request, token: unknown) {
   origin(env, request)
   insist(!managedInstall(env), portalManagedNotice, 409)
   insist(validToken(token), 'portal_link_not_available', 410)
+  const guardian=await consumeGuardianLink(env,request,token)
+  if(guardian)return guardian
   const link = await one<{ id: string; client_id: string; client_version: number; email: string }>(env.DB, `SELECT l.id,l.client_id,l.client_version,l.email FROM bm_portal_links l JOIN bm_clients c ON c.id=l.client_id
     WHERE l.token_hash=? AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>? AND c.erased_at IS NULL
     AND c.version=l.client_version AND lower(c.email)=l.email AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=l.email AND erased_at IS NULL)=1`, await sha256(token), now())
@@ -83,12 +86,15 @@ export async function consumePortalLink(env: Bindings, request: Request, token: 
     stmt(env.DB, 'INSERT INTO bm_portal_sessions(id,token_hash,client_id,client_version,email,created_at,expires_at) VALUES(?,?,?,?,?,?,?)', sessionId, await sha256(session), link.client_id, link.client_version, link.email, at, new Date(Date.now() + SESSION_MS).toISOString()),
     audit(env.DB, patientActor, 'portal.signed_in', link.client_id, sessionId),
   ])
-  return { cookie: cookie(request, session, SESSION_MS / 1000) }
+  return { cookie: portalCookie(request, session, SESSION_MS / 1000) }
 }
 
 export async function signOutPortal(db: D1Database, request: Request) {
   insist(request.method === 'POST' && request.headers.get('origin') === new URL(request.url).origin, 'cross_site_request_refused', 403)
   const token = cookieValue(request)
-  if (validToken(token)) await stmt(db, 'UPDATE bm_portal_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL', now(), await sha256(token)).run()
-  return { cookie: cookie(request, '', 0) }
+  if (validToken(token)) {
+    const hash=await sha256(token)
+    await commit(db,null,[stmt(db,'UPDATE bm_portal_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL',now(),hash),stmt(db,'UPDATE bm_guardian_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL',now(),hash)])
+  }
+  return { cookie: portalCookie(request, '', 0) }
 }
