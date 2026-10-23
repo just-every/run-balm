@@ -505,3 +505,97 @@ test('CODE-001: effective CMS quarters, billable diagnosis children, clinician d
 })
 
 test('CODE-001: explicit durable continuation preserves cursors and publishes only after every archive checksum',async()=>{const {codeImportJourney}=await import('./code-import-journey.mjs');await codeImportJourney()})
+
+
+test('INS-005: referring NPI and dated 97140/97530 edit hold a claim until attested correction; payer authorization, certification and filing requirements hold every export',async()=>{
+ const {codeSetEdge}=await import('./code-sets-journey.mjs')
+ const {codeSetClaimAdapter}=await import('./code-sets-claims.mjs')
+ const edge=codeSetEdge({therapyPtp:true})
+ await run(async h=>{
+  await h.finishSetup()
+  const scrub=await codeSetClaimAdapter(h),state=await h.state(),payer=state.insurance.payers[0],clinician=state.staff.find(p=>p.role==='practitioner')
+  await h.cmd('insurance.payer.save',{id:payer.id,name:payer.name,payerId:payer.payer_id,unitMethod:'cms',requiresReferral:true,fees:['00530','00532','0932T','97110','97140','97530'].map(code=>({code,cents:1000}))})
+  const distinct={code1:'97140',code2:'97530',modifier:'59',reason:'Synthetic separate encounters and sites reviewed by the treating clinician',attested:true}
+  const held=await scrub({date:'2026-10-01',diagnoses:['M25.561'],lines:[{code:'97140',units:1,modifiers:[]},{code:'97530',units:1,modifiers:[]}],distinctServices:[distinct]})
+  assert.equal(held.status,'draft')
+  assert.ok(held.errors.some(e=>e.code==='referring_npi_missing'))
+  const edit=held.errors.find(e=>e.code==='ncci_ptp');assert.ok(edit);assert.match(edit.message,/97140/);assert.match(edit.message,/97530/);assert.match(edit.message,/32\.3 r0/)
+  const claim=(await h.state()).insurance.queue.find(c=>c.id===held.id),patient=claim.client_id,visit=claim.appointment_id,policy=claim.policy_id
+  let browser,context,page
+  const capture=async(name,anchor='#claim-'+held.id)=>{
+   if(!process.env.BALM_UI_SCREENSHOTS)return
+   if(!browser){
+    const {chromium}=await import('@playwright/test'),{mkdir}=await import('node:fs/promises');await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+    browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']});context=await browser.newContext({ignoreHTTPSErrors:true})
+    for(const [pattern,path,contentType]of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType}))
+    await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+    const [key,...value]=h.owner.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}]);page=await context.newPage()
+   }
+   for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});await page.goto(h.origin+(anchor==='#claim-requirements'?'/app/insurance':'/app/clients/'+patient))
+    const target=page.locator(anchor);if(anchor==='#claim-requirements'){
+     await target.locator('summary').click()
+     const rule=target.locator('form').first();await rule.locator('[name=authorization]').check();await rule.locator('[name=certification]').check();await rule.locator('[name=filing]').check()
+     await rule.locator('[name=source]').fill('synthetic-balm-1 payer contract, authorization/certification and filing section')
+     await Promise.all([page.waitForNavigation(),rule.getByRole('button',{name:'Save claim requirements',exact:true}).click()]);await target.locator('summary').click()
+    }
+    await target.scrollIntoViewIfNeeded();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
+    // Audit this screen's icon-only controls; each needs the shared delayed hover / immediate focus tooltip.
+    const iconControls=page.locator('button,a').filter({visible:true});
+    for(const el of await iconControls.all()){
+     const text=(await el.innerText()).trim(),label=await el.getAttribute('aria-label')
+     if(label&&!/[a-zA-Z]{2}/.test(text)){
+      const tip=el.locator('[role=tooltip]');assert.equal(await tip.count(),1,'icon-only '+label+' has a tooltip')
+      await el.focus();assert.equal(await tip.isVisible(),true,'keyboard focus shows '+label)
+      await page.locator('h1').click();await el.hover();await page.waitForTimeout(350);assert.equal(await tip.isVisible(),true,'hover shows '+label)
+     }
+    }
+    await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
+   }
+  }
+  try{
+   await capture('INS-005-held-edit')
+   await h.cmd('insurance.batch.prepare',{claimIds:[held.id]},h.owner,409)
+   await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561',cpt:'97140\n97530 59'})
+   const fixed=await h.cmd('insurance.claim.correct',{id:held.id,referringFirst:'synthetic-balm-1',referringLast:'synthetic-balm-2',referringNpi:'1234567893'})
+   assert.equal(fixed.status,'ready',JSON.stringify(fixed.errors));assert.deepEqual(fixed.errors,[])
+   const requirements={payerId:payer.id,authorization:true,certification:true,filing:true,source:'synthetic-balm-1 payer contract, authorization/certification and filing section'}
+   const biller=await h.staff('synthetic-balm-94','biller')
+   await h.cmd('insurance.requirements.save',requirements,biller.cookie,403)
+   await h.cmd('insurance.requirements.save',requirements)
+   const required=await h.cmd('insurance.claim.scrub',{id:fixed.id})
+   for(const code of ['authorization_required','plan_certification_required','filing_rule_required'])assert.ok(required.errors.some(e=>e.code===code),code)
+   await capture('INS-005-payer-requirements','#claim-requirements')
+   await h.cmd('insurance.authorization.save',{policyId:policy,number:'synthetic-balm-95',startsOn:'2026-10-01',endsOn:'2026-12-31',visits:12})
+   const plan=await h.cmd('plan.send',{clientId:patient,practitionerId:clinician.id,diagnoses:'M25.561',shortTermGoals:'Synthetic short-term goal',longTermGoals:'Synthetic long-term goal',frequencyPerWeek:2,durationWeeks:12,interventions:'Synthetic documented distinct manual therapy and therapeutic activities',startDate:'2026-10-01',physicianName:'synthetic-balm-1 synthetic-balm-2',physicianEmail:'synthetic-balm-1@example.test',signature:clinician.name,credentials:'PT',attest:true},await h.signIn(clinician.email))
+   assert.equal((await h.form('/plan/'+plan.token,{name:'synthetic-balm-1 synthetic-balm-2',credentials:'MD',npi:'1234567893',attest:'on'})).status,303)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:0,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 expired initial filing instruction'})
+   const expired=await h.cmd('insurance.claim.scrub',{id:fixed.id})
+   assert.deepEqual(expired.errors.map(e=>e.code),['timely_filing_expired'])
+   assert.match(expired.errors[0].message,/2026-10-01/)
+   await capture('INS-005-filing-held','#claim-'+fixed.id)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:3660,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 corrected payer filing instruction'})
+   assert.equal((await h.cmd('insurance.claim.scrub',{id:fixed.id})).status,'ready')
+   await capture('INS-005-clean-attested','#claim-'+fixed.id)
+   const batch=await h.cmd('insurance.batch.prepare',{claimIds:[fixed.id]})
+   const x12=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)
+   assert.equal(x12.status,200,x12.text);assert.match(x12.text,/SV1\*HC:97530:59:GP\*10.00\*UN\*1/);assert.match(x12.text,/NM1\*DN\*1\*SYNTHETIC-BALM-2\*SYNTHETIC-BALM-1/)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:0,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 newly corrected expiration'})
+   assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).status,409,'a previously prepared file cannot bypass the current filing deadline')
+   const sent=await h.cmd('insurance.batch.submit',{id:batch.id},h.owner,409);assert.match(sent.code,/filing deadline/)
+   const denied=(await fixture('835-denied.x12',{CLAIM:fixed.id})).replace('*4*95*','*4*20*').replace('197*95~','197*20~').replace('AETNA*XV*60054','SYNTHETIC*XV*SYNTHETIC70')
+   await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:denied})
+   await h.cmd('insurance.authorization.save',{policyId:policy,number:'synthetic-balm-97',startsOn:'2026-10-01',endsOn:'2026-12-31',visits:12})
+   const replacement=await h.cmd('insurance.claim.correct',{id:fixed.id})
+   assert.deepEqual(replacement.errors.map(e=>e.code),['filing_rule_required'])
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'correction',basis:'adjudication_date',days:30,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 corrected claims section'})
+   assert.deepEqual((await h.cmd('insurance.claim.scrub',{id:replacement.id})).errors.map(e=>e.code),['filing_date_required'])
+   await h.cmd('insurance.filing.date',{id:fixed.id,adjudicationOn:new Date().toISOString().slice(0,10),source:'synthetic-balm-1 actual payer decision date'})
+   assert.equal((await h.cmd('insurance.claim.scrub',{id:replacement.id})).status,'ready')
+   const correction=await h.cmd('insurance.batch.prepare',{claimIds:[replacement.id]})
+   const corrected=await h.send('/api/balm/insurance/837P/'+correction.id,undefined,h.owner)
+   assert.equal(corrected.status,200,corrected.text);assert.match(corrected.text,/11:B:7/);assert.match(corrected.text,/REF\*F8\*PAYERDENIED001/)
+
+  }finally{await browser?.close()}
+ },{codeSetEdge:edge,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-96'},outbound:async()=>{throw Error('Scrubber must refuse before any payer request')}})
+})

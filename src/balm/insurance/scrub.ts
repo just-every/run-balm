@@ -1,3 +1,4 @@
+import {requirementErrors} from './claim-requirements'
 import { validNpi, parseIcd10 } from '../payments/codes'
 import type { ClaimSnapshot, ScrubError } from './types'
 import { dollars as usd } from '../domain/invoices'
@@ -51,6 +52,6 @@ export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
     }
   }
   if(s.frequency==='7' &&!s.originalControl)add('original_payer_control_required','originalControl','Enter the original payer claim control number for a replacement.')
-  errors.push(...s.coding?.issues??[])
+  errors.push(...s.coding?.issues??[],...requirementErrors(s))
   return errors
 }

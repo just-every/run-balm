@@ -1,3 +1,4 @@
+import {requirementGuards} from './claim-requirements'
 import {codingGuards} from '../codesets'
 import { guard, type Data } from '../domain/model'
 import { incurredClaimWhere } from './medicare'
@@ -8,6 +9,9 @@ import type { ClaimSnapshot } from './types'
 export function claimFactGuards(db:D1Database,claim:Data,s:ClaimSnapshot) {
   const b=s.basis!
   return [
+    ...requirementGuards(db,s,claim.client_id),
+    ...(s.requirements?.plan?[guard(db,'EXISTS(SELECT 1 FROM bm_plans_of_care WHERE id=? AND version=?)',s.requirements.plan.id,s.requirements.plan.version)]:[]),
+    ...(s.requirements?.rule?[guard(db,'EXISTS(SELECT 1 FROM bm_payer_claim_requirements WHERE payer_id=? AND version=?)',s.payer.id,s.requirements.rule.version)]:[]),
     ...(s.coding?codingGuards(db,s.coding):[]),
     ...(s.cob?s.cob.prior.map(p=>guard(db,"EXISTS(SELECT 1 FROM bm_cob_stages s JOIN bm_cob_adjudications a ON a.invoice_id=s.invoice_id AND a.policy_id=s.policy_id WHERE s.invoice_id=? AND s.policy_id=? AND s.state='adjudicated' AND a.source_id=?)",s.invoiceId,p.policyId,p.sourceId)):[]),
     ...(b.assistantSupervisionCount!==undefined?[guard(db,'(SELECT COUNT(*) FROM bm_assistant_supervision s JOIN bm_notes n ON n.id=s.note_id WHERE n.appointment_id=?)=?',claim.appointment_id,b.assistantSupervisionCount)]:[]),

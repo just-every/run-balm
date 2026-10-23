@@ -24,6 +24,7 @@ export function codeSetEdge(options={}){
   for(let part=1;part<=4;part++){
    // CMS's public Q4 additions report lists 00530 / 0932T, indicator 1.
    const rows=part===1?['00530\t00532\t0\t20260701\t*\t0']:part===2?['00531\t00533\t0\t20260701\t20260701\t9']:part===3?[quarter===4?'00530\t0932T\t0\t20261001\t*\t1':'00534\t00535\t0\t20260701\t20261001\t0']:['00536\t00537\t0\t20260701\t20260701\t9']
+   if(options.therapyPtp&&part===2)rows.push('97140\t97530\t0\t20260701\t*\t1')
    parts.push(add(`medicare-ncci-2026q${quarter}-practitioner-ptp-edits-ccipra-${version}-f${part}.zip`,`ccipra-${version}-f${part}.txt`,ptpFile(rows)))
   }
   ptp.push({kind:'ptp',version:quarter===3?'32.2 r0':'32.3 r0',effectiveOn:`2026-${quarter===3?'07':'10'}-01`,files:parts})

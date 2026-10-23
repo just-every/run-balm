@@ -1,3 +1,4 @@
+import {claimRequirements} from './claim-requirements'
 import {claimCoding} from './coding'
 import { audit, commit, DomainError, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
 import { claimFor } from './access'
@@ -22,6 +23,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
     facts.frequency=replacement?'7':'1';facts.originalControl=replacement?payerControl:''
   }
   facts.coding=await claimCoding(db,facts)
+  facts.requirements=await claimRequirements(db,facts,(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,input.appointmentId)
   const errors=scrubClaim(facts),amount=facts.lines.reduce((t,l)=>t+l.amountCents,0)
   // Zero-priced incomplete claims still keep the approved invoice charge while
   // the scrubber names the missing line prices. No invented price is billed.
@@ -82,5 +84,6 @@ export async function refreshClaimFacts(db:D1Database,who:Actor,claim:Data) {
   const old=JSON.parse(claim.snapshot) as ClaimSnapshot
   const fresh=await claimFacts(db,who,{appointmentId:claim.appointment_id,policyId:claim.policy_id,therapyGroup:claim.therapy_group,referringFirst:old.referring?.first,referringLast:old.referring?.last,referringNpi:old.referring?.npi,authorizationCorrection:old.basis?.authorizationCorrection})
   applyMedicareServices(fresh,old.medicareServices,old.medicalNecessity);fresh.frequency=old.frequency;fresh.originalControl=old.originalControl
+  fresh.requirements=await claimRequirements(db,fresh,claim.client_id,claim.appointment_id)
   return fresh
 }

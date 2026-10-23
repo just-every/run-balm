@@ -1,3 +1,4 @@
+import {claimRequirements} from './claim-requirements'
 import {claimCoding} from './coding'
 import { audit, commit, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
@@ -91,5 +92,6 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   value.cob=await cobFacts(db,policy,invoice)
   applyMedicareServices(value)
   value.coding=await claimCoding(db,value)
+  value.requirements=await claimRequirements(db,value,policy.client_id,visit.id)
   return value
 }
