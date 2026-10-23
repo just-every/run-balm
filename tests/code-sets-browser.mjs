@@ -89,7 +89,7 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
     await picker.getByRole('button',{name:'Add M25.561',exact:true}).click()
     assert.match(await picker.locator('[data-code-feedback]').textContent(),/M25\.561 added/)
     await receipt(page,'CODE-001-clinician-picker',width,picker)
-    const draft=picker.locator('..').locator('xpath=ancestor::form[1]')
+    const draft=picker.locator('xpath=ancestor::form[1]')
     await draft.locator('[name=charge_code_0]').selectOption('G0001')
     await receipt(page,'CODE-001-hcpcs-charge-choice',width,draft.locator('[name=charge_code_0]'))
     await submit(page,draft,'Save draft')
