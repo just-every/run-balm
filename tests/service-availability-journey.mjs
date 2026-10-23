@@ -82,7 +82,20 @@ export async function serviceAvailabilityJourney(h){
  assert.deepEqual(await get(evaluation.id,priya.id,nr.id),[])
  await h.cmd('schedule.exception',{practitionerId:priya.id,date:plus(from,6),mode:'remove'})
  await h.cmd('hours.save',{practitionerId:priya.id,hours})
- const scenes=[{name:'SCHED-007-schedule',path:'/app?date='+from,cookie:h.owner,tooltips:['Previous day','Next day']},{name:'SCHED-007-clinic',path:'/app/clinic',cookie:h.owner,selector:'#locations',openSelector:'#locations details:nth-of-type(2) summary'},{name:'SCHED-007-service-assignment',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'form[action*="name=service.save"] fieldset'},{name:'SCHED-007-service',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'input[name="beforeBuffer"]'},{name:'SCHED-007-time-off',path:'/app/clinic',cookie:h.owner,selector:'#date-rules'},{name:'SCHED-007-book-north',path:query(evaluation.id,priya.id,nr.id)},{name:'SCHED-007-book-south',path:query(follow.id,sam.id,sr.id)},{name:'SCHED-007-portal',path:'/portal/schedule?'+new URLSearchParams({serviceId:follow.id,practitionerId:priya.id,roomId:nr.id,from}),cookie:portal},{name:'SCHED-007-draft',path:'/app/clients/'+patient.id+'?compose='+visit.id,cookie:priya.cookie,selector:'.charges'}]
+ const serviceForm='form[action*="name=service.save"]:has(input[name="id"][value="'+follow.id+'"])'
+ const saveServiceInBrowser=async({page})=>{
+  let form=page.locator(serviceForm)
+  if(!await form.isVisible())await form.locator('..').locator('summary').click()
+  for(const key of [priya.id,sam.id])await form.locator('input[name="practitionerIds_item"][value="'+key+'"]').check()
+  for(const key of [north.id,south.id])await form.locator('input[name="locationIds_item"][value="'+key+'"]').check()
+  await form.getByRole('button',{name:'Save service',exact:true}).click()
+  await page.waitForLoadState('networkidle')
+  const saved=(await h.state()).services.find(s=>s.id===follow.id)
+  assert.deepEqual(JSON.parse(saved.practitioner_ids).sort(),[priya.id,sam.id].sort(),'all checked practitioners survive the actual browser form')
+  assert.deepEqual(JSON.parse(saved.location_ids).sort(),[north.id,south.id].sort(),'all checked locations survive the actual browser form')
+  form=page.locator(serviceForm);await form.locator('..').locator('summary').click()
+ }
+ const scenes=[{name:'SCHED-007-service-form',path:'/app/clinic',cookie:h.owner,selector:serviceForm+' fieldset',interact:saveServiceInBrowser},{name:'SCHED-007-schedule',path:'/app?date='+from,cookie:h.owner,tooltips:['Previous day','Next day']},{name:'SCHED-007-clinic',path:'/app/clinic',cookie:h.owner,selector:'#locations',openSelector:'#locations details:nth-of-type(2) summary'},{name:'SCHED-007-service-assignment',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'form[action*="name=service.save"] fieldset'},{name:'SCHED-007-service',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'input[name="beforeBuffer"]'},{name:'SCHED-007-time-off',path:'/app/clinic',cookie:h.owner,selector:'#date-rules'},{name:'SCHED-007-book-north',path:query(evaluation.id,priya.id,nr.id)},{name:'SCHED-007-book-south',path:query(follow.id,sam.id,sr.id)},{name:'SCHED-007-portal',path:'/portal/schedule?'+new URLSearchParams({serviceId:follow.id,practitionerId:priya.id,roomId:nr.id,from}),cookie:portal},{name:'SCHED-007-draft',path:'/app/clients/'+patient.id+'?compose='+visit.id,cookie:priya.cookie,selector:'.charges'}]
  await viewportProof(h,scenes)
  return {north,south,nr,sr,evaluation,follow,priya,sam,patient,visit,from,scenes}
 }

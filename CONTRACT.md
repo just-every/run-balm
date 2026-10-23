@@ -425,8 +425,8 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 45 | 27 | 23 | 95 |
-| All | 60 | 27 | 23 | 110 |
+| Target and push further | 46 | 26 | 23 | 95 |
+| All | 61 | 26 | 23 | 110 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
