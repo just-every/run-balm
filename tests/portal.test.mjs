@@ -258,7 +258,8 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     assert.ok(released.released_at);assert.equal(released.package_id,prepared.packageId)
     const queueAfterRelease=(await h.send('/app',undefined,h.owner)).text
     assert.match(queueAfterRelease,/does not establish fulfillment of the complete-record request/)
-    await viewportProof(h,[{name:'record-released',path:'/portal/home',cookie:patientCookie,selector:'#records'}])
+    await viewportProof(h,[{name:'record-released',path:'/portal/home',cookie:patientCookie,selector:'#records'},
+      {name:'record-partial-delivered',path:'/app',cookie:h.owner,selector:'#record-requests'}])
     if(process.env.BALM_RECORD_EXPORT){await mkdir(process.env.BALM_RECORD_EXPORT,{recursive:true});await writeFile(process.env.BALM_RECORD_EXPORT+'/record.json',fhir.text);await writeFile(process.env.BALM_RECORD_EXPORT+'/record.pdf',Buffer.from(pdf.text,'binary'))}
     const events=(await h.db.prepare("SELECT action,detail FROM bm_audit WHERE client_id=? AND action LIKE 'record.%'").bind(patient.id).all()).results
     for(const name of ['record.requested','record.prepared','record.released','record.downloaded'])assert.ok(events.some(r=>r.action===name),name)
