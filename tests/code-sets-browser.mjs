@@ -41,7 +41,7 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
    await cpt.locator('[name=mappingCode]').fill('Procedure')
    await cpt.locator('[name=mappingDescription]').fill('Licensed description')
    await cpt.locator('[name=mappingTimed]').fill('Timed service')
-   await cpt.locator('[name=cptFile]').setInputFiles({name:`synthetic-balm-${width}.csv`,mimeType:'text/csv',buffer:Buffer.from(`Procedure,Licensed description,Timed service\n97110,Synthetic test-only descriptor ${width},1\n97161,Synthetic test-only evaluation ${width},0\n`)})
+   await cpt.locator('[name=cptFile]').setInputFiles({name:`synthetic-balm-${width}.csv`,mimeType:'text/csv',buffer:Buffer.from(`Procedure,Licensed description,Timed service\n97110,Synthetic test-only descriptor ${width},1\n97161,Synthetic test-only evaluation ${width},0\nG0001,Synthetic owner-reviewed timing,0\n`)})
    await cpt.locator('[name=licenseBasis]').fill('Synthetic test-only license acknowledgment for browser proof')
    await cpt.locator('[name=licenseAcknowledged]').check()
    await receipt(page,'CODE-001-licensed-import',width,cpt)
@@ -89,6 +89,12 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
     await picker.getByRole('button',{name:'Add M25.561',exact:true}).click()
     assert.match(await picker.locator('[data-code-feedback]').textContent(),/M25\.561 added/)
     await receipt(page,'CODE-001-clinician-picker',width,picker)
+    const draft=picker.locator('..').locator('xpath=ancestor::form[1]')
+    await draft.locator('[name=charge_code_0]').selectOption('G0001')
+    await receipt(page,'CODE-001-hcpcs-charge-choice',width,draft.locator('[name=charge_code_0]'))
+    await submit(page,draft,'Save draft')
+    const file=(await h.send(options.picker.path.replace('/app/clients/','/api/balm/clients/'),undefined,options.picker.cookie)).value
+    assert.ok(file.notes.some(n=>n.revisions[0].charges.some(c=>c.code==='G0001'&&c.timed===false&&c.timingRelease&&c.release)))
    }
   }
  }finally{await browser.close()}
