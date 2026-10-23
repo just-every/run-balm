@@ -6,7 +6,7 @@ export { validateCoding, codingGuard, distinctServices, distinctModifiers, type 
 export { templateCodeContext } from './review'
 export { sourcePages } from './sources'
 export async function codeSetCommand(db:D1Database,initial:Actor,name:string,input:Data) {
-  human(initial);const who=await actor(db,initial.id)
+  human(initial);const who={...await actor(db,initial.id),sessionId:initial.sessionId}
   if(name==='codes.update')return updateCodes(db,who,input)
   if(name==='codes.cpt.import')return importLicensedCpt(db,who,input)
   if(name==='codes.search')return searchCodes(db,who,input)

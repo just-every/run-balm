@@ -51,5 +51,6 @@ export function scrubClaim(s:ClaimSnapshot):ScrubError[] {
     }
   }
   if(s.frequency==='7' &&!s.originalControl)add('original_payer_control_required','originalControl','Enter the original payer claim control number for a replacement.')
+  errors.push(...s.coding?.issues??[])
   return errors
 }

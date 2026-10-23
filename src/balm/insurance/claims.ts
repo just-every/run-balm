@@ -1,3 +1,4 @@
+import {claimCoding} from './coding'
 import { audit, commit, DomainError, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
 import { claimFor } from './access'
 import { stageSetup } from './cob-stages'
@@ -20,6 +21,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
     const replacement=['denied','partial','paid','accepted'].includes(replaces.status)
     facts.frequency=replacement?'7':'1';facts.originalControl=replacement?payerControl:''
   }
+  facts.coding=await claimCoding(db,facts)
   const errors=scrubClaim(facts),amount=facts.lines.reduce((t,l)=>t+l.amountCents,0)
   // Zero-priced incomplete claims still keep the approved invoice charge while
   // the scrubber names the missing line prices. No invented price is billed.
@@ -39,7 +41,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
     ...(replaces?[stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),replaces.id,'corrected',JSON.stringify({replacementId:key}),at)]:[])
   ])
   const visible=JSON.parse(JSON.stringify(facts));if(who.role!=='owner'&&who.staffRole!=='practitioner'){delete visible.medicalNecessity;for(const service of Object.values(visible.medicareServices??{}) as Data[])delete service.assistantBasis}
-  return {id:key,status:errors.length?'draft':'ready',errors,amountCents:cents,snapshot:visible}
+  return {id:key,status:errors.length?'draft':'ready',errors,proposals:facts.coding?.proposals??[],amountCents:cents,snapshot:visible}
 }
 export async function correctClaim(db:D1Database,who:Actor,input:Data) {
   const prior=await claimFor(db,who,input.id)
@@ -53,7 +55,7 @@ export async function scrubStoredClaim(db:D1Database,who:Actor,input:Data) {
   insist(['draft','ready'].includes(claim.status),'only_unbatched_claims_can_change',409)
   const snapshot=await refreshClaimFacts(db,who,claim),errors=scrubClaim(snapshot),status=errors.length?'draft':'ready'
   await commit(db,who,[...claimFactGuards(db,claim,snapshot),stmt(db,'UPDATE bm_claims SET snapshot=?,errors=?,status=?,updated_at=?,version=version+1 WHERE id=? AND version=?',JSON.stringify(snapshot),JSON.stringify(errors),status,now(),claim.id,claim.version),guard(db,'changes()=1'),audit(db,who,'insurance.claim_scrubbed',claim.client_id,claim.id)])
-  return {id:claim.id,status,errors}
+  return {id:claim.id,status,errors,proposals:snapshot.coding?.proposals??[]}
 }
 export async function documentNecessity(db:D1Database,who:Actor,input:Data) {
   insist(who.role==='owner'||who.staffRole==='practitioner','medical_necessity_is_clinical',403)
@@ -63,7 +65,7 @@ export async function documentNecessity(db:D1Database,who:Actor,input:Data) {
   const s=await refreshClaimFacts(db,who,claim);s.medicalNecessity=text(input.medicalNecessity,'medical_necessity',8000);for(const l of s.lines)if(s.kx.required&&(s.medicareServices?.[l.code]?.coverage??'covered')==='covered'&&!l.modifiers.includes('KX'))l.modifiers.push('KX')
   const errors=scrubClaim(s),status=errors.length?'draft':'ready'
   await commit(db,who,[...claimFactGuards(db,claim,s),guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND (?='owner' OR practitioner_id=?))",claim.appointment_id,who.role,who.staffId??''),stmt(db,'UPDATE bm_claims SET medical_necessity=?,snapshot=?,errors=?,status=?,updated_at=?,version=version+1 WHERE id=? AND version=?',s.medicalNecessity,JSON.stringify(s),JSON.stringify(errors),status,now(),claim.id,claim.version),guard(db,'changes()=1'),audit(db,who,'insurance.medical_necessity_attested',claim.client_id,claim.id)])
-  return {id:claim.id,status,errors}
+  return {id:claim.id,status,errors,proposals:s.coding?.proposals??[]}
 }
 export async function draftAppeal(db:D1Database,who:Actor,input:Data) {
   insist(who.role==='owner'||who.staffRole==='practitioner','appeal_clinical_content_is_private',403)
