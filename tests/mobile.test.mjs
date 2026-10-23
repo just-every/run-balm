@@ -147,7 +147,7 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     await sign.getByRole('button',{name:'Sign note',exact:true}).click()
     assert.equal((await file()).notes[0].status,'signed')
     await page.getByText('Assign an exercise',{exact:true}).click()
-    const program = page.locator('form[action*="name=exercise.assign"]')
+    const program = page.locator('form[action*="name=exercise.assign"]').filter({ has: page.getByRole('button', { name: 'Assign exercise', exact: true }) })
     await program.locator('[name=title]').fill('Standing balance by a counter')
     await program.locator('[name=instructions]').fill('Stand by a stable counter, 3 sets of 10 seconds daily. Stop if dizzy.')
     await program.getByRole('button',{name:'Assign exercise',exact:true}).click()

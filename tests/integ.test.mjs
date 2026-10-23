@@ -1,5 +1,6 @@
 import {portalBilling} from './portal-billing.mjs'
 import {test} from 'node:test'
+import {readFile} from 'node:fs/promises'
 import assert from 'node:assert/strict'
 import {createHmac,timingSafeEqual} from 'node:crypto'
 import {harness} from './harness.mjs'
@@ -100,6 +101,21 @@ test('booking webhooks require owner consent and explicit approval, verify raw-b
   const next=await pastVisit(h,patient.id,priya,service.id,h.owner,11)
   await h.cmd('integration.hook.deliver',{hookId:hook.id,eventId:next,confirm:true},h.owner,404)
   assert.equal(received.length,3)
+  // Imported booking notifications can be undone only while still unsent.
+  const importHook=await h.cmd('integration.hook.create',input)
+  const bundle={provider:'webpt',practitionerId:priya.id,serviceId:service.id,files:await Promise.all([
+   ['patients','webpt-patient-lists-native.csv'],['appointments','webpt-scheduled-visits-native.csv']
+  ].map(async([kind,name])=>({kind,name,csv:await readFile('tests/fixtures/movein/'+name,'utf8')})))}
+  const preview=await h.cmd('movein.preview',bundle)
+  assert.equal(preview.canApply,true,JSON.stringify(preview.diagnostics))
+  const imported=await h.cmd('movein.apply',{...bundle,fingerprint:preview.fingerprint,acceptanceReason:'Reviewed the native patient and visit reports.'})
+  const importedVisit=imported.records.find(r=>r.kind==='appointment').target_id
+  fail=true
+  assert.equal((await h.cmd('integration.hook.deliver',{hookId:importHook.id,eventId:importedVisit,confirm:true})).outcome,'uncertain')
+  await h.cmd('movein.undo',{jobId:imported.job.id},h.owner,409)
+  const retained=await h.cmd('movein.journal',{jobId:imported.job.id})
+  assert.equal(retained.job.state,'applied')
+  assert.ok((await h.state()).appointments.some(a=>a.id===importedVisit))
  }finally{await h.close()}
 })
 

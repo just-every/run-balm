@@ -67,11 +67,11 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   return jobId
 }
 
-/** Discover every native client/visit reference, including non-FK clinical work. */
+/** Discover every native client and visit reference, including non-FK clinical work. */
 function dependencies(shapes: { table_name: string; column_name: string }[], db: D1Database, jobId: string) {
   const statements: D1PreparedStatement[] = []
   for (const { table_name: name, column_name: column } of shapes) {
-    if (name === 'bm_visit_reminders' || name === 'bm_audit' || name.startsWith('bm_movein_') || name === 'bm_clients') continue
+    if (name === 'bm_visit_reminders' || name === 'bm_integration_events' || name === 'bm_audit' || name.startsWith('bm_movein_') || name === 'bm_clients') continue
     const target = column === 'client_id' ? 'bm_clients' : ['appointment_id', 'source_appointment_id'].includes(column) ? 'bm_appointments' : null
     if (!target) continue
     // Imported appointments themselves are removed in this same transaction.
@@ -84,6 +84,12 @@ function dependencies(shapes: { table_name: string; column_name: string }[], db:
 export async function undoBundle(db: D1Database, who: Actor, jobId: string) {
   const shapes = await schema(db)
   const body = [guard(db, "EXISTS(SELECT 1 FROM bm_movein_jobs WHERE id=? AND state='applied')", jobId), ...dependencies(shapes, db, jobId)]
+  // Unsent booking notifications are derived from the imported visits. Any
+  // approved delivery keeps its event and blocks the whole undo atomically.
+  body.push(guard(db, `NOT EXISTS(SELECT 1 FROM bm_integration_deliveries d
+    JOIN bm_integration_events e ON e.id=d.event_id
+    JOIN bm_movein_records r ON r.target_id=e.appointment_id
+    WHERE r.job_id=? AND r.target_table='bm_appointments')`, jobId))
   for (const table of tables) {
     const shape = shapes.filter(c => c.table_name === table).map(c => c.column_name)
     body.push(guard(db, `NOT EXISTS(SELECT 1 FROM bm_movein_records r LEFT JOIN ${quote(table)} t ON t.id=r.target_id WHERE r.job_id=? AND r.target_table=? AND (t.id IS NULL OR r.snapshot<>${snapshot(shape)}))`, jobId, table))
@@ -91,6 +97,8 @@ export async function undoBundle(db: D1Database, who: Actor, jobId: string) {
   }
   body.push(stmt(db, "UPDATE bm_movein_jobs SET state='undoing' WHERE id=?", jobId),
     stmt(db, "DELETE FROM bm_visit_reminders WHERE appointment_id IN (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table='bm_appointments')", jobId))
+  body.push(stmt(db, `DELETE FROM bm_integration_events WHERE appointment_id IN
+    (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table='bm_appointments')`, jobId))
   for (const table of ['bm_movein_notes', 'bm_movein_balances', 'bm_movein_insurance', 'bm_appointments', 'bm_clients']) body.push(stmt(db, `DELETE FROM ${quote(table)} WHERE id IN (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table=?)`, jobId, table))
   body.push(stmt(db, "UPDATE bm_movein_jobs SET state='undone',undone_at=? WHERE id=?", now(), jobId), audit(db, who, 'movein.undone', null, jobId))
   await commit(db, who, body)
