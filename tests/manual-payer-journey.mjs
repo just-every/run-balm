@@ -22,7 +22,7 @@ export async function manualPayerJourney(h) {
   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
   await h.cmd('pay.codes.save',{appointmentId,icd10:'M25.561'})
   const invoice=await h.cmd('invoice.prepare',{appointmentId},biller.cookie);await h.cmd('invoice.approve',{id:invoice.id},biller.cookie)
-  const claim=await h.cmd('insurance.claim.prepare',{appointmentId,policyId:policy.id,therapyGroup:'PTSLP'},biller.cookie)
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId,policyId:policy.id,therapyGroup:'pt_slp'},biller.cookie)
   assert.equal(claim.status,'ready')
   const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},biller.cookie)
   assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,biller.cookie)).status,200)
