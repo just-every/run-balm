@@ -1,4 +1,4 @@
-import {pdf} from '../payments/pdf'
+import {pdf,type Block} from '../payments/pdf'
 import {day} from '../domain/model'
 import {guardianActor} from './guardians'
 import { clientVisible } from '../domain/clients'
@@ -114,10 +114,11 @@ export async function exerciseProgress(db: D1Database, patient: Patient, input: 
 export async function programPdf(db:D1Database,patient:Patient){
  const list=await exercises(db,patient.clientId,false)
  const clinic=(await rows(db,'SELECT clinic_name FROM bm_settings WHERE id=1'))[0]
+ const spanish=(await rows(db,'SELECT portal_language FROM bm_clients WHERE id=?',patient.clientId))[0]?.portal_language==='es'
  await commit(db,null,[portalGuard(db,patient),audit(db,guardianActor(patient),'exercise.program_downloaded',patient.clientId)])
- return pdf({header:clinic.clinic_name,title:'Your home exercise program',blocks:[
+ return pdf({header:clinic.clinic_name,title:spanish?'Su programa de ejercicios en casa':'Your home exercise program',blocks:[
   {kind:'facts',rows:[['Patient',patient.firstName+' '+patient.lastName],['Prepared',now().slice(0,10)]]},
   {kind:'notes',lines:['Follow the dosage your clinician assigned. Stop and contact your clinician if symptoms worsen.']},
-  ...list.flatMap(e=>[{kind:'heading' as const,text:e.title},{kind:'notes' as const,lines:[`${e.sets} sets · ${e.reps} reps · hold ${e.holdSeconds} seconds · ${e.frequency}`,e.instructions]}]),
+  ...list.flatMap((e):Block[]=>[{kind:'heading',text:spanish&&e.titleEs?e.titleEs:e.title},...(e.libraryId?.startsWith('balm-cc0-')&&e.image?.startsWith('data:image/svg+xml;base64,')?[{kind:'illustration' as const,svg:atob(e.image.split(',')[1])}]:[]),{kind:'notes',lines:[`${e.sets} sets · ${e.reps} reps · hold ${e.holdSeconds} seconds · ${e.frequency}`,spanish&&e.instructionsEs?e.instructionsEs:e.instructions,...(e.license?[e.license+' · '+e.source]:[])]}]),
  ]})
 }

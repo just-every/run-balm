@@ -5,6 +5,7 @@
 export type Column = { label: string; width: number; right?: boolean }
 export type Block =
   | { kind: 'heading'; text: string }
+  | { kind: 'illustration'; svg: string }
   | { kind: 'facts'; rows: [string, string][] }
   | { kind: 'table'; columns: Column[]; rows: string[][]; totals?: [string, string][] }
   | { kind: 'notes'; lines: string[] }
@@ -42,6 +43,33 @@ function wrap(text: string, room: number, size: number): string[] {
   return lines.length ? lines : ['']
 }
 
+/** Trusted project line illustrations only; no SVG scripts, URLs or arbitrary
+ * markup are interpreted. Uppercase path commands cover the shipped diagrams. */
+function illustration(svg:string):string[]{
+ const ops=['0.945 0.969 0.957 rg 0 0 240 200 re f','0.251 0.412 0.373 RG 6 w 1 J 1 j']
+ for(const circle of svg.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\s*\/>/g)){
+  const x=+circle[1],y=+circle[2],r=+circle[3],k=r*0.55228475
+  ops.push(`${x+r} ${y} m ${x+r} ${y+k} ${x+k} ${y+r} ${x} ${y+r} c ${x-k} ${y+r} ${x-r} ${y+k} ${x-r} ${y} c ${x-r} ${y-k} ${x-k} ${y-r} ${x} ${y-r} c ${x+k} ${y-r} ${x+r} ${y-k} ${x+r} ${y} c S`)
+ }
+ for(const path of svg.matchAll(/<path d="([^"]+)"/g)){
+  if(/[^MLHVQZ0-9.,\s-]/.test(path[1]))continue
+  const tokens=path[1].match(/[MLHVQZ]|-?(?:\d*\.)?\d+/g)??[]
+  let i=0,command='',x=0,y=0
+  const take=()=>Number(tokens[i++])
+  while(i<tokens.length){
+   if(/^[A-Z]$/.test(tokens[i]))command=tokens[i++]
+   if(command==='M'||command==='L'){x=take();y=take();ops.push(`${x} ${y} ${command==='M'?'m':'l'}`);if(command==='M')command='L'}
+   else if(command==='H'){x=take();ops.push(`${x} ${y} l`)}
+   else if(command==='V'){y=take();ops.push(`${x} ${y} l`)}
+   else if(command==='Q'){const cx=take(),cy=take(),nx=take(),ny=take();ops.push(`${x+2*(cx-x)/3} ${y+2*(cy-y)/3} ${nx+2*(cx-nx)/3} ${ny+2*(cy-ny)/3} ${nx} ${ny} c`);x=nx;y=ny}
+   else if(command==='Z'){ops.push('h');command=''}
+   else break
+  }
+  ops.push('S')
+ }
+ return ops
+}
+
 export function pdf(doc: PdfDocument): Uint8Array<ArrayBuffer> {
   const W = 612, H = 792, M = 54, pages: string[][] = [[]]
   let y = H - M
@@ -53,8 +81,9 @@ export function pdf(doc: PdfDocument): Uint8Array<ArrayBuffer> {
 
   text(M, 11, doc.header, true); y -= 30
   text(M, 22, doc.title, true); y -= 28
-  for (const block of doc.blocks) {
-    if (block.kind === 'heading') { room(40); y -= 6; text(M, 12, block.text, true); y -= 18 }
+  for (const [blockIndex,block] of doc.blocks.entries()) {
+    if(block.kind==='illustration'){room(150);page().push(`q 0.6 0 0 -0.6 ${M} ${y} cm`,...illustration(block.svg),'Q');y-=132}
+    if (block.kind === 'heading') { room(doc.blocks[blockIndex+1]?.kind==='illustration'?210:40); y -= 6; text(M, 12, block.text, true); y -= 18 }
     if (block.kind === 'facts') {
       for (const [k, v] of block.rows) {
         const rows = wrap(v, W - 2 * M - 150, 10)
