@@ -15,7 +15,7 @@ function zip(name,content){
 const ptpFile=(rows)=>'"Synthetic CMS-format copyright banner\r\nnot licensed AMA descriptors"\t\t\r\nColumn 1\tColumn 2\tPrior\tEffective\tDeletion\tModifier\r\n'+rows.join('\r\n')+'\r\n'
 const icdRow=(n,code,billable,description)=>String(n).padStart(5,'0')+' '+code.padEnd(7)+' '+billable+' '+description.slice(0,60).padEnd(60)+' '+description+'\r\n'
 function hcpcsRow(){const cells=Array(293).fill(' ');for(const [at,value] of [[0,'G0001'],[5,'00100'],[10,'3'],[11,'Synthetic HCPCS descriptor'],[268,'20260701'],[276,'20260701']])for(let i=0;i<value.length;i++)cells[at+i]=value[i];return cells.join('')+'\r\n'}
-export function codeSetEdge(){
+export function codeSetEdge(options={}){
  const files=new Map(),requests=[]
  const add=(path,name,body)=>{const url='https://www.cms.gov/files/zip/'+path;files.set(url,zip(name,body));return {url}}
  const ptp=[]
@@ -32,7 +32,7 @@ export function codeSetEdge(){
  const icd=add('2026-code-descriptions-tabular-order.zip','icd10cm_order_2026.txt',icdBody)
  const icdLatest=add('2027-code-descriptions-tabular-order.zip','icd10cm_order_2027.txt',icdBody)
  const hcpcs=add('july-2026-alpha-numeric-hcpcs-file.zip','HCPC2026_JUL_ANWEB.txt',hcpcsRow())
- const mueBody='"Synthetic banner\nsecond line",,,\r\n"HCPCS/\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\r\n00530,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n0932T,1,1 Claim Line Edit,Synthetic rationale\r\n00532,4,3 Date of Service Edit: Clinical,Synthetic rationale\r\n97110,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n'
+ const mueBody='"Synthetic banner\nsecond line",,,\r\n"HCPCS/\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\r\n00530,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n0932T,1,1 Claim Line Edit,Synthetic rationale\r\n00532,4,3 Date of Service Edit: Clinical,Synthetic rationale\r\n'+(options.therapyMue?'97110,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n':'')
  const hcpcsLatest=add('october-2026-alpha-numeric-hcpcs-file.zip','HCPC2026_OCT_ANWEB.txt',hcpcsRow())
  const mue=add('medicare-ncci-2026-q3-practitioner-services-mue-table.zip','MCR_MUE_PractitionerServices_Eff_07-01-2026.csv',mueBody)
  const mueLatest=add('medicare-ncci-2026-q4-practitioner-services-mue-table.zip','MCR_MUE_PractitionerServices_Eff_10-01-2026.csv',mueBody)

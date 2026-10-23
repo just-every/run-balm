@@ -107,7 +107,8 @@ test('CODE-001: owner imports licensed data, saves synonyms, finds billable chil
  try{
   await h.finishSetup()
   const {clinic,pastVisit}=await import('./clinic.mjs')
-  const {service,practitioners:[clinician]}=await clinic(h,['Oliver Park'])
+  const {service,practitioners:[clinician]}=await clinic(h,['Oliver'])
+  await h.cmd('staff.save',{id:clinician.id,name:'Oliver Park',email:clinician.email,role:'practitioner',credentials:'PT',active:true})
   const patient=await h.cmd('client.save',{firstName:'Ava',lastName:'Sullivan'})
   const visit=await pastVisit(h,patient.id,clinician,service.id)
   await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',sections:[]},clinician.cookie)

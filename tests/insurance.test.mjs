@@ -475,6 +475,6 @@ test('INS-013: prior adjudications reach secondary and tertiary claims, crossove
 test('CODE-001: effective CMS quarters, billable diagnosis children, clinician distinct-service attestations, MUE and licensed charge delivery',async()=>{
  const {codeSetJourney,codeSetEdge}=await import('./code-sets-journey.mjs')
  const {codeSetClaimAdapter}=await import('./code-sets-claims.mjs')
- const edge=codeSetEdge()
+ const edge=codeSetEdge({therapyMue:true})
  await run(async h=>{await h.finishSetup();await codeSetJourney(h,edge,await codeSetClaimAdapter(h))},{codeSetEdge:edge})
 })
