@@ -63,7 +63,7 @@ export async function manualPayerJourney(h) {
  assert.equal(report.summary.insurancePaymentsCents,21500);assert.equal(report.summary.deskPaymentsCents,0)
  assert.equal(report.agingByPayer.rows.find(r=>r.payer==='Horizon Workers Compensation').total,21000)
  const csv=await h.send('/api/balm/reports/financial/deposits.csv?from='+today+'&to='+today,undefined,biller.cookie)
- assert.match(csv.text,/synthetic-balm-10,121.00,121.00,0.00,0.00,0.00,1.00,20.00/)
+ assert.ok(csv.text.split('\r\n').some(row=>row.includes('"synthetic-balm-10","121.00","121.00","0.00","0.00","0.00","1.00","20.00"')))
  for(const cookie of [h.owner,biller.cookie])assert.equal((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie)).text,payerEobPdf.toString())
  for(const cookie of ['',priya.cookie,reception.cookie,portal])assert.ok([401,403].includes((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie)).status))
  await command('insurance.payer_line.add',{batchId:batch.id,kind:'interest',amountCents:1,reason:'Attempt after closing'},409)
