@@ -21,7 +21,7 @@ export async function viewportProof(h,scenes){
    if(open)await page.getByText(open,{exact:true}).first().click()
    for(const width of [1440,390]){
     await page.setViewportSize({width,height:1000})
-    if(selector)await page.locator(selector).first().scrollIntoViewIfNeeded()
+    if(selector)await page.locator(selector).first().evaluate(el=>el.scrollIntoView({block:'start'}))
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
     if(name==='PAY-007-schedule'){

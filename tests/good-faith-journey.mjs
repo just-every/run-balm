@@ -115,7 +115,7 @@ export async function goodFaithJourney(h){
   const {viewportProof}=await import('./viewport-proof.mjs')
   await viewportProof(h,[
    {name:'PAY-007-booking',path:'/book'},
-   {name:'PAY-007-portal',path:'/portal/home',cookie:portal},
+   {name:'PAY-007-portal',path:'/portal/home',cookie:portal,selector:'#statements'},
    {name:'PAY-007-schedule',path:'/app',cookie:h.owner},
    {name:'PAY-007-preparation',path:'/app/clients/'+patient.id,cookie:reception.cookie,selector:'#estimates'},
    {name:'PAY-007-issuance',path:'/app/clients/'+patient.id,cookie:h.owner,selector:'#estimates'}
@@ -129,5 +129,5 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
  assert.equal(execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),'','timing journey requires a clean committed candidate')
  await run(goodFaithJourney,{browserHttps:true})
- console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c29-gfe')
+ console.log('PASS PAY-007 timing journey head='+head+' run=sx-balm-c30-gfe')
 }
