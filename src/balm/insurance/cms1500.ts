@@ -5,16 +5,16 @@ const escape=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':
  * substitute background: it is printed at 100% on an approved red form. */
 export function cms1500(c:ClaimSnapshot,claimId:string) {
  insist(c.lines.length<=6,'CMS1500_supports_six_service_lines_use_electronic_for_longer_claims')
- const fields:string[]=[]
+ const fields:string[]=[],birth=(date:string)=>date?date.slice(5,7)+' '+date.slice(8,10)+' '+date.slice(0,4):''
  const put=(left:number,top:number,value:unknown,width=2)=>fields.push(`<span style="left:${left}in;top:${top}in;width:${width}in">${escape(value)}</span>`)
  put(5.1,.6,c.payer.name,2.5)
  put(c.payer.medicare ? .38 : 3.37,1.64,'X',.2);put(4.52,1.64,c.subscriber.memberId,3.5)
- put(.37,1.98,`${c.patient.last}, ${c.patient.first}`,3);put(3.12,1.98,c.patient.dob.replace(/-/g,' '),1.2);put(c.patient.sex==='M'?4.0:4.38,1.98,'X',.2)
+ put(.37,1.98,`${c.patient.last}, ${c.patient.first}`,3);put(3.12,1.98,birth(c.patient.dob),1.2);put(c.patient.sex==='M'?4.0:4.38,1.98,'X',.2)
  put(4.65,1.98,`${c.subscriber.last}, ${c.subscriber.first}`,3)
  put(.37,2.32,c.address.street,2.8);put(3.2,2.32,c.subscriber.relationship==='18'?'X':'',.2);put(4.65,2.32,c.address.street,3)
  put(.37,2.66,c.address.city,2);put(2.68,2.66,c.address.state,.4);put(.37,3.0,c.address.postal,1.5)
  put(4.65,2.66,c.address.city,2);put(7.2,2.66,c.address.state,.4);put(4.65,3.0,c.address.postal,1.5)
- put(4.65,3.34,c.subscriber.group,3);put(4.65,3.68,c.subscriber.dob.replace(/-/g,' '),1.5);put(4.65,4.02,c.payer.name,3)
+ put(4.65,3.34,c.subscriber.group,3);put(4.65,3.68,birth(c.subscriber.dob),1.5);put(4.65,4.02,c.payer.name,3)
  const prior=c.cob?.prior[0]
  if(prior){put(.37,3.34,`${prior.subscriber.last}, ${prior.subscriber.first}`,3);put(.37,3.68,prior.subscriber.memberId,3);put(.37,4.36,prior.payer.name,3)}
  if(c.referring){put(.37,5.38,`${c.referring.first} ${c.referring.last}`,2.7);put(3.3,5.38,c.referring.npi,1.4)}
