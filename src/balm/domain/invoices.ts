@@ -1,3 +1,4 @@
+import {copayRoomSql} from '../payments/cob-collection'
 import {stageSetup} from '../insurance/cob-stages'
 import {hostDateAt} from '../availability/timezone'
 // Reviewed billing adapted from Satchel (src/satchel/billing.ts, just-every/run-satchel
@@ -136,11 +137,12 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception'); human(who)
   const invoice = await one(db, "SELECT * FROM bm_invoices WHERE id=? AND status='approved'", text(input.invoiceId, 'invoice', 100))
   insist(invoice, 'approved_invoice_not_found', 404)
-  insist(!await one(db,'SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?',invoice.id),'patient_balance_waits_for_all_payers',409)
   const amount = integer(input.amountCents, 'amount_cents', 1, 10_000_000), reference = text(input.reference, 'reference', 120), paymentId = id()
+  const collectionAllowed = `NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?) OR ${copayRoomSql()}>=?`
+  insist(await one(db,'SELECT 1 WHERE '+collectionAllowed,invoice.id,invoice.id,amount),'patient_balance_waits_for_all_payers',409)
   insist(!await one(db, 'SELECT 1 FROM bm_invoice_payments WHERE reference=? UNION ALL SELECT 1 FROM bm_account_entries WHERE reference=?', reference, reference), 'payment_reference_used', 409)
   await commit(db, who, [
-    guard(db,'NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?)',invoice.id),
+    guard(db,collectionAllowed,invoice.id,invoice.id,amount),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE reference=?)', reference),
     stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)', paymentId, invoice.id, amount, reference, who.email, now()),
     guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
@@ -150,7 +152,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
 }
 
 export async function invoicesFor(db: D1Database, clientId?: string) {
-  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id) AS insurance_pending,
+  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,${copayRoomSql('i.id')} AS collectible_copay_cents,EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id) AS insurance_pending,
     (SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
   const payments = await rows(db, `SELECT * FROM bm_invoice_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
   return list.map(i => ({ ...i, snapshot: JSON.parse(i.snapshot as string), payments: payments.filter(p => p.invoice_id === i.id) }) as Data)
