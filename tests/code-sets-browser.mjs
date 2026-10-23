@@ -112,6 +112,11 @@ test('CODE-001: owner imports licensed data, saves synonyms, finds billable chil
   const patient=await h.cmd('client.save',{firstName:'Ava',lastName:'Sullivan'})
   const visit=await pastVisit(h,patient.id,clinician,service.id)
   await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',sections:[]},clinician.cookie)
+  const {codeSetClaimAdapter}=await import('./code-sets-claims.mjs'),prepare=await codeSetClaimAdapter(h,{realistic:true})
+  const claim=await prepare({date:'2026-10-01',diagnoses:['M25.561'],lines:[{code:'00530',units:1,modifiers:[]},{code:'0932T',units:1,modifiers:[]}],distinctServices:[{code1:'00530',code2:'0932T',modifier:'59',reason:'Separate clinically distinct services documented and reviewed by the treating clinician.',attested:true}]})
+  assert.ok(claim.proposals.some(p=>p.modifier==='59'))
+  const proof=await browserContext(h)
+  try{for(const width of [1440,390]){await proof.page.setViewportSize({width,height:1000});await proof.page.goto(h.origin+'/app/insurance');const proposals=proof.page.locator('[data-code-proposals]');await receipt(proof.page,'CODE-001-modifier-proposal',width,proposals)}}finally{await proof.browser.close()}
   await codeSetsBrowserJourney(h,edge,{picker:{cookie:clinician.cookie,path:'/app/clients/'+patient.id,targetName:'section_diagnosis',open:'Edit draft'}})
  }finally{await h.close()}
 })
@@ -122,8 +127,17 @@ test('CODE-001: first installation names missing releases and older public impor
  try{
   await h.finishSetup();await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane'})
   await codeSetsMissingBrowser(h)
-  await h.cmd('codes.update',{...edge.ptp[0],licenseAcknowledged:true,licenseBasis:'Synthetic test-only CMS/AMA license acknowledgment'})
+  const pending=await h.cmd('codes.update',{...edge.ptp[0],batchLimit:1,licenseAcknowledged:true,licenseBasis:'Synthetic test-only CMS/AMA license acknowledgment'})
+  assert.equal(pending.status,'incomplete')
   const {browser,page}=await browserContext(h)
-  try{await page.goto(h.origin+'/app/clinic');const panel=page.locator('#clinical-codes');assert.match(await panel.textContent(),/Update due/);for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-overdue-release',width,panel)}}finally{await browser.close()}
+  try{
+   await page.goto(h.origin+'/app/clinic');let panel=page.locator('#clinical-codes')
+   const resume=panel.locator('form[action*="codes.update.continue"]')
+   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-incomplete-import',width,resume)}
+   await submit(page,resume,'Continue code import')
+   await page.locator('[data-code-update-result]').filter({hasText:'Code release loaded'}).waitFor()
+   panel=page.locator('#clinical-codes');assert.match(await panel.textContent(),/Update due/)
+   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-overdue-release',width,panel)}
+  }finally{await browser.close()}
  }finally{await h.close()}
 })

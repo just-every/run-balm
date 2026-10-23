@@ -2,13 +2,13 @@
 // CMS is the only faked network edge; signing/invoices/scrubbing use real commands.
 import assert from 'node:assert/strict'
 import {clinic} from './clinic.mjs'
-export async function codeSetClaimAdapter(h){
- const {service,practitioners:[clinician]}=await clinic(h,['synthetic-balm-70'])
- const signature='synthetic-balm-70 synthetic-balm-71'
+export async function codeSetClaimAdapter(h,options={}){
+ const {service,practitioners:[clinician]}=await clinic(h,[options.realistic?'Priya':'synthetic-balm-70'])
+ const signature=options.realistic?'Priya Shah':'synthetic-balm-70 synthetic-balm-71'
  await h.cmd('staff.save',{id:clinician.id,name:signature,email:clinician.email,role:'practitioner',credentials:'PT',active:true})
  await h.cmd('pay.npi.save',{staffId:clinician.id,npi:'1234567893'})
  await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 synthetic-balm-70',city:'Austin',state:'TX',postalCode:'78701',contactName:'synthetic-balm-70',contactPhone:'5125550100'})
- const payer=await h.cmd('insurance.payer.save',{name:'synthetic-balm-70',payerId:'SYNTHETIC70',unitMethod:'cms',fees:['00530','00532','0932T','97110'].map(code=>({code,cents:1000}))})
+ const payer=await h.cmd('insurance.payer.save',{name:options.realistic?'Blue Cedar Health':'synthetic-balm-70',payerId:'SYNTHETIC70',unitMethod:'cms',fees:['00530','00532','0932T','97110'].map(code=>({code,cents:1000}))})
  await h.cmd('insurance.enrollment.save',{payerId:payer.id,practitionerId:clinician.id,taxonomy:'225100000X',active:true})
  let counter=70
  return async input=>{
@@ -16,7 +16,7 @@ export async function codeSetClaimAdapter(h){
   const visits=input.visits??[input]
   const appointments=visits.map((v,i)=>{const hour=String(1+i*2).padStart(2,'0');return `${source}-visit-${i},${source},${input.date}T${hour}:00:00+10:00,${input.date}T${hour}:45:00+10:00,booked`}).join('\n')
   const bundle={provider:'cliniko',practitionerId:clinician.id,serviceId:service.id,dateFormat:'MDY',files:[
-   {kind:'patients',name:'patients.csv',csv:`Patient ID,First Name,Last Name,Date of Birth\n${source},${source},synthetic-balm-70,1980-01-01\n`},
+   {kind:'patients',name:'patients.csv',csv:`Patient ID,First Name,Last Name,Date of Birth\n${source},${options.realistic?'Ana':source},${options.realistic?'Ramirez':'synthetic-balm-70'},1980-01-01\n`},
    {kind:'appointments',name:'appointments.csv',csv:`Source ID,Patient ID,Start At,End At,Status\n${appointments}\n`}]}
   const preview=await h.cmd('movein.preview',bundle)
   assert.equal(preview.canApply,true,JSON.stringify(preview.diagnostics))
