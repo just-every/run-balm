@@ -15,7 +15,7 @@ export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],ba
   let hl=1
   for(const claim of claims) {
     const c=claim.snapshot,sub=++hl,self=c.subscriber.relationship==='18'
-    parts.push(s('HL',sub,1,22,self?0:1),s('SBR',payerOrder(c.cob?.priority??1),self?'18':'',c.subscriber.group,'','','','','',c.payer.medicare?'MB':'CI'),
+    parts.push(s('HL',sub,1,22,self?0:1),s('SBR',payerOrder(c.cob?.priority??1),self?'18':'',c.subscriber.group,'','','','','',c.injury?({workers_comp:'WC',auto_no_fault:'AM',personal_injury:'LI'} as Record<string,string>)[c.injury.kind]:c.payer.medicare?'MB':'CI'),
       s('NM1','IL',1,c.subscriber.last,c.subscriber.first,'','','','MI',c.subscriber.memberId))
     if(self)parts.push(s('N3',c.address.street),s('N4',c.address.city,c.address.state,c.address.postal),s('DMG','D8',xdate(c.subscriber.dob),c.subscriber.sex))
     parts.push(s('NM1','PR',2,c.payer.name,'','','','','PI',c.payer.code))
@@ -23,6 +23,7 @@ export function professionalBatch(claims:{id:string;snapshot:ClaimSnapshot}[],ba
     const total=c.lines.reduce((sum,l)=>sum+l.amountCents,0)
     // Composite separators belong to composites, never to external values.
     parts.push(`CLM*${claim.id}*${money(total)}***11:B:${c.frequency}*Y*A*Y*I`)
+    if(c.injury)parts.push(s('REF','Y4',c.injury.claimNumber),s('PWK','OZ','AA','','','AC',c.injury.attachmentControl))
     if(c.authorization)parts.push(s('REF','G1',c.authorization))
     if(c.frequency==='7')parts.push(s('REF','F8',c.originalControl))
     parts.push('HI*'+c.diagnoses.map((d,i)=>`${i===0?'ABK':'ABF'}:${d.replace('.','')}`).join('*'))

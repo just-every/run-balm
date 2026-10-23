@@ -1,3 +1,4 @@
+import {runoutPosting} from './runout'
 import {audit,commit,guard,id,insist,now,one,rows,stmt,type Actor,type Data} from '../domain/model'
 import {manualCob} from './cob-manual'
 import {claimFor,clientGuard,yes} from './access'
@@ -9,7 +10,9 @@ export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
  const batch=await payerBatch(db,input.id),at=now()
  insist(yes(input.attest),'confirm_the_original_EOB_and_check_total')
  const lines=await rows(db,'SELECT * FROM bm_payer_payment_lines WHERE batch_id=? ORDER BY created_at,id',batch.id)
- insist(lines.some(l=>l.claim_id),'payer_batch_needs_claim_lines')
+ lines.push(...(await rows(db,'SELECT * FROM bm_runout_paper_lines WHERE batch_id=? ORDER BY created_at,id',batch.id)).map(l=>({...l,legacy_detail:l.detail,kind:'payment',claim_id:null,amount_cents:0})))
+ insist(lines.some(l=>l.claim_id||l.legacy_detail),'payer_batch_needs_claim_lines')
+ if(lines.some(l=>l.legacy_detail))insist(who.role==='owner','legacy_paper_matching_requires_owner',403)
  insist(await one(db,'SELECT batch_id FROM bm_payer_eobs WHERE batch_id=?',batch.id),'attach_the_scanned_EOB_before_posting')
  const sum=(kind:string,field:string)=>lines.filter(l=>l.kind===kind).reduce((t,l)=>t+Number(l[field]),0)
  const paid=sum('payment','paid_cents'),interest=sum('interest','amount_cents'),recouped=sum('recoupment','amount_cents')
@@ -37,6 +40,14 @@ export async function closePayerBatch(db:D1Database,who:Actor,input:Data) {
    guard(db,`(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=? AND (instr(reference,?)=1 OR instr(reference,?)=1))>=0`,claim.invoice_id,'era:'+batch.payer_id+':','payer:'+batch.payer_id+':'),
    stmt(db,'UPDATE bm_claims SET status=?,errors=?,payer_control=?,updated_at=?,version=version+1 WHERE id=? AND version=?',status,JSON.stringify(errors),control,at,claim.id,claim.version),guard(db,'changes()=1'),
    stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'paper_eob',JSON.stringify({batchId:batch.id,lines:items.map(l=>({...l,adjustments:JSON.parse(l.adjustments),remarks:JSON.parse(l.remarks)}))}),at),audit(db,who,'insurance.remittance_posted',claim.client_id,claim.id))
+ }
+ for(const l of lines.filter(l=>l.legacy_detail)){
+  const r=JSON.parse(l.legacy_detail)
+  if(l.migrated_id){
+   const migrated=await one(db,'SELECT * FROM bm_migrated_claims WHERE id=? AND payer_id=?',l.migrated_id,batch.payer_id)
+   insist(migrated&&!migrated.native_claim_id,'legacy_claim_changed_review_paper_line',409)
+   statements.push(...runoutPosting(db,who,migrated,r,null,batch.id).statements)
+  }else statements.push(stmt(db,'INSERT INTO bm_remittance_suspense(id,import_id,paper_batch_id,payer_id,patient_control,paid_cents,detail,reason,created_at) VALUES(?,NULL,?,?,?,?,?,?,?)',id(),batch.id,batch.payer_id,r.id,r.paidCents,JSON.stringify(r),'Paper EOB has no unique migrated claim; payment held in suspense',at),audit(db,who,'insurance.paper_remittance_held_in_suspense',null,batch.id))
  }
  await commit(db,who,[payerAuthority(db,who),...statements])
  return {id:batch.id,status:'closed',depositCents:paid+interest-recouped,paidCents:paid,interestCents:interest,recoupedCents:recouped}

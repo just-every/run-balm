@@ -1,7 +1,9 @@
+import {injuryPanel} from './injury'
+import {runoutPanel} from './runout'
 import {insuranceCob} from './insurance-cob'
 import {claimWorkPanel} from './claim-work'
 import {manualPayerPanel} from './manual-payers'
-import { check, empty, entry, form, h, hidden, money, panel, stamp, status, usDate, zoneOf } from './shared'
+import { check, empty, entry, form, h, hidden, money, owner, panel, select, stamp, status, usDate, zoneOf } from './shared'
 import { insuranceSettings } from './insurance-settings'
 import { claimErrors, claimNumber, insurancePath as path, insuranceResult, payerFileUploads, reasonHtml, x12Link } from './insurance-shared'
 
@@ -30,5 +32,15 @@ export function insurancePage(s: any, notice: any) {
   const batchForm = ready.length ? `<details><summary>Build a claim file</summary><p>Choose ready claims for one payer. Balm checks each claim again, then builds one 837P file to download${i.adapter?.available ? ' or send' : ''}.</p>${form('insurance.batch.prepare', path, ready.map((q: any) => check('claim_' + q.id, `${name(q)} · ${q.snapshot?.payer?.name ?? ''} · ${usDate(q.service_date, zoneOf(s))} · ${money(q.amount_cents)}`, '')).join(''), 'Check claims and build 837P file')}</details>` : '<p class="help">Prepare claims from signed visits in each patient’s file.</p>'
   const batchList = batches.map((b: any) => entry(`${payers.find((p: any) => p.id === b.payer_id)?.name ?? 'Claim file'} · ${b.status === 'prepared' ? 'ready to download' : b.status === 'exported' ? 'downloaded, not sent by Balm' : b.status}`, `<p>${stamp(s, b.created_at)}${b.reference ? `<br>Clearinghouse reference: ${h(b.reference)}` : ''}</p><p><a href="${x12Link('837P', b.id)}">Download 837P claim file</a></p>${b.status === 'exported' && !i.adapter?.available ? '<p class="help">Upload this file to your clearinghouse or the payer’s portal. The payer’s 277CA and 835 come back there: upload them on this page.</p>' : ''}${b.can_submit && ['prepared', 'exported'].includes(b.status) && i.adapter?.available ? form('insurance.batch.submit', path, hidden('id', b.id), 'Send through the clearinghouse') : b.status === 'uncertain' ? '<p>Balm cannot tell whether the clearinghouse received this file. Check with the clearinghouse before sending it again.</p>' : ''}`)).join('')
   const fixes = denials.map((q: any) => `<article class="claim-row"><h3><a href="/app/clients/${h(q.client_id)}#claim-${h(q.id)}">${h(name(q))}</a></h3><p>${status(q.status)} · ${day(q.service_date)} · Claim ${claimNumber(q.id)}</p><div class="fix">${(q.errors ?? []).map((e: any) => `<p>${reasonHtml(e)}</p>`).join('')}${q.nextStep ? `<p>${h(q.nextStep)}</p>` : ''}<p><a href="/app/clients/${h(q.client_id)}#claim-${h(q.id)}">Open the claim to correct or draft an appeal</a></p></div></article>`).join('')
-  return `<div class="insurance"><h1>Claims &amp; reimbursement</h1><p>Follow each signed visit through the payer’s answer to the patient’s balance.</p>${insuranceResult(notice)}${overview(i)}${stats}${manualPayerPanel(s)}${claimWorkPanel(i.work)}${insuranceCob(s)}<div class="layout"><div>${panel('Claims', (claims || empty('No insurance claims yet. Open a patient file to add a policy and prepare a signed visit’s claim.')) + batchForm)}<div id="batches">${panel('Claim files', batchList || empty('No claim files yet.'))}</div>${insuranceSettings(s)}</div><aside class="sidebar">${panel('Denials with the next step', fixes || empty('No denials or rejections waiting.'))}${payerFileUploads(payers, path)}</aside></div></div>`
+  return `<div class="insurance"><h1>Claims &amp; reimbursement</h1><p>Follow each signed visit through the payer’s answer to the patient’s balance.</p>${insuranceResult(notice)}${overview(i)}${stats}${injuryPanel(s)}${runoutPanel(s)}${manualPayerPanel(s)}${claimWorkPanel(i.work)}${insuranceCob(s)}<div class="layout"><div>${panel('Claims', (claims || empty('No insurance claims yet. Open a patient file to add a policy and prepare a signed visit’s claim.')) + batchForm)}<div id="batches">${panel('Claim files', batchList || empty('No claim files yet.'))}</div>${insuranceSettings(s)}${claimRequirementsPanel(s)}</div><aside class="sidebar">${panel('Denials with the next step', fixes || empty('No denials or rejections waiting.'))}${payerFileUploads(payers, path)}</aside></div></div>`
+}
+
+function claimRequirementsPanel(s:any){
+ if(!owner(s))return ''
+ const i=s.insurance,payers=i.payers??[]
+ if(!payers.length)return ''
+ return panel('Payer claim requirements',`<details id="claim-requirements"><summary>Authorization, certification and filing requirements</summary><p>Record the requirements from each payer’s contract or provider manual. Balm holds claims that do not meet a recorded requirement. Filing instructions and their service-date ranges are recorded in the claim work queue.</p>${payers.map((p:any)=>{
+ const r=(i.requirements??[]).find((r:any)=>r.payer_id===p.id)
+ return form('insurance.requirements.save',path,hidden('payerId',p.id)+`<h3>${h(p.name)}</h3>`+check('authorization','Authorization required',r?.authorization?'checked':'')+check('certification','Physician-certified plan required',r?.certification?'checked':'')+check('filing','Dated filing instruction required',r?.filing?'checked':'')+`<label>Payer instruction source<textarea name="source" required>${h(r?.source??'')}</textarea></label>`,'Save claim requirements')
+ }).join('')}</details>`)
 }

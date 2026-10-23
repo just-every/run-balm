@@ -35,7 +35,7 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
     practitioner: { name: row.practitioner, profession: row.profession, providerNumber: row.provider_number },
     service: { name: row.service, durationMinutes: row.duration_minutes }, serviceDate: localTime(row.start_at as string, row.time_zone as string),
     appointmentId: row.id, amountCents: amountCents ?? (row.price_cents as number), currency: 'USD',
-    ...(procedures.length ? { procedures, ...(procedures.some(p => p.diagnosisCodes?.length) ? { diagnoses } : {}), timedUnitBasis: { method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion, ...(billing!.method === 'fixed' ? { fixedUnitMinutes: billing!.fixedUnitMinutes } : {}) } } : {}),
+    ...(procedures.length ? { procedures, ...(procedures.some(p => p.diagnosisCodes?.length) ? { diagnoses } : {}), timedUnitBasis: { schedule: billing!.schedule, method: billing!.method, payerId: billing!.payerId, payer: billing!.payer, payerVersion: billing!.payerVersion, ...(billing!.method === 'fixed' ? { fixedUnitMinutes: billing!.fixedUnitMinutes } : {}) } } : {}),
   } }
 }
 

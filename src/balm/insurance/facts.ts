@@ -1,3 +1,6 @@
+import {injuryFacts} from './injury'
+import {scheduleBasis,scheduleFees} from './schedules'
+import {claimRequirements} from './claim-requirements'
 import {claimCoding} from './coding'
 import { audit, commit, insist, one, rows, type Actor, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
@@ -21,10 +24,13 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   // Billing sees only signed charge facts, never body/sections/intake answers.
   const {signed,charges}=await signedCharges(db,visit.id)
   await commit(db,who,[audit(db,who,'insurance.signed_charges_read',visit.client_id,visit.id)])
+  const date=hostDateAt(new Date(visit.start_at),visit.time_zone)
+  const contract=await scheduleBasis(db,{...policy,id:policy.payer_id},policy.plan_name,date)
+  Object.assign(policy,{unit_method:contract.unit_method,fixed_unit_minutes:contract.fixed_unit_minutes})
   const billed=billedLines(charges,policy.unit_method,policy.fixed_unit_minutes)
   const [codes,fees,invoice,settings,enrollment,auths]=await Promise.all([
     rows(db,'SELECT * FROM bm_visit_codes WHERE appointment_id=? ORDER BY kind,position',visit.id),
-    rows(db,'SELECT code,cents FROM bm_payer_fees WHERE payer_id=?',policy.payer_id),
+    scheduleFees(db,policy.payer_id,contract.schedule),
     one(db,"SELECT * FROM bm_invoices WHERE appointment_id=? AND status='approved'",visit.id),
     one(db,'SELECT * FROM bm_insurance_settings WHERE id=1'),
     one(db,'SELECT * FROM bm_payer_enrollments WHERE payer_id=? AND practitioner_id=?',policy.payer_id,visit.practitioner_id),
@@ -83,7 +89,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
     ...(policy.fixed_unit_minutes != null ? {belowThresholdCodes:billed.filter(l=>l.timed&&l.units===0).map(l=>l.code)} : {}),
     invoiceId:invoice.id,invoiceCents:invoice.amount_cents,attended:visit.status==='attended',requiresReferral:!!policy.requires_referral,
     kx:{required,thresholdCents:threshold,usedCents:used,projectedCents:used+estimatedAllowed,group,year,reviewCents:annual?.review_cents??null,targetedReview:!!policy.medicare&&annual!==null&&used+estimatedAllowed>annual.review_cents,source:annual?.source??'',externalUsedCents:config?.external_used_cents??0},medicalNecessity:'',frequency:'1',originalControl:'',estimatedAllowedCents:estimatedAllowed,
-    basis:{assistantSupervisionCount:independent.filter(r=>r.supervision_given).length,...(renderingStaff ? {renderingStaffId:renderingStaff.id,renderingStaffVersion:renderingStaff.version} : {}),...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
+    basis:{schedule:contract.schedule,assistantSupervisionCount:independent.filter(r=>r.supervision_given).length,...(renderingStaff ? {renderingStaffId:renderingStaff.id,renderingStaffVersion:renderingStaff.version} : {}),...(input.authorizationCorrection?{authorizationCorrection:input.authorizationCorrection}:{}),policyVersion:policy.version,payerVersion:policy.payer_version,appointmentVersion:visit.version,staffVersion:visit.staff_version,clientVersion:visit.client_version,billingVersion:settings?.version??null,medicareVersion:config?.version??null,medicareSettingsVersion:annual?.version??null,priorClaimsVersion:spending.previous.reduce((sum,c)=>sum+c.version,0),expensesVersion:spending.previous.reduce((sum,c)=>sum+(c.expense_version??0),0),codes:JSON.stringify(codes.map(c=>[c.kind,c.position,c.code,c.modifiers,c.units])),signed:JSON.stringify(signed.map(n=>[n.id,n.signed_sha256]))},
     policyCovers:policy.starts_on<=serviceDate&&(!policy.ends_on||policy.ends_on>=serviceDate),authorizationExhausted:!!auth&&auth.used_allowance>auth.allowance_total,authorizationNotCovered:!!auth&&!authorizationCoversCodes(auth,billed.filter(l=>l.units>0).map(l=>l.code))
   }
   const attestations=await rows(db,`SELECT r.clinical FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`,visit.id)
@@ -91,5 +97,7 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   value.cob=await cobFacts(db,policy,invoice)
   applyMedicareServices(value)
   value.coding=await claimCoding(db,value)
+  value.requirements=await claimRequirements(db,value,policy.client_id,visit.id)
+  const injury=await injuryFacts(db,visit.id,policy.id);if(injury)value.injury=injury
   return value
 }

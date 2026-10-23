@@ -1,3 +1,4 @@
+import {chooseSchedule} from './schedules'
 import { chargeCode, type Charge } from '../charting/cpt'
 import { payerBilling } from './unit-method'
 import { hostDateAt } from '../availability/timezone'
@@ -75,6 +76,7 @@ function visitCharges(visit: Data, chargeRows: Data[], cutoff?: string, zone = '
 /** Any billed CPT outside scope makes the entire visit uncovered; it consumes
  * neither a partial unit debit nor a reservation. Empty scope covers all CPTs. */
 export function authorizationCoversVisit(a: Data, visit: Data, chargeRows: Data[], cutoff?: string, zone = 'UTC') {
+  if(a.billingPolicy&&visit.start_at){const s=chooseSchedule(a.billingSchedules??[],a.billingPolicy.payer_id,a.billingPolicy.plan_name,hostDateAt(new Date(visit.start_at),zone));if(s)a={...a,unit_method:s.unit_method,fixed_unit_minutes:s.fixed_unit_minutes}}
   const facts = visitCharges(visit, chargeRows, cutoff, zone)
   const codes = facts.signed ? billedLines(facts.charges, a.unit_method ?? null, a.fixed_unit_minutes).filter(l => l.units > 0).map(l => l.code) : facts.known.flatMap(row => {
     const charges = typeof row.charges === 'string' ? JSON.parse(row.charges) : row.charges
@@ -87,6 +89,7 @@ export function visitAllowance(a: Data, visit: Data, chargeRows: Data[], cutoff?
   if (!['booked', 'attended'].includes(visit.status) || !beforeCutoff(visit.created_at, cutoff, zone)
     || visit.status === 'attended' && !beforeCutoff(visit.start_at, cutoff, zone)
     || !authorizationCoversVisit(a, visit, chargeRows, cutoff, zone)) return empty
+  if(a.billingPolicy&&visit.start_at){const s=chooseSchedule(a.billingSchedules??[],a.billingPolicy.payer_id,a.billingPolicy.plan_name,hostDateAt(new Date(visit.start_at),zone));if(s)a={...a,unit_method:s.unit_method,fixed_unit_minutes:s.fixed_unit_minutes}}
   const facts = visitCharges(visit, chargeRows, cutoff, zone)
   if (visit.status === 'booked' || a.allowance_kind === 'units' && !facts.signed) return { ...empty, reserved: reservationAllowance(a), reservedVisits: 1 }
   const used = a.allowance_kind === 'units' ? billedLines(facts.charges, a.unit_method ?? null, a.fixed_unit_minutes).reduce((sum, l) => sum + l.units, 0) : 1

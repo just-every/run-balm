@@ -45,6 +45,8 @@ function fixes(e: any, c: any): [string, string][] {
   if (field === 'patient.dob') return [[file, 'Edit the patient’s details']]
   if (field === 'diagnoses') return [[`${file}#codes-${c.appointment_id}`, 'Record ICD-10 codes for the visit']]
   if (field === 'note' || field === 'lines') return [[`${file}#visit-${c.appointment_id}`, 'Open the visit and its note']]
+  if (field === 'certification') return [[`${file}#plans`, 'Review plan certification']]
+  if (field === 'filing') return [['/app/insurance#claim-work', 'Review payer filing instructions']]
   if (field === 'policy' || field === 'authorization') return [[`${file}#insurance`, 'Coverage and authorizations']]
   if (field.startsWith('medicare')) return [[`${file}#insurance`, 'Medicare KX threshold']]
   return []

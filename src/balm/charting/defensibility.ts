@@ -1,3 +1,4 @@
+import {scheduleBasis} from '../insurance/schedules'
 import { noteCodeContext } from './codeset-review'
 import { pendingSubmission } from '../domain/supervision'
 import type { Bindings } from '../../auth.server'
@@ -26,9 +27,10 @@ async function context(db: D1Database, noteId: string, who: Actor) {
   insist(note.appointment_id, 'choose_a_visit_before_checking', 409)
   const visit = (await one(db, 'SELECT a.*,s.time_zone FROM bm_appointments a JOIN bm_settings s ON s.id=1 WHERE a.id=?', note.appointment_id))!
   const date = hostDateAt(new Date(visit.start_at), visit.time_zone)
-  const payers = await rows(db, `SELECT y.id,y.name,y.medicare,y.unit_method,y.fixed_unit_minutes,y.version,p.id AS policy_id,p.version AS policy_version,p.priority,p.starts_on,p.ends_on,COALESCE(d.required,'[]') AS required,COALESCE(d.version,0) AS documentation_version
+  const payers = await rows(db, `SELECT y.id,y.name,p.plan_name,y.medicare,y.unit_method,y.fixed_unit_minutes,y.version,p.id AS policy_id,p.version AS policy_version,p.priority,p.starts_on,p.ends_on,COALESCE(d.required,'[]') AS required,COALESCE(d.version,0) AS documentation_version
     FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id LEFT JOIN bm_payer_documentation d ON d.payer_id=y.id
     WHERE p.client_id=? AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on='' OR p.ends_on>=?) ORDER BY p.priority,p.starts_on DESC,p.id`, note.client_id, date, date)
+  for(const p of payers){const basis=await scheduleBasis(db,p,p.plan_name,date);Object.assign(p,{unit_method:basis.unit_method,fixed_unit_minutes:basis.fixed_unit_minutes,schedule:basis.schedule})}
   const payer=payers[0]??null
   // Match the visit's explicitly assigned episode; never guess across episodes.
   const plans = await rows(db, `SELECT p.id,p.content,p.status FROM bm_plans_of_care p
@@ -42,7 +44,7 @@ async function context(db: D1Database, noteId: string, who: Actor) {
   for(const rule of dailyRules)rules.push({id:'role.assistant_daily.'+rule.id,title:'Owner-recorded assistant daily-note permission',source:'/app/clinic',rule:JSON.stringify(rule)})
   const supervision=await one(db,'SELECT kind,supervisor_id FROM bm_staff_access WHERE staff_id=?',note.author_id)
   if (supervision && ['assistant','student','fellow'].includes(supervision.kind)) rules.push({id:'role.supervision',title:'Clinic supervision and co-signature policy',source:'/app/clinic',rule:'This author documents under a named licensed supervisor. Students and fellows require co-signature. An assistant may finalize only a daily note under a matching explicit owner-recorded state/payer rule; otherwise co-signature is required. Evaluation notes/codes remain prohibited for assistants. The named therapist must record actual supervision before claiming; payer-recorded billability/minimum/rendering rules still apply.'})
-  for(const p of payers)rules.push({ id:p===payer?'payer.configuration':'payer.configuration.'+p.policy_id, title: `${p.name}: clinic-recorded documentation rules v${p.documentation_version}, unit method v${p.version}`, source: '/app/clinic#documentation', rule: `${p===payer?'':`Applies to priority ${p.priority}, policy ${p.policy_id} v${p.policy_version}. `}Configured unit method: ${unitMethodLabel(p.fixed_unit_minutes != null ? 'fixed' : p.unit_method, p.fixed_unit_minutes)}. Required elements: ${(JSON.parse(p.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
+  for(const p of payers)rules.push({ id:p===payer?'payer.configuration':'payer.configuration.'+p.policy_id, title: `${p.name}: clinic-recorded documentation rules v${p.documentation_version}, unit method v${p.version}`, source: '/app/clinic#documentation', rule: `${p===payer?'':`Applies to priority ${p.priority}, policy ${p.policy_id} v${p.policy_version}. `}Contract revision: ${p.schedule?.id??'legacy baseline'}, effective ${p.schedule?.effective_on??'undated baseline'}, source ${p.schedule?.source??'clinic setup'}. Configured unit method: ${unitMethodLabel(p.fixed_unit_minutes != null ? 'fixed' : p.unit_method, p.fixed_unit_minutes)}. Required elements: ${(JSON.parse(p.required) as (keyof typeof documentationElements)[]).map(k => documentationElements[k]).join(', ') || 'none configured'}. These are clinic-entered requirements, not provider verification.` })
   if(payers.length>1)rules.push({id:'cob.billing',title:'Clinic coordination-of-benefits billing rules',source:'/app/insurance#cob',rule:'Review each covering payer separately. Secondary and tertiary claims re-apply their own configured unit method to the note minutes, retaining earlier payers’ original per-code adjudication and units. Compare each payer’s billed units with the documented skilled minutes; do not add units across payer claims or apply one payer’s documentation requirements to another.'})
   const codeContext=await noteCodeContext(db,note,date,billedLines(JSON.parse(note.charges??'[]'),payer?.unit_method??(payer?null:'cms'),payer?.fixed_unit_minutes))
   rules.push(...codeContext.rules)

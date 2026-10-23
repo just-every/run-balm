@@ -15,6 +15,8 @@ export async function inventory(db: D1Database, clientId: string): Promise<Inven
     }
     found[table] = terms.length ? (await rows(db, `SELECT rowid AS rid FROM ${table} WHERE ${terms.join(' OR ')} ORDER BY rowid`, ...args)).map(r => Number(r.rid)) : []
   }
+  const resolvedPaper=await rows(db,`SELECT l.rowid AS rid FROM bm_runout_paper_lines l JOIN bm_remittance_suspense q ON q.paper_batch_id=l.batch_id AND q.patient_control=json_extract(l.detail,'$.id') JOIN bm_migrated_claims m ON m.id=q.resolved_claim WHERE m.client_id=?`,clientId)
+  found.bm_runout_paper_lines=[...new Set([...found.bm_runout_paper_lines,...resolvedPaper.map(r=>Number(r.rid))])]
   found.bm_intake_photos = (await rows(db, `SELECT rowid AS rid FROM bm_intake_photos WHERE id IN (
     SELECT front FROM bm_intake_insurance WHERE client_id=? UNION SELECT back FROM bm_intake_insurance WHERE client_id=?
     UNION SELECT photo_id FROM bm_intake_identity WHERE client_id=?) ORDER BY rowid`, clientId, clientId, clientId)).map(r => Number(r.rid))

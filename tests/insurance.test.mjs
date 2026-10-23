@@ -35,7 +35,7 @@ const setup = async h => {
   // Exercise every downstream billing journey through a real biller session;
   // owner configuration and clinical attestations retain their existing actors.
   const biller=await h.staff('InsuranceBiller','biller'),nativeCommand=h.cmd
-  const ownerCommands=new Set(['insurance.settings.save','insurance.payer.save','insurance.enrollment.save','insurance.medicare.settings.save','insurance.supervision.save','insurance.claim.necessity','insurance.denial.appeal'])
+  const ownerCommands=new Set(['insurance.schedule.save','insurance.license.save','insurance.settings.save','insurance.payer.save','insurance.enrollment.save','insurance.medicare.settings.save','insurance.supervision.save','insurance.claim.necessity','insurance.denial.appeal'])
   h.cmd=(name,input,cookie,status,headers)=>nativeCommand(name,input,cookie ?? (name.startsWith('insurance.')&&!ownerCommands.has(name)?biller.cookie:h.owner),status,headers)
   return { patient, priya, payer, policy, appointmentId, serviceDate, invoice, biller }
 }
@@ -505,3 +505,339 @@ test('CODE-001: effective CMS quarters, billable diagnosis children, clinician d
 })
 
 test('CODE-001: explicit durable continuation preserves cursors and publishes only after every archive checksum',async()=>{const {codeImportJourney}=await import('./code-import-journey.mjs');await codeImportJourney()})
+
+
+test('INS-005: referring NPI and dated 97140/97530 edit hold a claim until attested correction; payer authorization, certification and filing requirements hold every export',async()=>{
+ const {codeSetEdge}=await import('./code-sets-journey.mjs')
+ const {codeSetClaimAdapter}=await import('./code-sets-claims.mjs')
+ const edge=codeSetEdge({therapyPtp:true})
+ await run(async h=>{
+  await h.finishSetup()
+  const scrub=await codeSetClaimAdapter(h),state=await h.state(),payer=state.insurance.payers[0],clinician=state.staff.find(p=>p.role==='practitioner')
+  await h.cmd('insurance.payer.save',{id:payer.id,name:payer.name,payerId:payer.payer_id,unitMethod:'cms',requiresReferral:true,fees:['00530','00532','0932T','97110','97140','97530'].map(code=>({code,cents:1000}))})
+  const distinct={code1:'97140',code2:'97530',modifier:'59',reason:'Synthetic separate encounters and sites reviewed by the treating clinician',attested:true}
+  const held=await scrub({date:'2026-10-01',diagnoses:['M25.561'],lines:[{code:'97140',units:1,modifiers:[]},{code:'97530',units:1,modifiers:[]}],distinctServices:[distinct]})
+  assert.equal(held.status,'draft')
+  assert.ok(held.errors.some(e=>e.code==='referring_npi_missing'))
+  const edit=held.errors.find(e=>e.code==='ncci_ptp');assert.ok(edit);assert.match(edit.message,/97140/);assert.match(edit.message,/97530/);assert.match(edit.message,/32\.3 r0/)
+  const claim=(await h.state()).insurance.queue.find(c=>c.id===held.id),patient=claim.client_id,visit=claim.appointment_id,policy=claim.policy_id
+  let browser,context,page
+  const capture=async(name,anchor='#claim-'+held.id)=>{
+   if(!process.env.BALM_UI_SCREENSHOTS)return
+   if(!browser){
+    const {chromium}=await import('@playwright/test'),{mkdir}=await import('node:fs/promises');await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+    browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']});context=await browser.newContext({ignoreHTTPSErrors:true})
+    for(const [pattern,path,contentType]of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType}))
+    await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+    const [key,...value]=h.owner.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}]);page=await context.newPage()
+   }
+   for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});await page.goto(h.origin+(anchor==='#claim-requirements'?'/app/insurance':'/app/clients/'+patient))
+    const target=page.locator(anchor);if(anchor==='#claim-requirements'){
+     await target.locator('summary').click()
+     const rule=target.locator('form').first();await rule.locator('[name=authorization]').check();await rule.locator('[name=certification]').check();await rule.locator('[name=filing]').check()
+     await rule.locator('[name=source]').fill('synthetic-balm-1 payer contract, authorization/certification and filing section')
+     await Promise.all([page.waitForNavigation(),rule.getByRole('button',{name:'Save claim requirements',exact:true}).click()]);await target.locator('summary').click()
+    }
+    await target.scrollIntoViewIfNeeded();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
+    // Audit this screen's icon-only controls; each needs the shared delayed hover / immediate focus tooltip.
+    const iconControls=page.locator('button,a').filter({visible:true});
+    for(const el of await iconControls.all()){
+     const text=(await el.innerText()).trim(),label=await el.getAttribute('aria-label')
+     if(label&&!/[a-zA-Z]{2}/.test(text)){
+      const tip=el.locator('[role=tooltip]');assert.equal(await tip.count(),1,'icon-only '+label+' has a tooltip')
+      await el.focus();assert.equal(await tip.isVisible(),true,'keyboard focus shows '+label)
+      await page.locator('h1').click();await el.hover();await page.waitForTimeout(350);assert.equal(await tip.isVisible(),true,'hover shows '+label)
+     }
+    }
+    await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
+   }
+  }
+  try{
+   await capture('INS-005-held-edit')
+   await h.cmd('insurance.batch.prepare',{claimIds:[held.id]},h.owner,409)
+   await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561',cpt:'97140\n97530 59'})
+   const fixed=await h.cmd('insurance.claim.correct',{id:held.id,referringFirst:'synthetic-balm-1',referringLast:'synthetic-balm-2',referringNpi:'1234567893'})
+   assert.equal(fixed.status,'ready',JSON.stringify(fixed.errors));assert.deepEqual(fixed.errors,[])
+   const requirements={payerId:payer.id,authorization:true,certification:true,filing:true,source:'synthetic-balm-1 payer contract, authorization/certification and filing section'}
+   const biller=await h.staff('synthetic-balm-94','biller')
+   await h.cmd('insurance.requirements.save',requirements,biller.cookie,403)
+   await h.cmd('insurance.requirements.save',requirements)
+   const required=await h.cmd('insurance.claim.scrub',{id:fixed.id})
+   for(const code of ['authorization_required','plan_certification_required','filing_rule_required'])assert.ok(required.errors.some(e=>e.code===code),code)
+   await capture('INS-005-payer-requirements','#claim-requirements')
+   await h.cmd('insurance.authorization.save',{policyId:policy,number:'synthetic-balm-95',startsOn:'2026-10-01',endsOn:'2026-12-31',visits:12})
+   const plan=await h.cmd('plan.send',{clientId:patient,practitionerId:clinician.id,diagnoses:'M25.561',shortTermGoals:'Synthetic short-term goal',longTermGoals:'Synthetic long-term goal',frequencyPerWeek:2,durationWeeks:12,interventions:'Synthetic documented distinct manual therapy and therapeutic activities',startDate:'2026-10-01',physicianName:'synthetic-balm-1 synthetic-balm-2',physicianEmail:'synthetic-balm-1@example.test',signature:clinician.name,credentials:'PT',attest:true},await h.signIn(clinician.email))
+   assert.equal((await h.form('/plan/'+plan.token,{name:'synthetic-balm-1 synthetic-balm-2',credentials:'MD',npi:'1234567893',attest:'on'})).status,303)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:0,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 expired initial filing instruction'})
+   const expired=await h.cmd('insurance.claim.scrub',{id:fixed.id})
+   assert.deepEqual(expired.errors.map(e=>e.code),['timely_filing_expired'])
+   assert.match(expired.errors[0].message,/2026-10-01/)
+   await capture('INS-005-filing-held','#claim-'+fixed.id)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:3660,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 corrected payer filing instruction'})
+   assert.equal((await h.cmd('insurance.claim.scrub',{id:fixed.id})).status,'ready')
+   await capture('INS-005-clean-attested','#claim-'+fixed.id)
+   const batch=await h.cmd('insurance.batch.prepare',{claimIds:[fixed.id]})
+   const x12=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)
+   assert.equal(x12.status,200,x12.text);assert.match(x12.text,/SV1\*HC:97530:59:GP\*10.00\*UN\*1/);assert.match(x12.text,/NM1\*DN\*1\*SYNTHETIC-BALM-2\*SYNTHETIC-BALM-1/)
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'initial',basis:'service_date',days:0,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 newly corrected expiration'})
+   assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).status,409,'a previously prepared file cannot bypass the current filing deadline')
+   const sent=await h.cmd('insurance.batch.submit',{id:batch.id},h.owner,409);assert.match(sent.code,/filing deadline/)
+   const denied=(await fixture('835-denied.x12',{CLAIM:fixed.id})).replace('*4*95*','*4*20*').replace('197*95~','197*20~').replace('AETNA*XV*60054','SYNTHETIC*XV*SYNTHETIC70')
+   await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:denied})
+   await h.cmd('insurance.authorization.save',{policyId:policy,number:'synthetic-balm-97',startsOn:'2026-10-01',endsOn:'2026-12-31',visits:12})
+   const replacement=await h.cmd('insurance.claim.correct',{id:fixed.id})
+   assert.deepEqual(replacement.errors.map(e=>e.code),['filing_rule_required'])
+   await h.cmd('insurance.filing.save',{payerId:payer.id,kind:'correction',basis:'adjudication_date',days:30,effectiveFrom:'2026-10-01',source:'synthetic-balm-1 corrected claims section'})
+   assert.deepEqual((await h.cmd('insurance.claim.scrub',{id:replacement.id})).errors.map(e=>e.code),['filing_date_required'])
+   await h.cmd('insurance.filing.date',{id:fixed.id,adjudicationOn:new Date().toISOString().slice(0,10),source:'synthetic-balm-1 actual payer decision date'})
+   assert.equal((await h.cmd('insurance.claim.scrub',{id:replacement.id})).status,'ready')
+   const correction=await h.cmd('insurance.batch.prepare',{claimIds:[replacement.id]})
+   const corrected=await h.send('/api/balm/insurance/837P/'+correction.id,undefined,h.owner)
+   assert.equal(corrected.status,200,corrected.text);assert.match(corrected.text,/11:B:7/);assert.match(corrected.text,/REF\*F8\*PAYERDENIED001/)
+
+  }finally{await browser?.close()}
+ },{codeSetEdge:edge,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-96'},outbound:async()=>{throw Error('Scrubber must refuse before any payer request')}})
+})
+
+
+test('INS-001: dated plan contracts price service-date units and fees without rewriting issued documents; owner records provider licenses',async()=>{
+ await run(async h=>{
+  const c=await setup(h),state=await h.state(),service=state.services[0]
+  const second=await h.staff('synthetic-balm-101','practitioner',{discipline:'pt'})
+  await h.cmd('pay.npi.save',{staffId:second.id,npi:'1234567893'})
+  await h.cmd('insurance.enrollment.save',{payerId:c.payer.id,practitionerId:second.id,taxonomy:'225100000X',active:true})
+  const license={practitionerId:second.id,state:'TX',number:'synthetic-balm-102',startsOn:'2020-01-01',endsOn:'2030-12-31',source:'synthetic-balm-103 state board certificate'}
+  await h.cmd('insurance.license.save',license,c.biller.cookie,403)
+  await h.cmd('insurance.license.save',license)
+  const plan='synthetic-balm-104',day=c.serviceDate
+  const schedule={payerId:c.payer.id,planName:plan,effectiveOn:'2020-01-01',kind:'contracted',unitMethod:'ama',fees:[{code:'97110',cents:2100},{code:'97140',cents:1900}],source:'synthetic-balm-105 original plan contract'}
+  await h.cmd('insurance.schedule.save',schedule,c.biller.cookie,403)
+  await h.cmd('insurance.schedule.save',schedule)
+  const later=await h.cmd('insurance.schedule.save',{...schedule,effectiveOn:day,unitMethod:'fixed',fixedUnitMinutes:10,fees:[{code:'97110',cents:3000},{code:'97140',cents:2000}],source:'synthetic-balm-106 plan amendment'})
+  const oldDay=new Date(Date.parse(day+'T12:00:00Z')-5*86400000).toISOString().slice(0,10)
+  const bundle={provider:'cliniko',practitionerId:c.priya.id,serviceId:service.id,dateFormat:'MDY',files:[
+   {kind:'patients',name:'patients.csv',csv:'Patient ID,First Name,Last Name,Date of Birth\nsynthetic-balm-110,Synthetic,Dated plan,1980-01-01\n'},
+   {kind:'appointments',name:'appointments.csv',csv:`Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-111,synthetic-balm-110,${oldDay}T01:00:00+10:00,${oldDay}T01:45:00+10:00,booked\nsynthetic-balm-112,synthetic-balm-110,${day}T01:00:00+10:00,${day}T01:45:00+10:00,booked\n`}]}
+  const preview=await h.cmd('movein.preview',bundle);assert.equal(preview.canApply,true)
+  const moved=await h.cmd('movein.apply',{...bundle,fingerprint:preview.fingerprint,acceptanceReason:'Reviewed synthetic dated contract test appointments'})
+  const patient={id:moved.records.find(r=>r.target_table==='bm_clients').target_id}
+  const policy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:c.payer.id,planName:plan,memberId:'synthetic-balm-107',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',...coverage})
+  const make=async(hours,minutes)=>{
+   const visit=moved.records.find(r=>r.source_id===(hours===60?'synthetic-balm-111':'synthetic-balm-112')).target_id
+   await h.cmd('appointment.attend',{id:visit})
+   await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561'})
+   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic skilled care',charges:[{code:'97110',minutes},{code:'97140',minutes}]},c.priya.cookie)
+   await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},c.priya.cookie)
+   const invoice=await h.cmd('invoice.prepare',{appointmentId:visit});await h.cmd('invoice.approve',{id:invoice.id})
+   const claim=await h.cmd('insurance.claim.prepare',{appointmentId:visit,policyId:policy.id})
+   return {visit,note,invoice,claim,date:await visitDate(h,visit)}
+  }
+  const old=await make(60,8),current=await make(5,20)
+  assert.ok(old.date<day)
+  assert.deepEqual(old.invoice.snapshot.procedures.map(l=>l.units),[1,1]);assert.equal(old.invoice.snapshot.amountCents,4000)
+  assert.deepEqual(current.claim.snapshot.lines.map(l=>l.units),[2,2]);assert.equal(current.invoice.snapshot.amountCents,10000)
+  assert.equal(current.invoice.snapshot.timedUnitBasis.schedule.id,later.id)
+  const auth=await h.cmd('insurance.authorization.save',{policyId:policy.id,number:'synthetic-balm-108',...coverage,allowanceKind:'units',units:8,unitsPerVisit:2,lowRemainder:2})
+  let file=await patientFile(h,patient.id)
+  assert.equal(file.insurance.authorizations.find(a=>a.id===auth.id).used_units,6)
+  assert.ok((await h.state()).dailyClose.authorizations.some(a=>a.clientId===patient.id&&a.kind==='low_authorization'))
+  const frozen=(await h.send('/api/balm/invoices/'+current.invoice.id+'.html',undefined,h.owner)).text
+  await h.cmd('insurance.schedule.save',{...schedule,effectiveOn:'2090-01-01',unitMethod:'cms',fees:[{code:'97110',cents:9000},{code:'97140',cents:9000}]})
+  const refreshed=await h.cmd('insurance.claim.scrub',{id:current.claim.id});assert.equal(refreshed.status,'ready')
+  file=await patientFile(h,patient.id,c.priya.cookie)
+  assert.deepEqual(file.notes.find(n=>n.id===current.note.id).billing.lines.map(l=>l.units),[2,2])
+  assert.equal((await h.send('/api/balm/invoices/'+current.invoice.id+'.html',undefined,h.owner)).text,frozen)
+  assert.equal((await h.state()).insurance.licenses[0].number,license.number)
+  assert.equal((await h.state(c.biller.cookie)).insurance.licenses.length,0)
+  if(process.env.BALM_UI_SCREENSHOTS){
+   const {viewportProof}=await import('./viewport-proof.mjs')
+   await viewportProof(h,[{name:'INS-001-dated-schedules',path:'/app/insurance',cookie:h.owner,selector:'#dated-billing',openSelector:'#dated-billing > summary',interact:async({page,width})=>{
+    const form=page.locator('#dated-billing form');await form.locator('[name=planName]').fill('synthetic-balm-'+width)
+    await form.locator('[name=effectiveOn]').fill('2026-01-01');await form.locator('[name=unitMethod]').selectOption('ama');await form.locator('[name=feeSchedule]').fill('97110 21.00\n97140 19.00');await form.locator('[name=source]').fill('synthetic-balm-109 browser contract')
+    await Promise.all([page.waitForNavigation(),form.getByRole('button',{name:'Record dated schedule',exact:true}).click()]);await page.locator('#dated-billing > summary').click()
+   }},{name:'INS-001-license',path:'/app/insurance',cookie:h.owner,selector:'#provider-licenses',openSelector:'#provider-licenses > summary'}])
+  }
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})
+
+test('MOVE-007: reviewed aging and mixed 835 retain migrated payments and unmatched suspense without losing or duplicating a deposit',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]});await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  const csvHeader='Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\n'
+  const csv=csvHeader+`synthetic-balm-201,${c.patient.id},${c.payer.id},synthetic-balm-202,synthetic-balm-203,${c.serviceDate},100.00,80.00,open\n`
+  const input={source:'synthetic-balm-200',csv}
+  await h.cmd('insurance.runout.preview',input,c.biller.cookie,403)
+  const preview=await h.cmd('insurance.runout.preview',input,owner)
+  assert.equal(preview.count,1);assert.equal(preview.balanceCents,8000)
+  await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8100},owner,409)
+  await h.cmd('insurance.runout.apply',{...input,csv:csv.replace('80.00','70.00'),fingerprint:preview.fingerprint,expectedBalanceCents:7000},owner,409)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).claims.length,0)
+  const applied=await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)
+  const make=(trace,claims)=>{
+   const segments=['ST*835*0001*005010X221A1',`BPR*I*${claims.reduce((t,r)=>t+r.paid,0).toFixed(2)}*C*CHK************20261023`,`TRN*1*${trace}*1234567890`,'N1*PR*AETNA*XV*60054',...claims.flatMap(r=>[`CLP*${r.id}*${r.denied?'4':'1'}*${r.billed}*${r.paid}*${r.pr??0}*CI*${r.control??''}`,`CAS*CO*${r.denied?'197':'45'}*${r.co}`,...(r.pr?[`CAS*PR*3*${r.pr}`]:[]),...(r.patient?[`NM1*QC*1*${r.patient.last}*${r.patient.first}`,`DTM*232*${c.serviceDate.replaceAll('-','')}`]:[])])]
+   return segments.join('~')+`~SE*${segments.length+1}*0001~`
+  }
+  const mixed=make('synthetic-balm-204',[
+   {id:claim.id,billed:95,paid:60,co:20,pr:15,control:'synthetic-balm-205'},
+   {id:'synthetic-balm-202',billed:100,paid:50,co:20,pr:30,control:'synthetic-balm-203'},
+   {id:'synthetic-balm-206',billed:40,paid:30,co:10,control:'synthetic-balm-207'},
+  ])
+  // A failed native line refuses the complete mixed import; no partial ledger writes.
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed.replace(`CLP*${claim.id}*1*95`,`CLP*${claim.id}*1*96`)},owner,400)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,8000)
+  const posted=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed},owner)
+  assert.equal(posted.depositCents,14000);assert.equal(posted.claims.length,3)
+  let report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.importedCents,8000);assert.equal(report.totals.remainingCents,1000)
+  assert.equal(report.posted.paidCents,5000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.totals.importedCents-report.posted.paidCents-report.posted.adjustmentCents,report.totals.remainingCents)
+  assert.equal(report.suspense.length,1);assert.equal(report.suspense[0].paid_cents,3000)
+  assert.equal(report.deposits[0].nativeCents,6000);assert.equal(report.deposits[0].migratedCents,5000);assert.equal(report.deposits[0].suspenseCents,3000)
+  assert.equal(report.deposits[0].nativeCents+report.deposits[0].migratedCents+report.deposits[0].suspenseCents,report.deposits[0].depositCents)
+  assert.equal(Object.values(report.totals.byPayerAge).reduce((t,n)=>t+n,0),1000)
+  const native=(await patientFile(h,c.patient.id)).insurance.claims.find(q=>q.id===claim.id)
+  assert.equal(native.payer_paid_cents,6000)
+  assert.equal((await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed},owner)).duplicate,true)
+  assert.equal((await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)).imported,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner,409)
+  const screen=await h.send('/app/insurance',undefined,owner);assert.match(screen.text,/Unmatched remittances/);assert.match(screen.text,/synthetic-balm-206/)
+  const deskState=await h.state(c.biller.cookie);assert.equal(deskState.insurance.runout,null)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-mixed-835',path:'/app/insurance',cookie:owner,selector:'#runout',open:'Migrated claims'}])}
+  // Later reviewed source aging can identify the suspense claim without replaying the original deposit.
+  const secondCsv=csvHeader+`synthetic-balm-208,${c.patient.id},${c.payer.id},synthetic-balm-209,synthetic-balm-207,${c.serviceDate},40.00,40.00,open\n`
+  const second={source:input.source,csv:secondCsv},secondPreview=await h.cmd('insurance.runout.preview',second,owner)
+  const secondApplied=await h.cmd('insurance.runout.apply',{...second,fingerprint:secondPreview.fingerprint,expectedBalanceCents:4000},owner)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:applied.claims[0],attest:true},owner,409)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:secondApplied.claims[0],attest:true},owner)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:secondApplied.claims[0],attest:true},owner,409)
+  report=await h.cmd('insurance.runout.read',{},owner);assert.equal(report.suspense.length,0)
+  assert.equal(report.totals.remainingCents,1000)
+  assert.equal(report.deposits[0].nativeCents+report.deposits[0].migratedCents+report.deposits[0].suspenseCents,14000)
+  // Payer-control and patient/date/amount fallback both match, with the latter refusing ambiguity.
+  const remainder=make('synthetic-balm-210',[{id:'unknown-legacy-control',billed:100,paid:10,co:0,pr:90,control:'synthetic-balm-203'}])
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remainder},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).closed,true)
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})
+
+test('MOVE-007: a denied legacy receivable becomes a frequency-7 signed-charge correction with its original control and no duplicate balance',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={source:'synthetic-balm-230',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-231,${c.patient.id},${c.payer.id},synthetic-balm-232,synthetic-balm-233,${c.serviceDate},95.00,80.00,denied\n`}
+  const preview=await h.cmd('insurance.runout.preview',input,owner)
+  const imported=await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id},owner,400)
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},c.biller.cookie,403)
+  const correction=await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},owner)
+  assert.equal(correction.frequency,'7');assert.equal(correction.originalControl,'synthetic-balm-233')
+  let report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,8000);assert.equal(report.totals.importedCents,8000)
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},owner,409)
+  await h.cmd('insurance.runout.close',{attest:true},owner,409)
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]})
+  const file=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  assert.equal(file.status,200);assert.match(file.text,new RegExp(`CLM\\*${claim.id}\\*95.00\\*\\*\\*11:B:7`));assert.match(file.text,/REF\*F8\*SYNTHETIC-BALM-233/)
+  const submitted=await h.cmd('insurance.batch.submit',{id:batch.id},owner)
+  assert.equal(submitted.status,'submitted')
+  const paid=await fixture('835-paid.x12',{CLAIM:'synthetic-balm-232'})
+  // The old patient-control number follows the transferred receivable into Balm.
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:paid},owner)
+  report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,0);assert.equal(report.posted.paidCents,6000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.totals.importedCents-report.posted.paidCents-report.posted.adjustmentCents,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  await h.cmd('insurance.runout.reopen',{attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).closed,false)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-corrected-runout',path:'/app/insurance',cookie:owner,selector:'#runout',open:'Migrated claims'}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-234'},outbound:async request=>{const sent=await request.json();assert.equal(sent.kind,'837P');assert.match(sent.body,/11:B:7/);assert.match(sent.body,/REF\*F8\*SYNTHETIC-BALM-233/);return Response.json({status:'submitted',reference:'synthetic-balm-235'})}})
+})
+
+test('MOVE-007: a scanned paper EOB closes one mixed native, legacy and unmatched deposit once',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner,claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  const exported=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]});await h.send('/api/balm/insurance/837P/'+exported.id,undefined,owner)
+  const input={source:'synthetic-balm-240',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-241,${c.patient.id},${c.payer.id},synthetic-balm-242,synthetic-balm-243,${c.serviceDate},100.00,100.00,open\n`}
+  const preview=await h.cmd('insurance.runout.preview',input,owner);await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:10000},owner)
+  const paper=await h.cmd('insurance.payer_batch.prepare',{payerId:c.payer.id,reference:'synthetic-balm-244',depositOn:c.serviceDate,amountCents:14000},owner)
+  const add=(claimId,billedCents,paidCents,co,pr)=>h.cmd('insurance.payer_line.add',{batchId:paper.id,kind:'payment',claimId,billedCents,allowedCents:paidCents+pr,paidCents,adjustments:[{group:'CO',reason:'45',amountCents:co},...(pr?[{group:'PR',reason:'3',amountCents:pr}]:[])],payerControl:claimId==='synthetic-balm-242'?'synthetic-balm-243':'synthetic-balm-245',reason:'Synthetic original paper EOB line'},owner)
+  await add(claim.id,9500,6000,2000,1500);await add('synthetic-balm-242',10000,5000,2000,3000)
+  const attachment='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\nsynthetic-balm-246 original paper EOB\n%%EOF').toString('base64')
+  await h.cmd('insurance.payer_eob.attach',{batchId:paper.id,attachment,attachmentName:'synthetic-balm-246.pdf',attest:true},owner)
+  await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,409)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,10000)
+  await add('synthetic-balm-247',4000,3000,1000,0)
+  // A newly added legacy/unknown line withdraws the earlier patient-scope attestation.
+  assert.match((await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,400)).code,/attach_the_scanned_EOB/)
+  await h.cmd('insurance.payer_eob.attach',{batchId:paper.id,attachment,attachmentName:'synthetic-balm-246.pdf',attest:true},owner)
+  const posted=await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner)
+  assert.equal(posted.depositCents,14000)
+  const report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,3000);assert.equal(report.posted.paidCents,5000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.suspense.length,1);assert.equal(report.suspense[0].paid_cents,3000)
+  assert.equal((await patientFile(h,c.patient.id)).insurance.claims.find(q=>q.id===claim.id).payer_paid_cents,6000)
+  await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,409)
+  assert.equal((await h.send('/api/balm/insurance/eob/'+paper.id,undefined,c.biller.cookie)).status,403)
+  assert.equal((await h.state(c.biller.cookie)).insurance.manualPayers.some(b=>b.id===paper.id),false)
+  const original=await h.send('/api/balm/insurance/eob/'+paper.id,undefined,owner);assert.equal(original.status,200);assert.match(original.text,/synthetic-balm-246 original paper EOB/)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-paper-suspense',path:'/app/insurance',cookie:owner,selector:'#runout'},{name:'MOVE-007-paper-deposit',path:'/app/insurance',cookie:owner,selector:'#payer-batch-'+paper.id}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})
+
+test('INS-010: owner records carrier instructions and a patient-bound progress report in a PWK claim, while unconfigured report delivery refuses without sending',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={policyId:c.policy.id,kind:'workers_comp',claimNumber:'synthetic-balm-251',adjuster:'Synthetic Adjuster',adjusterEmail:'adjuster@example.test',employerAttorney:'Synthetic Employer',billingRequirements:'Use carrier claim number on every bill',authorizationRequirements:'Carrier authorization required for the current episode',reportRequirements:'Progress report with the billed visit',source:'synthetic-balm-252 carrier written instructions'}
+  await h.cmd('insurance.injury.save',input,c.biller.cookie,403)
+  const injury=await h.cmd('insurance.injury.save',input,owner)
+  const pdf='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\nsynthetic-balm-253 progress report\n%%EOF').toString('base64')
+  const report=await h.cmd('chart.document.upload',{clientId:c.patient.id,title:'Synthetic progress report',documentType:'other',documentDate:c.serviceDate,attachment:pdf,attachmentName:'synthetic-balm-253.pdf',searchText:'Required carrier progress report'},owner)
+  const other=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Other injury',dateOfBirth:'1980-01-01'})
+  const unrelated=await h.cmd('chart.document.upload',{clientId:other.id,title:'Other report',documentType:'other',documentDate:c.serviceDate,attachment:pdf,attachmentName:'synthetic-balm-254.pdf'},owner)
+  const attach={id:injury.id,appointmentId:c.appointmentId,documentId:report.id,attachmentControl:'synthetic-balm-255',attest:true}
+  await h.cmd('insurance.injury.attach',{...attach,documentId:unrelated.id},owner,409)
+  await h.cmd('insurance.injury.attach',attach,c.biller.cookie,403)
+  const linked=await h.cmd('insurance.injury.attach',attach,owner);assert.equal(linked.transport,'unavailable')
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id},owner)
+  assert.equal(claim.status,'ready');assert.equal(claim.snapshot.injury.documentId,report.id)
+  await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},c.biller.cookie,403)
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},owner)
+  const downloaded=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  assert.equal(downloaded.status,200);assert.match(downloaded.text,/REF\*Y4\*SYNTHETIC-BALM-251/);assert.match(downloaded.text,/PWK\*OZ\*AA\*\*\*AC\*SYNTHETIC-BALM-255/);assert.match(downloaded.text,/SBR\*P\*18\*[^~]*\*WC~/)
+  assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,c.biller.cookie)).status,403)
+  const refused=await h.cmd('insurance.batch.submit',{id:batch.id},owner,409);assert.equal(refused.code,'injury_report_transport_not_configured_no_claim_sent')
+  assert.ok(!h.outboundRequests.some(r=>r.origin==='https://clearinghouse.clinic.example'))
+  assert.equal((await h.state(c.biller.cookie)).insurance.injuryCases,null)
+  assert.equal((await patientFile(h,c.patient.id,c.biller.cookie)).insurance.claims.find(q=>q.id===claim.id).snapshot.injury,undefined)
+  const state=await h.state();assert.equal(state.insurance.injuryCases[0].claim_number,input.claimNumber);assert.equal(state.insurance.injuryCases[0].report_requirements,input.reportRequirements)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'INS-010-carrier-requirements',path:'/app/insurance',cookie:owner,selector:'#injury-cases'}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-256'},outbound:async()=>{throw Error('Unconfigured clinical report transport must refuse before egress')}})
+})
+
+test('MOVE-007: name/date/amount fallback posts only for one clinic patient and one migrated claim',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={source:'synthetic-balm-270',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-271,${c.patient.id},${c.payer.id},synthetic-balm-272,synthetic-balm-273,${c.serviceDate},60.00,60.00,open\n`}
+  const add=async(value)=>{const p=await h.cmd('insurance.runout.preview',value,owner);return h.cmd('insurance.runout.apply',{...value,fingerprint:p.fingerprint,expectedBalanceCents:p.balanceCents},owner)}
+  await add(input)
+  const remit=(trace,amount)=>`ST*835*0001*005010X221A1~BPR*I*${amount}*C*CHK************20261023~TRN*1*${trace}*1234567890~N1*PR*AETNA*XV*60054~CLP*${trace}*1*${amount}*${amount}*0*CI*UNKNOWN~NM1*QC*1*LEE*MAYA~DTM*232*${c.serviceDate.replaceAll('-','')}~SE*8*0001~`
+  const first=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-274',60)},owner)
+  assert.equal(first.claims[0].migrated,true)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+  const next={...input,csv:input.csv.replaceAll('271','275').replaceAll('272','276').replaceAll('273','277').replaceAll('60.00','70.00')}
+  const moved=await add(next)
+  await h.cmd('client.save',{firstName:'Maya',lastName:'Lee',dateOfBirth:'1990-01-01'})
+  const ambiguous=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-278',70)},owner)
+  assert.equal(ambiguous.claims[0].suspense,true,'a same-named clinic patient prevents automatic identity selection even when only one claim matches')
+  const report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,7000);assert.equal(report.suspense[0].paid_cents,7000)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:moved.claims[0],attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+ })
+})

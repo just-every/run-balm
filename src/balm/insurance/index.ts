@@ -1,3 +1,7 @@
+import {injuryCommand} from './injury'
+import {runoutCommand} from './runout'
+import {saveBillingSchedule,saveProviderLicense} from './schedules'
+import {saveClaimRequirements} from './claim-requirements'
 import {cobCommand} from './cob'
 import {claimWork,saveFilingRule,recordFilingDate,recordClaimAction} from './claim-work'
 import {biller} from '../domain/role-access'
@@ -24,6 +28,8 @@ export type { InsuranceEnv, ClaimSnapshot, ScrubError } from './types'
  * clinical assertions remain exclusive to clinicians and the clinic owner. */
 export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:string,input:Data) {
   insist(input&&typeof input==='object'&&!Array.isArray(input),'invalid_input')
+  if(name.startsWith('insurance.injury.'))return injuryCommand(env.DB,initial,name,input)
+  if(name.startsWith('insurance.runout.'))return runoutCommand(env.DB,initial,name,input)
   if(name.startsWith('insurance.cob.'))return cobCommand(env.DB,initial,name,input)
   const clinical=['insurance.claim.necessity','insurance.denial.appeal','insurance.medicare.service.save'].includes(name)
   const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
@@ -33,7 +39,10 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.filing.save':return saveFilingRule(db,initial,input)
     case 'insurance.filing.date':return recordFilingDate(db,initial,input)
     case 'insurance.claim.action':return recordClaimAction(db,initial,input)
+    case 'insurance.requirements.save':return saveClaimRequirements(db,who,input)
     case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
+    case 'insurance.schedule.save':return saveBillingSchedule(db,who,input)
+    case 'insurance.license.save':return saveProviderLicense(db,who,input)
     case 'insurance.payer.save':return savePayer(db,who,input)
     case 'insurance.enrollment.save':return saveEnrollment(db,who,input)
     case 'insurance.policy.save':return savePolicy(db,who,input)

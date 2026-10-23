@@ -14,6 +14,7 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
   const claims:(Data & {facts:ClaimSnapshot})[]=[],incurredInBatch=new Map<string,number>()
   for(const key of input.claimIds) {
     const claim=await claimFor(db,who,key),facts=JSON.parse(claim.snapshot) as ClaimSnapshot
+    if(facts.injury)insist(who.role==='owner','injury_case_requires_owner',403)
     const fresh=await refreshClaimFacts(db,who,claim)
     insist(JSON.stringify(fresh)===JSON.stringify(facts),'claim_facts_changed_scrub_and_review_before_batching',409)
     if(facts.payer.medicare) {
@@ -45,6 +46,8 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
 }
 export async function submitBatch(env:InsuranceEnv,who:Actor,input:Data) {
   const db=env.DB,batch=await one(db,'SELECT * FROM bm_claim_batches WHERE id=?',text(input.id,'batch',100));insist(batch,'insurance_batch_not_found',404)
+  const injury=await one(db,"SELECT 1 FROM bm_claim_batch_items b JOIN bm_claims c ON c.id=b.claim_id WHERE b.batch_id=? AND json_type(c.snapshot,'$.injury') IS NOT NULL",batch.id)
+  insist(!injury,'injury_report_transport_not_configured_no_claim_sent',409)
   const status=adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}
   insist(['prepared','exported'].includes(batch.status),'batch_already_submitted_or_outcome_uncertain',409)
   const claims=await rows(db,'SELECT c.id,c.client_id,c.status FROM bm_claims c JOIN bm_claim_batch_items b ON b.claim_id=c.id WHERE b.batch_id=?',batch.id)

@@ -37,6 +37,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
+  if(await one(db,'SELECT 1 FROM bm_remittance_suspense WHERE resolved_claim IS NULL LIMIT 1'))reasons.push('unmatched_remittance_identity_review_required')
   if (!applied?.resolved) reasons.push('state_rule_requires_review')
   if (!client.date_of_birth) reasons.push('date_of_birth_required')
   if (!lastTreatment) reasons.push('last_treatment_unknown')
