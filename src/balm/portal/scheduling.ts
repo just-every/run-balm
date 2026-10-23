@@ -15,7 +15,7 @@ export async function portalSchedule(env: Bindings, patient: Patient, input: Dat
     rows(db, `SELECT id,name,profession FROM bm_staff WHERE role='practitioner' AND active=1 AND erased_at IS NULL ORDER BY name`),
   ])
   let moving: Data | undefined
-  const params = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), from: String(input.from ?? '') }
+  const params = { roomId:String(input.roomId??''), serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), from: String(input.from ?? '') }
   if (appointmentId) {
     moving = await one(db, `SELECT a.*,s.name AS service,p.name AS practitioner FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id JOIN bm_staff p ON p.id=a.practitioner_id
       WHERE a.id=? AND a.client_id=? AND a.status='booked'`, appointmentId, patient.clientId) ?? undefined
@@ -30,7 +30,8 @@ export async function portalSchedule(env: Bindings, patient: Patient, input: Dat
     available.slots = available.slots.filter(s => Date.parse(s.startAt) >= Date.now() + policy.noticeHours * 3600_000)
   }
   await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'portal.scheduling_opened', patient.clientId, moving?.id ?? null)])
-  return { clinic, patient: { firstName: patient.firstName, lastName: patient.lastName }, services, practitioners, params, moving, slots: available }
+  const rooms=await rows(db,'SELECT r.id,r.name,l.name AS location FROM bm_rooms r JOIN bm_room_locations x ON x.room_id=r.id JOIN bm_locations l ON l.id=x.location_id WHERE r.active=1 AND l.active=1 ORDER BY l.name,r.name')
+  return { rooms, clinic, patient: { firstName: patient.firstName, lastName: patient.lastName }, services, practitioners, params, moving, slots: available }
 }
 export async function portalAppointmentAction(env: Bindings, patient: Patient, name: string, input: Data) {
   const db = env.DB, authority = [portalGuard(db, patient)]

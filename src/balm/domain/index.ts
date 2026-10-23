@@ -1,3 +1,4 @@
+import { saveException } from '../scheduling/service-rules'
 import { saveClinicalTemplate, templateCatalog } from '../charting/template-catalog'
 import {dailyRules,dailyRuleCommand,attestAssistantSupervision} from './assistant-daily'
 import { coSignQueue, returnNote, saveSupervisionDeadline } from './supervision'
@@ -38,6 +39,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
     await commit(db,who,[db.prepare('UPDATE bm_payers SET supervisor_billing=?,supervision_minimum=?,supervision_billable=?,supervision_rule_recorded=1,version=version+1 WHERE id=?').bind(input.billSupervisor===true||input.billSupervisor==='true'?1:0,input.minimumSupervision,input.billable===true||input.billable==='true'?1:0,String(input.payerId)),audit(db,who,'payer.supervision_saved',null,String(input.payerId))])
     return {saved:true}
   },
+  'schedule.exception': saveException,
   'hours.location': locateHours, 'location.save': saveLocation, 'room.location': locateRoom,
   'staff.balance_access': saveBalanceAccess,
   'booking.embed.save': saveBookingEmbed,
@@ -100,5 +102,5 @@ export async function snapshot(db: D1Database, who: Actor) {
     if (seen.length) await commit(db, who, seen.map(clientId => audit(db, who, 'agent.context', clientId, null, 'names, appointments and invoices')))
   }
   const waitlist = who.role === 'agent' ? { entries: [], offers: [] } : await waitlistFor(db, who)
-  return { actor: who, clinicalTemplates: owner || own ? await templateCatalog(db) : [], assistantDailyRules: await dailyRules(db,who), supervisionDeadlines: owner ? await rows(db,'SELECT * FROM bm_supervision_deadlines ORDER BY staff_id') : [], coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, hourLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
+  return { actor: who, scheduleExceptions: owner?await rows(db,'SELECT * FROM bm_schedule_exceptions ORDER BY date'):[], clinicalTemplates: owner || own ? await templateCatalog(db) : [], assistantDailyRules: await dailyRules(db,who), supervisionDeadlines: owner ? await rows(db,'SELECT * FROM bm_supervision_deadlines ORDER BY staff_id') : [], coSignQueue: await coSignQueue(db,who), documentation: owner ? await documentationSettings(db) : null, documentationClose: await documentationClose(db, who), dailyClose: settings?.time_zone ? await dailyClose(db, who) : null, breakGlass: await breakGlassNotices(db, who), settings, staff, locations, roomLocations, hourLocations, services, hours, rooms, equipment, appointments, clients, invoices, drafts, forms, policies: owner ? await currentPolicies(db) : [], approvals: approvalRows, waitlist }
 }

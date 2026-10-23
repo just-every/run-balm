@@ -411,6 +411,11 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const release=await h.cmd('note_release.prepare',{clientId:patient.id,payerId:payer.id,purpose:'appeal',reference:'synthetic-balm-3',appointmentIds:[visit]})
   const releasePath='/api/balm/note-releases/'+release.id+'.pdf',releaseOriginal=(await h.send(releasePath,undefined,h.owner)).text
   await h.cmd('note_release.approve',{id:release.id,sha256:release.sha256,attest:true})
+  const scheduleLocation=await h.cmd('location.save',{name:'Synthetic portable location',timeZone:'America/Chicago',hours:[{weekday:1,start:'09:00',end:'17:00'}]})
+  const scheduleRoom=await h.cmd('room.save',{name:'Synthetic portable room'})
+  await h.cmd('room.location',{roomId:scheduleRoom.id,locationId:scheduleLocation.id})
+  const scheduleService=await h.cmd('service.save',{name:'Synthetic portable evaluation',durationMinutes:60,priceCents:15000,practitionerIds:[priya.id],locationIds:[scheduleLocation.id],cptDefaults:['97161'],beforeBuffer:10,afterBuffer:15})
+  await h.cmd('schedule.exception',{locationId:scheduleLocation.id,date:'2099-03-02',mode:'closed',name:'Synthetic portable day off'})
   const auth=h.auth,ownerSession=h.owner
   await h.close();h=null
   const archive=join(temporary,'clinic.rer')
@@ -424,6 +429,11 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   const {authorizeTestSession}=await import('./staff-second-step.mjs')
   await authorizeTestSession(h.send,owner,auth.OWNER_EMAIL,auth.SESSION_SECRET+':'+restored)
   await authorizeTestSession(h.send,cookie,'archivestudent@clinic.example',auth.SESSION_SECRET+':'+restored)
+  const restoredScheduling=await h.state(owner),restoredService=restoredScheduling.services.find(s=>s.id===scheduleService.id),restoredLocation=restoredScheduling.locations.find(l=>l.id===scheduleLocation.id)
+  assert.deepEqual([restoredService.duration_minutes,restoredService.price_cents,JSON.parse(restoredService.practitioner_ids),JSON.parse(restoredService.location_ids),JSON.parse(restoredService.cpt_defaults),restoredService.before_buffer,restoredService.after_buffer],[60,15000,[priya.id],[scheduleLocation.id],['97161'],10,15],'SCHED-007 service defaults and padded restrictions survive the public CLI archive')
+  assert.equal(restoredLocation.time_zone,'America/Chicago');assert.deepEqual(JSON.parse(restoredLocation.hours),[{weekday:1,startMinute:540,endMinute:1020}])
+  assert.equal(restoredScheduling.scheduleExceptions.find(e=>e.location_id===scheduleLocation.id).name,'Synthetic portable day off')
+  await h.cmd('appointment.book',{clientId:patient.id,practitionerId:priya.id,serviceId:scheduleService.id,roomId:scheduleRoom.id,date:'2099-03-02',time:'10:00'},owner,409)
   const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
   assert.equal(file.status,200,file.text)
   const fixed=file.value.notes.find(n=>n.id===note.id)

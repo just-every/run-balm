@@ -1,3 +1,4 @@
+import { ruleChecker, serviceGuards } from '../scheduling/service-rules'
 import {manager,locationWrite} from './role-access'
 import { bookingCoverage, bookingEstimate } from '../payments/estimate-requests'
 import { checkSelfService, selfServiceSnapshot } from '../scheduling/self-service-policy'
@@ -9,7 +10,7 @@ import { attendanceStatements } from './attendance'
 import { phoneNumber } from './us-clinic'
 import { evaluateSlot, listAvailableSlots, type AvailabilityConstraints } from '../availability/engine'
 import { datePlus, hostDateAt, wallClockInstants, zonedParts } from '../availability/timezone'
-import { audit, commit, day, email, guard, human, id, insist, integer, need, now, one, optional, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
+import { audit, commit, day, email, guard, human, id, insist, integer, need, now, one, optional, practitionerId, rows, sha256, stmt, text, DomainError, type Actor, type Data } from './model'
 
 // Online booking rules (Dial's constraint names; Balm fixes them for the first release).
 export const onlineRules: AvailabilityConstraints = { durationMinutes: 0, slotIncrementMinutes: 15, minimumNoticeMinutes: 120, bookingHorizonDays: 60, beforeBufferMinutes: 0, afterBufferMinutes: 0, hostDayBookingLimit: null }
@@ -44,13 +45,13 @@ export async function equipmentFor(db: D1Database, key: unknown) {
 }
 /** Dial's engine input for one practitioner; `exclude` leaves out visits being moved. Online booking offers quarter-hour
  * starts; staff may place a visit at any start time inside the practitioner's hours. */
-async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = [], minimumNoticeMinutes = 120, overlapAllowed = staff) {
+async function engineInput(db: D1Database, practitioner: string, duration: number, zone: string, staff: boolean, exclude: string[] = [], minimumNoticeMinutes = 120, overlapAllowed = staff, rule?: Awaited<ReturnType<typeof ruleChecker>>) {
   const [hours, claims] = await Promise.all([
     rows(db, 'SELECT weekday,start_minute AS startMinute,end_minute AS endMinute FROM bm_hours WHERE practitioner_id=?', practitioner),
     rows(db, `SELECT id,start_at AS startAt,end_at AS endAt FROM bm_appointments WHERE practitioner_id=? AND ${live} AND end_at>?`, practitioner, new Date(Date.now() - 86400_000).toISOString()),
   ])
   return {
-    hostTimeZone: zone, recurringWindows: hours as any[], overrides: JSON.parse(String((await settings(db)).holidays)).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] })),
+    hostTimeZone: zone, recurringWindows: hours as any[], overrides: [...(rule?.practitionerOverrides ?? []), ...(rule?.location?.time_zone ? [] : JSON.parse(String((await settings(db)).holidays))).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] }))],
     constraints: { ...onlineRules, minimumNoticeMinutes, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     // Where overlap is allowed (staff placement, or an online double-booking service) capacity decides instead (SCHED-010).
     internalClaims: claims.filter(c => !overlapAllowed && !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) })), calendarBusy: [],
@@ -61,12 +62,16 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
 export async function openSlots(db: D1Database, input: Data, exclude: string[] = []) {
   const clinic = await settings(db)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
-  const from = input.from ? day(input.from, 'from') : hostDateAt(new Date(), clinic.time_zone)
+  const selected=await ruleChecker(db,{serviceId:service.id,practitionerId:practitioner.id,roomId:input.roomId,exclude})
+  const zone=selected.zone
+  const from = input.from ? day(input.from, 'from') : hostDateAt(new Date(), zone)
   const double = service.online_double_booking === 1
-  const listed = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, exclude, Math.max(120, Number(service.self_book_notice_minutes)), double), fromHostDate: from, days: 7 })
+  const listed = listAvailableSlots({ ...await engineInput(db, practitioner.id as string, service.duration_minutes, zone, false, exclude, Math.max(120, Number(service.self_book_notice_minutes)), double,selected), fromHostDate: from, days: 7 })
   // SCHED-010: online double-booking offers only times with capacity left.
-  const slots = double ? await withCapacity(db, practitioner.id as string, service.id as string, listed, exclude) : listed
-  return { from, next: datePlus(from, 7), timeZone: clinic.time_zone, practitioner, service, slots: clinic.booking_open === 1 && service.self_book_enabled === 1 ? slots : [] }
+  let slots = double ? await withCapacity(db, practitioner.id as string, service.id as string, listed, exclude) : listed
+  slots=slots.filter(s=>!selected.problem(s.startAt,s.endAt)&&selected.buffers(s.startAt,s.endAt))
+  if(input.roomId&&slots.length){const busy=await resourceBusy(db,{id:'',room_id:input.roomId},slots[0].startAt,slots[slots.length-1].endAt);slots=slots.filter(s=>!busy.some(b=>b.start_at<s.endAt&&b.end_at>s.startAt))}
+  return { roomId:input.roomId??null, location:selected.location, from, next: datePlus(from, 7), timeZone: zone, practitioner, service, slots: clinic.booking_open === 1 && service.self_book_enabled === 1 ? slots : [] }
 }
 
 async function withCapacity<T extends { startAt: string; endAt: string }>(db: D1Database, practitionerId: string, serviceId: string, slots: T[], exclude: string[] = []) {
@@ -100,18 +105,21 @@ export async function resourceBusy(db: D1Database, row: Data, from: string, to: 
 export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   const clinic = await settings(db), start = instant(input.start)
   const service = (await bookable(db, row.practitioner_id, row.service_id)).service
+  const selected=await ruleChecker(db,{serviceId:row.service_id,practitionerId:row.practitioner_id,roomId:row.room_id,exclude:[row.id]})
   const end = new Date(start.getTime() + Date.parse(row.end_at) - Date.parse(row.start_at))
   const double = service.online_double_booking === 1
-  const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), clinic.time_zone, false, [row.id], Math.max(120, Number(service.self_book_notice_minutes)), double)
-  insist(checkSlot(engine, start, end, clinic.time_zone).valid, 'slot_unavailable', 409)
+  const engine = await engineInput(db, row.practitioner_id, Math.round((Date.parse(row.end_at)-Date.parse(row.start_at))/60_000), selected.zone, false, [row.id], Math.max(120, Number(service.self_book_notice_minutes)), double,selected)
+  insist(!selected.problem(start.toISOString(),end.toISOString())&&selected.buffers(start.toISOString(),end.toISOString()),'slot_unavailable',409)
+  insist(checkSlot(engine, start, end, selected.zone).valid, 'slot_unavailable', 409)
   if (double) insist(await patientFits(db, row.client_id, row.practitioner_id, row.service_id, start.toISOString(), end.toISOString(), [row.id]), 'slot_unavailable', 409)
   insist(!(await resourceBusy(db, row, start.toISOString(), end.toISOString())).length, 'slot_unavailable', 409)
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
 /** Same-batch fences: neither the practitioner, the room nor the equipment holds another live visit then. */
-export function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string }) {
+export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string }) {
   return [
     guard(db, "NOT EXISTS(SELECT 1 FROM bm_settings,json_each(bm_settings.holidays) h WHERE json_extract(h.value,'$.startAt')<? AND json_extract(h.value,'$.endAt')>?)", v.endAt, v.startAt),
+    ...await serviceGuards(db,v),
     capacityGuard(db, v),
     guard(db, "EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)", v.practitionerId),
     ...(v.roomId ? [
@@ -124,10 +132,10 @@ export function placementGuards(db: D1Database, v: { practitionerId: unknown; se
     ] : []),
   ]
 }
-export function appointmentStatements(db: D1Database, who: Actor | { email: string; role: string }, appointment: Data) {
+export async function appointmentStatements(db: D1Database, who: Actor | { email: string; role: string }, appointment: Data) {
   return [
     // Rechecked in the batch: no other live appointment for this practitioner or room overlaps.
-    ...placementGuards(db, appointment as any),
+    ...await placementGuards(db, appointment as any),
     stmt(db, `INSERT INTO bm_appointments(id,client_id,practitioner_id,service_id,start_at,end_at,status,booked_via,intake_token_hash,created_at,created_by,room_id,series_id,offer_id,equipment_id,coverage_choice)
       VALUES(?,?,?,?,?,?,'booked',?,?,?,?,?,?,?,?,?)`, appointment.id, appointment.clientId, appointment.practitionerId, appointment.serviceId,
     appointment.startAt, appointment.endAt, appointment.bookedVia, null, now(), who.email, appointment.roomId ?? null, appointment.seriesId ?? null, appointment.offerId ?? null, appointment.equipmentId ?? null, appointment.coverageChoice ?? 'unknown'),
@@ -146,17 +154,20 @@ export function clockMinute(value: unknown) {
 export type Placement = { start?: Date; end?: Date; problem?: string; clash?: Data }
 /** Where a staff-placed visit would land and, if it cannot, why: the same checks booking and moving refuse on. */
 export async function placeVisit(db: D1Database, zone: string, v: { practitionerId: string; serviceId: string; durationMinutes: number; date: string; minute: number; roomId: string | null; equipmentId?: string | null; exclude?: string[] }): Promise<Placement> {
+  let selected:Awaited<ReturnType<typeof ruleChecker>>
+  try{selected=await ruleChecker(db,v)}catch(error){if(error instanceof DomainError)return {problem:error.code};throw error}
   const candidates = wallClockInstants(v.date, v.minute, zone)
   if (candidates.length !== 1) return { problem: 'ambiguous_or_missing_local_time' }
   const start = candidates[0], end = new Date(start.getTime() + v.durationMinutes * 60_000)
   if (start.getTime() <= Date.now() - 86400_000) return { start, end, problem: 'start_too_far_in_past' }
   const holiday = JSON.parse(String((await settings(db)).holidays)).find((h: { startAt: string; endAt: string }) => h.startAt < end.toISOString() && h.endAt > start.toISOString())
   if (holiday) return { start, end, problem: 'clinic_holiday', clash: holiday }
-  const verdict = checkSlot(await engineInput(db, v.practitionerId, v.durationMinutes, zone, true, v.exclude), start, end, zone)
+  const problem=selected.problem(start.toISOString(),end.toISOString())
+  if(problem)return {start,end,problem}
+  if(!selected.buffers(start.toISOString(),end.toISOString()))return {start,end,problem:'service_buffer_conflict'}
   const except = v.exclude ?? []
   const overlapping = (column: string, key: string) => one(db, `SELECT a.id,a.start_at,a.end_at,s.name AS service FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id
     WHERE a.${column}=? AND ${live.replace(/status/, 'a.status')} AND a.start_at<? AND a.end_at>? AND a.id NOT IN (SELECT value FROM json_each(?)) LIMIT 1`, key, end.toISOString(), start.toISOString(), JSON.stringify(except))
-  if (!verdict.valid) return { start, end, problem: 'outside_practitioner_hours' }
   // SCHED-010: up to the practitioner's and services' capacity at every instant.
   const { capacity } = await capacityOf(db, v.practitionerId, v.serviceId)
   const full = overflow(await liveVisits(db, v.practitionerId, start.toISOString(), end.toISOString(), except), capacity, start.toISOString(), end.toISOString())
@@ -185,8 +196,10 @@ export async function bookOnline(db: D1Database, input: Data) {
   const start = instant(input.start), end = new Date(start.getTime() + service.duration_minutes * 60_000)
   const holiday = JSON.parse(String((await settings(db)).holidays)).find((h: { startAt: string; endAt: string }) => h.startAt < end.toISOString() && h.endAt > start.toISOString())
   insist(!holiday, 'clinic_holiday', 409)
+  const selected=await ruleChecker(db,{serviceId:service.id,practitionerId:practitioner.id,roomId:input.roomId})
   const double = service.online_double_booking === 1
-  const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, clinic.time_zone, false, [], Math.max(120, Number(service.self_book_notice_minutes)), double), start, end, clinic.time_zone)
+  insist(!selected.problem(start.toISOString(),end.toISOString())&&selected.buffers(start.toISOString(),end.toISOString()),'slot_unavailable',409)
+  const verdict = checkSlot(await engineInput(db, practitioner.id as string, service.duration_minutes, selected.zone, false, [], Math.max(120, Number(service.self_book_notice_minutes)), double,selected), start, end, selected.zone)
   insist(verdict.valid, 'slot_unavailable', 409)
   const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }
   insist(input.privacy === true || input.privacy === 'on' || input.privacy === 'yes', 'privacy_acknowledgement_required')
@@ -206,7 +219,7 @@ export async function bookOnline(db: D1Database, input: Data) {
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),
-    ...appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }),
+    ...await appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }),
   ])
   return { appointmentId, clientId, token, startAt: start.toISOString(), practitioner: practitioner.name, service: service.name, timeZone: clinic.time_zone, email: client.email, firstName: client.firstName }
 }
@@ -226,7 +239,7 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const token = intakeToken(), appointmentId = id()
   const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
   filing.push(...await medicareStatements(db, who, { clientId: client.id as string, practitionerId: practitioner.id as string, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId }, input.acknowledgeMedicareOverlap))
-  await commit(db, who, [...locationGuards,...appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
+  await commit(db, who, [...locationGuards,...await appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 
@@ -250,7 +263,7 @@ export async function moveAppointment(db: D1Database, who: Actor, input: Data) {
   await commit(db, who, [
     ...await locationWrite(db,who,row.room_id),...locationGuards,
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", row.id, version),
-    ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId, startAt, endAt, except: row.id }),
+    ...await placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId, startAt, endAt, except: row.id }),
     stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,equipment_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, equipmentId, startAt, endAt, row.id),
     ...medicare,
     audit(db, who, 'appointment.moved', row.client_id, row.id, `${row.start_at} -> ${startAt}${target !== row.practitioner_id ? ' new practitioner' : ''}${roomId !== row.room_id ? ' new room' : ''}${equipmentId !== row.equipment_id ? ' new equipment' : ''}`),

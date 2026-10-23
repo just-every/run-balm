@@ -277,7 +277,9 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
     return input
   }
   if (!request.headers.get('content-type')?.includes('application/x-www-form-urlencoded')) fail('use_json_or_a_form', 415)
-  return Object.fromEntries(new URLSearchParams(raw))
+  const fields=new URLSearchParams(raw),input:Record<string,unknown>=Object.fromEntries(fields)
+  for(const key of ['practitionerIds','locationIds'])if(fields.has(key))input[key+'_item']=fields.getAll(key+'_item')
+  return input
 }
 
 const sameOrigin = (request: Request, env: Bindings) => request.headers.get('origin') === env.AUTH_ORIGIN && request.headers.get('sec-fetch-site') !== 'cross-site'
@@ -298,7 +300,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     if (!await takeAddressRate(env, request, 'booking')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
     const params = Object.fromEntries(url.searchParams)
     const clinic = await env.DB.prepare('SELECT clinic_name,time_zone,booking_open,booking_embed_origins FROM bm_settings WHERE id=1').first<any>()
-    const options = { clinic, embedOrigins: JSON.parse(clinic?.booking_embed_origins ?? '[]'), services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 AND self_book_enabled=1 ORDER BY name').all()).results,
+    const rooms=(await env.DB.prepare('SELECT r.id,r.name,l.name AS location,l.time_zone FROM bm_rooms r JOIN bm_room_locations x ON x.room_id=r.id JOIN bm_locations l ON l.id=x.location_id WHERE r.active=1 AND l.active=1 ORDER BY l.name,r.name').all()).results
+    const options = { rooms, clinic, embedOrigins: JSON.parse(clinic?.booking_embed_origins ?? '[]'), services: (await env.DB.prepare('SELECT id,name,duration_minutes,price_cents FROM bm_services WHERE active=1 AND self_book_enabled=1 ORDER BY name').all()).results,
       practitioners: (await env.DB.prepare("SELECT id,name,profession FROM bm_staff WHERE role='practitioner' AND active=1 AND erased_at IS NULL ORDER BY name").all()).results }
     if (request.method === 'POST') {
       let input: Record<string, unknown> = {}
@@ -319,7 +322,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         if (failure.status === 429) return renderPublic('missing', { error: failure.text }, 429)
         // The patient's details come back filled in; a taken or missing time offers the open times instead.
         const typed = Object.fromEntries(['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'privacy', 'coverageChoice', 'deliveryMethod'].map(key => [key, typeof input[key] === 'string' ? input[key] : '']))
-        const chosen = { serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
+        const chosen = { roomId:String(input.roomId??''), serviceId: String(input.serviceId ?? ''), practitionerId: String(input.practitionerId ?? ''), start: String(input.start ?? '') }
         const retime = code === 'slot_unavailable' || code === 'invalid_start' || !chosen.start
         const from = !clinic?.time_zone || Number.isNaN(Date.parse(chosen.start)) ? undefined : hostDateAt(new Date(chosen.start), clinic!.time_zone)
         const slots = chosen.serviceId && chosen.practitionerId ? await openSlots(env.DB, { ...chosen, from }).catch(() => null) : null
@@ -576,7 +579,9 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (typeof input.price === 'string') input.priceCents = parseDollars(input.price, 'price')
         if (typeof input.amount === 'string' && input.amount.trim()) input.amountCents = parseDollars(input.amount)
         delete input.price; delete input.amount
-        if (name === 'hours.save' && input.hoursForm === 'on') input.hours = hoursFromForm(input)
+        if(name==='service.save'){for(const key of ['practitionerIds','locationIds'])if(input[key]!==undefined)input[key]=input[key+'_item']??[]}
+        if(name==='schedule.exception'&&input.mode==='open')input.windows=[{start:input.start,end:input.end}]
+        if (['hours.save','location.save'].includes(name) && input.hoursForm === 'on') input.hours = hoursFromForm(input)
         if (name === 'intake.prepare' && 'questionCount' in input) {
           // Builder edits (move, remove, add) only redraw the form; preparing saves the draft.
           const rows = builderRows(input), builder = { title: String(input.title ?? ''), rows }

@@ -12,19 +12,20 @@ export function bookPage(d: any) {
   if (!d.clinic?.time_zone) return '<h1>Online booking is not open yet</h1><p>The clinic is still setting up online booking. Please contact the clinic to make an appointment.</p>'
   if (!d.clinic?.booking_open) return '<h1>Online booking is closed</h1><p>Please contact the clinic to make an appointment.</p>'
   if (!d.services.length || !d.practitioners.length) return '<h1>Online booking is not set up yet</h1><p>The clinic has not published services and practitioners for online booking. Please contact the clinic.</p>'
-  const p = d.params ?? {}, zone = d.clinic.time_zone
+  const p = d.params ?? {}, zone = d.slots?.timeZone ?? d.clinic.time_zone
   if (p.booked === '1') return `<h1>You're booked.</h1><p>${p.intake === 'link_open' ? 'Please use your existing private intake link before your visit.' : 'Your current intake form is already on file. No new intake form is needed.'}</p><p><a href="/book">Book another appointment</a></p>`
   const chooser = `<section class="panel"><h2>1. Choose a service and practitioner</h2><form method="get" action="/book">
     <label>Service<select name="serviceId" required><option value="">Choose a service</option>${d.services.map((s: any) => option(s.id, `${s.name} · ${s.duration_minutes} min · ${money(s.price_cents)}`, p.serviceId)).join('')}</select></label>
     <label>Practitioner<select name="practitionerId" required><option value="">Choose a practitioner</option>${d.practitioners.map((s: any) => option(s.id, s.profession ? `${s.name} (${s.profession})` : s.name, p.practitionerId)).join('')}</select></label>
+    ${d.rooms?.length?`<label>Location / room<select name="roomId"><option value="">No location selected</option>${d.rooms.map((r:any)=>option(r.id,r.location+' · '+r.name,p.roomId)).join('')}</select></label>`:''}
     <label>From date<input type="date" name="from" value="${h(p.from ?? '')}"></label><button type="submit">Show available times</button></form></section>`
   let times = ''
   if (d.slots && !d.retime) {
     const byDay = new Map<string, any[]>()
     for (const slot of d.slots.slots) byDay.set(slot.hostDate, [...(byDay.get(slot.hostDate) ?? []), slot])
-    const link = (start: string) => `/book?${new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.from, start })}`
-    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the clinic’s time zone: ${h(zoneLabel(zone))}.</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
-      <p><a href="/book?${h(new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, from: d.slots.next }))}">Show the next week</a></p></section>`
+    const link = (start: string) => `/book?${new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, roomId:p.roomId??'', from: d.slots.from, start })}`
+    times = `<section class="panel"><h2>2. Choose a time</h2><p>Times are in the appointment location’s time zone: ${h(zoneLabel(zone))}.</p>${byDay.size ? [...byDay].map(([day, slots]) => `<h3>${h(new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(day + 'T00:00:00Z')))}</h3><div class="slots">${slots.map(s => `<a class="slot${s.startAt === p.start ? ' chosen' : ''}" href="${h(link(s.startAt))}">${h(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(new Date(s.startAt)))}</a>`).join('')}</div>`).join('') : '<p class="empty">No times are available this week.</p>'}
+      <p><a href="/book?${h(new URLSearchParams({ serviceId: p.serviceId, practitionerId: p.practitionerId, roomId:p.roomId??'', from: d.slots.next }))}">Show the next week</a></p></section>`
   }
   // After a refusal the patient's typed details come back filled in; a taken time is swapped for a list of open times.
   const typed = d.typed ?? {}, value = (name: string) => h(typed[name] ?? '')
@@ -36,7 +37,7 @@ export function bookPage(d: any) {
   const heading = retime ? `<p>Booking <strong>${h(d.slots.service.name)}</strong> with <strong>${h(d.slots.practitioner.name)}</strong>.</p>`
     : `<p>Booking <strong>${h(d.slots?.service.name)}</strong> with <strong>${h(d.slots?.practitioner.name)}</strong> on <strong>${h(p.start ? localTime(p.start, zone) : '')}</strong>.</p>`
   const details = (p.start || retime) && d.slots ? `<section class="panel" id="details"><h2>3. Your details</h2>${heading}
-    <form method="post" action="/book#details" target="_top"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
+    <form method="post" action="/book#details" target="_top"><input type="hidden" name="roomId" value="${h(p.roomId??'')}"><input type="hidden" name="serviceId" value="${h(p.serviceId)}"><input type="hidden" name="practitionerId" value="${h(p.practitionerId)}">${timeChoice}
     <div class="pair"><label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" value="${value('firstName')}"></label><label>Last name<input name="lastName" required maxlength="80" autocomplete="family-name" value="${value('lastName')}"></label></div>
     <div class="pair"><label>Date of birth<input type="date" name="dateOfBirth" required autocomplete="bday" value="${value('dateOfBirth')}"></label><label>Mobile (optional)<input name="phone" type="tel" placeholder="+1 (312) 555-0100" maxlength="40" autocomplete="tel" value="${value('phone')}"></label></div>
     <label>Email<input type="email" name="email" required maxlength="254" autocomplete="email" value="${value('email')}"></label>

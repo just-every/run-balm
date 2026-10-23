@@ -9,17 +9,17 @@ export async function bookOwnAppointment(db: D1Database, clientId: string, input
     clientId, practitionerId: text(input.practitionerId, 'practitioner', 100), serviceId: text(input.serviceId, 'service', 100), startAt: input.start,
   })
   const startAt = eligible.startAt
-  const available = await openSlots(db, { practitionerId: eligible.practitioner.id, serviceId: eligible.service.id, from: eligible.localDate })
+  const available = await openSlots(db, { practitionerId: eligible.practitioner.id, serviceId: eligible.service.id, roomId:input.roomId, from: eligible.localDate })
   insist(available.slots.some(s => s.startAt === startAt), 'slot_unavailable', 409)
   const placement = await patientPlacement(db, {
-    id: '', practitioner_id: eligible.practitioner.id, service_id: eligible.service.id, start_at: startAt,
+    id: '', room_id:input.roomId, practitioner_id: eligible.practitioner.id, service_id: eligible.service.id, start_at: startAt,
     end_at: new Date(Date.parse(startAt) + eligible.service.duration_minutes * 60_000).toISOString(),
   }, { start: startAt })
   const appointmentId = id(), token = intakeToken()
   await commit(db, null, [
     ...authority, ...eligible.guards,
-    ...appointmentStatements(db, who, { id: appointmentId, clientId, practitionerId: eligible.practitioner.id, serviceId: eligible.service.id,
-      ...placement, bookedVia: 'online', tokenHash: await sha256(token) }),
+    ...await appointmentStatements(db, who, { id: appointmentId, clientId, practitionerId: eligible.practitioner.id, serviceId: eligible.service.id,
+      ...placement, roomId:input.roomId, bookedVia: 'online', tokenHash: await sha256(token) }),
   ])
   return { appointmentId, clientId, token, startAt: placement.startAt }
 }

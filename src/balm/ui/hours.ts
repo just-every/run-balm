@@ -12,7 +12,7 @@ export const clockText = (m: number) => new Intl.DateTimeFormat('en-US', { timeZ
 
 const time = (name: string, label: string, value: string) => `<label>${h(label)}<input type="time" name="${h(name)}" value="${h(value)}" step="300"></label>`
 
-function day(weekday: number, windows: any[], fresh: boolean) {
+export function hoursDay(weekday: number, windows: any[], fresh: boolean) {
   const works = windows.length > 0 || (fresh && weekday >= 1 && weekday <= 5)
   const start = windows.length ? clock(windows[0].start_minute) : works ? '09:00' : ''
   const end = windows.length ? clock(windows[windows.length - 1].end_minute) : works ? '17:00' : ''
@@ -29,7 +29,7 @@ export function hoursFor(s: any, p: any) {
   const byDay = (d: number) => mine.filter(w => w.weekday === d).sort((a, b) => a.start_minute - b.start_minute)
   const summary = mine.length ? `<ul class="plain">${order.filter(d => byDay(d).length).map(d => `<li>${days[d]} ${byDay(d).map(w => `${clockText(w.start_minute)}–${clockText(w.end_minute)}`).join(', ')}</li>`).join('')}</ul>`
     : '<p class="empty">No hours yet: nobody can book this practitioner.</p>'
-  const fields = hidden('practitionerId', p.id) + hidden('hoursForm', 'on') + order.map(d => day(d, byDay(d), !mine.length)).join('')
-    + `<p class="help">Times are clock times in the clinic’s time zone, ${h(zoneLabel(s.settings.time_zone))}. Uncheck a day the practitioner does not work. A break splits the day: nobody can book inside it.</p>`
+  const fields = hidden('practitionerId', p.id) + hidden('hoursForm', 'on') + order.map(d => hoursDay(d, byDay(d), !mine.length)).join('')
+    + `<p class="help">Times are clock times in the selected location’s time zone, or ${h(zoneLabel(s.settings.time_zone))} for unlocated visits. Uncheck a day the practitioner does not work. A break splits the day: nobody can book inside it.</p>`
   return summary + `<details${mine.length ? '' : ' open'}><summary>Set weekly hours</summary>${form('hours.save', '/app/clinic', fields, 'Save hours')}</details>`
 }

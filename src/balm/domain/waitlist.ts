@@ -148,7 +148,7 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
     await commit(db, null, [
       guard(db, "EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open')", offer.offer_id),
       guard(db, "EXISTS(SELECT 1 FROM bm_waitlist WHERE id=? AND status='waiting')", offer.entry_id),
-      ...appointmentStatements(db, visitor, { id: appointmentId, clientId: offer.client_id, practitionerId: offer.practitioner_id, serviceId: offer.service_id, startAt, endAt: place.end!.toISOString(), bookedVia: 'online', tokenHash: tokenForIntake ? await sha256(tokenForIntake) : null, roomId: offer.room_id, offerId: offer.offer_id }),
+      ...await appointmentStatements(db, visitor, { id: appointmentId, clientId: offer.client_id, practitionerId: offer.practitioner_id, serviceId: offer.service_id, startAt, endAt: place.end!.toISOString(), bookedVia: 'online', tokenHash: tokenForIntake ? await sha256(tokenForIntake) : null, roomId: offer.room_id, offerId: offer.offer_id }),
       stmt(db, "UPDATE bm_offers SET status='taken',appointment_id=?,closed_at=? WHERE id=?", appointmentId, now(), offer.offer_id),
       stmt(db, "UPDATE bm_offer_recipients SET outcome='accepted',responded_at=? WHERE offer_id=? AND entry_id=?", now(), offer.offer_id, offer.entry_id),
       stmt(db, "UPDATE bm_waitlist SET status='booked',appointment_id=?,version=version+1 WHERE id=?", appointmentId, offer.entry_id),

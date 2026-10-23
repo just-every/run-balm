@@ -154,13 +154,13 @@ export async function moveRest(db: D1Database, who: Actor, input: Data) {
   const medicare = new Map<string, D1PreparedStatement[]>()
   for (const o of occurrences) medicare.set(o.id, await medicareStatements(db, who, { clientId: row.client_id, practitionerId: target, startAt: o.startAt!, endAt: o.endAt!, appointmentId: o.id, except: exclude }, input.acknowledgeMedicareOverlap))
   await commit(db, who, [
-    ...occurrences.flatMap(o => [
+    ...(await Promise.all(occurrences.map(async o => [
       guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND version=?)", o.id, o.version),
-      ...placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId: o.equipmentId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
+      ...await placementGuards(db, { practitionerId: target, serviceId: row.service_id, roomId, equipmentId: o.equipmentId, startAt: o.startAt!, endAt: o.endAt!, except: o.id }),
       ...medicare.get(o.id)!,
       stmt(db, 'UPDATE bm_appointments SET practitioner_id=?,room_id=?,start_at=?,end_at=?,version=version+1 WHERE id=?', target, roomId, o.startAt, o.endAt, o.id),
       audit(db, who, 'appointment.moved', row.client_id, o.id, `rest of series; ${o.startAt}`),
-    ]),
+    ]))).flat(),
     audit(db, who, 'series.moved_rest', row.client_id, row.series_id, `${occurrences.length} visits to ${clock(minute)}`),
   ])
   return { seriesId: row.series_id, moved: occurrences.length, appointmentIds: occurrences.map(o => o.id) }

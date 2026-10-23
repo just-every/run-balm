@@ -10,8 +10,8 @@ const eligibilityRefusals = new Set(['online_booking_closed', 'service_self_book
 /** A week's slots need at most one clinical eligibility read per clinic-local day. */
 export async function eligiblePatientSlots(db: D1Database, clientId: string, input: Data, excludeAppointmentId?: string) {
   const rules = await selfServiceRules(db, text(input.serviceId, 'service', 100))
-  const available = await openSlots(db, input, excludeAppointmentId ? [excludeAppointmentId] : [])
   const moved = excludeAppointmentId ? await one(db, 'SELECT id,room_id,equipment_id FROM bm_appointments WHERE id=?', excludeAppointmentId) : null
+  const available = await openSlots(db, {...input,roomId:moved?.room_id??input.roomId}, excludeAppointmentId ? [excludeAppointmentId] : [])
   const busy = moved && available.slots.length ? await resourceBusy(db, moved, available.slots[0].startAt, available.slots[available.slots.length - 1].endAt) : []
   const candidates = available.slots.filter(s => rules.enabled && Date.parse(s.startAt) >= Date.now() + rules.noticeMinutes * 60_000 && !busy.some(b => b.start_at < s.endAt && b.end_at > s.startAt))
   const firstByDay = new Map(candidates.map(s => [s.hostDate, s]))
@@ -62,7 +62,7 @@ export async function moveOwnAppointment(db: D1Database, clientId: string, input
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND cancellation_notice_hours=?)', policy.noticeHours),
     guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND client_id=? AND status='booked' AND version=? AND start_at>=?)", a.id, clientId, a.version, threshold),
     guard(db, "julianday(?)>=julianday('now')+?/24.0 AND julianday(?)>=julianday('now')+?/24.0", a.start_at, policy.noticeHours, placement.startAt, policy.noticeHours),
-    ...placementGuards(db, { practitionerId: a.practitioner_id, serviceId: a.service_id, roomId: a.room_id, equipmentId: a.equipment_id, ...placement, except: a.id }),
+    ...await placementGuards(db, { practitionerId: a.practitioner_id, serviceId: a.service_id, roomId: a.room_id, equipmentId: a.equipment_id, ...placement, except: a.id }),
     stmt(db, "UPDATE bm_appointments SET start_at=?,end_at=?,patient_response='confirmed',patient_response_at=?,version=version+1 WHERE id=?", placement.startAt, placement.endAt, now(), a.id),
     audit(db, who, 'appointment.moved', clientId, a.id, `${a.start_at} -> ${placement.startAt}`),
   ])

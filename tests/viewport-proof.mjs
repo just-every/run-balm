@@ -13,19 +13,22 @@ export async function viewportProof(h,scenes){
   await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
   await context.route('**/brand/mark.svg',r=>r.fulfill({path:'public/brand/mark.svg',contentType:'image/svg+xml'}))
   const page=await context.newPage()
-  for(const {name,path,cookie,selector,open} of scenes){
+  for(const {name,path,cookie,selector,open,openSelector,tooltips} of scenes){
    await context.clearCookies()
    if(cookie){const [key,...value]=cookie.split('=');await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])}
    const response=await page.goto(h.origin+path)
    assert.equal(response.status(),200,name)
+   if(openSelector)await page.locator(openSelector).click()
    if(open)await page.getByText(open,{exact:true}).first().click()
    for(const width of [1440,390]){
     await page.setViewportSize({width,height:1000})
     if(selector)await page.locator(selector).first().evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}))
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
-    if(name==='PAY-007-schedule'){
-     for(const label of ['Previous day','Next day']){
+    const iconOnly=await page.locator('button,a,[role=button]').evaluateAll(items=>items.filter(el=>{if(!el.getClientRects().length)return false;const clone=el.cloneNode(true);clone.querySelectorAll('[role=tooltip]').forEach(t=>t.remove());return !/[\p{L}\p{N}]/u.test(clone.textContent??'')}).map(el=>({label:el.getAttribute('aria-label'),tooltip:!!el.querySelector('[role=tooltip]')})))
+    assert.ok(iconOnly.every(c=>c.label&&c.tooltip),name+' icon-only controls have named tooltips: '+JSON.stringify(iconOnly))
+    if(name==='PAY-007-schedule'||tooltips){
+     for(const label of tooltips??['Previous day','Next day']){
       const control=page.getByRole('link',{name:label,exact:true}),tip=control.getByRole('tooltip')
       await page.mouse.move(0,0);await control.blur()
       await control.evaluate(el=>{

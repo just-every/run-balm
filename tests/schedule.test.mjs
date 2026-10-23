@@ -608,3 +608,8 @@ test('BALM-001 / SCHED-002: rooms and equipment refuse a second booking, drag mo
   await h.cmd('staff.balance_access', { id: sam.id, enabled: true }, '', 401, { authorization: 'Bearer ' + key.token })
   assert.equal((await h.send(`/api/balm/day-sheet.csv?date=${day}`, undefined, '', { authorization: 'Bearer ' + key.token })).status, 401, 'an agent key is not a staff sign-in')
 }))
+
+test('SCHED-007: service and location rules govern public, portal, staff and series availability with padded race refusal',()=>run(async h=>{
+ const {serviceAvailabilityJourney}=await import('./service-availability-journey.mjs')
+ await serviceAvailabilityJourney(h)
+}))

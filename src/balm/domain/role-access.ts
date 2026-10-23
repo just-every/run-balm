@@ -1,4 +1,6 @@
 import { audit, commit, guard, human, id, insist, need, now, one, rows, stmt, text, type Actor, type Data, type StaffKind } from './model'
+import { windows } from '../scheduling/service-rules'
+import { validTimeZone } from './clinic'
 import { reportRange } from '../reports/range'
 import { template } from '../charting/templates'
 import { type Charge } from '../charting/cpt'
@@ -39,7 +41,11 @@ export function roleRead(who: Actor, path: string) {
 export async function saveLocation(db: D1Database, who: Actor, input: Data) {
  human(who); need(who,'owner')
  const key = input.id ? text(input.id,'location',100) : id(), name = text(input.name,'location_name',100)
- await commit(db,who,[stmt(db,'INSERT INTO bm_locations(id,name) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',key,name),audit(db,who,'location.saved',null,key)])
+ const previous=input.id?await one(db,'SELECT * FROM bm_locations WHERE id=?',key):null
+ if(input.id)insist(previous,'location_not_found',404)
+ const zone=input.timeZone===undefined?previous?.time_zone??'':validTimeZone(input.timeZone)
+ const hours=input.hours===undefined?JSON.parse(previous?.hours??'[]'):windows(input.hours,true)
+ await commit(db,who,[stmt(db,'INSERT INTO bm_locations(id,name) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',key,name),stmt(db,'UPDATE bm_locations SET time_zone=?,hours=? WHERE id=?',zone,JSON.stringify(hours),key),audit(db,who,'location.saved',null,key)])
  return { id:key }
 }
 export async function locateRoom(db: D1Database, who: Actor, input: Data) {

@@ -2,6 +2,7 @@
 import { createPortability } from '@runeditrun/rer/modules/portability'
 // @ts-ignore The CLI and Worker share this JavaScript archive policy.
 import archivePolicy from '../archive-policy.mjs'
+import { parsedList } from '../scheduling/service-rules'
 import { holidayRanges } from './holidays'
 import { clinicIdentity } from './us-clinic'
 import { resolveTemplate } from '../charting/template-catalog'
@@ -89,6 +90,13 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
   const notice = integer(input.selfBookNoticeMinutes === undefined ? previous?.self_book_notice_minutes ?? 120 : input.selfBookNoticeMinutes, 'self_book_notice_minutes', 120, 86400)
   const plan = serviceBoolean(input.selfBookPlanRequired, 'self_book_plan_required', previous?.self_book_plan_required ?? 0)
   const authorization = serviceBoolean(input.selfBookAuthRequired, 'self_book_auth_required', previous?.self_book_auth_required ?? 0)
+  const people=input.practitionerIds===undefined?JSON.parse(previous?.practitioner_ids??'[]'):parsedList(input.practitionerIds,'practitioners')
+  const places=input.locationIds===undefined?JSON.parse(previous?.location_ids??'[]'):parsedList(input.locationIds,'locations')
+  const defaults=input.cptDefaults===undefined?JSON.parse(previous?.cpt_defaults??'[]'):parsedList(input.cptDefaults,'cpt_defaults')
+  insist(defaults.length<=6&&defaults.every((c:string)=>/^\d{5}$/.test(c)),'invalid_cpt_defaults')
+  for(const key of people)insist(await one(db,"SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL",key),'practitioner_not_found',404)
+  for(const key of places)insist(await one(db,'SELECT 1 FROM bm_locations WHERE id=? AND active=1',key),'location_not_found',404)
+  const before=integer(input.beforeBuffer===undefined?previous?.before_buffer??0:input.beforeBuffer,'before_buffer',0,120),after=integer(input.afterBuffer===undefined?previous?.after_buffer??0:input.afterBuffer,'after_buffer',0,120)
   await commit(db, who, [
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=?)', serviceId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
     stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template,self_book_enabled,self_book_notice_minutes,self_book_plan_required,self_book_auth_required,intake_discipline) VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -96,6 +104,7 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
       self_book_enabled=excluded.self_book_enabled,self_book_notice_minutes=excluded.self_book_notice_minutes,self_book_plan_required=excluded.self_book_plan_required,self_book_auth_required=excluded.self_book_auth_required,intake_discipline=excluded.intake_discipline,version=bm_services.version+1`,
     serviceId, text(input.name === undefined ? previous?.name : input.name, 'name', 120), integer(input.durationMinutes === undefined ? previous?.duration_minutes : input.durationMinutes, 'duration_minutes', 5, 480),
     integer(input.priceCents === undefined ? previous?.price_cents : input.priceCents, 'price_cents', 0, 10_000_000), serviceBoolean(input.active, 'active', previous?.active ?? 1), noteTemplate, enabled, notice, plan, authorization,intakeDiscipline),
+    stmt(db,'UPDATE bm_services SET practitioner_ids=?,location_ids=?,cpt_defaults=?,before_buffer=?,after_buffer=? WHERE id=?',JSON.stringify(people),JSON.stringify(places),JSON.stringify(defaults),before,after,serviceId),
     audit(db, who, 'service.saved', null, serviceId),
   ])
   return { id: serviceId }
