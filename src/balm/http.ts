@@ -1,3 +1,4 @@
+import {claimWork} from './insurance/claim-work'
 import {aeobCommand,aeobsFor,aeobOriginal} from './payments/aeobs'
 import {releaseCommand,releasesFor,releasePdf} from './domain/payer-note-releases'
 import { estimateCommand, estimateFile, estimateOriginal, pendingEstimates } from './payments/estimates'
@@ -110,6 +111,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
     s.calendar = await calendarView(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     if (s.calendar.selected) s.calendar.summary = await visitSummary(env, who, s.calendar.selected.client_id)
   }
+  if(path==='/app/insurance'&&(who.role==='owner'||biller(who)))s.insurance.work=await claimWork(env.DB,who,Object.fromEntries(new URLSearchParams(query)))
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
@@ -475,7 +477,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const doc = kind === 'consents' ? await consentDocument(env.DB, who, id) : kind === 'identity' ? await identityPhoto(env.DB, who, id) : await insurancePhoto(env.DB, who, id, side)
         return new Response(doc.bytes, { headers: { ...headers, 'content-type': doc.mime, 'content-disposition': `${kind === 'consents' ? 'attachment' : 'inline'}; filename="${doc.filename}"`, 'content-security-policy': "default-src 'none'" } })
       }
-      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : path === '/app/reports' ? path + url.search : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
+      if (pages.test(path)) return await page(env, who, path === '/app' && url.search ? returnTarget(path + url.search) : ['/app/reports','/app/insurance'].includes(path) ? path + url.search : path, path.startsWith('/app/clients/') ? { ask: Object.fromEntries(url.searchParams) } : path === '/app/clinic' && url.searchParams.has('invited') ? { invited: url.searchParams.get('invited') } : {})
       if (path === '/api/balm/access-refusals' || path === '/api/balm/access-refusals.csv') {
         human(who);insist(who.role==='owner','only_the_owner_reads_access_refusals',403)
         const found=(await env.DB.prepare("SELECT sequence,at,actor_email,actor_role,action,detail FROM bm_audit WHERE action='access.refused' ORDER BY sequence DESC LIMIT 500").all()).results

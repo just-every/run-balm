@@ -68,14 +68,14 @@ export const claimAgeBands = ['0-30', '31-60', '61-90', '91-120', 'over-120'] as
  * receivables. Amounts use the same invoice/payment/adjustment basis as the ledger. */
 export async function claimWork(db: D1Database, initial: Actor, input: Data = {}) {
   const who = await billingActor(db, initial), settings = await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1')
-  insist(settings?.time_zone, 'clinic_time_zone_not_set', 409)
+  if(!settings?.time_zone)return {today:null,timeZone:null,filters:{payerId:'',age:'',reason:''},payers:[],rules:[],reasons:[],queue:[],history:[]}
   const zone = String(settings.time_zone), today = hostDateAt(new Date(), zone)
   const payerId = input.payerId ? text(input.payerId, 'payer', 100) : '', age = input.age ? text(input.age, 'age', 20) : '', reason = input.reason ? text(input.reason, 'reason', 100) : ''
   insist(!age || (claimAgeBands as readonly string[]).includes(age), 'invalid_claim_age')
   const [claims, rules, payers, actions, events] = await Promise.all([
     rows(db, `SELECT c.id,c.client_id,c.invoice_id,c.policy_id,c.replaces_id,c.status,i.status AS invoice_status,c.service_date,c.created_at,c.errors,c.payer_control,
       p.payer_id,y.name AS payer_name,n.first_name||' '||n.last_name AS patient,
-      MAX(0,i.amount_cents-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_payments WHERE invoice_id=i.id)
+      MAX(0,i.amount_cents-(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=i.id)
       -(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=i.id)) AS open_cents
       FROM bm_claims c JOIN bm_invoices i ON i.id=c.invoice_id JOIN bm_policies p ON p.id=c.policy_id
       JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients n ON n.id=c.client_id WHERE n.erased_at IS NULL ORDER BY c.service_date,c.id`),

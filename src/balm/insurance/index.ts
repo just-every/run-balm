@@ -1,3 +1,4 @@
+import {claimWork,saveFilingRule,recordFilingDate,recordClaimAction} from './claim-work'
 import {biller} from '../domain/role-access'
 import { insist, type Actor, type Data } from '../domain/model'
 import { insuranceActor } from './access'
@@ -26,6 +27,10 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
   const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
   if(/^insurance\.payer_(batch|line|eob)\./.test(name))insist(who.role==='owner'||biller(who),'payer_batches_require_biller_or_owner',403)
   switch(name) {
+    case 'insurance.work.read':return claimWork(db,initial,input)
+    case 'insurance.filing.save':return saveFilingRule(db,initial,input)
+    case 'insurance.filing.date':return recordFilingDate(db,initial,input)
+    case 'insurance.claim.action':return recordClaimAction(db,initial,input)
     case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
     case 'insurance.payer.save':return savePayer(db,who,input)
     case 'insurance.enrollment.save':return saveEnrollment(db,who,input)

@@ -464,3 +464,6 @@ test('CHART-006 selected diagnoses follow signed procedures into claims and fixe
 })
 
 test('INS-012: balanced manual EOB batches post group checks, CARC/PR, interest and recoupments once into statements and deposits',async()=>{const {manualPayerJourney}=await import('./manual-payer-journey.mjs');await run(manualPayerJourney)})
+
+
+test('INS-008: sourced claim work follows a KX denial through correction and payment',async()=>{const {denialWorkJourney}=await import('./denial-work-journey.mjs');await denialWorkJourney()})

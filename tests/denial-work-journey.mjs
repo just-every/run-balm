@@ -6,7 +6,7 @@ const gateway = 'https://synthetic-balm-1.example/claims'
 const plus = (date, days) => new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10)
 const era = (claim, date, paid) => {
   const segments = ['ST*835*0001*005010X221A1', `BPR*I*${paid ? 95 : 0}*C*CHK************${date.replaceAll('-', '')}`,
-    `TRN*1*synthetic-balm-${paid ? 5 : 4}*1234567890`, 'N1*PR*synthetic-balm-1*XV*SYNTHETIC-BALM-1', 'N1*PE*synthetic-balm-2*XX*1234567893',
+    `TRN*1*synthetic-balm-${paid ? 5 : 4}*1234567890`, 'N1*PR*synthetic-balm-1*XV*SYNTHETICBALM1', 'N1*PE*synthetic-balm-2*XX*1234567893',
     `CLP*${claim}*${paid ? 1 : 4}*95*${paid ? 95 : 0}*0*CI*synthetic-balm-${paid ? 7 : 6}`,
     ...paid ? [] : ['CAS*CO*4*95']]
   return [...segments, `SE*${segments.length + 1}*0001`].join('~') + '~'
@@ -22,7 +22,7 @@ export async function denialWorkJourney() {
     await h.cmd('staff.save', { id: therapist.id, name: 'synthetic-balm-1 synthetic-balm-2', email: therapist.email, role: 'practitioner', credentials: 'PT', active: true })
     await h.cmd('pay.npi.save', { staffId: therapist.id, npi: '1234567893' })
     await h.cmd('insurance.settings.save', { billingNpi: '1234567893', taxId: '123456789', address: '100 synthetic-balm-1', city: 'Austin', state: 'TX', postalCode: '78701', contactName: 'synthetic-balm-1 synthetic-balm-2', contactPhone: '5125550100' })
-    const payer = await h.cmd('insurance.payer.save', { name: 'synthetic-balm-1', payerId: 'synthetic-balm-1', receiverId: 'SYNTHETICBALM1', medicare: true, unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
+    const payer = await h.cmd('insurance.payer.save', { name: 'synthetic-balm-1', payerId: 'SYNTHETICBALM1', receiverId: 'SYNTHETICBALM1', medicare: true, unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
     await h.cmd('insurance.enrollment.save', { payerId: payer.id, practitionerId: therapist.id, taxonomy: '225100000X', active: true })
     const patient = await h.cmd('client.save', { firstName: 'synthetic-balm-1', lastName: 'synthetic-balm-2', dateOfBirth: '1988-04-02' })
     const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
