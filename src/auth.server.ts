@@ -4,7 +4,7 @@ import { createDependencies } from './modules/dependencies/index.mjs'
 import { createIdpOwnerClaimHandler, createOwnerClaimHandler } from './modules/owner-claim/index.mjs'
 import { firstRunResponse } from './base/setup'
 import { fontDocumentResponse } from './base/font-response'
-import { createOperatorAuth, createAuthHandler, createSignInHandler, type AuthConfig } from './modules/operator-auth/index.mjs'
+import { createOperatorAuth, createAuthHandler, createSignInHandler, securityHeaders, type AuthConfig } from './modules/operator-auth/index.mjs'
 import { operatorMail } from './mail.server.mjs'
 import branding from './branding.json'
 import { clinicZone, identitySettingsView, linkState } from './balm/identity-settings'
@@ -111,6 +111,12 @@ async function handleAuthResponse(request: Request, original: Bindings): Promise
   if (settings) return settings
  }
  if (url.pathname === '/auth/owner-claim') return createIdpOwnerClaimHandler({db:env.DB,authConfig:authConfig(env),clientIp:req=>req.headers.get('CF-Connecting-IP')??''})(request)
+ // A staff member's sign-in email is their staff identity: the owner sets it in Clinic → Staff and invites it.
+ // Only the owner corrects their own sign-in email here.
+ if (url.pathname === '/auth/email' && request.method === 'POST') {
+  const session = await operatorAuth(env).getSession(request)
+  if (session && session.operator.role !== 'owner') return Response.json({ error: 'only_the_owner_changes_a_sign_in_email' }, { status: 403, headers: securityHeaders() })
+ }
  // The shared server-rendered sign-in page: plain forms that work before any script.
  if (url.pathname === '/signin') {
   const page = await createSignInHandler(operatorAuth(env), {

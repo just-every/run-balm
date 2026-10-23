@@ -330,3 +330,20 @@ test('SEC-001: staff regenerates a private recovery set, old codes are invalidat
 })
 
 test('SEC-001: federation preserves live Balm roles and independent factors', {timeout:120000}, async()=>{const {federatedStaffJourney}=await import('./federated-staff.mjs');await federatedStaffJourney()})
+
+test('only the owner changes a sign-in email; a staff session keeps its own job', { timeout: 120_000 }, async () => {
+  const h = await harness()
+  try {
+    const desk = await h.staff('Rhea', 'reception')
+    // A practitioner on the staff list who has no sign-in of their own yet.
+    await h.cmd('staff.save', { name: 'Theo Grant', email: 'theo@clinic.example', role: 'practitioner', active: true })
+    const before = (await h.state(desk.cookie)).actor
+    const refused = await h.send('/auth/email', { email: 'theo@clinic.example' }, desk.cookie)
+    assert.equal(refused.status, 403, refused.text)
+    assert.deepEqual((await h.state(desk.cookie)).actor, before, 'the session keeps its own identity, job and scope')
+    const fresh = await h.signIn(h.auth.OWNER_EMAIL)
+    const corrected = await h.send('/auth/email', { email: 'jordan@clinic.example' }, fresh)
+    assert.equal(corrected.status, 200, corrected.text)
+    assert.equal(corrected.value.email, 'jordan@clinic.example')
+  } finally { await h.close() }
+})
