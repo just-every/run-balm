@@ -93,6 +93,12 @@ async function archiveFixture(){
     const recordPackage=await h.cmd('record.prepare',{id:recordRequest.id})
     await h.cmd('record.release',{id:recordRequest.id,packageId:recordPackage.packageId,sha256:recordPackage.sha256,confirm:true})
     const recordOriginal=(await h.send('/portal/records/'+recordRequest.id+'.json',undefined,patientCookie)).text
+    await h.cmd('exercise.program.assign',{clientId:maya.id,noteId:checkedNote.id,exerciseIds:['balm-cc0-001','balm-cc0-004']},priya.cookie)
+    await h.form('/portal/action',{name:'profile.insurance',payer:'Archive proposed payer',memberId:'ARCHIVE-PROFILE',subscriber:'Maya Lee',relationship:'self',confirm:'on'},patientCookie)
+    const guardianChild=await h.cmd('client.save',{firstName:'Archive',lastName:'Minor',dateOfBirth:'2014-01-01'})
+    await h.cmd('guardian.grant',{clientId:guardianChild.id,email:'archive-parent@family.example',name:'Archive Parent',relationship:'parent',verification:'Synthetic verified guardian authority and confidentiality review.',verified:true})
+    const libraryCsv='title,title_es,instructions,instructions_es,discipline,region,position,equipment,sets,reps,hold_seconds,frequency,media\nArchive practice exercise,Ejercicio de archivo,Move as directed.,Muévase según la indicación.,ot,hand,seated,none,1,5,0,Daily,archive.png'
+    await h.cmd('exercise.library.import',{csv:libraryCsv,media:{'archive.png':card},rights:true},priya.cookie)
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
@@ -126,6 +132,12 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
       assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))
       assert.equal((await restoredClinic.state(cookie)).integrations.hooks.length,0,'hook credentials and consent are not transplanted into a restored installation')
+      const restoredLibrary=await restoredClinic.send('/api/balm/exercises?q=Archive%20practice',undefined,cookie)
+      assert.equal(restoredLibrary.value.total,1,'practice library originals travel in CLI archives')
+      const chartBeforeEdit=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value
+      assert.ok(chartBeforeEdit.homeExercises.some(e=>e.libraryId==='balm-cc0-004'&&e.sourceNoteId===checkedNote.id&&e.license==='CC0-1.0'))
+      assert.ok(chartBeforeEdit.portalProfileChanges.some(r=>r.payload.memberId==='ARCHIVE-PROFILE'))
+      assert.ok((await restoredClinic.db.prepare('SELECT id FROM bm_guardian_grants WHERE email=?').bind('archive-parent@family.example').all()).results.length)
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
       const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')

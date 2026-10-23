@@ -1,3 +1,6 @@
+import {chooseLanguage,patientLanguage} from './language'
+import {guardianActor,guardianChildren,selectGuardianChild} from './guardians'
+import {patientProfile,submitProfile} from './profile'
 import { patientRecordRequests, requestRecord } from './records'
 import {aeobsFor} from '../payments/aeobs'
 import { estimatesFor } from '../payments/estimates'
@@ -33,11 +36,13 @@ export async function portalHome(env: Bindings, patient: Patient) {
     rows(db, "SELECT id,number,approved_at FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC", patient.clientId),
     recipients(db, patient.clientId),
   ])
-  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'portal.viewed', patient.clientId),
-    audit(db, patientActor, 'message.thread_read', patient.clientId), ...messages.map(m => audit(db, patientActor, 'message.read', patient.clientId, m.id)),
-    audit(db, patientActor, 'statement.opened', patient.clientId),
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'portal.viewed', patient.clientId),
+    audit(db, guardianActor(patient), 'message.thread_read', patient.clientId), ...messages.map(m => audit(db, guardianActor(patient), 'message.read', patient.clientId, m.id)),
+    audit(db, guardianActor(patient), 'statement.opened', patient.clientId),
   ])
   return {
+    language:await patientLanguage(db,patient),
+    guardianChildren:await guardianChildren(db,patient),clientId:patient.clientId,profile:await patientProfile(db,patient),
     recordRequests: await patientRecordRequests(db,patient),
     clinic: clinic!, patient: { firstName: patient.firstName, lastName: patient.lastName },
     upcoming: appointments.filter(a => a.end_at >= at && a.status === 'booked').map(a => ({ ...a, canCancel: Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000, canMove: a.self_book_enabled === 1 && Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000 })),
@@ -56,7 +61,7 @@ async function intakeOpen(db: D1Database, patient: Patient, input: Data) {
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${available}) THEN 1 ELSE 0 END AS ok`, appointmentId, patient.clientId, now()))?.ok, 'open_intake_not_found', 404)
   await commit(db, null, [portalGuard(db, patient), guard(db, available, appointmentId, patient.clientId, now()),
     stmt(db, 'UPDATE bm_appointments SET intake_token_hash=? WHERE id=?', await sha256(token), appointmentId),
-    audit(db, patientActor, 'intake.opened', patient.clientId, appointmentId),
+    audit(db, guardianActor(patient), 'intake.opened', patient.clientId, appointmentId),
   ])
   return { redirect: '/intake/' + token }
 }
@@ -64,7 +69,7 @@ async function intakeOpen(db: D1Database, patient: Patient, input: Data) {
 /** Patient sessions and private links share the immutable message writer. */
 async function messageSend(env: Bindings, patient: Patient, input: Data) {
   const target = await destination(env.DB, patient.clientId, input)
-  return savePatientMessage(env, patient.clientId, input, target, portalGuard(env.DB, patient), patientActor)
+  return savePatientMessage(env, patient.clientId, input, target, portalGuard(env.DB, patient), guardianActor(patient))
 }
 
 async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
@@ -74,13 +79,16 @@ async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
   await commit(db, null, [portalGuard(db, patient),
     stmt(db, 'INSERT INTO bm_pay_links(id,token_hash,client_id,purpose,created_by,created_at,expires_at,delivery,delivery_result) VALUES(?,?,?,?,?,?,?,?,?)',
       linkId, await sha256(token), patient.clientId, purpose, `patient-portal:${patient.sessionId}`, now(), patient.expiresAt, 'shown', 'portal'),
-    audit(db, patientActor, 'paylink.portal_opened', patient.clientId, linkId, purpose),
+    audit(db, guardianActor(patient), 'paylink.portal_opened', patient.clientId, linkId, purpose),
   ])
   return { redirect: '/pay/' + token }
 }
 
 export async function portalAction(env: Bindings, patient: Patient, name: string, input: Data) {
   switch (name) {
+    case 'language.choose':return chooseLanguage(env.DB,patient,input)
+    case 'guardian.select':return selectGuardianChild(env.DB,patient,input)
+    case 'profile.contact':case 'profile.insurance':return submitProfile(env.DB,patient,name,input)
     case 'record.request': return requestRecord(env.DB,patient)
     case 'appointment.book': case 'appointment.move': case 'appointment.cancel': return portalAppointmentAction(env, patient, name, input)
     case 'exercise.seen': return exerciseProgress(env.DB, patient, input, false)
@@ -95,7 +103,7 @@ export async function portalAction(env: Bindings, patient: Patient, name: string
 /** Statements use the existing ledger/PDF directly, without making another bearer link. */
 export async function portalStatement(db: D1Database, patient: Patient) {
   const document = await statementPdf(db, patient.clientId)
-  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'statement.downloaded', patient.clientId)])
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'statement.downloaded', patient.clientId)])
   return document
 }
 
@@ -106,13 +114,13 @@ export async function portalDocument(db: D1Database, patient: Patient, kind: 're
     : await one(db, "SELECT id FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", key, patient.clientId)
   insist(allowed, 'document_not_found', 404)
   const document = kind === 'statement' ? await statementOriginal(db, patient.clientId, key) : kind === 'receipt' ? await receiptPdf(db, key) : await superbillPdf(db, key)
-  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, kind + '.downloaded', patient.clientId, key)])
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), kind + '.downloaded', patient.clientId, key)])
   return document
 }
 
 
 export async function portalPeriodSuperbill(db: D1Database, patient: Patient, from: string, to: string) {
   const document = await periodSuperbillPdf(db, patient.clientId, from, to)
-  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'superbill.downloaded', patient.clientId, null, 'period')])
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'superbill.downloaded', patient.clientId, null, 'period')])
   return document
 }

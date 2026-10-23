@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {mkdir} from 'node:fs/promises'
+import {mkdir,readFile,writeFile} from 'node:fs/promises'
 import {chromium} from '@playwright/test'
 
 /** Optional viewport receipts on real Worker pages; identities are synthetic test sign-ins. */
@@ -26,6 +26,14 @@ export async function viewportProof(h,scenes){
     if(selector)await page.locator(selector).first().evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}))
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
+    if(process.env.BALM_AXE==='1'&&path.startsWith('/portal')){
+      const source=await readFile(new URL(import.meta.resolve('axe-core/axe.min.js')),'utf8')
+      await page.evaluate(source)
+      const result=await page.evaluate(async()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']}}))
+      await writeFile(process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'-axe.json',JSON.stringify(result,null,2))
+      const serious=result.violations.filter(v=>['serious','critical'].includes(v.impact))
+      assert.deepEqual(serious.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[],name+' axe serious/critical at '+width)
+    }
     const iconOnly=await page.locator('button,a,[role=button]').evaluateAll(items=>items.filter(el=>{if(!el.getClientRects().length)return false;const clone=el.cloneNode(true);clone.querySelectorAll('[role=tooltip]').forEach(t=>t.remove());return !/[\p{L}\p{N}]/u.test(clone.textContent??'')}).map(el=>({label:el.getAttribute('aria-label'),tooltip:!!el.querySelector('[role=tooltip]')})))
     assert.ok(iconOnly.every(c=>c.label&&c.tooltip),name+' icon-only controls have named tooltips: '+JSON.stringify(iconOnly))
     if(name==='PAY-007-schedule'||tooltips){

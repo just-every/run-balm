@@ -1,3 +1,4 @@
+import {noteProgram} from './portal-chart'
 import { distinctServiceFields } from './distinct-services'
 import { clinicalCodePicker } from './code-sets'
 import { hostDateAt } from '../availability/timezone'
@@ -80,7 +81,7 @@ function noteEntry(s: any, f: any, n: any) {
   if(n.assistantDaily)actions+='<p class="help">Assistant daily signature under owner-recorded '+h(n.assistantDaily.rule.state)+' state/payer rule. '+h(n.assistantDaily.endorsement?'Supervision recorded by '+n.assistantDaily.endorsement.supervisor_name:'Supervision must be recorded by the named therapist before claiming.')+'</p>'
   const authorSignatures=(n.submissions ?? []).map((x:any)=>`<p class="signature">Author signature: <strong>${h(x.author_name)}, ${h(x.author_credentials)}</strong> · ${stamp(s,x.submitted_at)} · revision ${h(x.revision)} · ${h(x.decision ?? 'awaiting supervisor')}<br><span class="help">Digest ${h(String(x.sha256).slice(0,16))}…${x.supervision_given ? '<br>Supervision: '+h(x.supervision_given.replace('_',' ')) : ''}${x.reason ? '<br>Returned: '+h(x.reason) : ''}</span></p>`).join('')
   if (n.mine && n.status === 'signed' && !['assistant','student','fellow'].includes(s.actor.staffKind)) actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
-  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + clinicalSummary(latest.clinical) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
+  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + clinicalSummary(latest.clinical) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + noteProgram(s,f,n) + actions, `note-${n.id}`)
 }
 
 function compose(s: any, f: any, ask: any) {

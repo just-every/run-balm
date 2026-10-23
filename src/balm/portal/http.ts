@@ -1,3 +1,5 @@
+import {programPdf} from './programs'
+import {consumeSmsCode,requestSmsCode} from './sms-auth'
 import { recordDownload } from './records'
 import {aeobOriginal} from '../payments/aeobs'
 import { estimateOriginal } from '../payments/estimates'
@@ -21,23 +23,26 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
   const url = new URL(request.url), path = url.pathname
   try {
     if (request.method === 'POST' && (request.headers.get('origin') !== env.AUTH_ORIGIN || request.headers.get('sec-fetch-site') === 'cross-site')) return renderPortal('signin', { error: 'Open this page again before submitting.' }, 403)
-    if (request.method === 'POST' && (path === '/portal' || path === '/portal/confirm')) {
-      const kind = path === '/portal/confirm' ? 'confirm' : 'signin'
+    if (request.method === 'POST' && (path === '/portal' || path === '/portal/confirm'||path==='/portal/sms'||path==='/portal/sms/confirm')) {
+      const kind = (path === '/portal/confirm'||path==='/portal/sms/confirm') ? 'confirm' : 'signin'
       if (!await takeAddressRate(env, request, 'portal', kind)) return renderPortal('signin', { notice: portalNotice }, kind === 'signin' ? 200 : 429)
     }
     const input = request.method === 'POST' ? await parseMessageInput(request) : {}
+    if(path==='/portal/sms'&&request.method==='POST')return renderPortal('sms',await requestSmsCode(env,request,input.phone))
+    if(path==='/portal/sms/confirm'&&request.method==='POST')return redirect('/portal/home',(await consumeSmsCode(env,request,input)).cookie)
     if (path === '/portal/confirm') {
       const token = String(input.token ?? url.searchParams.get('token') ?? '')
-      if (request.method === 'GET') return renderPortal('confirm', { token })
+      if (request.method === 'GET') return renderPortal('confirm', { token,language:url.searchParams.get('lang')==='es'?'es':'en' })
       const result = await consumePortalLink(env, request, token)
       return redirect('/portal/home', result.cookie)
     }
     if (path === '/portal') {
       if (request.method === 'POST') return renderPortal('signin', await requestPortalLink(env, request, input.email))
       const patient = await portalPatient(env.DB, request).catch(() => null)
-      return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : url.searchParams.has('cancelled') ? '?cancelled=1' : '')) : renderPortal('signin', { notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : url.searchParams.has('cancelled') ? 'Your appointment was cancelled. Sign in to see your visits.' : '' })
+      return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : url.searchParams.has('cancelled') ? '?cancelled=1' : '')) : renderPortal('signin', { language:url.searchParams.get('lang')==='es'?'es':'en',notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : url.searchParams.has('cancelled') ? 'Your appointment was cancelled. Sign in to see your visits.' : '' })
     }
     const patient = await portalPatient(env.DB, request)
+    if(path==='/portal/program.pdf'&&request.method==='GET')return new Response(await programPdf(env.DB,patient),{headers:{...headers,'content-type':'application/pdf','content-disposition':'attachment; filename="home-program.pdf"'}})
     const recordPath=path.match(/^\/portal\/records\/([\w-]+)\.(pdf|json)$/)
     if(recordPath&&request.method==='GET')return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',patient)
     const payerEstimate=path.match(/^\/portal\/aeobs\/([\w-]+)\.pdf$/)
