@@ -1,5 +1,4 @@
 // Native CMS-format bytes at the HTTPS edge; the Worker owns every saved row.
-import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { deflateRawSync } from 'node:zlib'
 import { run } from './harness.mjs'
@@ -70,4 +69,3 @@ export async function codeImportJourney(){
  },{codeSets:false,codeSetEdge:broken,outbound:broken.outbound})
 }
 
-test('CODE-001: explicit durable continuation preserves cursors and publishes only after every archive checksum',codeImportJourney)

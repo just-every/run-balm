@@ -19,12 +19,12 @@ async function browserContext(h){
 async function receipt(page,name,width,locator){
  await locator.scrollIntoViewIfNeeded()
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
- await page.screenshot({path:`${process.env.BALM_UI_SCREENSHOTS}/${name}-${width}.png`})
+ if(process.env.BALM_UI_SCREENSHOTS)await page.screenshot({path:`${process.env.BALM_UI_SCREENSHOTS}/${name}-${width}.png`})
 }
 const submit=async(page,form,name)=>{await Promise.all([page.waitForNavigation(),form.getByRole('button',{name,exact:true}).click()])}
 
 export async function codeSetsBrowserJourney(h,edge,options={}){
- await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+ if(process.env.BALM_UI_SCREENSHOTS)await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
  const {browser,page,signIn}=await browserContext(h)
  try {
   for(const width of [1440,390]){
@@ -97,12 +97,12 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
 /** Pass a fresh, unseeded public harness to prove first-install missing state.
  * This intentionally never deletes production tables to manufacture the state. */
 export async function codeSetsMissingBrowser(h){
- await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
+ if(process.env.BALM_UI_SCREENSHOTS)await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
  const {browser,page}=await browserContext(h)
  try{await page.goto(h.origin+'/app/clinic');const panel=page.locator('#clinical-codes');assert.match(await panel.textContent(),/Missing/);for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-missing-release',width,panel)}}finally{await browser.close()}
 }
 
-test('CODE-001: owner imports licensed data, saves synonyms, finds billable children and repeats a CMS update through real forms at desktop and phone widths',{skip:!process.env.BALM_UI_SCREENSHOTS},async()=>{
+test('CODE-001: owner imports licensed data, saves synonyms, finds billable children and repeats a CMS update through real forms at desktop and phone widths',async()=>{
  const edge=codeSetEdge(),h=await harness({browserHttps:true,codeSetEdge:edge})
  try{
   await h.finishSetup()
@@ -122,7 +122,7 @@ test('CODE-001: owner imports licensed data, saves synonyms, finds billable chil
 })
 
 
-test('CODE-001: first installation names missing releases and older public imports name overdue updates at desktop and phone widths',{skip:!process.env.BALM_UI_SCREENSHOTS},async()=>{
+test('CODE-001: first installation names missing releases and older public imports name overdue updates at desktop and phone widths',async()=>{
  const edge=codeSetEdge(),h=await harness({browserHttps:true,codeSetEdge:edge,codeSets:false})
  try{
   await h.finishSetup();await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane'})

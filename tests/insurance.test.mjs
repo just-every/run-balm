@@ -479,3 +479,5 @@ test('CODE-001: effective CMS quarters, billable diagnosis children, clinician d
  const edge=codeSetEdge({therapyMue:true})
  await run(async h=>{await h.finishSetup();await codeSetJourney(h,edge,await codeSetClaimAdapter(h))},{codeSetEdge:edge})
 })
+
+test('CODE-001: explicit durable continuation preserves cursors and publishes only after every archive checksum',async()=>{const {codeImportJourney}=await import('./code-import-journey.mjs');await codeImportJourney()})
