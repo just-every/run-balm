@@ -467,3 +467,6 @@ test('INS-012: balanced manual EOB batches post group checks, CARC/PR, interest 
 
 
 test('INS-008: sourced claim work follows a KX denial through correction and payment',async()=>{const {denialWorkJourney}=await import('./denial-work-journey.mjs');await denialWorkJourney()})
+
+
+test('INS-013: prior adjudications reach secondary and tertiary claims, crossover waits without duplicates, and patient balances wait for all payers',async()=>{const {cobJourney}=await import('./cob-journey.mjs');await run(h=>cobJourney(h,process.env.BALM_COB_VALIDATION),{auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-30'},outbound:async request=>{assert.equal(request.url,'https://clearinghouse.clinic.example/x12');return Response.json({status:'submitted',reference:'synthetic-balm-31'})}})})
