@@ -154,7 +154,9 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
       assert.deepEqual([Object.fromEntries(billing.lines.map(l => [l.code, l.units])), billing.units], [units, total], `case ${n}`)
     }
     await h.cmd('note.write', { clientId: client.id, appointmentId: visit, body: 'x', charges: [{ code: '97110', minutes: 0 }] }, priya.cookie, 400)
-    await h.cmd('note.write', { clientId: client.id, appointmentId: visit, body: 'x', charges: [{ code: '12345', minutes: 10 }] }, priya.cookie, 400)
+    const unavailable=await h.cmd('note.write', { clientId: client.id, appointmentId: visit, body: 'x', charges: [{ code: '12345', minutes: 10 }] }, priya.cookie, 409)
+    assert.match(unavailable.code,/licensed CPT catalog containing 12345/)
+    assert.equal((await view(h,client.id,priya.cookie)).notes.length,notes.length,'an unavailable catalog procedure creates no draft')
 
     // No key: the scribe says so and drafts nothing.
     const dictation = 'Pt reports L knee 3/10 after stairs. Ther ex 23 min SLR 3x10. Manual 10 min patellar mobs. Progress step height.'
