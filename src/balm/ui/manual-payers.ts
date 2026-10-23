@@ -4,7 +4,7 @@ const attestation='<label class="check"><input type="checkbox" name="attest" val
 const dollars=(name:string,label:string,required=true)=>field(name,label,'','text',`${required?'required ':''}inputmode="decimal" placeholder="0.00"`)
 const claimChoices=(s:any,payerId:string)=>s.insurance.queue.filter((q:any)=>q.snapshot.payer.id===payerId&&!['draft','ready','corrected'].includes(q.status)).map((q:any)=>[q.id,`${q.snapshot.patient.first} ${q.snapshot.patient.last} · ${usDate(q.service_date,'UTC')} · ${q.id.slice(0,8).toUpperCase()} · ${money(q.amount_cents)}`])
 export function manualPayerPanel(s:any) {
- if(s.actor.role!=='owner'&&s.actor.staffRole!=='reception')return ''
+ if(s.actor.role!=='owner'&&s.actor.staffKind!=='biller')return ''
  const i=s.insurance,batches=i.manualPayers??[]
  const start=form('insurance.payer_batch.prepare',path,select('payerId','Payer',i.payers.map((p:any)=>[p.id,p.name]))+field('reference','Check or EFT number','','text','required maxlength="150"')+field('depositOn','Deposit date','','date','required')+dollars('amount','Check total'),'Start payer batch')
  const batchList=batches.map((b:any)=>{

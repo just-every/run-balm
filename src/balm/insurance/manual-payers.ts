@@ -1,3 +1,4 @@
+import {biller} from '../domain/role-access'
 import {audit,commit,guard,id,insist,now,one,rows,stmt,text,type Actor,type Data} from '../domain/model'
 import {claimFor,clientGuard,insuranceActor,yes} from './access'
 import {attachment,attachmentResponse} from '../messages/attachments'
@@ -45,7 +46,7 @@ export async function attachPayerEob(db:D1Database,who:Actor,input:Data) {
  return {id:batch.id,sha256:upload.digest}
 }
 export async function manualPayerState(db:D1Database,who:Actor) {
- if(who.role!=='owner'&&who.staffRole!=='reception')return []
+ if(who.role!=='owner'&&!biller(who))return []
  const batches=await rows(db,`SELECT b.*,p.name AS payer,e.filename AS eob_filename FROM bm_payer_payment_batches b JOIN bm_payers p ON p.id=b.payer_id LEFT JOIN bm_payer_eobs e ON e.batch_id=b.id ORDER BY b.created_at DESC LIMIT 100`)
  for(const b of batches){
   b.lines=(await rows(db,`SELECT l.*,c.first_name||' '||c.last_name AS patient FROM bm_payer_payment_lines l LEFT JOIN bm_clients c ON c.id=l.client_id WHERE l.batch_id=? ORDER BY l.created_at,l.id`,b.id)).map(l=>({...l,adjustments:JSON.parse(l.adjustments),remarks:JSON.parse(l.remarks)}))
@@ -56,7 +57,8 @@ export async function manualPayerState(db:D1Database,who:Actor) {
  return batches
 }
 export async function payerEobDownload(db:D1Database,initial:Actor,key:string) {
- const who=await insuranceActor(db,initial,true),batch=await payerBatch(db,key,false),file=await one(db,'SELECT * FROM bm_payer_eobs WHERE batch_id=?',batch.id)
+ const who=await insuranceActor(db,initial,true);insist(who.role==='owner'||biller(who),'payer_batches_require_biller_or_owner',403)
+ const batch=await payerBatch(db,key,false),file=await one(db,'SELECT * FROM bm_payer_eobs WHERE batch_id=?',batch.id)
  insist(file,'payer_eob_unavailable_or_withdrawn',404)
  const clients=await rows(db,'SELECT DISTINCT client_id FROM bm_payer_payment_lines WHERE batch_id=? AND client_id IS NOT NULL',batch.id)
  await commit(db,who,clients.flatMap(c=>[clientGuard(db,who,c.client_id),audit(db,who,'insurance.payer_eob_downloaded',c.client_id,batch.id)]))
