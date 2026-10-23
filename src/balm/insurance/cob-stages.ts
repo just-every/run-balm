@@ -3,9 +3,13 @@ import type { ClaimSnapshot } from './types'
 import type { CobPrior } from './cob-types'
 
 export async function stageSetup(db:D1Database,claim:Data,snapshot:Pick<ClaimSnapshot,'invoiceId'|'serviceDate'>) {
- const policies=await rows(db,"SELECT id,priority FROM bm_policies WHERE client_id=? AND starts_on<=? AND (ends_on='' OR ends_on IS NULL OR ends_on>=?) ORDER BY priority",claim.client_id,snapshot.serviceDate,snapshot.serviceDate)
+ const policies=await rows(db,"SELECT id,priority,version FROM bm_policies WHERE client_id=? AND starts_on<=? AND (ends_on='' OR ends_on IS NULL OR ends_on>=?) ORDER BY priority",claim.client_id,snapshot.serviceDate,snapshot.serviceDate)
  insist(new Set(policies.map(p=>p.priority)).size===policies.length,'resolve_duplicate_COB_policy_priorities')
- return policies.flatMap(p=>[stmt(db,"INSERT INTO bm_cob_stages(invoice_id,policy_id,priority,state,updated_at) VALUES(?,?,?,'waiting',?) ON CONFLICT(invoice_id,policy_id) DO NOTHING",snapshot.invoiceId,p.id,p.priority,new Date().toISOString())])
+ const statements:D1PreparedStatement[]=[guard(db,"(SELECT COUNT(*) FROM bm_policies WHERE client_id=? AND starts_on<=? AND (ends_on='' OR ends_on IS NULL OR ends_on>=?))=?",claim.client_id,snapshot.serviceDate,snapshot.serviceDate,policies.length),
+  ...policies.flatMap(p=>[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND client_id=? AND priority=? AND version=?)',p.id,claim.client_id,p.priority,p.version),
+  stmt(db,"INSERT INTO bm_cob_stages(invoice_id,policy_id,priority,state,updated_at) VALUES(?,?,?,'waiting',?) ON CONFLICT(invoice_id,policy_id) DO NOTHING",snapshot.invoiceId,p.id,p.priority,new Date().toISOString()),
+  guard(db,'EXISTS(SELECT 1 FROM bm_cob_stages WHERE invoice_id=? AND policy_id=? AND priority=?)',snapshot.invoiceId,p.id,p.priority)])]
+ return Object.assign(statements,{insuranceHeld:policies.length>0})
 }
 export async function cobFacts(db:D1Database,policy:Data,invoice:Data) {
  if(policy.priority===1)return undefined
