@@ -9,9 +9,9 @@ export async function recordRequests(db: D1Database, who: Actor) {
   const list = await rows(db,`SELECT r.*,c.first_name||' '||c.last_name AS patient,
     (SELECT id FROM bm_record_packages p WHERE p.request_id=r.id ORDER BY p.prepared_at DESC,p.rowid DESC LIMIT 1) AS prepared_id,
     (SELECT sha256 FROM bm_record_packages p WHERE p.request_id=r.id ORDER BY p.prepared_at DESC,p.rowid DESC LIMIT 1) AS prepared_sha256
-    FROM bm_record_requests r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL ORDER BY r.released_at IS NOT NULL,r.due_at,r.id`)
+    FROM bm_record_requests r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL ORDER BY r.due_at,r.released_at IS NOT NULL,r.id`)
   await commit(db,who,list.map(r=>audit(db,who,'record_request.read',r.client_id,r.id)))
-  return list.map(r=>({...r,overdue:!r.released_at && r.due_at<now()}))
+  return list.map(r=>({...r,overdue:r.due_at<now()}))
 }
 export const patientRecordRequests = (db: D1Database, patient: Patient) => rows(db,
   'SELECT id,requested_at,due_at,released_at FROM bm_record_requests WHERE client_id=? ORDER BY requested_at DESC,id',patient.clientId)

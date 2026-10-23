@@ -1,5 +1,5 @@
 import type { Bindings } from '../../auth.server'
-import { audit, commit, guard, human, id, insist, now, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
+import { audit, commit, guard, human, id, insist, integer, now, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { managedInstall } from '../payments/stripe-api'
 import { seal, unseal } from '../scribe/seal'
 
@@ -10,19 +10,23 @@ export function requireScope(who: Actor, scope: string) {
   insist(who.role==='agent' && (who as KeyActor).keyScopes?.includes(scope),'key_scope_refused',403)
   who.keyScope=scope
 }
-export async function scopedRead(db: D1Database, who: Actor, kind: string) {
+export async function scopedRead(db: D1Database, who: Actor, kind: string,input:Data={}) {
   requireScope(who,kind+'.read')
+  const limit=integer(input.limit??100,'page_limit',1,300),after=input.after===undefined?'':text(input.after,'cursor',100)
   const tables: Record<string,string> = {
-    appointments:'SELECT id,client_id,practitioner_id,service_id,start_at,end_at,status FROM bm_appointments ORDER BY start_at,id LIMIT 300',
-    patients:'SELECT id,first_name,last_name,date_of_birth,email,phone FROM bm_clients WHERE erased_at IS NULL ORDER BY id LIMIT 300',
-    charges:"SELECT id,client_id,appointment_id,number,status,amount_cents,approved_at FROM bm_invoices ORDER BY id LIMIT 300",
-    payments:'SELECT p.id,i.client_id,p.invoice_id,p.amount_cents,p.recorded_at FROM bm_payments p JOIN bm_invoices i ON i.id=p.invoice_id ORDER BY p.recorded_at,p.id LIMIT 300',
+    appointments:'SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.start_at,a.end_at,a.status FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE c.erased_at IS NULL',
+    patients:'SELECT id,first_name,last_name,date_of_birth,email,phone FROM bm_clients WHERE erased_at IS NULL',
+    charges:'SELECT i.id,i.client_id,i.appointment_id,i.number,i.status,i.amount_cents,i.approved_at FROM bm_invoices i JOIN bm_clients c ON c.id=i.client_id WHERE c.erased_at IS NULL',
+    payments:`SELECT 'payment:'||p.id AS id,i.client_id,p.invoice_id,p.amount_cents,p.recorded_at,CASE WHEN p.amount_cents<0 THEN 'payer_recoupment' ELSE 'recorded_payment' END AS kind FROM bm_invoice_payments p JOIN bm_invoices i ON i.id=p.invoice_id JOIN bm_clients c ON c.id=i.client_id WHERE c.erased_at IS NULL AND p.card_payment_id IS NULL AND p.account_entry_id IS NULL
+      UNION ALL SELECT 'card:'||p.id AS id,p.client_id,p.invoice_id,p.amount_cents,p.succeeded_at AS recorded_at,'card_payment' AS kind FROM bm_card_payments p JOIN bm_clients c ON c.id=p.client_id WHERE c.erased_at IS NULL AND p.status='succeeded'
+      UNION ALL SELECT 'account:'||e.id AS id,e.client_id,e.invoice_id,e.amount_cents,e.posted_at AS recorded_at,e.kind FROM bm_posted_account_entries e JOIN bm_clients c ON c.id=e.client_id WHERE c.erased_at IS NULL`,
   }
   insist(kind in tables,'not_found',404)
-  const list=await rows(db,tables[kind])
-  await commit(db,who,[...await keyGuard(db,who,kind+'.read'),...Array.from(new Set(list.map(r=>kind==='patients'?r.id:r.client_id))).map(clientId=>audit(db,who,'integration.'+kind+'_read',clientId,(who as KeyActor).keyId??null))])
-  return {records:list,limit:300}
+  const found=await rows(db,`SELECT * FROM (${tables[kind]}) WHERE id>? ORDER BY id LIMIT ?`,after,limit+1),list=found.slice(0,limit)
+  await commit(db,who,[...await keyGuard(db,who,kind+'.read'),...Array.from(new Set(list.map(r=>kind==='patients'?r.id:r.client_id))).map(clientId=>audit(db,who,'integration.'+kind+'_read',clientId,who.keyId??null))])
+  return {records:list,limit,nextCursor:found.length>limit?list.at(-1)!.id:null}
 }
+
 /** A second key check in the read and write batch closes revocation races. */
 export async function keyGuard(db: D1Database, who: Actor, scope: string) {
  const key=(who as KeyActor).keyId

@@ -1,3 +1,4 @@
+import {portalBilling} from './portal-billing.mjs'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHmac,timingSafeEqual} from 'node:crypto'
@@ -11,6 +12,8 @@ test('scoped keys read only authorized fields, prepare invoices for a human, and
   await h.finishSetup()
   const {service,practitioners:[priya]}=await clinic(h)
   const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',email:'marisol@patient.example'})
+  const foreign=await h.cmd('client.save',{firstName:'Other',lastName:'Scheduled',email:'other-scheduled@patient.example'})
+  await pastVisit(h,foreign.id,priya,service.id,h.owner,5)
   const visit=await pastVisit(h,patient.id,priya,service.id)
   await h.cmd('appointment.attend',{id:visit},priya.cookie)
   await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Clinical narrative never belongs in an API feed.'},priya.cookie)
@@ -18,6 +21,11 @@ test('scoped keys read only authorized fields, prepare invoices for a human, and
   const headers={authorization:'Bearer '+key.token}
   const read=await h.send('/api/balm/agent/appointments',undefined,'',headers)
   assert.equal(read.status,200,read.text);assert.ok(read.value.records.some(a=>a.id===visit))
+  const page1=await h.send('/api/balm/agent/appointments?limit=1',undefined,'',headers)
+  assert.equal(page1.value.records.length,1);assert.ok(page1.value.nextCursor)
+  const page2=await h.send('/api/balm/agent/appointments?limit=1&after='+encodeURIComponent(page1.value.nextCursor),undefined,'',headers)
+  assert.equal(page2.value.records.length,1);assert.notEqual(page1.value.records[0].id,page2.value.records[0].id);assert.equal(page2.value.nextCursor,null)
+  assert.equal((await h.send('/api/balm/agent/appointments?limit=301',undefined,'',headers)).status,400)
   assert.ok(!read.text.includes('marisol@')&&!read.text.includes('Clinical narrative'))
   for(const path of ['context','patients','charges','payments','other'])assert.equal((await h.send('/api/balm/agent/'+path,undefined,'',headers)).status,403,path)
   assert.equal((await h.send('/api/balm/agent/command',{name:'invoice.prepare',input:{appointmentId:visit}},'',headers)).status,200)
@@ -92,5 +100,24 @@ test('booking webhooks require owner consent and explicit approval, verify raw-b
   const next=await pastVisit(h,patient.id,priya,service.id,h.owner,11)
   await h.cmd('integration.hook.deliver',{hookId:hook.id,eventId:next,confirm:true},h.owner,404)
   assert.equal(received.length,3)
+ }finally{await h.close()}
+})
+
+
+test('the payment scope returns one card receipt or posted external movement without duplicating its invoice allocations', {timeout:120000},async()=>{
+ const {h,patient}=await portalBilling()
+ try{
+  const credit=await h.cmd('pay.entry.prepare',{clientId:patient.id,kind:'credit',amount:'30.00',reason:'External prepayment',reference:'synthetic-balm-401',occurredOn:'2026-01-01'})
+  await h.cmd('pay.entry.approve',{id:credit.id,sha256:credit.sha256,attest:true})
+  const key=await h.cmd('agent.create',{label:'Recorded movements',scopes:['payments.read']})
+  const response=await h.send('/api/balm/agent/payments',undefined,'',{authorization:'Bearer '+key.token})
+  assert.equal(response.status,200,response.text)
+  const receipts=response.value.records.filter(r=>r.client_id===patient.id)
+  assert.equal(receipts.filter(r=>r.kind==='card_payment').length,1)
+  assert.equal(receipts.find(r=>r.kind==='card_payment').amount_cents,9500)
+  assert.equal(receipts.filter(r=>r.id==='account:'+credit.id).length,1)
+  assert.equal(receipts.find(r=>r.id==='account:'+credit.id).amount_cents,3000)
+  assert.equal(receipts.length,2,'card and credit allocations are not counted as additional payments')
+  assert.ok(!response.text.includes('receipt_base64')&&!response.text.includes('payment_intent')&&!response.text.includes('card_last4'))
  }finally{await h.close()}
 })
