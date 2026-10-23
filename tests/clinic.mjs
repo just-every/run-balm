@@ -1,3 +1,4 @@
+import { installCodeSetFixtures } from './code-sets-journey.mjs'
 // Shared clinic setup for the public-door tests.
 import assert from 'node:assert/strict'
 
@@ -6,6 +7,7 @@ const allWeek = [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00',
 
 /** A clinic with one service and the named practitioners, open every day. */
 export async function clinic(h, names = ['Priya']) {
+  if (!h.codeSetsInstalled && h.codeSets) { await installCodeSetFixtures(h, h.codeSets); h.codeSetsInstalled = true }
   await h.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane', taxId: '12-3456789', address: '1 River St, Brisbane QLD' })
   const service = await h.cmd('service.save', { name: 'Initial consultation', durationMinutes: 45, priceCents: 9500 })
   const practitioners = []

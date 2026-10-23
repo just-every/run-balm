@@ -6,7 +6,6 @@ import { noteMeasures, progressChanges } from './measures'
 // Treatment notes on a client file: start from the visit's template, draft with
 // the scribe, edit the draft, review and sign, then add signed addenda.
 import { documentationFields, documentationSummary, documentationWarnings } from './documentation'
-import { codes } from '../charting/cpt'
 import { disciplines, template, templates } from '../charting/templates'
 import { clinician, empty, entry, field, form, h, hidden, panel, select, stamp, status, textarea, usDate, when, zoneOf } from './shared'
 
@@ -16,9 +15,10 @@ const CHARGE_ROWS = 6
 const templateChoices = (current: string, dailyOnly = false, catalog = templates) => ` ${dailyOnly ? '' : '<option value="">Free-text note</option>'}${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${catalog.filter(t => t.discipline === d && (!dailyOnly || t.kind === 'daily')).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
 export const templateSelect = (name: string, label: string, current: string, dailyOnly = false, catalog = templates) => `<label>${h(label)}<select name="${h(name)}">${templateChoices(current, dailyOnly, catalog)}</select></label>`
 
-function chargeRows(charges: any[], assistant = false) {
-  const options = (value: string) => `<option value="">No code</option>${codes.filter(c => !assistant || !evaluationCodes.has(c.code)).map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
-  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}${field(`charge_parameters_${n}`, 'Intervention parameters', charges[n]?.parameters ?? '', 'text', 'maxlength="2000"')}`).join('')}</fieldset>`
+function chargeRows(charges: any[], assistant = false, catalog: any[] = []) {
+  const options = (value: string) => `<option value="">No code</option>${catalog.filter(c => !assistant || !evaluationCodes.has(c.code)).map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
+  const missing = !catalog.length ? '<p class="notice">Load this deployment’s licensed CPT catalog before recording charges.</p>' : ''
+  return `${missing}<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${charges[n]?.code && !catalog.some(c=>c.code===charges[n].code) ? `<option value="${h(charges[n].code)}" selected>${h(charges[n].code)} (not in the active licensed catalog)</option>` : ''}${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}${field(`charge_parameters_${n}`, 'Intervention parameters', charges[n]?.parameters ?? '', 'text', 'maxlength="2000"')}`).join('')}</fieldset>`
 }
 
 function sectionFields(t: any, values: Record<string, string>) {
@@ -59,7 +59,7 @@ function noteEntry(s: any, f: any, n: any) {
   let actions = ''
   if (n.mine && n.status !== 'signed' && !n.pending) {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
-    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(latest.clinical) : '') + chargeRows(latest.charges, s.actor.staffKind === 'assistant') + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
+    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(latest.clinical) : '') + chargeRows(latest.charges, s.actor.staffKind === 'assistant', n.billingCodeCatalog ?? f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
@@ -99,7 +99,7 @@ function compose(s: any, f: any, ask: any) {
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
   const carry = composeCarry(f, visit, t)
   const body = t ? sectionFields(t, carry.sections) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
-  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(carry.clinical) : '') + chargeRows([], assistant) + documentationFields({}, s.staff), 'Save draft')
+  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(carry.clinical) : '') + chargeRows([], assistant, f.billingCodeCatalog ?? s.billingCodeCatalog ?? []) + documentationFields({}, s.staff), 'Save draft')
   return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 

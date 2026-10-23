@@ -1,4 +1,4 @@
-import { cpt, type Charge } from '../charting/cpt'
+import { chargeCode, type Charge } from '../charting/cpt'
 import { payerBilling } from './unit-method'
 import { hostDateAt } from '../availability/timezone'
 import { insist, rows, type Data } from '../domain/model'
@@ -26,9 +26,13 @@ export function billedLines(charges: Charge[], unitMethod: string | null, fixedU
   return payerBilling(charges, unitMethod, fixedUnitMinutes).lines
 }
 export function aggregateCharges(chargeRows: Data[]): Charge[] {
+  const metadata = new Map<string, ReturnType<typeof chargeCode>>()
   const minutes = new Map<string, number>(), chosen = new Set<string>(), diagnoses = new Map<string, Set<string>>()
   for (const row of [...chargeRows].sort((a, b) => String(a.id ?? '').localeCompare(String(b.id ?? '')))) for (const charge of (typeof row.charges === 'string' ? JSON.parse(row.charges) : row.charges) ?? []) {
-    insist(cpt(charge.code) && Number.isInteger(charge.minutes) && charge.minutes >= 0, 'invalid_signed_charge')
+    insist(Number.isInteger(charge.minutes) && charge.minutes >= 0, 'invalid_signed_charge')
+    const code = chargeCode(charge), previous = metadata.get(charge.code)
+    insist(!previous || previous.timed === code.timed, 'signed_charge_timing_conflicts')
+    metadata.set(charge.code, code)
     minutes.set(charge.code, (minutes.get(charge.code) ?? 0) + charge.minutes)
     if (charge.cmsTieChosen === true) chosen.add(charge.code)
     if (charge.diagnosisCodes?.length) {
@@ -37,7 +41,7 @@ export function aggregateCharges(chargeRows: Data[]): Charge[] {
       diagnoses.set(charge.code, selected)
     }
   }
-  return [...minutes].map(([code, minutes]) => ({ code, minutes, ...(chosen.has(code) ? { cmsTieChosen: true as const } : {}), ...(diagnoses.has(code) ? { diagnosisCodes: [...diagnoses.get(code)!] } : {}) }))
+  return [...minutes].map(([code, minutes]) => ({ ...metadata.get(code)!, code, minutes, ...(chosen.has(code) ? { cmsTieChosen: true as const } : {}), ...(diagnoses.has(code) ? { diagnosisCodes: [...diagnoses.get(code)!] } : {}) }))
 }
 export async function signedCharges(db: D1Database, appointmentId: string) {
   const signed = await rows(db, `SELECT n.id,n.signed_sha256,n.signed_revision,r.charges FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.appointment_id=? AND n.signed_at IS NOT NULL ORDER BY n.id`, appointmentId)

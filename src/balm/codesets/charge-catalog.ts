@@ -1,0 +1,32 @@
+import { day, guard, insist, one, rows } from '../domain/model'
+import { hostDateAt } from '../availability/timezone'
+import type { Code } from '../charting/cpt'
+import { releaseAt } from './catalog'
+
+/** Descriptors and timing come only from this deployment's licensed release.
+ * An empty catalog is useful for an honest setup screen, never for charging. */
+export async function resolveChargeCatalog(db: D1Database, date?: string): Promise<Code[]> {
+  const settings = date ? null : await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1')
+  const on = day(date ?? hostDateAt(new Date(), String(settings!.time_zone)), 'date_of_service')
+  const release = await releaseAt(db, 'cpt', on)
+  if (!release) return []
+  const items = await rows(db, `SELECT code,description,timed FROM bm_code_items WHERE release_id=?
+    AND effective_on<=? AND (deleted_on IS NULL OR deleted_on>?) ORDER BY code`, release.id, on, on)
+  return items.map(item => {
+    insist(item.timed === 0 || item.timed === 1, 'licensed_cpt_requires_reviewed_timing')
+    return { code: item.code, description: item.description, timed: item.timed === 1,
+      release: { id: release.id, version: release.version, effectiveOn: release.effective_on } }
+  })
+}
+
+/** New revisions use their visit's local service date. Guard the release epoch
+ * in the same write, so a concurrent catalog update cannot change the answer. */
+export async function noteChargeCatalog(db: D1Database, appointmentId?: string | null) {
+  const epoch = await one(db, 'SELECT version FROM bm_code_epoch WHERE id=1')
+  const settings = await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1')
+  const visit = appointmentId ? await one(db, 'SELECT start_at FROM bm_appointments WHERE id=?', appointmentId) : null
+  insist(!appointmentId || visit, 'appointment_not_found', 404)
+  const date = hostDateAt(visit ? new Date(visit.start_at) : new Date(), String(settings!.time_zone))
+  return { date, items: await resolveChargeCatalog(db, date),
+    guard: guard(db, '(SELECT version FROM bm_code_epoch WHERE id=1)=?', epoch!.version) }
+}

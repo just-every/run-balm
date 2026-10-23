@@ -1,4 +1,4 @@
-import { bill, cpt, type Charge, type Billing } from '../charting/cpt'
+import { bill, chargeCode, type Charge, type Billing } from '../charting/cpt'
 import { hostDateAt } from '../availability/timezone'
 import { insist, one } from '../domain/model'
 
@@ -17,12 +17,12 @@ export async function primaryUnitMethod(db: D1Database, clientId: string, servic
 export function payerBilling(charges: Charge[], method: string | null, fixedUnitMinutes?: number | null): Billing {
   if (fixedUnitMinutes != null || method === 'fixed') {
     insist(Number.isSafeInteger(fixedUnitMinutes) && fixedUnitMinutes! > 0, 'invalid_fixed_unit_minutes')
-    const lines = charges.map(c => ({ ...cpt(c.code)!, ...(c.diagnosisCodes?.length ? { diagnosisCodes: c.diagnosisCodes } : {}), minutes: c.minutes, units: cpt(c.code)!.timed ? Math.floor(c.minutes / fixedUnitMinutes!) : 1 }))
+    const lines = charges.map(c => ({ ...chargeCode(c), ...(c.diagnosisCodes?.length ? { diagnosisCodes: c.diagnosisCodes } : {}), minutes: c.minutes, units: chargeCode(c).timed ? Math.floor(c.minutes / fixedUnitMinutes!) : 1 }))
     return { lines, cmsTie: null, timedMinutes: lines.filter(l => l.timed).reduce((sum, l) => sum + l.minutes, 0), timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
   }
   const cms = bill(charges)
   if (method !== 'ama') return cms
-  const lines = charges.map(c => ({ ...cpt(c.code)!, ...(c.diagnosisCodes?.length ? { diagnosisCodes: c.diagnosisCodes } : {}), minutes: c.minutes, units: cpt(c.code)!.timed ? Math.floor((c.minutes + 7) / 15) : 1 }))
+  const lines = charges.map(c => ({ ...chargeCode(c), ...(c.diagnosisCodes?.length ? { diagnosisCodes: c.diagnosisCodes } : {}), minutes: c.minutes, units: chargeCode(c).timed ? Math.floor((c.minutes + 7) / 15) : 1 }))
   return { lines, cmsTie: null, timedMinutes: cms.timedMinutes, timedUnits: lines.filter(l => l.timed).reduce((sum, l) => sum + l.units, 0), units: lines.reduce((sum, l) => sum + l.units, 0) }
 }
 

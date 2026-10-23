@@ -1,3 +1,4 @@
+import { noteChargeCatalog, resolveChargeCatalog } from '../codesets/charge-catalog'
 import { resolveTemplate } from '../charting/template-catalog'
 // The scribe: the owner enters the install's own model key on the Clinic page
 // (sealed at rest, never sent back to a browser); a practitioner gives the visit's
@@ -90,7 +91,7 @@ async function check(env: Bindings, who: Actor) {
   if (!('config' in state)) return { ok: false, message: state.line }
   let ok = false, message
   try {
-    const draft = await draftNote(state.config, template('pt.daily')!, 45, SAMPLE)
+    const draft = await draftNote(state.config, template('pt.daily')!, 45, SAMPLE, await resolveChargeCatalog(env.DB))
     const minutes = Object.fromEntries(draft.charges.map(c => [c.code, c.minutes]))
     ok = minutes['97110'] === 23 && minutes['97140'] === 10 && !!draft.sections.subjective
     message = `${ok ? 'It drafted the sample note' : 'The model answered, but misread the sample note. Try a stronger model'}: ${draft.charges.map(c => `${c.code} ${c.minutes} min`).join(', ') || 'no codes'}; subjective "${draft.sections.subjective.slice(0, 80)}".`
@@ -119,7 +120,7 @@ async function draft(env: Bindings, who: Actor, input: Data) {
   insist(state.checked, 'the_scribe_has_not_passed_its_test', 409)
   const minutes = (await one<{ m: number }>(env.DB, 'SELECT s.duration_minutes AS m FROM bm_appointments a JOIN bm_services s ON s.id=a.service_id WHERE a.id=?', appointment.id))!.m
   let result
-  try { result = await draftNote(state.config, t, minutes, dictation) }
+  try { result = await draftNote(state.config, t, minutes, dictation, (await noteChargeCatalog(env.DB, appointment.id)).items) }
   catch (e) { insist(false, (e instanceof ScribeError ? e.message : 'The AI model could not be reached.').replace(/\W+/g, '_').replace(/^_|_$/g, '').toLowerCase(), 424) }
   const note = await createNote(env.DB, who, { clientId: client.id, appointmentId: appointment.id, template: t.key, sections: result!.sections, charges: result!.charges }, 'scribe', result!.note)
   return { ...note, scribeNote: result!.note }

@@ -1,3 +1,4 @@
+import { codeSetEdge, installCodeSetFixtures } from './code-sets-journey.mjs'
 import {authorizeTestSession} from './staff-second-step.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
@@ -19,7 +20,7 @@ export async function harness(options = {}) {
   const auth = { AUTH_LOCAL: 'false', OWNER_EMAIL: 'owner@clinic.example', SESSION_SECRET: randomBytes(32).toString('hex'), SETUP_TOKEN: setup, MAIL_PROVIDER: 'resend', MAIL_API_KEY: 'synthetic-balm-1', MAIL_FROM: 'auth@clinic.example', ...options.auth, AUTH_ORIGIN: origin }
   // Exercise the production mail adapter; only the provider's HTTP edge is fake.
   // h.mail contains Resend request bodies in send order, in this test's memory only.
-  const mail = [], outboundRequests = []
+  const mail = [], outboundRequests = [], codeSets = options.codeSetEdge ?? codeSetEdge()
   const outbound = async request => {
     // Record before dispatch: a provider error caught by product code must not hide egress.
     const url = new URL(request.url)
@@ -29,6 +30,7 @@ export async function harness(options = {}) {
       mail.push(await request.json())
       return Response.json({ id: `mail_test_${mail.length}` })
     }
+    if (codeSets.handles(request.url)) return codeSets.outbound(request)
     if (options.outbound) return options.outbound(request)
     throw new Error(`Unexpected outbound request: ${request.method} ${request.url}`)
   }
@@ -75,7 +77,15 @@ export async function harness(options = {}) {
       return { status: response.status, text: await response.text(), location: response.headers.get('location') }
     }
     const signIn = async email => { const response = await send('/auth/magic-link', {email}); assert.equal(response.status,202,response.text); return confirmMail(email) }
-    return { db, mf, origin, owner, auth, mail, outboundRequests, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    const h = { db, mf, origin, owner, auth, mail, outboundRequests, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, codeSets, codeSetsInstalled: false, provisioningRequests: [], close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    if (bootstrap && options.autoMfa !== false && options.codeSets !== false) {
+      await installCodeSetFixtures(h, codeSets)
+      h.codeSetsInstalled = true
+      // Provisioning is explicit test setup. Subsequent egress assertions start
+      // here; every setup request remains available for inspection separately.
+      h.provisioningRequests.push(...outboundRequests.splice(0))
+    }
+    return h
   } catch (error) { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }); throw error }
 }
 

@@ -1,3 +1,4 @@
+import { noteChargeCatalog } from '../codesets/charge-catalog'
 import { clinicalInput, emptyClinical, goalNarrative } from '../charting/clinical-input'
 import { carryForward } from '../charting/note-carry'
 import { resolveTemplate, noteTemplate } from '../charting/template-catalog'
@@ -10,7 +11,7 @@ import { beginDraftRequest, type DraftRequest } from './draft-requests'
 // a discipline template keeps its sections and CPT minutes per revision; signing
 // locks it (src/balm/domain/signing.ts) and later changes are addenda.
 import { documentationAlerts, documentationInput, type Documentation } from '../charting/compliance'
-import { cpt, type Charge } from '../charting/cpt'
+import { chargeCode, type Charge, type Code } from '../charting/cpt'
 import { parseIcd10 } from '../payments/codes'
 import { payerBilling, primaryUnitMethod } from '../insurance/unit-method'
 import { template, type Template } from '../charting/templates'
@@ -28,13 +29,13 @@ const clean = (value: unknown, field: string, max: number) => {
 }
 
 /** Charges as JSON [{code, minutes}] or the form's charge_code_N / charge_minutes_N rows. */
-export function charges(input: Data, incomplete = false): Charge[] {
+export function charges(input: Data, incomplete = false, catalog: Code[] = []): Charge[] {
   const raw: Data[] = Array.isArray(input.charges) ? input.charges
     : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`], diagnosisCodes: input[`charge_diagnoses_${n}`], parameters: input[`charge_parameters_${n}`] })).filter(c => c.code)
   insist(raw.length <= 12, 'too_many_cpt_codes')
   const list = raw.map(c => {
-    const code = cpt(String(c?.code ?? '').trim())
-    insist(code, 'unknown_cpt_code')
+    const value = String(c?.code ?? '').trim().toUpperCase(), code = catalog.find(item => item.code === value)
+    insist(code, `Load the active licensed CPT catalog containing ${value} for this visit before recording its charges.`, 409)
     const minutes = c.minutes === undefined || c.minutes === '' ? 0 : integer(c.minutes, 'cpt_minutes', 0, 480)
     if (code.timed && !incomplete) insist(minutes > 0, 'enter_minutes_for_each_timed_code')
     insist([undefined, null, '', false, true, 'on'].includes(c.cmsTieChosen), 'invalid_cms_tie_choice')
@@ -44,7 +45,7 @@ export function charges(input: Data, incomplete = false): Charge[] {
     const diagnosisCodes = parseIcd10(Array.isArray(c.diagnosisCodes) ? c.diagnosisCodes.join(',') : c.diagnosisCodes)
     insist(diagnosisCodes.length <= 4, 'select_at_most_four_diagnoses_per_cpt_code')
     const parameters = clean(c.parameters, 'intervention_parameters', 2000)
-    return { code: code.code, minutes, ...(parameters ? { parameters } : {}), ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
+    return { code: code.code, description: code.description, timed: code.timed, release: code.release, minutes, ...(parameters ? { parameters } : {}), ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
   })
   insist(new Set(list.map(c => c.code)).size === list.length, 'cpt_code_listed_twice')
   return list
@@ -61,10 +62,10 @@ export async function diagnosisGuards(db: D1Database, appointmentId: unknown, li
 }
 
 /** A template's sections from JSON {sections: {id: text}} or the form's section_<id> fields. */
-export function written(input: Data, t: Template | undefined): Written {
+export function written(input: Data, t: Template | undefined, catalog: Code[] = []): Written {
   const documentation = documentationInput(input)
-  const list = charges(input, (t?.schemaVersion ?? 0) >= 2)
-  const timed = list.filter(c => cpt(c.code)?.timed).reduce((sum,c) => sum+c.minutes,0)
+  const list = charges(input, (t?.schemaVersion ?? 0) >= 2, catalog)
+  const timed = list.filter(c => chargeCode(c).timed).reduce((sum,c) => sum+c.minutes,0)
   insist(documentation.totalTimedMinutes === null || documentation.totalTimedMinutes >= timed, 'total_timed_minutes_must_include_all_timed_interventions')
   insist(documentation.totalTreatmentMinutes === null || documentation.totalTreatmentMinutes >= timed, 'total_treatment_minutes_must_include_all_timed_interventions')
   if (!t) return { documentation, sections: null, charges: list, body: text(input.body, 'note', 20_000) }
@@ -102,11 +103,12 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   const given = input.sections && typeof input.sections === 'object' ? input.sections : {}
   const inherited = { ...carry.sections, ...given }
   for (const section of t?.sections ?? []) if (input['section_' + section.id] !== undefined) inherited[section.id] = input['section_' + section.id]
-  const content = written({ ...input, sections: inherited, clinical }, t), noteId = (starter?.id as string) ?? id()
+  const catalog = await noteChargeCatalog(db, appointment?.id as string | undefined)
+  const content = written({ ...input, sections: inherited, clinical }, t, catalog.items), noteId = (starter?.id as string) ?? id()
   assistantNote(who, t ? `${t.discipline}.${t.kind}` : '', content.charges)
   const diagnoses = await diagnosisGuards(db, appointment?.id, content.charges)
   await commit(db, who, [
-    ...diagnoses, ...carry.guards,
+    catalog.guard, ...diagnoses, ...carry.guards,
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     ...(starter ? [
@@ -146,11 +148,12 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
     const definition = latest === 0 && !note.template_snapshot ? await resolveTemplate(db,note.template) : noteTemplate(note)
     const carry = latest === 0 && definition ? await carryForward(db,who,note.client_id,note.appointment_id,definition) : { sections: {}, clinical: emptyClinical(), guards: [] }
     const clinical = clinicalInput(input, previous?.clinical ? JSON.parse(previous.clinical) : carry.clinical)
-    const content = written({ ...input, clinical }, definition)
+    const catalog = await noteChargeCatalog(db, note.appointment_id)
+    const content = written({ ...input, clinical }, definition, catalog.items)
     assistantNote(who, definition ? `${definition.discipline}.${definition.kind}` : note.template, content.charges)
     const diagnoses = await diagnosisGuards(db, note.appointment_id, content.charges)
     await commit(db, who, [
-      ...diagnoses, ...carry.guards,
+      catalog.guard, ...diagnoses, ...carry.guards,
       ...(latest === 0 ? [stmt(db,'UPDATE bm_notes SET template_snapshot=? WHERE id=? AND signed_at IS NULL',definition ? JSON.stringify(definition) : null,note.id)] : []),
       stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation,clinical) VALUES(?,?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
         optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation), JSON.stringify(clinical)),

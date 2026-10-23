@@ -1,5 +1,5 @@
 import { insist, type Data } from '../domain/model'
-import { cpt } from './cpt'
+import { chargeCode, type Charge } from './cpt'
 import type { Clinical } from './clinical-input'
 import type { Template } from './templates'
 
@@ -19,7 +19,7 @@ export function validateClinical(t: Template, revision: Data, sections: Data[]) 
     insist(JSON.parse(revision.charges ?? '[]').some((c: Data) => accepted.includes(c.code)), 'Record the discipline evaluation complexity CPT code before signing.')
   }
   if (t.kind === 'daily') {
-    const charges: Data[] = JSON.parse(revision.charges ?? '[]')
+    const charges: Charge[] = JSON.parse(revision.charges ?? '[]')
     insist(charges.length > 0, 'Record each intervention with its CPT code before signing.')
     for (const charge of charges) {
       insist(Number(charge.minutes) > 0, `Record minutes for intervention ${charge.code} before signing.`)
@@ -28,7 +28,7 @@ export function validateClinical(t: Template, revision: Data, sections: Data[]) 
     const documentation = JSON.parse(revision.documentation ?? '{}')
     insist(documentation.totalTimedMinutes !== null && documentation.totalTimedMinutes !== undefined, 'Record total timed minutes before signing.')
     insist(documentation.totalTreatmentMinutes !== null && documentation.totalTreatmentMinutes !== undefined, 'Record total treatment minutes before signing.')
-    const timed = charges.filter(c => cpt(c.code)?.timed).reduce((sum,c) => sum + Number(c.minutes),0)
+    const timed = charges.filter(c => chargeCode(c).timed).reduce((sum,c) => sum + Number(c.minutes),0)
     const total = charges.reduce((sum,c) => sum + Number(c.minutes),0)
     insist(documentation.totalTimedMinutes === timed, 'Total timed minutes must equal the timed interventions.')
     insist(documentation.totalTreatmentMinutes >= total, 'Total treatment minutes must include every intervention.')
