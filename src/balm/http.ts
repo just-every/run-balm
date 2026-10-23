@@ -1,3 +1,5 @@
+import { integrationCommand, integrationState, requireScope, scopedRead } from './portal/integrations'
+import { recordCommand, recordDownload, recordRequests } from './portal/records'
 import { codeSetCommand, codeSetStatus } from './codesets'
 import { resolveChargeCatalog } from './codesets/charge-catalog'
 import { codesetFormInput } from './ui/code-sets'
@@ -89,7 +91,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -145,6 +147,8 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name.startsWith('integration.'))return integrationCommand(env,who,name,input)
+  if(name.startsWith('record.'))return recordCommand(env.DB,who,name,input)
   if(name.startsWith('codes.'))return codeSetCommand(env.DB,who,name,codesetFormInput(input))
   if(name==='insurance.payer_line.add')input=manualPayerForm(input)
   if(name.startsWith('note_release.'))return releaseCommand(env.DB,who,name,input)
@@ -472,8 +476,16 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (path === WEBHOOK_PATH) return await paymentsPublicResponse(request, env, path, false) ?? json({ error: 'Not found' }, 404)
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
+    if(isAgent){
+      const scopeRead=path.match(/^\/api\/balm\/agent\/(appointments|patients|charges|payments)$/)
+      if(scopeRead&&request.method==='GET')return json(await scopedRead(env.DB,who,scopeRead[1]))
+      if(path==='/api/balm/agent/context'&&request.method==='GET')requireScope(who,'context.read')
+      else if(path!=='/api/balm/agent/command')fail('key_scope_refused',403)
+    }
     if (request.method === 'GET') {
       roleRead(who,path)
+      const recordPath=path.match(/^\/api\/balm\/records\/([\w-]+)\.(pdf|json)$/)
+      if(recordPath)return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',who)
       if (manager(who) && path === '/api/balm/reports/location') return json((await locationState(env.DB,who,Object.fromEntries(url.searchParams))).location)
       const chartDocument = path.match(/^\/api\/balm\/chart-documents\/([\w-]+)$/)
       if (chartDocument) return await downloadDocument(env.DB, who, chartDocument[1])
@@ -602,7 +614,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
+        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people
@@ -615,6 +627,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const body = await inputBody(request)
         if (typeof body.name !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input)) fail('provide_a_command_name_and_input_object')
         if (isAgent && !preparations.includes(String(body.name))) fail('agents_can_only_prepare', 403)
+        if(isAgent)requireScope(who,String(body.name))
         return json({ result: await execute(request, env, who, String(body.name), body.input as Record<string, unknown>) })
       }
     }

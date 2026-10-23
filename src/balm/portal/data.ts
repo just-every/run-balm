@@ -1,3 +1,4 @@
+import { patientRecordRequests, requestRecord } from './records'
 import {aeobsFor} from '../payments/aeobs'
 import { estimatesFor } from '../payments/estimates'
 import { getVisitPolicy } from '../scheduling/policy'
@@ -37,6 +38,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     audit(db, patientActor, 'statement.opened', patient.clientId),
   ])
   return {
+    recordRequests: await patientRecordRequests(db,patient),
     clinic: clinic!, patient: { firstName: patient.firstName, lastName: patient.lastName },
     upcoming: appointments.filter(a => a.end_at >= at && a.status === 'booked').map(a => ({ ...a, canCancel: Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000, canMove: a.self_book_enabled === 1 && Date.parse(a.start_at) >= Date.now() + policy.noticeHours * 3600_000 })),
     past: appointments.filter(a => a.end_at < at || a.status !== 'booked').reverse(),
@@ -79,6 +81,7 @@ async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
 
 export async function portalAction(env: Bindings, patient: Patient, name: string, input: Data) {
   switch (name) {
+    case 'record.request': return requestRecord(env.DB,patient)
     case 'appointment.book': case 'appointment.move': case 'appointment.cancel': return portalAppointmentAction(env, patient, name, input)
     case 'exercise.seen': return exerciseProgress(env.DB, patient, input, false)
     case 'exercise.done': return exerciseProgress(env.DB, patient, input, true)

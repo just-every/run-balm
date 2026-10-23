@@ -1,3 +1,4 @@
+import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
 import { createHmac, randomBytes } from 'node:crypto'
 import { test } from 'node:test'
@@ -97,18 +98,25 @@ async function archiveFixture(){
     const retentionPatient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
     const retentionVisit=await pastVisit(h,retentionPatient.id,priya,service.id,h.owner,12)
     await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',retentionVisit).run()
+    const patientCookie=await portalLogin(h,'maya@client.example')
+    await h.form('/portal/action',{name:'record.request'},patientCookie)
+    const recordRequest=(await h.state()).recordRequests.find(r=>r.client_id===maya.id)
+    const recordPackage=await h.cmd('record.prepare',{id:recordRequest.id})
+    await h.cmd('record.release',{id:recordRequest.id,packageId:recordPackage.packageId,sha256:recordPackage.sha256,confirm:true})
+    const recordOriginal=(await h.send('/portal/records/'+recordRequest.id+'.json',undefined,patientCookie)).text
+    const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}
+    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}=await archiveFixture()
+  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}=await archiveFixture()
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
-    const bytes=await readFile(old,'utf8');for(const kept of ['Thanksgiving clinic closure','Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
+    const bytes=await readFile(old,'utf8');for(const kept of ['Thanksgiving clinic closure','Temporary','Restored ankle sprain','Restored treatment note','Backup-EFTPOS-1','patients.csv','appointment.booked','client.imported','Attorney Archive','disclosure.recorded','Archive weight-bearing restriction','knee-MRI-report.pdf','chart.document_uploaded',mriReport().toString('base64')])assert.ok(bytes.includes(kept),kept);assert.ok(!bytes.includes('Excluded secret'));assert.ok(!bytes.includes('https://archive.synthetic-balm.com/events'));assert.ok(!bytes.includes(feedToken));assert.ok(!bytes.includes('"token_hash"'))
     const rows=archiveRows
     assert.ok(rows(bytes).length>0)
     const corrupt=join(temporary,'corrupt.rer');await writeFile(corrupt,bytes.replace('Restored treatment note','Changed treatment note'),{mode:0o600})
@@ -126,6 +134,9 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
     const restoredClinic=await harness({root:restored,...identity})
     try {
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
+      assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
+      assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))
+      assert.equal((await restoredClinic.state(cookie)).integrations.hooks.length,0,'hook credentials and consent are not transplanted into a restored installation')
       const checkedFile=await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)
       assert.deepEqual(checkedFile.value.notes.find(n=>n.id===checkedNote.id).defensibility,noteCheck,'AGENT-003 preserves original questions, sources and revision through CLI archive restore')
       const setupState=(await restoredClinic.send('/api/balm/state',undefined,cookie)).value
@@ -167,7 +178,7 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
 })
 
 test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary erasure and later destruction resurrection', {timeout:240_000},async()=>{
-  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,identity}=await archiveFixture()
+  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}=await archiveFixture()
   let h
   try{
     const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')

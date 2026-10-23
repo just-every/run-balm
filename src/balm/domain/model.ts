@@ -9,6 +9,7 @@ export interface Actor {
   /** The linked staff row, when this person is on the clinic's staff list. */
   staffId?: string; staffRole?: 'practitioner' | 'reception'
   operatorVersion: number; staffVersion?: number; balanceVisibility?: boolean
+  keyId?: string; keyScopes?: string[]; keyScope?: string
   sessionId?: string; staffKind?: StaffKind; supervisorId?: string; locationId?: string
 }
 export type Data = Record<string, any>
@@ -80,7 +81,7 @@ export function audit(db: D1Database, who: Actor | { email: string; role: string
 /** One D1 batch: live authority, the caller's guards and writes, then cleanup. */
 export async function commit(db: D1Database, who: Actor | null, statements: D1PreparedStatement[]) {
   try {
-    await db.batch([...(who ? [authority(db, who),...(who.sessionId?[guard(db,"EXISTS(SELECT 1 FROM oa_sessions s JOIN bm_staff_session_proofs p ON p.session_id=s.id JOIN bm_staff_security_policy c ON c.id=1 WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND p.last_seen_at+c.idle_minutes*60000>?)",who.sessionId,Date.now(),Date.now())]:[])] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
+    await db.batch([...(who ? [authority(db, who),...(who.role==='agent'?[guard(db,`EXISTS(SELECT 1 FROM bm_agent_keys k WHERE k.id=? AND k.owner_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND k.owner_version=? AND (k.scopes IS NULL OR EXISTS(SELECT 1 FROM json_each(k.scopes) WHERE value=?)))`,who.keyId??'',who.id,Date.now(),who.operatorVersion,who.keyScope??'')]:[]),...(who.sessionId?[guard(db,"EXISTS(SELECT 1 FROM oa_sessions s JOIN bm_staff_session_proofs p ON p.session_id=s.id JOIN bm_staff_security_policy c ON c.id=1 WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND p.last_seen_at+c.idle_minutes*60000>?)",who.sessionId,Date.now(),Date.now())]:[])] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
   } catch (error) {
     if (/note_locked|plan_locked/.test(String(error))) throw new DomainError('signed_records_cannot_change', 409)
     if (/bm_assert|CHECK constraint|UNIQUE constraint|ik_d1_assertions/.test(String(error))) throw new DomainError('changed_refresh_and_retry', 409)

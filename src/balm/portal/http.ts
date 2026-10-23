@@ -1,3 +1,4 @@
+import { recordDownload } from './records'
 import {aeobOriginal} from '../payments/aeobs'
 import { estimateOriginal } from '../payments/estimates'
 import { audit,commit } from '../domain/model'
@@ -37,6 +38,8 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : url.searchParams.has('cancelled') ? '?cancelled=1' : '')) : renderPortal('signin', { notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : url.searchParams.has('cancelled') ? 'Your appointment was cancelled. Sign in to see your visits.' : '' })
     }
     const patient = await portalPatient(env.DB, request)
+    const recordPath=path.match(/^\/portal\/records\/([\w-]+)\.(pdf|json)$/)
+    if(recordPath&&request.method==='GET')return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',patient)
     const payerEstimate=path.match(/^\/portal\/aeobs\/([\w-]+)\.pdf$/)
     if(payerEstimate&&request.method==='GET'){const doc=await aeobOriginal(env.DB,patient.clientId,payerEstimate[1],true);await commit(env.DB,null,[portalGuard(env.DB,patient),audit(env.DB,patientActor,'aeob.downloaded',patient.clientId,payerEstimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
     const estimate=path.match(/^\/portal\/estimates\/([\w-]+)\.pdf$/)

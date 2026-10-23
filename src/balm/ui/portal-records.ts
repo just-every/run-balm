@@ -1,0 +1,12 @@
+import { form, h, hidden, stamp } from './shared'
+import { patientForm } from './portal-content'
+
+export function patientRecordPanel(d:any) {
+ return `<section class="card portal-section" id="records"><h2>Your patient record</h2><p>Ask for a copy of your record. The clinic reviews and releases a readable PDF and a machine-readable FHIR file here within 30 days. No record is sent by email.</p>${patientForm('record.request','','Request my record')}${(d.recordRequests??[]).map((r:any)=>`<article><h3>${r.released_at?'Ready to download':'Requested'}</h3><p>Requested ${h(r.requested_at.slice(0,10))} · Due ${h(r.due_at.slice(0,10))}</p>${r.released_at?`<p>Released ${h(r.released_at.slice(0,10))}</p><p><a href="/portal/records/${h(r.id)}.pdf">Download record PDF</a> · <a href="/portal/records/${h(r.id)}.json">Download FHIR record</a></p>`:'<p>The clinic is preparing your copy. Contact the clinic if you need help.</p>'}</article>`).join('')}</section>`
+}
+export function recordQueue(s:any) {
+ if(s.actor.role!=='owner')return ''
+ const pending=(s.recordRequests??[]).filter((r:any)=>!r.released_at)
+ if(!pending.length)return ''
+ return `<section class="panel full" id="record-requests"><h2>Patient record requests</h2>${pending.map((r:any)=>`<article class="entry"><h3>${h(r.patient)}</h3><p>${r.overdue?'<strong>Overdue</strong> · ':''}Due ${stamp(s,r.due_at)} · Requested ${stamp(s,r.requested_at)}</p><p><a href="/app/clients/${h(r.client_id)}">Open patient file</a></p>${form('record.prepare','/app#record-requests',hidden('id',r.id),'Prepare record copy')}${r.prepared_id?`<p>Review both fixed originals before releasing: <a href="/api/balm/records/${h(r.prepared_id)}.pdf">Preview PDF</a> · <a href="/api/balm/records/${h(r.prepared_id)}.json">Preview FHIR</a>.</p><p class="help">The PDF includes notes, intake answers, exercises and document descriptions; chart and consent originals are embedded in FHIR. Full billing, messages and all remaining record categories are not included yet. Use the clinic's existing process for a complete record.</p>${form('record.release','/app#record-requests',hidden('id',r.id)+hidden('packageId',r.prepared_id)+hidden('sha256',r.prepared_sha256)+'<label class="check"><input type="checkbox" name="confirm" required><span>I reviewed both copies and approve releasing this exact package to this patient.</span></label>','Release record to patient')}`:''}</article>`).join('')}</section>`
+}

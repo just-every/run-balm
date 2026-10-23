@@ -5,8 +5,13 @@ export const custody = [
   {"table":"bm_note_release_approvals","client":false,"links":[["release_id","bm_note_releases","id"]]},
   {"table":"bm_note_release_revocations","client":false,"links":[["release_id","bm_note_releases","id"]]},
 
+  {"table":"bm_record_requests","client":true,"links":[]},
+  {"table":"bm_record_packages","client":true,"links":[["request_id","bm_record_requests","id"]]},
+  {"table":"bm_record_parts","client":false,"links":[["package_id","bm_record_packages","id"]]},
   {"table":"bm_series","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_appointments","client":true,"links":[["series_id","bm_series","id"],["client_id","bm_clients","id"]]},
+  {"table":"bm_integration_events","client":true,"links":[["appointment_id","bm_appointments","id"]]},
+  {"table":"bm_integration_deliveries","client":false,"links":[["event_id","bm_integration_events","id"]]},
   {"table":"bm_policies","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_authorizations","client":false,"links":[["policy_id","bm_policies","id"]]},
   {"table":"bm_balance_reminders","client":true,"links":[["client_id","bm_clients","id"]]},
