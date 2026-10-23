@@ -14,14 +14,14 @@ export function chartFixture(kind='daily',discipline='pt') {
 
 export async function templateJourney(h) {
   await h.finishSetup()
-  await h.cmd('settings.save',{clinicName:'synthetic-balm-1',timeZone:'Australia/Brisbane',taxId:'12-3456789',address:'synthetic-balm-1'})
-  const service=await h.cmd('service.save',{name:'synthetic-balm-1',durationMinutes:45,priceCents:9500})
+  await h.cmd('settings.save',{clinicName:'Riverside Rehabilitation',timeZone:'Australia/Brisbane',taxId:'12-3456789',address:'synthetic-balm-1'})
+  const service=await h.cmd('service.save',{name:'Therapy session',durationMinutes:45,priceCents:9500})
   const results=[]
   for (const [index,discipline] of ['pt','ot','slp'].entries()) {
-    const name=`synthetic-balm-${index+1}`
+    const name=['Priya','Owen','Sofia'][index]
     const clinician=await h.staff(name,'practitioner',{discipline,credentials:discipline.toUpperCase()})
     await h.cmd('hours.save',{practitionerId:clinician.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
-    const patient=await h.cmd('client.save',{firstName:name,lastName:'synthetic-balm-1',dateOfBirth:'1980-01-01'})
+    const patient=await h.cmd('client.save',{firstName:['Maya','Noah','Carla'][index],lastName:['Lee','Kim','Nguyen'][index],dateOfBirth:'1980-01-01'})
     const episode=await h.cmd('episode.open',{clientId:patient.id,title:name,directAccess:true})
     const signature=(note,revision=1,status=200)=>h.cmd('note.sign',{id:note.id,revision,signature:name,credentials:discipline.toUpperCase(),attest:true},clinician.cookie,status)
     const file=async()=> (await h.send('/api/balm/clients/'+patient.id,undefined,clinician.cookie)).value
@@ -78,18 +78,18 @@ export async function templateJourney(h) {
 export async function customizedTemplateJourney(h) {
   const results=await templateJourney(h)
   const {patient,clinician,episode}=results[0]
-  const input={baseKey:'pt.daily',title:'synthetic-balm-1 knee daily',bodyRegion:'Lower extremity',diagnosisVariant:'M25.561',customFields:[{id:'assistance',label:'Functional assistance',required:true,choices:['Independent','Assisted']}]}
+  const input={baseKey:'pt.daily',title:'Knee rehabilitation daily',bodyRegion:'Lower extremity',diagnosisVariant:'M25.561',customFields:[{id:'assistance',label:'Functional assistance',required:true,choices:['Independent','Assisted']}]}
   const custom=await h.cmd('template.save',input)
   const visit=await pastVisit(h,patient.id,clinician,(await h.state()).services[0].id,h.owner,1,{episodeId:episode.id})
   const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:custom.id,...chartFixture()},clinician.cookie)
-  const sign={id:note.id,revision:1,signature:clinician.name ?? 'synthetic-balm-1',credentials:'PT',attest:true}
+  const sign={id:note.id,revision:1,signature:clinician.name ?? 'Priya',credentials:'PT',attest:true}
   const missing=await h.cmd('note.sign',sign,clinician.cookie,400);assert.match(missing.message ?? missing.code,/Functional assistance/)
   await h.cmd('note.amend',{id:note.id,revision:1,...chartFixture(),sections:{...chartFixture().sections,assistance:'Unsupported'}},clinician.cookie,400)
   await h.cmd('note.amend',{id:note.id,revision:1,...chartFixture(),sections:{...chartFixture().sections,assistance:'Independent'}},clinician.cookie)
   await h.cmd('note.sign',{...sign,revision:2},clinician.cookie)
   const read=async()=> (await h.send('/api/balm/clients/'+patient.id,undefined,clinician.cookie)).value
   const original=(await read()).notes.find(n=>n.id===note.id)
-  await h.cmd('template.save',{...input,id:custom.id,version:custom.version,title:'synthetic-balm-1 revised daily',customFields:[...input.customFields,{id:'review',label:'Additional practice review',required:true}]})
+  await h.cmd('template.save',{...input,id:custom.id,version:custom.version,title:'Knee rehabilitation daily, reviewed',customFields:[...input.customFields,{id:'review',label:'Additional practice review',required:true}]})
   assert.deepEqual((await read()).notes.find(n=>n.id===note.id),original)
   for (const result of results) {
     const current=(await h.send('/api/balm/clients/'+result.patient.id,undefined,result.clinician.cookie)).value.notes
@@ -129,7 +129,7 @@ export async function templateBrowserJourney(h, result) {
       await page.getByText('Add a practice template',{exact:true}).click()
       const edit=page.locator('form[action*="template.save"]').last()
       await edit.locator('[name=baseKey]').selectOption('pt.daily')
-      const title=`synthetic-balm-${width}`
+      const title=`Knee rehabilitation daily — ${width===1440?'clinic':'mobile'}`
       await edit.locator('[name=title]').fill(title)
       await edit.locator('[name=bodyRegion]').selectOption('Lower extremity')
       await edit.locator('[name=diagnosisVariant]').fill('M25.561')
@@ -163,7 +163,7 @@ export async function templateBrowserJourney(h, result) {
       const entry=page.locator('#note-'+note.id)
       await entry.getByText('Review and sign',{exact:true}).click()
       const signing=entry.locator('form[action*="note.sign"]')
-      await signing.locator('[name=signature]').fill('synthetic-balm-1')
+      await signing.locator('[name=signature]').fill('Priya')
       await signing.locator('[name=credentials]').fill('PT')
       await signing.locator('[name=attest]').check()
       await shot('CHART-002-review-sign',width,signing)
