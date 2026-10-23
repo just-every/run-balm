@@ -5,7 +5,7 @@ export async function insuranceActor(db: D1Database, who: Actor, desk = false) {
   human(who)
   const live = await actor(db, who.id)
   need(live, ...(desk ? ['owner', 'reception'] as const : ['owner', 'reception', 'practitioner'] as const))
-  return live
+  return {...live,sessionId:who.sessionId}
 }
 export function clientGuard(db: D1Database, who: Actor, clientId: string) {
   return guard(db, `EXISTS(SELECT 1 FROM bm_clients c WHERE c.id=? AND c.erased_at IS NULL
