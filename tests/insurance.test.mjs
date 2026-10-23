@@ -724,3 +724,68 @@ test('MOVE-007: reviewed aging and mixed 835 retain migrated payments and unmatc
   assert.equal((await h.cmd('insurance.runout.read',{},owner)).closed,true)
  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
 })
+
+test('MOVE-007: a denied legacy receivable becomes a frequency-7 signed-charge correction with its original control and no duplicate balance',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={source:'synthetic-balm-230',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-231,${c.patient.id},${c.payer.id},synthetic-balm-232,synthetic-balm-233,${c.serviceDate},95.00,80.00,denied\n`}
+  const preview=await h.cmd('insurance.runout.preview',input,owner)
+  const imported=await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id},owner,400)
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},c.biller.cookie,403)
+  const correction=await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},owner)
+  assert.equal(correction.frequency,'7');assert.equal(correction.originalControl,'synthetic-balm-233')
+  let report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,8000);assert.equal(report.totals.importedCents,8000)
+  await h.cmd('insurance.runout.correct',{id:imported.claims[0],claimId:claim.id,attest:true},owner,409)
+  await h.cmd('insurance.runout.close',{attest:true},owner,409)
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]})
+  const file=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  assert.equal(file.status,200);assert.match(file.text,new RegExp(`CLM\\*${claim.id}\\*95.00\\*\\*\\*11:B:7`));assert.match(file.text,/REF\*F8\*SYNTHETIC-BALM-233/)
+  const submitted=await h.cmd('insurance.batch.submit',{id:batch.id},owner)
+  assert.equal(submitted.status,'submitted')
+  const paid=await fixture('835-paid.x12',{CLAIM:'synthetic-balm-232'})
+  // The old patient-control number follows the transferred receivable into Balm.
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:paid},owner)
+  report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,0);assert.equal(report.posted.paidCents,6000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.totals.importedCents-report.posted.paidCents-report.posted.adjustmentCents,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  await h.cmd('insurance.runout.reopen',{attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).closed,false)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-corrected-runout',path:'/app/insurance',cookie:owner,selector:'#runout',open:'Migrated claims'}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-234'},outbound:async request=>{const sent=await request.json();assert.equal(sent.kind,'837P');assert.match(sent.body,/11:B:7/);assert.match(sent.body,/REF\*F8\*SYNTHETIC-BALM-233/);return Response.json({status:'submitted',reference:'synthetic-balm-235'})}})
+})
+
+test('MOVE-007: a scanned paper EOB closes one mixed native, legacy and unmatched deposit once',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner,claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  const exported=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]});await h.send('/api/balm/insurance/837P/'+exported.id,undefined,owner)
+  const input={source:'synthetic-balm-240',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-241,${c.patient.id},${c.payer.id},synthetic-balm-242,synthetic-balm-243,${c.serviceDate},100.00,100.00,open\n`}
+  const preview=await h.cmd('insurance.runout.preview',input,owner);await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:10000},owner)
+  const paper=await h.cmd('insurance.payer_batch.prepare',{payerId:c.payer.id,reference:'synthetic-balm-244',depositOn:c.serviceDate,amountCents:14000},owner)
+  const add=(claimId,billedCents,paidCents,co,pr)=>h.cmd('insurance.payer_line.add',{batchId:paper.id,kind:'payment',claimId,billedCents,allowedCents:paidCents+pr,paidCents,adjustments:[{group:'CO',reason:'45',amountCents:co},...(pr?[{group:'PR',reason:'3',amountCents:pr}]:[])],payerControl:claimId==='synthetic-balm-242'?'synthetic-balm-243':'synthetic-balm-245',reason:'Synthetic original paper EOB line'},owner)
+  await add(claim.id,9500,6000,2000,1500);await add('synthetic-balm-242',10000,5000,2000,3000)
+  const attachment='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\nsynthetic-balm-246 original paper EOB\n%%EOF').toString('base64')
+  await h.cmd('insurance.payer_eob.attach',{batchId:paper.id,attachment,attachmentName:'synthetic-balm-246.pdf',attest:true},owner)
+  await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,409)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,10000)
+  await add('synthetic-balm-247',4000,3000,1000,0)
+  // A newly added legacy/unknown line withdraws the earlier patient-scope attestation.
+  assert.match((await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,400)).code,/attach_the_scanned_EOB/)
+  await h.cmd('insurance.payer_eob.attach',{batchId:paper.id,attachment,attachmentName:'synthetic-balm-246.pdf',attest:true},owner)
+  const posted=await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner)
+  assert.equal(posted.depositCents,14000)
+  const report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,3000);assert.equal(report.posted.paidCents,5000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.suspense.length,1);assert.equal(report.suspense[0].paid_cents,3000)
+  assert.equal((await patientFile(h,c.patient.id)).insurance.claims.find(q=>q.id===claim.id).payer_paid_cents,6000)
+  await h.cmd('insurance.payer_batch.close',{id:paper.id,attest:true},owner,409)
+  assert.equal((await h.send('/api/balm/insurance/eob/'+paper.id,undefined,c.biller.cookie)).status,403)
+  assert.equal((await h.state(c.biller.cookie)).insurance.manualPayers.some(b=>b.id===paper.id),false)
+  const original=await h.send('/api/balm/insurance/eob/'+paper.id,undefined,owner);assert.equal(original.status,200);assert.match(original.text,/synthetic-balm-246 original paper EOB/)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-paper-suspense',path:'/app/insurance',cookie:owner,selector:'#runout'},{name:'MOVE-007-paper-deposit',path:'/app/insurance',cookie:owner,selector:'#payer-batch-'+paper.id}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})

@@ -1,3 +1,5 @@
+import {matchMigrated} from './runout'
+import type {RemitClaim} from './remittance-parser'
 import {biller} from '../domain/role-access'
 import {audit,commit,guard,id,insist,now,one,rows,stmt,text,type Actor,type Data} from '../domain/model'
 import {claimFor,clientGuard,insuranceActor,yes} from './access'
@@ -21,37 +23,59 @@ export async function payerBatch(db:D1Database,key:unknown,draft=true) {
 }
 export async function addPayerLine(db:D1Database,who:Actor,input:Data) {
  const batch=await payerBatch(db,input.batchId),line=manualLine(input),key=id()
- const claim=line.kind==='interest'?null:await claimFor(db,who,input.claimId)
+ let claim:Data|null=null,migrated:Data|null=null,legacy:RemitClaim|null=null
+ if(line.kind!=='interest'){
+  let native=await one(db,'SELECT id FROM bm_claims WHERE id=?',text(input.claimId,'claim',100))
+  if(!native&&line.kind==='payment'){
+   insist(who.role==='owner','legacy_paper_matching_requires_owner',403)
+   legacy={id:text(input.claimId,'patient_control',100),status:line.adjudication==='denied'?'4':'1',chargeCents:line.billedCents!,paidCents:line.paidCents!,prCents:line.prCents!,control:line.payerControl??'',adjustments:(line.adjustments??[]).map(a=>({...a,group:a.group as 'CO'|'PR'|'OA'|'PI',line:null})),remarks:line.remarks??[],lines:[]}
+   migrated=await matchMigrated(db,batch.payer_id,legacy!)
+   if(migrated?.native_claim_id){native={id:migrated.native_claim_id};migrated=null;legacy=null}
+  }
+  if(native)claim=await claimFor(db,who,native.id)
+  else insist(legacy,'insurance_claim_not_found',404)
+ }
+ if(legacy){
+  const count=await one(db,'SELECT (SELECT COUNT(*) FROM bm_payer_payment_lines WHERE batch_id=?)+(SELECT COUNT(*) FROM bm_runout_paper_lines WHERE batch_id=?) AS n',batch.id,batch.id);insist(count!.n<100,'payer_batch_maximum_100_lines')
+  await commit(db,who,[payerAuthority(db,who),...(migrated?[clientGuard(db,who,migrated.client_id)]:[]),stmt(db,"UPDATE bm_payer_payment_batches SET version=version+1 WHERE id=? AND status='draft' AND version=?",batch.id,batch.version),guard(db,'changes()=1'),stmt(db,'DELETE FROM bm_payer_eobs WHERE batch_id=?',batch.id),stmt(db,'INSERT INTO bm_runout_paper_lines(id,batch_id,migrated_id,client_id,paid_cents,detail,reason,created_at) VALUES(?,?,?,?,?,?,?,?)',key,batch.id,migrated?.id??null,migrated?.client_id??null,legacy.paidCents,JSON.stringify(legacy),line.reason,now()),audit(db,who,'insurance.legacy_paper_line_added',migrated?.client_id??null,key)])
+  return {id:key,batchId:batch.id}
+ }
  if(claim){const snapshot=JSON.parse(claim.snapshot);insist(snapshot.payer.id===batch.payer_id,'payer_does_not_match_claim');insist(!['draft','ready','corrected'].includes(claim.status),'claim_must_be_sent_or_exported',409)}
  const count=await one(db,'SELECT COUNT(*) AS n FROM bm_payer_payment_lines WHERE batch_id=?',batch.id);insist(count!.n<100,'payer_batch_maximum_100_lines')
- await commit(db,who,[payerAuthority(db,who),...(claim?[clientGuard(db,who,claim.client_id)]:[]),
+ await commit(db,who,[payerAuthority(db,who),...((claim||migrated)?[clientGuard(db,who,(claim??migrated)!.client_id)]:[]),
   stmt(db,"UPDATE bm_payer_payment_batches SET version=version+1 WHERE id=? AND status='draft' AND version=?",batch.id,batch.version),guard(db,'changes()=1'),
-  stmt(db,`INSERT INTO bm_payer_payment_lines(id,batch_id,kind,claim_id,client_id,invoice_id,billed_cents,allowed_cents,paid_cents,adjustment_cents,pr_cents,amount_cents,adjudication,adjustments,remarks,payer_control,reason,created_at,procedure_code,procedure_modifiers,paid_units,adjudicated_on) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,key,batch.id,line.kind,claim?.id??null,claim?.client_id??null,claim?.invoice_id??null,line.billedCents??0,line.allowedCents??0,line.paidCents??0,line.adjustmentCents??0,line.prCents??0,line.amountCents??0,line.adjudication??'paid',JSON.stringify(line.adjustments??[]),JSON.stringify(line.remarks??[]),line.payerControl??'',line.reason,now(),line.procedureCode??'',JSON.stringify(line.procedureModifiers??[]),line.paidUnits??null,line.adjudicatedOn??''),
+  stmt(db,`INSERT INTO bm_payer_payment_lines(id,batch_id,kind,claim_id,client_id,invoice_id,billed_cents,allowed_cents,paid_cents,adjustment_cents,pr_cents,amount_cents,adjudication,adjustments,remarks,payer_control,reason,created_at,procedure_code,procedure_modifiers,paid_units,adjudicated_on) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,key,batch.id,line.kind,claim?.id??null,claim?.client_id??migrated?.client_id??null,claim?.invoice_id??null,line.billedCents??0,line.allowedCents??0,line.paidCents??0,line.adjustmentCents??0,line.prCents??0,line.amountCents??0,line.adjudication??'paid',JSON.stringify(line.adjustments??[]),JSON.stringify(line.remarks??[]),line.payerControl??'',line.reason,now(),line.procedureCode??'',JSON.stringify(line.procedureModifiers??[]),line.paidUnits??null,line.adjudicatedOn??''),
   audit(db,who,'insurance.payer_line_added',claim?.client_id??null,key)])
  return {id:key,batchId:batch.id}
 }
 export async function removePayerLine(db:D1Database,who:Actor,input:Data) {
- const batch=await payerBatch(db,input.batchId),line=await one(db,'SELECT * FROM bm_payer_payment_lines WHERE id=? AND batch_id=?',text(input.id,'line',100),batch.id)
+ const batch=await payerBatch(db,input.batchId),lineId=text(input.id,'line',100),legacy=await one(db,'SELECT * FROM bm_runout_paper_lines WHERE id=? AND batch_id=?',lineId,batch.id),line=legacy??await one(db,'SELECT * FROM bm_payer_payment_lines WHERE id=? AND batch_id=?',lineId,batch.id)
+ if(legacy)insist(who.role==='owner','legacy_paper_matching_requires_owner',403)
  insist(line,'payer_line_not_found',404)
  // A draft scan attests to exactly the named patients. Removing a line withdraws
  // that scan, so its data can never become detached from patient custody.
- await commit(db,who,[payerAuthority(db,who),stmt(db,"UPDATE bm_payer_payment_batches SET version=version+1 WHERE id=? AND status='draft' AND version=?",batch.id,batch.version),guard(db,'changes()=1'),stmt(db,'DELETE FROM bm_payer_eobs WHERE batch_id=?',batch.id),stmt(db,'DELETE FROM bm_payer_payment_lines WHERE id=?',line.id),audit(db,who,'insurance.payer_line_removed',line.client_id,line.id)])
+ await commit(db,who,[payerAuthority(db,who),stmt(db,"UPDATE bm_payer_payment_batches SET version=version+1 WHERE id=? AND status='draft' AND version=?",batch.id,batch.version),guard(db,'changes()=1'),stmt(db,'DELETE FROM bm_payer_eobs WHERE batch_id=?',batch.id),stmt(db,legacy?'DELETE FROM bm_runout_paper_lines WHERE id=?':'DELETE FROM bm_payer_payment_lines WHERE id=?',line.id),audit(db,who,'insurance.payer_line_removed',line.client_id,line.id)])
  return {id:line.id,removed:true}
 }
 export async function attachPayerEob(db:D1Database,who:Actor,input:Data) {
  const batch=await payerBatch(db,input.batchId),upload=await attachment(input)
  insist(upload&&yes(input.attest),'attach_the_original_EOB_and_confirm_listed_patients')
- const lines=await rows(db,'SELECT DISTINCT client_id FROM bm_payer_payment_lines WHERE batch_id=? AND client_id IS NOT NULL',batch.id)
- insist(lines.length,'add_claim_lines_before_attaching_the_EOB')
+ const lines=await rows(db,'SELECT client_id FROM bm_payer_payment_lines WHERE batch_id=? AND client_id IS NOT NULL UNION SELECT client_id FROM bm_runout_paper_lines WHERE batch_id=? AND client_id IS NOT NULL',batch.id,batch.id)
+ const legacy=await one(db,"SELECT 1 FROM bm_runout_paper_lines WHERE batch_id=?",batch.id)
+ if(legacy)insist(who.role==='owner','legacy_paper_matching_requires_owner',403)
+ insist(lines.length||(legacy&&who.role==='owner'),'add_claim_lines_before_attaching_the_EOB')
  await commit(db,who,[payerAuthority(db,who),...lines.map(l=>clientGuard(db,who,l.client_id)),stmt(db,"UPDATE bm_payer_payment_batches SET version=version+1 WHERE id=? AND status='draft' AND version=?",batch.id,batch.version),guard(db,'changes()=1'),
   stmt(db,'INSERT INTO bm_payer_eobs(batch_id,filename,mime,content_base64,sha256,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(batch_id) DO UPDATE SET filename=excluded.filename,mime=excluded.mime,content_base64=excluded.content_base64,sha256=excluded.sha256,uploaded_by=excluded.uploaded_by,uploaded_at=excluded.uploaded_at',batch.id,upload.filename,upload.mime,upload.content,upload.digest,who.email,now()),...lines.map(l=>audit(db,who,'insurance.payer_eob_attached',l.client_id,batch.id))])
  return {id:batch.id,sha256:upload.digest}
 }
 export async function manualPayerState(db:D1Database,who:Actor) {
  if(who.role!=='owner'&&!biller(who))return []
- const batches=await rows(db,`SELECT b.*,p.name AS payer,e.filename AS eob_filename FROM bm_payer_payment_batches b JOIN bm_payers p ON p.id=b.payer_id LEFT JOIN bm_payer_eobs e ON e.batch_id=b.id ORDER BY b.created_at DESC LIMIT 100`)
+ const batches=await rows(db,`SELECT b.*,p.name AS payer,e.filename AS eob_filename FROM bm_payer_payment_batches b JOIN bm_payers p ON p.id=b.payer_id LEFT JOIN bm_payer_eobs e ON e.batch_id=b.id WHERE (?='owner' OR NOT EXISTS(SELECT 1 FROM bm_runout_paper_lines l WHERE l.batch_id=b.id)) ORDER BY b.created_at DESC LIMIT 100`,who.role)
  for(const b of batches){
   b.lines=(await rows(db,`SELECT l.*,c.first_name||' '||c.last_name AS patient FROM bm_payer_payment_lines l LEFT JOIN bm_clients c ON c.id=l.client_id WHERE l.batch_id=? ORDER BY l.created_at,l.id`,b.id)).map(l=>({...l,adjustments:JSON.parse(l.adjustments),remarks:JSON.parse(l.remarks)}))
+  for(const l of await rows(db,`SELECT l.*,c.first_name||' '||c.last_name AS patient FROM bm_runout_paper_lines l LEFT JOIN bm_clients c ON c.id=l.client_id WHERE l.batch_id=? ORDER BY l.created_at,l.id`,b.id)){
+   const r=JSON.parse(l.detail);b.lines.push({...l,patient:l.patient??'Unmatched '+r.id,kind:'payment',billed_cents:r.chargeCents,allowed_cents:r.paidCents+r.prCents,pr_cents:r.prCents,adjustments:r.adjustments,remarks:r.remarks,legacy:true})
+  }
   b.postedCents=b.lines.reduce((t:number,l:Data)=>t+(l.kind==='payment'?l.paid_cents:l.kind==='interest'?l.amount_cents:-l.amount_cents),0)
  }
  const clients=[...new Set(batches.flatMap(b=>b.lines.map((l:Data)=>l.client_id)).filter(Boolean))] as string[]
@@ -60,9 +84,11 @@ export async function manualPayerState(db:D1Database,who:Actor) {
 }
 export async function payerEobDownload(db:D1Database,initial:Actor,key:string) {
  const who=await insuranceActor(db,initial,true);insist(who.role==='owner'||biller(who),'payer_batches_require_biller_or_owner',403)
- const batch=await payerBatch(db,key,false),file=await one(db,'SELECT * FROM bm_payer_eobs WHERE batch_id=?',batch.id)
+ const batch=await payerBatch(db,key,false)
+ if(await one(db,"SELECT 1 FROM bm_runout_paper_lines WHERE batch_id=?",batch.id))insist(who.role==='owner','legacy_paper_matching_requires_owner',403)
+ const file=await one(db,'SELECT * FROM bm_payer_eobs WHERE batch_id=?',batch.id)
  insist(file,'payer_eob_unavailable_or_withdrawn',404)
- const clients=await rows(db,'SELECT DISTINCT client_id FROM bm_payer_payment_lines WHERE batch_id=? AND client_id IS NOT NULL',batch.id)
+ const clients=await rows(db,'SELECT client_id FROM bm_payer_payment_lines WHERE batch_id=? AND client_id IS NOT NULL UNION SELECT client_id FROM bm_runout_paper_lines WHERE batch_id=? AND client_id IS NOT NULL',batch.id,batch.id)
  await commit(db,who,[payerAuthority(db,who),...clients.flatMap(c=>[clientGuard(db,who,c.client_id),audit(db,who,'insurance.payer_eob_downloaded',c.client_id,batch.id)])])
  return attachmentResponse({filename:file.filename,mime:file.mime,content:file.content_base64,digest:file.sha256})
 }
