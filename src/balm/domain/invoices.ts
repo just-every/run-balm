@@ -148,7 +148,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
 }
 
 export async function invoicesFor(db: D1Database, clientId?: string) {
-  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,
+  const list = await rows(db, `SELECT i.id,i.number,i.appointment_id,i.client_id,i.status,i.amount_cents,i.snapshot,i.attendance_started,i.prepared_by,i.prepared_role,i.prepared_at,i.approved_by,i.approved_at,i.void_reason,EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id) AS insurance_pending,
     (SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id) AS paid_cents,(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id) AS adjusted_cents FROM bm_invoices i ${clientId ? 'WHERE i.client_id=?' : ''} ORDER BY i.prepared_at DESC`, ...(clientId ? [clientId] : []))
   const payments = await rows(db, `SELECT * FROM bm_invoice_payments ${clientId ? 'WHERE invoice_id IN (SELECT id FROM bm_invoices WHERE client_id=?)' : ''} ORDER BY recorded_at`, ...(clientId ? [clientId] : []))
   return list.map(i => ({ ...i, snapshot: JSON.parse(i.snapshot as string), payments: payments.filter(p => p.invoice_id === i.id) }) as Data)
