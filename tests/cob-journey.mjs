@@ -23,7 +23,7 @@ export async function cobJourney(h,output) {
   return {...saved,name:`Synthetic payer ${n}`,code:`9999${n}`}
  }
  const primary=await payer(1),secondary=await payer(2,'ama'),tertiary=await payer(3,'ama'),medicare=await payer(4,'cms',true)
- await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,source:'CMS synthetic-year threshold fixture'})
+ await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,publishedOn:`${year-1}-10-30`,source:'CMS synthetic-year threshold fixture'})
  const command=(name,input,status=200)=>h.cmd(name,input,biller.cookie,status)
  const prepare=async(label,payers)=>{
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:label,dateOfBirth:'1988-04-02'})
