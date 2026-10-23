@@ -22,7 +22,8 @@ export async function cobJourney(h,output) {
   await h.cmd('insurance.enrollment.save',{payerId:saved.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
   return {...saved,name:`Synthetic payer ${n}`,code:`9999${n}`}
  }
- const primary=await payer(1),secondary=await payer(2,'ama'),tertiary=await payer(3,'ama')
+ const primary=await payer(1),secondary=await payer(2,'ama'),tertiary=await payer(3,'ama'),medicare=await payer(4,'cms',true)
+ await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',thresholdCents:250000,reviewCents:300000,source:'CMS synthetic-year threshold fixture'})
  const command=(name,input,status=200)=>h.cmd(name,input,biller.cookie,status)
  const prepare=async(label,payers)=>{
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:label,dateOfBirth:'1988-04-02'})
@@ -68,12 +69,12 @@ export async function cobJourney(h,output) {
  await command('insurance.remittance.import',{payerId:tertiary.id,x12:era(third,tertiary,tertiaryLines,{status:'3',trace:'synthetic-balm-23'})})
  assert.equal((await file(c)).billing.ledger.patientBalanceCents,100)
  assert.equal((await file(c)).billing.ledger.insurancePendingCents,0)
- const crossed=await prepare('Crossover',[primary,secondary]);await submit(crossed.claim)
+ const crossed=await prepare('Crossover',[medicare,secondary]);await submit(crossed.claim)
  for(const status of ['19','20','21']){
-  const bad=era(crossed.claim,primary,primaryLines,{status,forward:{...secondary,code:'00000'},trace:'synthetic-balm-'+status})
-  const refusal=await command('insurance.remittance.import',{payerId:primary.id,x12:bad},400);assert.match(refusal.code,/crossover_carrier/)
+  const bad=era(crossed.claim,medicare,primaryLines,{status,forward:{...secondary,code:'00000'},trace:'synthetic-balm-'+status})
+  const refusal=await command('insurance.remittance.import',{payerId:medicare.id,x12:bad},400);assert.match(refusal.code,/crossover_carrier/)
  }
- await command('insurance.remittance.import',{payerId:primary.id,x12:era(crossed.claim,primary,primaryLines,{status:'19',forward:secondary,trace:'synthetic-balm-24'})})
+ await command('insurance.remittance.import',{payerId:medicare.id,x12:era(crossed.claim,medicare,primaryLines,{status:'19',forward:secondary,trace:'synthetic-balm-24'})})
  assert.equal((await file(crossed)).insurance.claims.length,1)
  await command('insurance.claim.prepare',{appointmentId:crossed.appointmentId,policyId:crossed.policies[1].id},409)
  await command('insurance.remittance.import',{payerId:secondary.id,x12:era(crossed.claim,secondary,[{code:'97140',charge:2500,paid:300,co:2000,pr:200,units:1}],{status:'2',trace:'synthetic-balm-25'})})

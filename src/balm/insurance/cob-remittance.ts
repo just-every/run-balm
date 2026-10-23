@@ -5,7 +5,7 @@ import type { ClaimSnapshot } from './types'
 import type { CobPrior } from './cob-types'
 import type { RemitClaim } from './remittance-parser'
 
-export async function remitIdentity(db:D1Database,who:Actor,r:RemitClaim,payerId:string) {
+export async function remitIdentity(db:D1Database,who:Actor,r:RemitClaim,payerId:string):Promise<{claim:Data;facts:ClaimSnapshot;crossover:boolean}> {
  const original=await claimFor(db,who,r.id),facts=JSON.parse(original.snapshot) as ClaimSnapshot
  if(facts.payer.id===payerId)return {claim:original,facts,crossover:false}
  const target=await one(db,`SELECT s.*,p.*,y.name AS payer_name,y.payer_id AS payer_code,y.receiver_id,y.medicare,y.unit_method FROM bm_cob_stages s JOIN bm_policies p ON p.id=s.policy_id JOIN bm_payers y ON y.id=p.payer_id WHERE s.invoice_id=? AND p.payer_id=? AND s.state='crossover' AND s.source_claim_id=?`,original.invoice_id,payerId,original.id)
