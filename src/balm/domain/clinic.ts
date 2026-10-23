@@ -4,7 +4,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { holidayRanges } from './holidays'
 import { clinicIdentity } from './us-clinic'
-import { template } from '../charting/templates'
+import { resolveTemplate } from '../charting/template-catalog'
 import { validNpi } from '../payments/codes'
 import { audit, commit, email, guard, human, id, insist, integer, need, now, one, optional, sha256, stmt, text, type Actor, type Data } from './model'
 
@@ -82,7 +82,7 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
   if (input.id) insist(previous, 'service_not_found', 404)
   // The note template a visit of this service starts from (for example pt.evaluation).
   const noteTemplate = input.noteTemplate === undefined ? previous?.note_template ?? '' : String(input.noteTemplate)
-  insist(!noteTemplate || template(noteTemplate), 'unknown_template')
+  insist(!noteTemplate || await resolveTemplate(db,noteTemplate), 'unknown_template')
   const intakeDiscipline=input.intakeDiscipline===undefined?previous?.intake_discipline??'':String(input.intakeDiscipline)
   insist(['','pt','ot','slp','pediatric'].includes(intakeDiscipline),'invalid_intake_discipline')
   const enabled = serviceBoolean(input.selfBookEnabled, 'self_book_enabled', previous?.self_book_enabled ?? 1)

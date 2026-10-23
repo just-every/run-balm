@@ -1,7 +1,7 @@
 // Attendance opens work for the treating clinician and billing desk in the same
 // guarded batch as the status change. It never records treatment or takes money.
 import { documentationInput } from '../charting/compliance'
-import { template } from '../charting/templates'
+import { resolveTemplate } from '../charting/template-catalog'
 import { insuredCharge } from '../insurance/invoice-price'
 import { snapshot } from './invoices'
 import { audit, guard, id, now, one, stmt, type Actor, type Data } from './model'
@@ -11,11 +11,12 @@ export async function attendanceStatements(db: D1Database, who: Actor, visit: Da
   const existingNote = await one(db, 'SELECT id FROM bm_notes WHERE appointment_id=?', visit.id)
   const staff = await one(db, 'SELECT kind FROM bm_staff_access WHERE staff_id=?', visit.practitioner_id)
   const service = (await one(db, 'SELECT note_template FROM bm_services WHERE id=?', visit.service_id))!
-  if (!existingNote && (staff?.kind !== 'assistant' || template(service.note_template)?.kind === 'daily')) {
-    const t = template(service.note_template), noteId = id()
+  const t = await resolveTemplate(db,service.note_template)
+  if (!existingNote && (staff?.kind !== 'assistant' || t?.kind === 'daily')) {
+    const noteId = id()
     statements.push(
       guard(db, 'NOT EXISTS(SELECT 1 FROM bm_notes WHERE appointment_id=?)', visit.id),
-      stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,?)', noteId, visit.client_id, visit.id, visit.practitioner_id, at, t?.key ?? ''),
+      stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template,template_snapshot) VALUES(?,?,?,?,?,?,?)', noteId, visit.client_id, visit.id, visit.practitioner_id, at, t?.key ?? '', t ? JSON.stringify(t) : null),
       // Revision zero is an empty starter. The clinician's first saved text is revision one.
       stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,0,?,?,?,?,?,?)', noteId, '', 'Started at attendance; no treatment recorded', at,
         t ? JSON.stringify(t.sections.map(s => ({ id: s.id, label: s.label, text: '' }))) : null, '[]', JSON.stringify(documentationInput({}))),

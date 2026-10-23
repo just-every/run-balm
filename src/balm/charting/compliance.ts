@@ -3,7 +3,7 @@ import { parseDollars } from '../payments/ledger'
 import { hostDateAt } from '../availability/timezone'
 import { medicareSpending } from '../insurance/medicare'
 import { audit, commit, guard, human, insist, integer, need, one, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
-import { template } from './templates'
+import { resolveTemplate } from './template-catalog'
 import { dollars } from '../domain/invoices'
 
 export const documentationElements = { totalTreatmentMinutes: 'Total treatment minutes', totalTimedMinutes: 'Total timed minutes', subjective: 'Subjective', objective: 'Objective measures and interventions', assessment: 'Assessment', goals: 'Goals', plan: 'Plan' }
@@ -54,11 +54,11 @@ export async function documentationAlerts(db: D1Database, visitId: string, revis
     }
   }
   if (policies.some(p => p.medicare)) {
-    const progress = await one(db, `SELECT a.start_at,n.template FROM bm_notes n JOIN bm_appointments a ON a.id=n.appointment_id WHERE n.client_id=? AND a.practitioner_id=? AND n.signed_at IS NOT NULL AND (n.template LIKE '%.progress' OR n.template LIKE '%.evaluation') AND a.start_at<=? ORDER BY a.start_at DESC LIMIT 1`, visit.client_id, visit.practitioner_id, visit.start_at)
+    const progress = await one(db, `SELECT a.start_at,n.template FROM bm_notes n JOIN bm_appointments a ON a.id=n.appointment_id WHERE n.client_id=? AND a.practitioner_id=? AND n.signed_at IS NOT NULL AND (n.template LIKE '%.progress' OR n.template LIKE '%.evaluation' OR n.template LIKE '%.reevaluation') AND a.start_at<=? ORDER BY a.start_at DESC LIMIT 1`, visit.client_id, visit.practitioner_id, visit.start_at)
     const treatmentDays = await rows(db, "SELECT start_at FROM bm_appointments WHERE client_id=? AND practitioner_id=? AND status='attended' AND start_at<=?", visit.client_id, visit.practitioner_id, visit.start_at)
     const reportDate = progress ? hostDateAt(new Date(progress.start_at), visit.time_zone) : null
     const days = new Set(treatmentDays.map(a => hostDateAt(new Date(a.start_at), visit.time_zone)).filter(d => !reportDate || (progress?.template.endsWith('.evaluation') ? d >= reportDate : d > reportDate))).size
-    if (days >= 10 && !['progress','evaluation'].includes(template(noteTemplate)?.kind ?? '')) alerts.push({ kind: 'progress', message: `Medicare progress report is due: ${days} treatment days in the reporting period.` })
+    if (days >= 10 && !['progress','evaluation','reevaluation'].includes((await resolveTemplate(db,noteTemplate))?.kind ?? '')) alerts.push({ kind: 'progress', message: `Medicare progress report is due: ${days} treatment days in the reporting period.` })
     const group = /\bOT\b|occupational/i.test(visit.profession) ? 'ot' : 'pt_slp'
     const spending = await medicareSpending(db, visit.client_id, Number(date.slice(0, 4)), group, visitId)
     const fees = await rows(db, 'SELECT code,MAX(cents) AS cents FROM bm_payer_fees WHERE payer_id IN (SELECT p.payer_id FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? AND y.medicare=1 AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on>=?)) GROUP BY code', visit.client_id, date, date)
