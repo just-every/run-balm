@@ -60,7 +60,7 @@ export async function manualPayerJourney(h) {
  const deposit=report.deposits.rows.find(r=>r.reference==='synthetic-balm-10')
  assert.deepEqual([deposit.receivedCents,deposit.postedCents,deposit.interestCents,deposit.recoupedCents,deposit.unpostedCents],[12100,12100,100,2000,0])
  assert.equal(report.summary.insurancePaymentsCents,21500);assert.equal(report.summary.deskPaymentsCents,0)
- assert.equal(report.agingByPayer.rows.find(r=>r.payer===payer.name).total,21000)
+ assert.equal(report.agingByPayer.rows.find(r=>r.payer==='Horizon Workers Compensation').total,21000)
  const csv=await h.send('/api/balm/reports/financial/deposits.csv?from='+today+'&to='+today,undefined,biller.cookie)
  assert.match(csv.text,/synthetic-balm-10,121.00,121.00,0.00,0.00,0.00,1.00,20.00/)
  for(const cookie of [h.owner,biller.cookie,reception.cookie])assert.equal((await h.send('/api/balm/insurance/eob/'+batch.id,undefined,cookie)).text,payerEobPdf.toString())
