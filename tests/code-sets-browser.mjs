@@ -31,7 +31,7 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
    await page.setViewportSize({width,height:1000});await signIn(h.owner)
    await page.goto(h.origin+'/app/clinic')
    let panel=page.locator('#clinical-codes');await panel.waitFor()
-   assert.ok((await panel.locator('[data-code-status]').textContent()).includes('Update due'),'the installed previous-quarter fixtures are named as overdue')
+   assert.ok((await panel.locator('[data-code-status]').count())>0,'loaded release status is visible')
    await receipt(page,'CODE-001-release-status',width,panel)
    await panel.locator('[data-code-cpt] > summary').click()
    const cpt=panel.locator('[data-code-cpt] form')
@@ -103,6 +103,26 @@ export async function codeSetsMissingBrowser(h){
 }
 
 test('CODE-001: owner imports licensed data, saves synonyms, finds billable children and repeats a CMS update through real forms at desktop and phone widths',{skip:!process.env.BALM_UI_SCREENSHOTS},async()=>{
- const edge=codeSetEdge(),h=await harness({browserHttps:true,outbound:edge.outbound})
- try{await h.finishSetup();await codeSetsBrowserJourney(h,edge)}finally{await h.close()}
+ const edge=codeSetEdge(),h=await harness({browserHttps:true,codeSetEdge:edge})
+ try{
+  await h.finishSetup()
+  const {clinic,pastVisit}=await import('./clinic.mjs')
+  const {service,practitioners:[clinician]}=await clinic(h,['synthetic-balm-90'])
+  const patient=await h.cmd('client.save',{firstName:'synthetic-balm-90',lastName:'synthetic-balm-91'})
+  const visit=await pastVisit(h,patient.id,clinician,service.id)
+  await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:'pt.daily',sections:[]},clinician.cookie)
+  await codeSetsBrowserJourney(h,edge,{picker:{cookie:clinician.cookie,path:'/app/clients/'+patient.id,targetName:'section_diagnosis',open:'Edit draft'}})
+ }finally{await h.close()}
+})
+
+
+test('CODE-001: first installation names missing releases and older public imports name overdue updates at desktop and phone widths',{skip:!process.env.BALM_UI_SCREENSHOTS},async()=>{
+ const edge=codeSetEdge(),h=await harness({browserHttps:true,codeSetEdge:edge,codeSets:false})
+ try{
+  await h.finishSetup();await h.cmd('settings.save',{clinicName:'synthetic-balm-92',timeZone:'Australia/Brisbane'})
+  await codeSetsMissingBrowser(h)
+  await h.cmd('codes.update',{...edge.ptp[0],licenseAcknowledged:true,licenseBasis:'Synthetic test-only CMS/AMA license acknowledgment'})
+  const {browser,page}=await browserContext(h)
+  try{await page.goto(h.origin+'/app/clinic');const panel=page.locator('#clinical-codes');assert.match(await panel.textContent(),/Update due/);for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-overdue-release',width,panel)}}finally{await browser.close()}
+ }finally{await h.close()}
 })

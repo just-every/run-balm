@@ -470,3 +470,11 @@ test('INS-008: sourced claim work follows a KX denial through correction and pay
 
 
 test('INS-013: prior adjudications reach secondary and tertiary claims, crossover waits without duplicates, and patient balances wait for all payers',async()=>{const {cobJourney}=await import('./cob-journey.mjs');await run(h=>cobJourney(h,process.env.BALM_COB_VALIDATION),{auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-30'},outbound:async request=>{assert.equal(request.url,'https://clearinghouse.clinic.example/x12');return Response.json({status:'submitted',reference:'synthetic-balm-31'})}})})
+
+
+test('CODE-001: effective CMS quarters, billable diagnosis children, clinician distinct-service attestations, MUE and licensed charge delivery',async()=>{
+ const {codeSetJourney,codeSetEdge}=await import('./code-sets-journey.mjs')
+ const {codeSetClaimAdapter}=await import('./code-sets-claims.mjs')
+ const edge=codeSetEdge()
+ await run(async h=>{await h.finishSetup();await codeSetJourney(h,edge,await codeSetClaimAdapter(h))},{codeSetEdge:edge})
+})

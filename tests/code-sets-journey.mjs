@@ -32,7 +32,7 @@ export function codeSetEdge(){
  const icd=add('2026-code-descriptions-tabular-order.zip','icd10cm_order_2026.txt',icdBody)
  const icdLatest=add('2027-code-descriptions-tabular-order.zip','icd10cm_order_2027.txt',icdBody)
  const hcpcs=add('july-2026-alpha-numeric-hcpcs-file.zip','HCPC2026_JUL_ANWEB.txt',hcpcsRow())
- const mueBody='"Synthetic banner\nsecond line",,,\r\n"HCPCS/\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\r\n00530,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n0932T,1,1 Claim Line Edit,Synthetic rationale\r\n00532,4,3 Date of Service Edit: Clinical,Synthetic rationale\r\n'
+ const mueBody='"Synthetic banner\nsecond line",,,\r\n"HCPCS/\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\r\n00530,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n0932T,1,1 Claim Line Edit,Synthetic rationale\r\n00532,4,3 Date of Service Edit: Clinical,Synthetic rationale\r\n97110,2,2 Date of Service Edit: Policy,Synthetic rationale\r\n'
  const hcpcsLatest=add('october-2026-alpha-numeric-hcpcs-file.zip','HCPC2026_OCT_ANWEB.txt',hcpcsRow())
  const mue=add('medicare-ncci-2026-q3-practitioner-services-mue-table.zip','MCR_MUE_PractitionerServices_Eff_07-01-2026.csv',mueBody)
  const mueLatest=add('medicare-ncci-2026-q4-practitioner-services-mue-table.zip','MCR_MUE_PractitionerServices_Eff_10-01-2026.csv',mueBody)
@@ -78,7 +78,7 @@ export async function codeSetJourney(h,edge,scrub){
  assert.ok(!fixed.errors.some(e=>e.code==='ncci_ptp'))
  const nonoverride=await scrub({date:'2026-10-01',diagnoses:['M25.561'],lines:[{code:'00530',units:1,modifiers:[]},{code:'00532',units:1,modifiers:['59']}],distinctServices:[{code1:'00530',code2:'00532',modifier:'59',reason:'Synthetic distinct-service rationale cannot bypass indicator zero',attested:true}]})
  assert.ok(nonoverride.errors.some(e=>e.code==='ncci_modifier_not_permitted'))
- const units=await scrub({...base,date:'2026-10-01',lines:[{...base.lines[0],units:3},base.lines[1]]})
+ const units=await scrub({date:'2026-10-01',diagnoses:base.diagnoses,lines:[{code:'97110',units:3,modifiers:[]}]})
  assert.ok(units.errors.some(e=>e.code==='ncci_mue'&&e.message.includes('MAI 2')))
  await chargeCatalogJourney(h)
 }
