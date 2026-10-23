@@ -17,7 +17,7 @@ export async function continueCodeImport(db: D1Database, who: Actor, input: Data
       const file = job.manifest[job.file_index]
       if (file && file.staged === file.chunks) { await advanceImport(db, who, job, { phase: 'parse' }); budget.left--; continue }
       await stageArchive(db, who, job, await downloadArchive(job.spec.files[job.file_index].url, fetcher), budget)
-      if (job.phase !== 'parse') break
+      if (String(job.phase) !== 'parse') break // staging advances the persisted job phase
     }
     if (job.phase === 'parse' && budget.left > 0) {
       const bytes = await storedArchive(db, job), cursor = job.row_cursor
