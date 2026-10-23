@@ -56,7 +56,7 @@ try{
    await page.getByRole('link',{name:'Print CMS-1500'}).first().waitFor()
    const state=await h.cmd('insurance.cob.read',{},biller.cookie),packet=state.packets.find(p=>p.claim_id===paperClaim.id)
    assert.ok(packet);assert.equal(packet.submitted_at,null)
-   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await capture('cob-paper-prepared-'+width,'#cob')}
+   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await capture('cob-paper-prepared-'+width,'#cob');await capture('cob-paper-submit-form-'+width,'form[action*="insurance.cob.paper.submit"]')}
    return packet
   },
   paperSubmit:async({packet,biller})=>{
