@@ -15,6 +15,7 @@ export function windows(value: unknown, weekly=false) {
  if(typeof raw==='string'){try{raw=JSON.parse(raw)}catch{insist(false,'invalid_hours')}}
  insist(Array.isArray(raw)&&raw.length<=50,'invalid_hours')
  const minute=(v:unknown)=>{if(typeof v==='number')return integer(v,'minute',0,1440);const s=text(v,'time',5);insist(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/.test(s),'invalid_time');return +s.slice(0,2)*60+ +s.slice(3)}
+ for(const w of raw)insist(w&&typeof w==='object'&&!Array.isArray(w),'invalid_hours')
  const result=raw.map(w=>({...(weekly?{weekday:integer(w.weekday,'weekday',0,6)}:{}),startMinute:minute(w.startMinute??w.start),endMinute:minute(w.endMinute??w.end)}))
  for(const w of result){insist(w.startMinute<w.endMinute,'invalid_hours');insist(!result.some(o=>o!==w&&o.weekday===w.weekday&&o.startMinute<w.endMinute&&o.endMinute>w.startMinute),'overlapping_hours')}
  return result

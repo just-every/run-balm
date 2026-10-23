@@ -612,4 +612,4 @@ test('BALM-001 / SCHED-002: rooms and equipment refuse a second booking, drag mo
 test('SCHED-007: service and location rules govern public, portal, staff and series availability with padded race refusal',()=>run(async h=>{
  const {serviceAvailabilityJourney}=await import('./service-availability-journey.mjs')
  await serviceAvailabilityJourney(h)
-}))
+},{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
