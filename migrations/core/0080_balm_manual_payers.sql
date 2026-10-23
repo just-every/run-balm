@@ -30,7 +30,7 @@ CREATE TABLE bm_payer_eobs (
 CREATE VIEW bm_invoice_payments AS
  SELECT id,invoice_id,amount_cents,reference,recorded_by,recorded_at,card_payment_id,account_entry_id FROM bm_payments
  UNION ALL SELECT l.id,l.invoice_id,CASE l.kind WHEN 'recoupment' THEN -l.amount_cents ELSE l.paid_cents END,
- 'payer:'||b.payer_id||':'||b.id||':'||l.id,b.closed_by,b.closed_at,NULL,NULL
+ 'payer:'||b.payer_id||':'||b.reference||':'||l.id,b.closed_by,b.closed_at,NULL,NULL
  FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id
  WHERE b.status='closed' AND (l.kind='recoupment' OR (l.kind='payment' AND l.paid_cents>0));
 DROP VIEW bm_invoice_adjustments;
