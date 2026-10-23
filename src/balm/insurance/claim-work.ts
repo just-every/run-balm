@@ -68,7 +68,7 @@ export const claimAgeBands = ['0-30', '31-60', '61-90', '91-120', 'over-120'] as
  * receivables. Amounts use the same invoice/payment/adjustment basis as the ledger. */
 export async function claimWork(db: D1Database, initial: Actor, input: Data = {}) {
   const who = await billingActor(db, initial), settings = await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1')
-  if(!settings?.time_zone)return {today:null,timeZone:null,filters:{payerId:'',age:'',reason:''},payers:[],rules:[],reasons:[],queue:[],history:[]}
+  insist(settings?.time_zone, 'clinic_time_zone_not_set', 409)
   const zone = String(settings.time_zone), today = hostDateAt(new Date(), zone)
   const payerId = input.payerId ? text(input.payerId, 'payer', 100) : '', age = input.age ? text(input.age, 'age', 20) : '', reason = input.reason ? text(input.reason, 'reason', 100) : ''
   insist(!age || (claimAgeBands as readonly string[]).includes(age), 'invalid_claim_age')
