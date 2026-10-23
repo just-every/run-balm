@@ -14,7 +14,7 @@ const era = (claim, date, paid) => {
 
 /** Public command/form doors and the real X12 transport; only the paid gateway
  * is faked. Parent registers this one business journey in insurance.test.mjs. */
-export async function denialWorkJourney() {
+export async function denialWorkJourney(options={}) {
   const sent = []
   await run(async h => {
     await h.finishSetup()
@@ -75,10 +75,14 @@ export async function denialWorkJourney() {
     assert.equal((await work({ age: current.age === '0-30' ? '31-60' : '0-30' })).queue.length, 0)
     assert.equal((await work({ reason: 'carc_197' })).queue.length, 0)
     assert.equal((await work({ payerId: 'synthetic-balm-99' })).queue.length, 0)
+    await options.onDenied?.(h,{payer,patient,biller,therapist,original,date})
     const appeal = await h.cmd('insurance.denial.appeal', { id: original.id, reason: 'Synthetic payer spending record supports the required modifier.' }, therapist.cookie)
     assert.equal(appeal.status, 'draft_not_sent')
+    if(options.recordActions)await options.recordActions(h,{payer,patient,biller,therapist,original,date})
+    else{
     await billing('insurance.claim.action', { id: original.id, kind: 'followup', on: date, source: 'synthetic-balm-3 payer call confirmation' })
     await billing('insurance.claim.action', { id: original.id, kind: 'appeal_sent', on: date, source: 'synthetic-balm-4 external appeal receipt' })
+    }
     assert.equal(sent.length, 1, 'recording completed work does not send anything')
     current = (await work()).queue.find(c => c.id === original.id)
     assert.equal(current.deadlines.find(d => d.kind === 'appeal').completed, true)
@@ -102,7 +106,8 @@ export async function denialWorkJourney() {
     assert.equal(file.billing.ledger.insurancePendingCents, 0); assert.equal(file.billing.ledger.patientBalanceCents, 0)
     const page = await h.send('/app/insurance', undefined, biller.cookie)
     assert.equal(page.status, 200); assert.match(page.text, /Claim action history/)
-  }, { auth: { BALM_INSURANCE_ADAPTER_URL: gateway, BALM_INSURANCE_ADAPTER_TOKEN: 'synthetic-balm-1' }, outbound: async request => {
+    await options.onPaid?.(h,{payer,patient,biller,therapist,original,replacement,date})
+  }, {browserHttps:!!options.browserHttps, auth: { BALM_INSURANCE_ADAPTER_URL: gateway, BALM_INSURANCE_ADAPTER_TOKEN: 'synthetic-balm-1' }, outbound: async request => {
     assert.equal(request.url, gateway); assert.equal(request.method, 'POST')
     assert.equal(request.headers.get('authorization'), 'Bearer synthetic-balm-1')
     const input = await request.json(); assert.equal(request.headers.get('idempotency-key'), input.id)
