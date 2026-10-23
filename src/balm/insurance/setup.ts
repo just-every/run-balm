@@ -37,7 +37,7 @@ export async function savePayer(db: D1Database, who: Actor, input: Data) {
   const fees = input.fees === undefined ? null : input.fees
   insist(fees === null || (Array.isArray(fees) && fees.length <= 200), 'invalid_fee_schedule')
   await commit(db,who,[stmt(db,`INSERT INTO bm_payers(id,name,payer_id,receiver_id,medicare,unit_method,fixed_unit_minutes,requires_referral) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,payer_id=excluded.payer_id,receiver_id=excluded.receiver_id,medicare=excluded.medicare,unit_method=excluded.unit_method,fixed_unit_minutes=excluded.fixed_unit_minutes,requires_referral=excluded.requires_referral,version=bm_payers.version+1`,key,text(input.name,'payer_name',100),payerCode,receiver,medicare?1:0,method === 'fixed' ? null : method,fixed,yes(input.requiresReferral)?1:0),
-    ...(fees === null ? [] : [stmt(db,'DELETE FROM bm_payer_fees WHERE payer_id=?',key), ...fees.map((f: Data) => { const code = text(f.code,'cpt',5); insist(/^\d{4}[\dA-Z]$/.test(code),'invalid_cpt'); return stmt(db,'INSERT INTO bm_payer_fees(payer_id,code,cents) VALUES(?,?,?)',key,code,integer(f.cents,'fee_cents',1)) })]),audit(db,who,'insurance.payer_saved',null,key)])
+    ...(fees === null ? [] : [stmt(db,'DELETE FROM bm_payer_fees WHERE payer_id=?',key), ...fees.map((f: Data) => { const code = text(f.code,'cpt',5); insist(/^(?:\d{4}[\dA-Z]|[A-Z]\d{4})$/.test(code),'invalid_cpt'); return stmt(db,'INSERT INTO bm_payer_fees(payer_id,code,cents) VALUES(?,?,?)',key,code,integer(f.cents,'fee_cents',1)) })]),audit(db,who,'insurance.payer_saved',null,key)])
   return { id:key }
 }
 export async function saveEnrollment(db: D1Database, who: Actor, input: Data) {
@@ -75,7 +75,7 @@ export async function saveAuthorization(db: D1Database, who: Actor, input: Data)
   if (typeof scope === 'string') {
     try { scope = JSON.parse(scope) } catch { insist(false, 'invalid_cpt_scope') }
   }
-  insist(Array.isArray(scope) && scope.length <= 200 && scope.every(code => typeof code === 'string' && /^\d{4}[\dA-Z]$/.test(code)), 'invalid_cpt_scope')
+  insist(Array.isArray(scope) && scope.length <= 200 && scope.every(code => typeof code === 'string' && /^(?:\d{4}[\dA-Z]|[A-Z]\d{4})$/.test(code)), 'invalid_cpt_scope')
   const cptScope = JSON.stringify([...new Set(scope as string[])])
   // REF-003: a new authorization joins the chosen or only open episode; an edit keeps its filing.
   const filing = previous ? [] : await episodeChoice(db,who,policy.client_id as string,'authorization',key,input.episodeId)

@@ -49,7 +49,7 @@ function cptForm() {
     +field('mappingCode','Code column heading','Code','text','required maxlength="120"')
     +field('mappingDescription','Descriptor column heading','Descriptor','text','required maxlength="120"')
     +field('mappingTimed','Timed/untimed column heading','Timed','text','required maxlength="120"')
-    +'<p class="help">The reviewed timed/untimed column must contain 1 for a timed service and 0 for an untimed service. Column names come from your licensed export.</p>'+licenseFields()+'<button type="submit">Import licensed CPT file</button></form></details>'
+    +'<p class="help">The reviewed timed/untimed column must contain 1 for a timed service and 0 for an untimed service. You may include HCPCS codes with owner-reviewed timing; their descriptions and validity come from the CMS release for the visit date. Keep every CPT row authorized under your license.</p>'+licenseFields()+'<button type="submit">Import licensed CPT file</button></form></details>'
 }
 function searchResults(r: any) {
   return `<section data-code-results><h3>${h(names[r.kind]??'Code search')} · ${h(r.version)}</h3><p class="help">Service date ${h(r.date)}. <a href="${h(r.source)}">Release source</a>.</p>${r.results?.length?`<ul>${r.results.map((code:any)=>`<li><strong>${h(code.code)}</strong> · ${h(code.description)}${r.kind==='icd10'&&!code.billable?' <strong>Header: choose a billable child below.</strong>':r.kind==='icd10'?' · Billable':''}</li>`).join('')}</ul>`:'<p>No matching codes in this release. Try a more specific code, word or saved synonym.</p>'}</section>`

@@ -6,8 +6,8 @@ import { insist } from '../domain/model'
 // codes with the most minutes left over. A clinician selects the codes at a
 // tied allocation boundary; unresolved previews keep stable provisional units.
 // Untimed (service-based) codes bill one unit each.
-export type Code = { code: string; description: string; timed: boolean; release?: { id: string; version: string; effectiveOn: string } }
-export type Charge = { code: string; minutes: number; description?: string; timed?: boolean; release?: Code['release']; parameters?: string; cmsTieChosen?: true; diagnosisCodes?: string[] }
+export type Code = { code: string; description: string; timed: boolean; release?: { id: string; version: string; effectiveOn: string }; timingRelease?: { id: string; version: string; effectiveOn: string } }
+export type Charge = { code: string; minutes: number; description?: string; timed?: boolean; release?: Code['release']; timingRelease?: Code['timingRelease']; parameters?: string; cmsTieChosen?: true; diagnosisCodes?: string[] }
 export type BilledLine = Code & { minutes: number; units: number; cmsTieChosen?: true; diagnosisCodes?: string[] }
 export type CmsTie = { codes: string[]; units: number; selected: string[]; resolved: boolean }
 export type Billing = { lines: BilledLine[]; timedMinutes: number; timedUnits: number; units: number; cmsTie: CmsTie | null }
@@ -20,7 +20,7 @@ export function chargeCode(charge: Charge): Code {
   const frozen = typeof charge.timed === 'boolean' && !!charge.release
   insist(frozen || legacyTimed.has(charge.code) || legacyUntimed.has(charge.code), 'charge_has_no_recorded_catalog_timing')
   return { code: charge.code, description: frozen ? charge.description ?? '' : '',
-    timed: frozen ? charge.timed! : legacyTimed.has(charge.code), ...(frozen ? { release: charge.release } : {}) }
+    timed: frozen ? charge.timed! : legacyTimed.has(charge.code), ...(frozen ? { release: charge.release, ...(charge.timingRelease?{timingRelease:charge.timingRelease}:{}) } : {}) }
 }
 
 /** Billed units for one note's charges. */

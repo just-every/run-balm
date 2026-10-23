@@ -13,10 +13,18 @@ export async function resolveChargeCatalog(db: D1Database, date?: string): Promi
   if (!release) return []
   const items = await rows(db, `SELECT code,description,timed FROM bm_code_items WHERE release_id=?
     AND effective_on<=? AND (deleted_on IS NULL OR deleted_on>?) ORDER BY code`, release.id, on, on)
-  return items.map(item => {
+  const hcpcs=await releaseAt(db,'hcpcs',on)
+  const official=hcpcs?await rows(db,'SELECT code,description FROM bm_code_items WHERE release_id=? AND effective_on<=? AND (deleted_on IS NULL OR deleted_on>?)',hcpcs.id,on,on):[]
+  const provenance=(r:typeof release)=>({id:r!.id,version:r!.version,effectiveOn:r!.effective_on})
+  return items.flatMap(item => {
     insist(item.timed === 0 || item.timed === 1, 'licensed_cpt_requires_reviewed_timing')
-    return { code: item.code, description: item.description, timed: item.timed === 1,
-      release: { id: release.id, version: release.version, effectiveOn: release.effective_on } }
+    if(/^[A-Z]\d{4}$/.test(item.code)){
+      const row=official.find(code=>code.code===item.code)
+      // HCPCS descriptions and validity come from CMS. Timing is never guessed:
+      // the owner must include a reviewed row in the private charge catalog.
+      return hcpcs&&row?[{code:item.code,description:row.description,timed:item.timed===1,release:provenance(hcpcs),timingRelease:provenance(release)}]:[]
+    }
+    return [{ code: item.code, description: item.description, timed: item.timed === 1, release: provenance(release) }]
   })
 }
 

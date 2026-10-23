@@ -45,7 +45,7 @@ export function charges(input: Data, incomplete = false, catalog: Code[] = []): 
     const diagnosisCodes = parseIcd10(Array.isArray(c.diagnosisCodes) ? c.diagnosisCodes.join(',') : c.diagnosisCodes)
     insist(diagnosisCodes.length <= 4, 'select_at_most_four_diagnoses_per_cpt_code')
     const parameters = clean(c.parameters, 'intervention_parameters', 2000)
-    return { code: code.code, description: code.description, timed: code.timed, release: code.release, minutes, ...(parameters ? { parameters } : {}), ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
+    return { code: code.code, description: code.description, timed: code.timed, release: code.release, ...(code.timingRelease?{timingRelease:code.timingRelease}:{}), minutes, ...(parameters ? { parameters } : {}), ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
   })
   insist(new Set(list.map(c => c.code)).size === list.length, 'cpt_code_listed_twice')
   return list

@@ -18,7 +18,7 @@ const items = (value: unknown) => String(value ?? '').toUpperCase().split(/[,;\n
 export function parseCpt(value: unknown) {
   const lines = items(value).map(item => {
     const [code, ...rest] = item.split(/[\s-]+/).filter(Boolean)
-    insist(/^\d{4}[0-9A-Z]$/.test(code), `"${item}" is not a CPT code (five characters, like 97110)`)
+    insist(/^(?:\d{4}[0-9A-Z]|[A-Z]\d{4})$/.test(code), `"${item}" is not a CPT or HCPCS code (five characters, like 97110 or G0001)`)
     let units = 1
     const modifiers: string[] = []
     for (const token of rest) {
