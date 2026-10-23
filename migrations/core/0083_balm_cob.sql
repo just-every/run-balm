@@ -15,7 +15,7 @@ CREATE TABLE bm_cob_adjudications (
  FOREIGN KEY(invoice_id,policy_id) REFERENCES bm_cob_stages(invoice_id,policy_id), UNIQUE(invoice_id,policy_id,source_kind,source_id)
 );
 CREATE TRIGGER bm_cob_adjudications_fixed BEFORE UPDATE ON bm_cob_adjudications BEGIN SELECT RAISE(ABORT,'cob_adjudication_fixed'); END;
-CREATE TRIGGER bm_cob_adjudications_kept BEFORE DELETE ON bm_cob_adjudications BEGIN SELECT RAISE(ABORT,'cob_adjudication_fixed'); END;
+CREATE TRIGGER bm_cob_adjudications_kept BEFORE DELETE ON bm_cob_adjudications WHEN NOT EXISTS(SELECT 1 FROM bm_retention_scope s JOIN bm_retention_permits p ON p.preview_id=s.preview_id WHERE s.table_name='bm_cob_adjudications' AND s.record_rowid=OLD.rowid) BEGIN SELECT RAISE(ABORT,'cob_adjudication_fixed'); END;
 CREATE TABLE bm_cob_wait_settings (
  id INTEGER PRIMARY KEY CHECK(id=1), wait_days INTEGER NOT NULL CHECK(wait_days BETWEEN 1 AND 730), source TEXT NOT NULL,
  recorded_by TEXT NOT NULL, recorded_at TEXT NOT NULL
@@ -25,7 +25,7 @@ CREATE TABLE bm_cob_patient_decisions (
  wait_days INTEGER NOT NULL, source TEXT NOT NULL
 );
 CREATE TRIGGER bm_cob_decisions_fixed BEFORE UPDATE ON bm_cob_patient_decisions BEGIN SELECT RAISE(ABORT,'cob_decision_fixed'); END;
-CREATE TRIGGER bm_cob_decisions_kept BEFORE DELETE ON bm_cob_patient_decisions BEGIN SELECT RAISE(ABORT,'cob_decision_fixed'); END;
+CREATE TRIGGER bm_cob_decisions_kept BEFORE DELETE ON bm_cob_patient_decisions WHEN NOT EXISTS(SELECT 1 FROM bm_retention_scope s JOIN bm_retention_permits p ON p.preview_id=s.preview_id WHERE s.table_name='bm_cob_patient_decisions' AND s.record_rowid=OLD.rowid) BEGIN SELECT RAISE(ABORT,'cob_decision_fixed'); END;
 -- Existing claims keep their originals. Older EOBs without line dates cannot be
 -- sent onward until the biller records the original line adjudication facts.
 INSERT INTO bm_cob_stages(invoice_id,policy_id,priority,state,claim_id,updated_at)
@@ -56,7 +56,7 @@ CREATE TABLE bm_cob_manual_reductions (
  line_id TEXT PRIMARY KEY REFERENCES bm_payer_payment_lines(id), amount_cents INTEGER NOT NULL CHECK(amount_cents>=0)
 );
 CREATE TRIGGER bm_cob_reductions_fixed BEFORE UPDATE ON bm_cob_manual_reductions BEGIN SELECT RAISE(ABORT,'cob_reduction_fixed'); END;
-CREATE TRIGGER bm_cob_reductions_kept BEFORE DELETE ON bm_cob_manual_reductions BEGIN SELECT RAISE(ABORT,'cob_reduction_fixed'); END;
+CREATE TRIGGER bm_cob_reductions_kept BEFORE DELETE ON bm_cob_manual_reductions WHEN NOT EXISTS(SELECT 1 FROM bm_retention_scope s JOIN bm_retention_permits p ON p.preview_id=s.preview_id WHERE s.table_name='bm_cob_manual_reductions' AND s.record_rowid=OLD.rowid) BEGIN SELECT RAISE(ABORT,'cob_reduction_fixed'); END;
 DROP VIEW bm_invoice_adjustments;
 CREATE VIEW bm_invoice_adjustments AS
  SELECT id,invoice_id,amount_cents,reason,recorded_by,recorded_at,'insurance' AS source FROM bm_insurance_adjustments
@@ -64,3 +64,21 @@ CREATE VIEW bm_invoice_adjustments AS
  UNION ALL SELECT l.id,l.invoice_id,COALESCE(c.amount_cents,l.adjustment_cents),'Paper EOB · '||l.adjustments,b.closed_by,b.closed_at,'insurance'
  FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id LEFT JOIN bm_cob_manual_reductions c ON c.line_id=l.id
  WHERE b.status='closed' AND l.kind='payment' AND COALESCE(c.amount_cents,l.adjustment_cents)>0;
+
+CREATE TRIGGER bm_cob_paper_fixed BEFORE UPDATE ON bm_cob_paper_packets WHEN OLD.submitted_at IS NOT NULL OR NEW.claim_id<>OLD.claim_id OR NEW.claim_version<>OLD.claim_version OR NEW.body<>OLD.body OR NEW.sha256<>OLD.sha256 OR NEW.eob_base64<>OLD.eob_base64 OR NEW.eob_mime<>OLD.eob_mime OR NEW.eob_sha256<>OLD.eob_sha256 OR NEW.created_by<>OLD.created_by OR NEW.created_at<>OLD.created_at BEGIN SELECT RAISE(ABORT,'paper_original_fixed'); END;
+CREATE TRIGGER bm_cob_paper_kept BEFORE DELETE ON bm_cob_paper_packets WHEN NOT EXISTS(SELECT 1 FROM bm_retention_scope s JOIN bm_retention_permits p ON p.preview_id=s.preview_id WHERE s.table_name='bm_cob_paper_packets' AND s.record_rowid=OLD.rowid) BEGIN SELECT RAISE(ABORT,'paper_original_kept'); END;
+CREATE TRIGGER bm_cob_adjudications_retention_insert AFTER INSERT ON bm_cob_adjudications BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_adjudications_retention_update AFTER UPDATE ON bm_cob_adjudications BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_adjudications_retention_delete AFTER DELETE ON bm_cob_adjudications BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_patient_decisions_retention_insert AFTER INSERT ON bm_cob_patient_decisions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_patient_decisions_retention_update AFTER UPDATE ON bm_cob_patient_decisions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_patient_decisions_retention_delete AFTER DELETE ON bm_cob_patient_decisions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_manual_reductions_retention_insert AFTER INSERT ON bm_cob_manual_reductions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_manual_reductions_retention_update AFTER UPDATE ON bm_cob_manual_reductions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_manual_reductions_retention_delete AFTER DELETE ON bm_cob_manual_reductions BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_stages_retention_insert AFTER INSERT ON bm_cob_stages BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_stages_retention_update AFTER UPDATE ON bm_cob_stages BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_stages_retention_delete AFTER DELETE ON bm_cob_stages BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_paper_packets_retention_insert AFTER INSERT ON bm_cob_paper_packets BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_paper_packets_retention_update AFTER UPDATE ON bm_cob_paper_packets BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_cob_paper_packets_retention_delete AFTER DELETE ON bm_cob_paper_packets BEGIN UPDATE bm_retention_epoch SET version=version+1 WHERE id=1; END;
