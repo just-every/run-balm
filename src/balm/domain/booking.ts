@@ -187,6 +187,24 @@ export function intakeToken() {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+/** A practitioner takes on a patient already in their care, or one no practitioner has seen yet. Binds client, practitioner, client. */
+const inCare = 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?) OR NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=?)'
+
+/** The desk books any patient; a practitioner books within their care, so a booking never opens another practitioner's
+ * patient. Checked before any warning or preview reads the patient's records; the guards repeat it in the write. */
+export async function bookingScope(db: D1Database, who: Actor, clientId: string) {
+  const own = who.role === 'owner' ? undefined : practitionerId(who)
+  if (!own) return []
+  insist(await one(db, `SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL AND (${inCare})`, clientId, clientId, own, clientId), 'client_not_found', 404)
+  return [guard(db, inCare, clientId, own, clientId)]
+}
+/** The patient a staff booking is for, with the booking-scope guards for its write. */
+export async function bookingClient(db: D1Database, who: Actor, key: unknown) {
+  const client = await one(db, 'SELECT * FROM bm_clients WHERE id=? AND erased_at IS NULL', text(key, 'client', 100))
+  insist(client, 'client_not_found', 404)
+  return { client, guards: await bookingScope(db, who, client.id as string) }
+}
+
 /** Public online booking for a new client. Returns the one-time intake link token. */
 export async function bookOnline(db: D1Database, input: Data) {
   const unchanged = await selfServiceSnapshot(db)
@@ -209,13 +227,15 @@ export async function bookOnline(db: D1Database, input: Data) {
   const matches = await rows(db, 'SELECT id FROM bm_clients WHERE erased_at IS NULL AND lower(first_name)=lower(?) AND lower(last_name)=lower(?) AND date_of_birth=? AND lower(email)=? LIMIT 2', client.firstName, client.lastName, client.dateOfBirth, client.email)
   insist(matches.length <= 1, 'contact_clinic_about_matching_patient_files', 409)
   const existing = matches[0]
+  // A returning patient adds a practitioner from the patient portal, where their email is proven.
+  if (existing) insist(await one(db, 'SELECT 1 WHERE ' + inCare, existing.id, practitioner.id, existing.id), 'book_a_new_practitioner_from_the_patient_portal', 409)
   if (double) insist(await patientFits(db, existing?.id as string ?? null, practitioner.id as string, service.id as string, start.toISOString(), end.toISOString()), 'slot_unavailable', 409)
   const eligibility = await checkSelfService(db, { clientId: existing?.id as string | undefined, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString() })
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
   await commit(db, null, [
     unchanged, ...eligibility.guards,
     guard(db, `((SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?)<3)`, client.email, now()),
-    ...(existing ? [] : [
+    ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),
@@ -230,8 +250,7 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const clinic = await settings(db)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   insist(who.role === 'owner' || who.staffRole === 'reception' || practitionerId(who) === practitioner.id, 'practitioners_book_their_own_diary', 403)
-  const client = await one(db, 'SELECT id FROM bm_clients WHERE id=? AND erased_at IS NULL', text(input.clientId, 'client', 100))
-  insist(client, 'client_not_found', 404)
+  const { client, guards } = await bookingClient(db, who, input.clientId)
   const roomId = await roomFor(db, input.roomId), equipmentId = await equipmentFor(db, input.equipmentId)
   const locationGuards=await locationWrite(db,who,roomId,client.id)
   const place = await placeVisit(db, clinic.time_zone, { practitionerId: practitioner.id as string, serviceId: service.id as string, durationMinutes: service.duration_minutes, date: day(input.date, 'date'), minute: clockMinute(input.time), roomId, equipmentId })
@@ -239,7 +258,7 @@ export async function bookForClient(db: D1Database, who: Actor, input: Data) {
   const token = intakeToken(), appointmentId = id()
   const filing = await episodeChoice(db, who, client.id as string, 'visit', appointmentId, input.episodeId)
   filing.push(...await medicareStatements(db, who, { clientId: client.id as string, practitionerId: practitioner.id as string, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), appointmentId }, input.acknowledgeMedicareOverlap))
-  await commit(db, who, [...locationGuards,...await appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
+  await commit(db, who, [...guards,...locationGuards,...await appointmentStatements(db, who, { id: appointmentId, clientId: client.id, practitionerId: practitioner.id, serviceId: service.id, startAt: place.start!.toISOString(), endAt: place.end!.toISOString(), bookedVia: 'staff', tokenHash: await sha256(token), roomId, equipmentId, ...bookingCoverage(input), timeZone:clinic.time_zone }), ...filing])
   return { appointmentId, token, startAt: place.start!.toISOString() }
 }
 

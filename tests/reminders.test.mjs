@@ -172,7 +172,7 @@ test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, mo
     assert.ok(file.audit.every(a => !a.detail.includes(clinical) && !a.detail.includes(reply)))
     assert.ok(h.mail.every(m => !JSON.stringify(m).includes(clinical) && !JSON.stringify(m).includes(reply)), 'COMM-001 no clinical detail appears in any appointment email')
     const ownHistoryIds = new Set((await readFile()).mailHistory.map(m => m.id))
-    await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-06-01', time: '10:00' }, sam.cookie)
+    await h.cmd('appointment.book', { clientId: client.id, practitionerId: sam.id, serviceId: service.id, date: '2099-06-01', time: '10:00' }, reception.cookie)
     const samFile = (await h.send('/api/balm/clients/' + client.id, undefined, sam.cookie)).value
     assert.equal(samFile.mailHistory.length, 1, 'COMM-001 practitioner sees deliveries only for their own visible visits')
     assert.ok(!ownHistoryIds.has(samFile.mailHistory[0].id))

@@ -613,3 +613,31 @@ test('SCHED-007: service and location rules govern public, portal, staff and ser
  const {serviceAvailabilityJourney}=await import('./service-availability-journey.mjs')
  await serviceAvailabilityJourney(h)
 },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
+
+test('booking never adds a practitioner to another practitioner’s patient, through staff or public doors', () => run(async h => {
+  const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
+  // Maya books online with Sam, and her file carries insurance.
+  assert.equal((await bookOnline(h, service.id, sam.id, (await slots(h, service.id, sam.id))[0])).status, 303)
+  const maya = (await h.state()).clients.find(c => c.first_name === 'Maya')
+  const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
+  const payer = await h.cmd('insurance.payer.save', { name: 'Aetna', payerId: '60054', receiverId: 'AETNA' })
+  const policy = await h.cmd('insurance.policy.save', { clientId: maya.id, payerId: payer.id, memberId: 'MEMBER123', relationship: '18', patientSex: 'F', address: '200 Oak St', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
+  await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'AUTH2', ...coverage, visits: 2 })
+  const file = cookie => h.send('/api/balm/clients/' + maya.id, undefined, cookie)
+  assert.equal((await file(priya.cookie)).status, 404)
+  const day = brisbane(Date.now() + 3 * 86400_000).slice(0, 10), visit = { clientId: maya.id, practitionerId: priya.id, serviceId: service.id, date: day, time: '12:00' }
+  const unacknowledged = await h.send('/api/balm/command', { name: 'appointment.book', input: visit }, priya.cookie)
+  assert.equal(unacknowledged.status, 404)
+  assert.ok(!unacknowledged.text.includes(policy.id) && !unacknowledged.text.includes('AUTH2'), 'no coverage detail before the patient is in scope')
+  await h.cmd('appointment.book', { ...visit, acknowledgeInsurance: 'on' }, priya.cookie, 404)
+  const pattern = { clientId: maya.id, practitionerId: priya.id, serviceId: service.id, firstDate: day, time: '13:00', weeks: 1, weekdays: [weekday(day)], acknowledgeInsurance: 'on' }
+  const preview = await h.send('/api/balm/command', { name: 'series.preview', input: pattern }, priya.cookie)
+  assert.equal(preview.status, 404); assert.ok(!preview.text.includes('Maya'))
+  await h.cmd('series.book', { ...pattern, occurrences: [{ date: day, time: '13:00' }] }, priya.cookie, 404)
+  // Maya's own details on the public page cannot pick a practitioner she has not seen; her portal sign-in can.
+  const online = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
+  assert.equal(online.status, 409)
+  assert.match(online.text, /patient portal/)
+  assert.equal((await file(priya.cookie)).status, 404, 'no booking door opened the file to another practitioner')
+  assert.deepEqual((await h.state()).appointments.filter(a => a.client_id === maya.id).map(a => a.practitioner_id), [sam.id])
+}))

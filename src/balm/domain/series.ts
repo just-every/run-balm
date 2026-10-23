@@ -6,7 +6,7 @@ import { cancellationStatements, getVisitPolicy } from '../scheduling/policy'
 // such date was moved to a free time or skipped by a person, never dropped.
 import { datePlus, hostDateAt, weekdayForDate } from '../availability/timezone'
 import { medicareStatements } from '../scheduling/capacity'
-import { appointmentStatements, bookable, clockMinute, intakeToken, placementGuards, placeVisit, roomFor, settings, visibleAppointment } from './booking'
+import { appointmentStatements, bookable, bookingClient, clockMinute, intakeToken, placementGuards, placeVisit, roomFor, settings, visibleAppointment } from './booking'
 import { audit, commit, day, DomainError, guard, human, id, insist, integer, need, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const maxVisits = 366
@@ -42,8 +42,7 @@ async function basis(db: D1Database, who: Actor, input: Data) {
   const clinic = await settings(db)
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   insist(who.role === 'owner' || who.staffRole === 'reception' || practitionerId(who) === practitioner.id, 'practitioners_book_their_own_diary', 403)
-  const client = await one(db, 'SELECT id,first_name,last_name FROM bm_clients WHERE id=? AND erased_at IS NULL', text(input.clientId, 'client', 100))
-  insist(client, 'client_not_found', 404)
+  const { client, guards } = await bookingClient(db, who, input.clientId)
   const plan = input.planId ? await one(db, 'SELECT id,content,content_sha256 FROM bm_plans_of_care WHERE id=? AND client_id=? AND author_id=?', text(input.planId, 'plan', 100), client.id, practitioner.id) : null
   if (input.planId) {
     insist(who.role === 'owner' || !!practitionerId(who), 'plans_are_clinical', 403)
@@ -55,7 +54,7 @@ async function basis(db: D1Database, who: Actor, input: Data) {
     insist(weekdays.length === content.frequencyPerWeek, 'choose_the_plan_frequency_of_weekdays')
     await commit(db, who, [audit(db, who, 'plan.read', client.id as string, plan!.id as string)])
   }
-  return { coverage:bookingCoverage(input), zone: clinic.time_zone as string, practitioner, service, client, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time, ...(plan ? { planId: plan.id, planSha256: plan.content_sha256 } : {}) } }
+  return { coverage:bookingCoverage(input), zone: clinic.time_zone as string, practitioner, service, client, guards, roomId: await roomFor(db, input.roomId), pattern: { firstDate, weekdays, weeks, time, ...(plan ? { planId: plan.id, planSha256: plan.content_sha256 } : {}) } }
 }
 
 async function check(db: D1Database, b: Awaited<ReturnType<typeof basis>>, list: { date: string; time: string; skip: boolean }[]) {
@@ -98,6 +97,7 @@ export async function bookSeries(db: D1Database, who: Actor, input: Data) {
   const seriesId = id(), token = intakeToken(), ids = kept.map(() => id())
   const medicare = (await Promise.all(kept.map((o, i) => medicareStatements(db, who, { clientId: b.client.id as string, practitionerId: b.practitioner.id as string, startAt: o.startAt!, endAt: o.endAt!, appointmentId: ids[i] }, input.acknowledgeMedicareOverlap)))).flat()
   await commit(db, who, [
+    ...b.guards,
     stmt(db, 'INSERT INTO bm_series(id,client_id,practitioner_id,service_id,room_id,pattern,skipped,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
       seriesId, b.client.id, b.practitioner.id, b.service.id, b.roomId, JSON.stringify(b.pattern), JSON.stringify(skipped), new Date().toISOString(), who.email),
     // The intake link goes with the first visit only.

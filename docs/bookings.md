@@ -8,7 +8,7 @@ Your booking page is `/book` on your Balm's address. A new client:
 
 They land on their private intake link, which is also emailed to them when mail is set up. If someone else took the same time a moment earlier, the booking is refused and they choose another.
 
-A client whose name, date of birth and email exactly match an existing file continues that file. One email address can hold at most three upcoming online bookings. Set **Online booking** to **Closed** on the **Clinic** page to stop taking bookings.
+A client whose name, date of birth and email exactly match an existing file continues that file with a practitioner they have already seen; a new practitioner is booked from the signed-in patient portal. One email address can hold at most three upcoming online bookings. Set **Online booking** to **Closed** on the **Clinic** page to stop taking bookings.
 
 ## The schedule
 
@@ -33,7 +33,7 @@ A move is checked exactly like a booking: it must sit inside the practitioner's 
 
 ## Book from the schedule or a client file
 
-Select an empty time in the calendar, or use **Book a visit** under it, or open **Clients**, then the file, then **Book an appointment**. Choose the client, the practitioner, the service, a room if you use them, the date and the start time in the clinic's time zone. Reception and the owner book for anyone; a practitioner books their own calendar. The time must sit inside the practitioner's hours and must not overlap another booking of that practitioner or that room.
+Select an empty time in the calendar, or use **Book a visit** under it, or open **Clients**, then the file, then **Book an appointment**. Choose the client, the practitioner, the service, a room if you use them, the date and the start time in the clinic's time zone. Reception and the owner book for anyone; a practitioner books their own calendar, for a patient already in their care or one no practitioner has seen yet. The time must sit inside the practitioner's hours and must not overlap another booking of that practitioner or that room.
 
 After booking, Balm shows the client's private intake link once, and emails it when the client has an email address and mail is set up.
 

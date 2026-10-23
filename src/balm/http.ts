@@ -37,7 +37,7 @@ import { operationalCsv, operationalReports, reportKinds, type ReportKind } from
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
 import { approvals, command, preparations, snapshot, type Actor } from './domain'
-import { bookOnline, openSlots } from './domain/booking'
+import { bookingScope, bookOnline, openSlots } from './domain/booking'
 import { calendarView } from './domain/calendar'
 import { clientFile } from './domain/clients'
 import { intakeView, submitIntake } from './domain/intake'
@@ -190,6 +190,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (['appointment.book', 'series.book'].includes(name)) {
     need(who, 'owner', 'reception', 'practitioner'); human(who)
     insist(who.role === 'owner' || who.staffRole === 'reception' || input.practitionerId === who.staffId, 'practitioners_book_their_own_diary', 403)
+    await bookingScope(env.DB, who, String(input.clientId ?? ''))
     const dates = name === 'series.book'
       ? (Array.isArray(input.occurrences) ? input.occurrences.filter((o: any) => ![true, 'on', 'yes'].includes(o.skip)).map((o: any) => String(o.date))
         : Object.keys(input).filter(k => /^date_\d+$/.test(k) && input['skip_' + k.slice(5)] !== 'on').map(k => String(input[k])))

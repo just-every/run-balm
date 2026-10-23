@@ -17,6 +17,7 @@ const sentences: Record<string, string> = {
   time_taken: 'That time is already booked. Choose another time.',
   online_booking_closed: 'Online booking is closed. Please contact the clinic.',
   too_many_online_bookings: 'Too many pending online bookings. Please contact the clinic.',
+  book_a_new_practitioner_from_the_patient_portal: 'To book with a practitioner you have not seen before, sign in to the patient portal with your email, or contact the clinic.',
   booking_refused: 'This booking could not be made. Please contact the clinic.',
   privacy_acknowledgement_required: 'Check the box to agree to how the clinic keeps your details.',
   invalid_start: 'Choose a time from the list.',
