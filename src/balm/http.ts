@@ -11,7 +11,7 @@ import {claimWork} from './insurance/claim-work'
 import {aeobCommand,aeobsFor,aeobOriginal} from './payments/aeobs'
 import {releaseCommand,releasesFor,releasePdf} from './domain/payer-note-releases'
 import { estimateCommand, estimateFile, estimateOriginal, pendingEstimates } from './payments/estimates'
-import { biller, manager, locationState, roleCommand, roleRead } from './domain/role-access'
+import { biller, manager, locationState, locationWrite, roleCommand, roleRead } from './domain/role-access'
 import { audit, commit } from './domain/model'
 import { takeAddressRate, takeEmailRate, takePatientRate } from './public-rates'
 import { saveBookingEmbed } from './domain/clinic'
@@ -201,7 +201,9 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (['appointment.book', 'series.book'].includes(name)) {
     need(who, 'owner', 'reception', 'practitioner'); human(who)
     insist(who.role === 'owner' || who.staffRole === 'reception' || input.practitionerId === who.staffId, 'practitioners_book_their_own_diary', 403)
+    // The booker's patient scope, and a location manager's location, come before any warning reads the patient's coverage.
     await bookingScope(env.DB, who, String(input.clientId ?? ''))
+    await locationWrite(env.DB, who, input.roomId, input.clientId)
     const dates = name === 'series.book'
       ? (Array.isArray(input.occurrences) ? input.occurrences.filter((o: any) => ![true, 'on', 'yes'].includes(o.skip)).map((o: any) => String(o.date))
         : Object.keys(input).filter(k => /^date_\d+$/.test(k) && input['skip_' + k.slice(5)] !== 'on').map(k => String(input[k])))

@@ -614,7 +614,7 @@ test('SCHED-007: service and location rules govern public, portal, staff and ser
  await serviceAvailabilityJourney(h)
 },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
 
-test('booking never adds a practitioner to another practitioner’s patient, through staff or public doors', () => run(async h => {
+test('booking never opens a patient outside the booker’s care or location, through staff or public doors', () => run(async h => {
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   // Maya books online with Sam, and her file carries insurance.
   assert.equal((await bookOnline(h, service.id, sam.id, (await slots(h, service.id, sam.id))[0])).status, 303)
@@ -634,6 +634,13 @@ test('booking never adds a practitioner to another practitioner’s patient, thr
   const preview = await h.send('/api/balm/command', { name: 'series.preview', input: pattern }, priya.cookie)
   assert.equal(preview.status, 404); assert.ok(!preview.text.includes('Maya'))
   await h.cmd('series.book', { ...pattern, occurrences: [{ date: day, time: '13:00' }] }, priya.cookie, 404)
+  // A location manager books only patients already seen at their location, and reads no coverage before that.
+  const north = await h.cmd('location.save', { name: 'North clinic' }), room = await h.cmd('room.save', { name: 'North room' })
+  await h.cmd('room.location', { roomId: room.id, locationId: north.id })
+  const manager = await h.staff('Manager', 'location_manager', { locationId: north.id })
+  const managed = await h.send('/api/balm/command', { name: 'appointment.book', input: { ...visit, practitionerId: sam.id, roomId: room.id } }, manager.cookie)
+  assert.equal(managed.status, 403)
+  assert.ok(!managed.text.includes(policy.id) && !managed.text.includes('AUTH2'), 'no coverage detail outside the manager’s location')
   // Maya's own details on the public page cannot pick a practitioner she has not seen; her portal sign-in can.
   const online = await bookOnline(h, service.id, priya.id, (await slots(h, service.id, priya.id))[0])
   assert.equal(online.status, 409)
