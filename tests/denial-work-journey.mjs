@@ -19,22 +19,31 @@ export async function denialWorkJourney(options={}) {
   await run(async h => {
     await h.finishSetup()
     const { service, practitioners: [therapist] } = await clinic(h)
-    await h.cmd('staff.save', { id: therapist.id, name: 'synthetic-balm-1 synthetic-balm-2', email: therapist.email, role: 'practitioner', credentials: 'PT', active: true })
+    await h.cmd('staff.save', { id: therapist.id, name: 'Priya Shah', email: therapist.email, role: 'practitioner', credentials: 'PT', active: true })
     await h.cmd('pay.npi.save', { staffId: therapist.id, npi: '1234567893' })
     await h.cmd('insurance.settings.save', { billingNpi: '1234567893', taxId: '123456789', address: '100 synthetic-balm-1', city: 'Austin', state: 'TX', postalCode: '78701', contactName: 'synthetic-balm-1 synthetic-balm-2', contactPhone: '5125550100' })
-    const payer = await h.cmd('insurance.payer.save', { name: 'synthetic-balm-1', payerId: 'SYNTHETICBALM1', receiverId: 'SYNTHETICBALM1', medicare: true, unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
+    const payer = await h.cmd('insurance.payer.save', { name: 'Horizon Health', payerId: 'SYNTHETICBALM1', receiverId: 'SYNTHETICBALM1', medicare: true, unitMethod: 'cms', fees: [{ code: '97110', cents: 3500 }, { code: '97140', cents: 2500 }] })
     await h.cmd('insurance.enrollment.save', { payerId: payer.id, practitionerId: therapist.id, taxonomy: '225100000X', active: true })
-    const patient = await h.cmd('client.save', { firstName: 'synthetic-balm-1', lastName: 'synthetic-balm-2', dateOfBirth: '1988-04-02' })
+    // The documented reviewed import supplies a historical visit through the
+    // public move-in door; ordinary staff booking correctly refuses old dates.
+    const serviceDay=new Date(Date.now()+10*3600000-3*86400000).toISOString().slice(0,10)
+    const start=serviceDay+'T00:00:00.000Z',end=serviceDay+'T00:45:00.000Z'
+    const bundle={provider:'cliniko',practitionerId:therapist.id,serviceId:service.id,dateFormat:'MDY',files:[
+     {kind:'patients',name:'patients.csv',csv:'Patient ID,First Name,Last Name,Date of Birth\nsynthetic-balm-1,Maya,Lee,1988-04-02\n'},
+     {kind:'appointments',name:'appointments.csv',csv:'Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-2,synthetic-balm-1,'+start+','+end+',booked\n'}]}
+    const preview=await h.cmd('movein.preview',bundle);assert.equal(preview.canApply,true,JSON.stringify(preview.diagnostics))
+    await h.cmd('movein.apply',{...bundle,fingerprint:preview.fingerprint,acceptanceReason:'Reviewed historical synthetic therapy visit for denial follow-up.'})
+    const imported=await h.state(),patient=imported.clients.find(c=>c.first_name==='Maya'&&c.last_name==='Lee')
+    const visit=imported.appointments.find(a=>a.client_id===patient.id).id,date=await visitDate(h,visit)
     const year = new Date().getUTCFullYear(), coverage = { startsOn: `${year - 1}-01-01`, endsOn: `${year + 1}-12-31` }
     const policy = await h.cmd('insurance.policy.save', { clientId: patient.id, payerId: payer.id, memberId: 'synthetic-balm-3', relationship: '18', patientSex: 'F', address: '100 synthetic-balm-1', city: 'Austin', state: 'TX', postalCode: '78701', ...coverage })
     await h.cmd('insurance.authorization.save', { policyId: policy.id, number: 'synthetic-balm-4', ...coverage, visits: 12 })
-    const visit = await pastVisit(h, patient.id, therapist, service.id, h.owner, 72), date = await visitDate(h, visit)
     await h.cmd('appointment.attend', { id: visit })
     const note = await h.cmd('note.write', { clientId: patient.id, appointmentId: visit, body: 'Synthetic skilled therapy: progressive gait and knee strengthening.', charges: [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 15 }] }, therapist.cookie)
-    await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'synthetic-balm-1 synthetic-balm-2', attest: true }, therapist.cookie)
+    await h.cmd('note.sign', { id: note.id, revision: 1, signature: 'Priya Shah', attest: true }, therapist.cookie)
     await h.cmd('pay.codes.save', { appointmentId: visit, icd10: 'M25.561' })
     const invoice = await h.cmd('invoice.prepare', { appointmentId: visit }); await h.cmd('invoice.approve', { id: invoice.id })
-    const biller = await h.staff('synthetic-balm-8', 'biller'), reception = await h.staff('synthetic-balm-9', 'reception')
+    const biller = await h.staff('ClaimsBiller', 'biller'), reception = await h.staff('ClaimsDesk', 'reception')
     const billing = (name, input) => h.cmd(name, input, biller.cookie)
     const work = input => billing('insurance.work.read', input ?? {})
     await h.cmd('insurance.work.read', {}, therapist.cookie, 403)
