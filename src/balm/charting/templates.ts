@@ -1,15 +1,16 @@
+import { clinicalElements } from './template-elements'
 // PT, OT and speech-language templates for the four notes a US outpatient
 // therapist writes in an episode: the initial evaluation, the daily (SOAP) note,
 // the progress report and the discharge summary. A note stores the section
 // labels it was written with, so changing a template never changes a saved note.
 export type Discipline = 'pt' | 'ot' | 'slp'
-export type Kind = 'evaluation' | 'daily' | 'progress' | 'discharge'
-export type Section = { id: string; label: string; help: string; required: boolean }
-export type Template = { key: string; discipline: Discipline; kind: Kind; title: string; sections: Section[] }
+export type Kind = 'evaluation' | 'daily' | 'progress' | 'reevaluation' | 'discharge'
+export type Section = { id: string; label: string; help: string; required: boolean; choices?: string[] }
+export type Template = { key: string; discipline: Discipline; kind: Kind; title: string; sections: Section[]; version?: number; schemaVersion?: number; bodyRegion?: string; diagnosisVariant?: string }
 
 export const disciplines: Record<Discipline, string> = { pt: 'Physical therapy', ot: 'Occupational therapy', slp: 'Speech-language pathology' }
 const short: Record<Discipline, string> = { pt: 'PT', ot: 'OT', slp: 'Speech' }
-const kinds: Record<Kind, string> = { evaluation: 'initial evaluation', daily: 'daily note', progress: 'progress report', discharge: 'discharge summary' }
+const kinds: Record<Kind, string> = { evaluation: 'initial evaluation', daily: 'daily note', progress: 'progress report', reevaluation: 're-evaluation', discharge: 'discharge summary' }
 
 // What each discipline records under the shared headings.
 const focus: Record<Discipline, { history: string; measures: string; daily: string; assessment: string; goals: string; plan: string }> = {
@@ -55,7 +56,7 @@ function sections(d: Discipline, kind: Kind): Section[] {
     s('goals', 'Goal progress', 'Status of each short- and long-term goal: met, progressing or not progressing, with today’s measure.'),
     s('plan', 'Plan', 'Plan for the next visit, home program changes, communication with the referring provider.'),
   ]
-  if (kind === 'progress') return [
+  if (kind === 'progress' || kind === 'reevaluation') return [
     s('period', 'Reporting period', 'Dates and visit numbers this report covers (Medicare: at least once every 10 treatment days).'),
     s('subjective', 'Subjective', 'Patient report of change since the evaluation or last progress report, current function and goals.'),
     s('objective', 'Objective measures', 'Re-measure what the evaluation measured and give both values: ' + f.measures),
@@ -73,7 +74,7 @@ function sections(d: Discipline, kind: Kind): Section[] {
   ]
 }
 
-export const templates: Template[] = (['pt', 'ot', 'slp'] as Discipline[]).flatMap(d => (['evaluation', 'daily', 'progress', 'discharge'] as Kind[])
-  .map(kind => ({ key: `${d}.${kind}`, discipline: d, kind, title: `${short[d]} ${kinds[kind]}`, sections: sections(d, kind) })))
+export const templates: Template[] = (['pt', 'ot', 'slp'] as Discipline[]).flatMap(d => (['evaluation', 'daily', 'progress', 'reevaluation', 'discharge'] as Kind[])
+  .map(kind => ({ key: `${d}.${kind}`, discipline: d, kind, title: `${short[d]} ${kinds[kind]}`, version: 2, schemaVersion: 2, sections: [...sections(d, kind), ...clinicalElements(d, kind)].map(s => s.id === 'goals' ? { ...s, required: false } : s) })))
 
 export const template = (key: unknown) => templates.find(t => t.key === key)

@@ -1,3 +1,4 @@
+import { chartFixture } from './chart-template-journey.mjs'
 import { modelEdge as supervisionModelEdge } from './defensibility-clinic.mjs'
 // Charting through the public doors: discipline templates, sign and lock,
 // addenda, the physician-certified plan of care, CPT units by the 8-minute rule
@@ -8,7 +9,7 @@ import { run } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { mriUpload } from './chart-document-fixtures.mjs'
 
-const daily = { subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
+const daily = { ...chartFixture().sections, subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
 const view = async (h, clientId, cookie) => (await h.send('/api/balm/clients/' + clientId, undefined, cookie)).value
 
 test('CHART-004: sign and lock a note, keep its original beside addenda, close overdue drafts, and certify the plan of care from the physician’s link', () => run(async h => {
@@ -29,7 +30,7 @@ test('CHART-004: sign and lock a note, keep its original beside addenda, close o
   assert.equal(note.template, 'pt.daily')
   const sign = (input, cookie = priya.cookie, status = 200) => h.cmd('note.sign', { id: note.id, signature: 'Priya', attest: true, ...input }, cookie, status)
   await sign({ revision: 1 }, priya.cookie, 400)
-  await h.cmd('note.amend', { id: note.id, revision: 1, sections: { ...daily, goals: 'STG 1: stairs reciprocally, progressing.' } }, priya.cookie)
+  await h.cmd('note.amend', { ...chartFixture(), id: note.id, revision: 1, sections: { ...daily, goals: 'STG 1: stairs reciprocally, progressing.' } }, priya.cookie)
   await sign({ revision: 1 }, priya.cookie, 409)
   await sign({ revision: 2, signature: 'Sam' }, priya.cookie, 400)
   await sign({ revision: 2 }, sam.cookie, 404)
@@ -179,7 +180,7 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     assert.deepEqual(draft.revisions[0].charges, [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 10 }])
     // The scribe never signs: the practitioner completes the missing goals and signs.
     await h.cmd('note.sign', { id: drafted.id, revision: 1, signature: 'Priya', attest: true }, priya.cookie, 400)
-    await h.cmd('note.amend', { id: drafted.id, revision: 1, sections: { ...Object.fromEntries(draft.revisions[0].sections.map(s => [s.id, s.text])), goals: 'STG 1 progressing.' }, charges: draft.revisions[0].charges }, priya.cookie)
+    await h.cmd('note.amend', { ...chartFixture(), id: drafted.id, revision: 1, totalTimedMinutes: 33, totalTreatmentMinutes: 33, sections: { ...Object.fromEntries(draft.revisions[0].sections.map(s => [s.id, s.text])), diagnosis: 'M25.561', response: 'Synthetic treatment response reviewed by the clinician', goals: 'STG 1 progressing.' }, charges: draft.revisions[0].charges.map(c=>({...c,parameters:'Synthetic clinician-reviewed intervention parameters'})) }, priya.cookie)
     await h.cmd('note.sign', { id: drafted.id, revision: 2, signature: 'priya ', attest: 'on' }, priya.cookie)
 
     // The signed note's units travel to the invoice and its fixed bytes.
@@ -218,7 +219,7 @@ test('documentation warnings follow imported treatment days and payer requiremen
   await h.cmd('documentation.settings.save', { lateDays: 3, kxNearCents: 10000 })
   await h.cmd('documentation.payer.save', { payerId: payer.id, required: ['totalTreatmentMinutes'] })
   const history = (await h.state()).appointments.filter(a => a.client_id === patient.id)
-  const initial = await h.cmd('note.write', { clientId: patient.id, appointmentId: history[0].id, template: 'pt.evaluation', sections: { ...daily, diagnosis: 'M25.561', goals: 'Walk stairs with good control' }, totalTreatmentMinutes: 40 }, priya.cookie)
+  const initial = await h.cmd('note.write', { ...chartFixture('evaluation'), clientId: patient.id, appointmentId: history[0].id, template: 'pt.evaluation', sections: { ...daily, diagnosis: 'M25.561', goals: 'Walk stairs with good control' }, totalTreatmentMinutes: 40 }, priya.cookie)
   await h.cmd('note.sign', { id: initial.id, revision: 1, signature: 'Priya', credentials: 'PT', attest: true }, priya.cookie)
   const ninth = await h.cmd('note.write', { clientId: patient.id, appointmentId: history[8].id, body: 'Improving knee control.' }, priya.cookie)
   assert.ok(!(await view(h, patient.id, priya.cookie)).notes.find(n => n.id === ninth.id).documentationAlerts.some(a => a.kind === 'progress'))
@@ -636,7 +637,7 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     assert.ok(sent.rules.some(r=>r.id==='payer.configuration'&&r.rule.includes('Total treatment minutes')))
     assert.ok(!JSON.stringify(sent).includes('Elena')&&!JSON.stringify(sent).includes('1971-09-22')&&!JSON.stringify(sent).includes('BENEFICIARY'))
     let note=(await c.file()).notes.find(n=>n.id===c.note.id)
-    assert.equal(note.status,'draft');assert.deepEqual(note.revisions[0].sections.map(s=>s.text),Object.values(weakNote))
+    assert.equal(note.status,'draft');assert.deepEqual(note.revisions[0].sections.filter(s=>Object.hasOwn(weakNote,s.id)).map(s=>s.text),Object.values(weakNote))
     assert.equal(note.defensibility.revision,1)
     const page=(await h.send(c.path,undefined,c.priya.cookie)).text
     assert.ok(page.includes(first.findings[0].question)&&page.includes('bp102c15.pdf'))
@@ -646,7 +647,7 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
       assert.equal((await c.file()).notes.find(n=>n.id===c.note.id).defensibility.checkedAt,first.checkedAt)
     }
     edge.control.mode='normal'
-    await h.cmd('note.amend',{id:c.note.id,revision:1,sections:strongNote,charges:[{code:'97110',minutes:40}],totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
+    await h.cmd('note.amend',{...chartFixture(),id:c.note.id,revision:1,sections:{...chartFixture().sections,...strongNote},charges:[{code:'97110',minutes:40,parameters:'Synthetic skilled graded loading and tactile cueing'}],totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
     await check(c.priya.cookie,409)
     assert.ok((await h.send(c.path,undefined,c.priya.cookie)).text.includes('The draft has changed'))
     input.revision=2
@@ -670,7 +671,7 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     }
     const overdue=await check()
     assert.ok(overdue.findings.some(f=>f.kind==='progress'&&f.ruleIds.includes('cms.progress')))
-    const progress=await h.cmd('note.write',{clientId:c.patient.id,appointmentId:c.visit,template:'pt.progress',sections:{...strongNote,period:'Last ten treatment days'},totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
+    const progress=await h.cmd('note.write',{...chartFixture('progress'),clientId:c.patient.id,appointmentId:c.visit,template:'pt.progress',sections:{...chartFixture('progress').sections,...strongNote,period:'Last ten treatment days'},totalTreatmentMinutes:40,totalTimedMinutes:40},c.priya.cookie)
     await h.cmd('note.sign',{id:progress.id,revision:1,signature:'Priya',attest:true},c.priya.cookie)
     const current=await check()
     assert.deepEqual(current.findings,[])
@@ -767,7 +768,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  assert.equal(claimed.snapshot.rendering.npi,'1234567893');assert.equal(claimed.snapshot.rendering.first,'Priya');assert.equal(claimed.snapshot.rendering.last,'Supervisor')
  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},biller.cookie)
  assert.match((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,biller.cookie)).text,/NM1\*82\*1\*SUPERVISOR\*PRIYA\*\*\*\*XX\*1234567893/)
- const medicare=await h.cmd('insurance.payer.save',{name:'Synthetic Medicare',payerId:'SYNTHETICMED',receiverId:'SYNTHETICMED',medicare:true,unitMethod:'cms',fees:[{code:'97110',cents:3500}]})
+ const medicare=await h.cmd('insurance.payer.save',{name:'Synthetic Medicare',payerId:'SYNTHETICMED',receiverId:'SYNTHETICMED',medicare:true,unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97161',cents:5000}]})
  await h.cmd('insurance.supervision.save',{payerId:medicare.id,billSupervisor:true,billable:true,minimumSupervision:'on_site'})
  await h.cmd('insurance.enrollment.save',{payerId:medicare.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
  await h.cmd('insurance.medicare.settings.save',{year:new Date().getFullYear(),therapyGroup:'pt_slp',publishedOn:new Date().getFullYear()+'-01-01',thresholdCents:248000,reviewCents:300000,source:'Synthetic published threshold for this public-door fixture'})
@@ -775,7 +776,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  for(const [hours,supervisionGiven] of [[4,'on_site'],[6,'in_room']]) {
   const medicareVisit=await pastVisit(h,patient.id,student,service.id,h.owner,hours)
   await h.cmd('appointment.attend',{id:medicareVisit})
-  const evaluation=await h.cmd('note.write',{clientId:patient.id,appointmentId:medicareVisit,template:'pt.evaluation',sections:{diagnosis:'M25.561',subjective:'Student evaluation history',objective:'Student objective measures',assessment:'Evaluation under the therapist',goals:'Functional goal',plan:'Therapist directs the plan'},charges:[{code:'97110',minutes:30}]},student.cookie)
+  const evaluation=await h.cmd('note.write',{...chartFixture('evaluation'),clientId:patient.id,appointmentId:medicareVisit,template:'pt.evaluation',sections:{...chartFixture('evaluation').sections,diagnosis:'M25.561',subjective:'Student evaluation history',objective:'Student objective measures',assessment:'Evaluation under the therapist',goals:'Functional goal',plan:'Therapist directs the plan'},charges:[{code:'97161',minutes:20},{code:'97110',minutes:30}],totalTimedMinutes:30,totalTreatmentMinutes:50},student.cookie)
   await h.cmd('note.submit',{id:evaluation.id,revision:1,signature:'Student',credentials:'SPT',attest:true},student.cookie)
   assert.ok((await h.state(priya.cookie)).coSignQueue.some(n=>n.note_id===evaluation.id),'student evaluation reaches the co-sign queue')
   await h.cmd('note.cosign',{id:evaluation.id,revision:1,signature:'Priya Supervisor',credentials:'PT, DPT',attest:true},priya.cookie,400)
@@ -798,7 +799,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  const dailyPolicy=await h.cmd('insurance.policy.save',{clientId:dailyPatient.id,payerId:medicare.id,memberId:'synthetic-balm-4',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
  const dailyVisit=await pastVisit(h,dailyPatient.id,daily,service.id)
  await h.cmd('appointment.attend',{id:dailyVisit})
- const dailyNote=await h.cmd('note.write',{clientId:dailyPatient.id,appointmentId:dailyVisit,template:'pt.daily',sections:{subjective:'Daily symptoms',objective:'Skilled exercise',assessment:'Response',goals:'Daily function',plan:'Continue'},charges:[{code:'97110',minutes:30}]},daily.cookie)
+ const dailyNote=await h.cmd('note.write',{...chartFixture(),clientId:dailyPatient.id,appointmentId:dailyVisit,template:'pt.daily',sections:{...chartFixture().sections,subjective:'Daily symptoms',objective:'Skilled exercise',assessment:'Response',goals:'Daily function',plan:'Continue'},charges:[{code:'97110',minutes:30,parameters:'Synthetic skilled exercise parameters'}]},daily.cookie)
  const ownSignature={id:dailyNote.id,revision:1,signature:'DailyAssistant',credentials:'PTA',attest:true}
  await h.cmd('note.sign',ownSignature,daily.cookie,403)
  const ruleInput={staffId:daily.id,state:'TX',payerId:medicare.id,startsOn:'2020-01-01',endsOn:'2099-12-31',stateSource:'Synthetic reviewed state daily-note permission',payerSource:'Synthetic reviewed payer daily-note permission',attest:true}
@@ -837,3 +838,8 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  const audit=(await h.db.prepare('SELECT action,actor_email FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['plan.read','note.submitted','note.returned','note.signed','note.read','note.break_glass_read']) assert.ok(audit.some(a=>a.action===action),action)
 },{outbound:supervisionModelEdge().outbound,browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
+
+test('CHART-002: PT, OT and SLP complete signed episodes, carry only earlier episode facts, and preserve signed custom template versions', () => run(async h => {
+  const { customizedTemplateJourney } = await import('./chart-template-journey.mjs')
+  await customizedTemplateJourney(h)
+},{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))

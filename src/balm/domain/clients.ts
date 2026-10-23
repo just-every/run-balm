@@ -1,3 +1,4 @@
+import { templateCatalog } from '../charting/template-catalog'
 import { supervisorReadSql, supervisionPlans } from './supervision'
 import { phoneNumber } from './us-clinic'
 // Client-file access adapted from Satchel's matter membership (src/satchel/matters.ts,
@@ -126,13 +127,13 @@ export async function clientFile(db: D1Database, who: Actor, key: unknown, audit
   ])
   // CHART-005: series and progress changes are built only from the notes this reader reaches.
   const measures = notes ? seriesByEpisode(notes) : null
-  const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => /\.(progress|discharge)$/.test(n.template as string)).map(n => [n.id, changesInEpisode(measures, n)])) : null
+  const measureChanges = notes && measures ? Object.fromEntries(notes.filter(n => ['progress','reevaluation','discharge'].includes(n.templateDefinition?.kind ?? '')).map(n => [n.id, changesInEpisode(measures, n)])) : null
   const episodeList = episodeSummaries(episodes, { appointments: visibleAppointments, plans, authorizations, measures })
   const referrals = teamOnly || who.role === 'agent' ? null : await referralsFor(db, client.id as string, (await one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string)
   const supervisionOnly = teamOnly && !access.all
   const visibleClient: Data = supervisionOnly ? {id:client.id,first_name:client.first_name,last_name:client.last_name} : { ...client }
   if (!all) delete visibleClient.copay_cents
-  return { client: visibleClient, careAccess: { ...access, teamOnly, supervisionOnly },  appointments: visibleAppointments, episodes: supervisionOnly ? [] : episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
+  return { clinicalTemplates: notes ? await templateCatalog(db) : [], client: visibleClient, careAccess: { ...access, teamOnly, supervisionOnly },  appointments: visibleAppointments, episodes: supervisionOnly ? [] : episodeList, referrals, intake, notes, measures, measureChanges, plans, invoices, audit: auditRows?.slice(0, AUDIT_PAGE_SIZE) ?? null, auditPage,
     auditEntries: groupedAudit?.entries ?? null, auditEntriesPage: groupedAudit?.page ?? null }
 }
 

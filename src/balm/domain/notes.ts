@@ -1,3 +1,6 @@
+import { clinicalInput, emptyClinical, goalNarrative } from '../charting/clinical-input'
+import { carryForward } from '../charting/note-carry'
+import { resolveTemplate, noteTemplate } from '../charting/template-catalog'
 import { assistantNote } from './role-access'
 import { pendingSubmission, supervisorReadSql } from './supervision'
 import { beginDraftRequest, type DraftRequest } from './draft-requests'
@@ -25,22 +28,23 @@ const clean = (value: unknown, field: string, max: number) => {
 }
 
 /** Charges as JSON [{code, minutes}] or the form's charge_code_N / charge_minutes_N rows. */
-export function charges(input: Data): Charge[] {
+export function charges(input: Data, incomplete = false): Charge[] {
   const raw: Data[] = Array.isArray(input.charges) ? input.charges
-    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`], diagnosisCodes: input[`charge_diagnoses_${n}`] })).filter(c => c.code)
+    : Array.from({ length: 8 }, (_, n) => ({ code: input[`charge_code_${n}`], minutes: input[`charge_minutes_${n}`], cmsTieChosen: input[`charge_cms_tie_${n}`], diagnosisCodes: input[`charge_diagnoses_${n}`], parameters: input[`charge_parameters_${n}`] })).filter(c => c.code)
   insist(raw.length <= 12, 'too_many_cpt_codes')
   const list = raw.map(c => {
     const code = cpt(String(c?.code ?? '').trim())
     insist(code, 'unknown_cpt_code')
     const minutes = c.minutes === undefined || c.minutes === '' ? 0 : integer(c.minutes, 'cpt_minutes', 0, 480)
-    if (code.timed) insist(minutes > 0, 'enter_minutes_for_each_timed_code')
+    if (code.timed && !incomplete) insist(minutes > 0, 'enter_minutes_for_each_timed_code')
     insist([undefined, null, '', false, true, 'on'].includes(c.cmsTieChosen), 'invalid_cms_tie_choice')
     const selected = c.cmsTieChosen === true || c.cmsTieChosen === 'on'
     insist(!selected || code.timed, 'cms_tie_choice_requires_a_timed_code')
     insist(c.diagnosisCodes == null || typeof c.diagnosisCodes === 'string' || Array.isArray(c.diagnosisCodes) && c.diagnosisCodes.every((d: unknown) => typeof d === 'string'), 'invalid_diagnosis_selection')
     const diagnosisCodes = parseIcd10(Array.isArray(c.diagnosisCodes) ? c.diagnosisCodes.join(',') : c.diagnosisCodes)
     insist(diagnosisCodes.length <= 4, 'select_at_most_four_diagnoses_per_cpt_code')
-    return { code: code.code, minutes, ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
+    const parameters = clean(c.parameters, 'intervention_parameters', 2000)
+    return { code: code.code, minutes, ...(parameters ? { parameters } : {}), ...(selected ? { cmsTieChosen: true as const } : {}), ...(diagnosisCodes.length ? { diagnosisCodes } : {}) }
   })
   insist(new Set(list.map(c => c.code)).size === list.length, 'cpt_code_listed_twice')
   return list
@@ -59,14 +63,19 @@ export async function diagnosisGuards(db: D1Database, appointmentId: unknown, li
 /** A template's sections from JSON {sections: {id: text}} or the form's section_<id> fields. */
 export function written(input: Data, t: Template | undefined): Written {
   const documentation = documentationInput(input)
-  const list = charges(input)
+  const list = charges(input, (t?.schemaVersion ?? 0) >= 2)
   const timed = list.filter(c => cpt(c.code)?.timed).reduce((sum,c) => sum+c.minutes,0)
   insist(documentation.totalTimedMinutes === null || documentation.totalTimedMinutes >= timed, 'total_timed_minutes_must_include_all_timed_interventions')
   insist(documentation.totalTreatmentMinutes === null || documentation.totalTreatmentMinutes >= timed, 'total_treatment_minutes_must_include_all_timed_interventions')
-  if (!t) return { documentation, sections: null, charges: charges(input), body: text(input.body, 'note', 20_000) }
+  if (!t) return { documentation, sections: null, charges: list, body: text(input.body, 'note', 20_000) }
   const given = input.sections && typeof input.sections === 'object' ? input.sections : {}
-  const sections = t.sections.map(s => ({ id: s.id, label: s.label, text: clean(given[s.id] ?? input['section_' + s.id], s.id, 8000) }))
-  return { documentation, sections, charges: charges(input), body: sections.filter(s => s.text).map(s => `${s.label}\n${s.text}`).join('\n\n') }
+  const sections = t.sections.map(s => {
+    const entered = clean(given[s.id] ?? input['section_' + s.id], s.id, 8000)
+    const value = s.id === 'goals' && !entered && input.clinical?.goals?.length ? goalNarrative(input.clinical.goals) : entered
+    insist(!value || !s.choices?.length || s.choices.includes(value), `Choose a value for ${s.label} from its pick list.`)
+    return { id: s.id, label: s.label, text: value }
+  })
+  return { documentation, sections, charges: list, body: sections.filter(s => s.text).map(s => `${s.label}\n${s.text}`).join('\n\n') }
 }
 
 export async function ownAppointment(db: D1Database, who: Actor, clientId: string, appointmentId: unknown) {
@@ -83,24 +92,29 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   insist(author, 'only_practitioners_write_notes', 403)
   const client = await clientVisible(db, who, input.clientId)
   const appointment = await ownAppointment(db, who, client.id as string, input.appointmentId)
-  const key = input.template ? text(input.template, 'template', 40) : input.body === undefined ? appointment?.note_template : ''
-  const t = key ? template(key) : undefined
+  const key = input.template ? text(input.template, 'template', 100) : input.body === undefined ? appointment?.note_template : ''
+  const t = await resolveTemplate(db, key)
   insist(!key || t, 'unknown_template')
   const starter = appointment ? await one(db, `SELECT n.id FROM bm_notes n WHERE n.appointment_id=? AND n.author_id=? AND n.signed_at IS NULL
     AND (SELECT MAX(number) FROM bm_note_revisions WHERE note_id=n.id)=0`, appointment.id, author) : null
-  const content = written(input, t), noteId = (starter?.id as string) ?? id()
-  assistantNote(who, t?.key, content.charges)
+  const carry = t ? await carryForward(db, who, client.id as string, appointment?.id ?? null, t) : { sections: {}, clinical: emptyClinical(), guards: [] }
+  const clinical = clinicalInput(input, carry.clinical)
+  const given = input.sections && typeof input.sections === 'object' ? input.sections : {}
+  const inherited = { ...carry.sections, ...given }
+  for (const section of t?.sections ?? []) if (input['section_' + section.id] !== undefined) inherited[section.id] = input['section_' + section.id]
+  const content = written({ ...input, sections: inherited, clinical }, t), noteId = (starter?.id as string) ?? id()
+  assistantNote(who, t ? `${t.discipline}.${t.kind}` : '', content.charges)
   const diagnoses = await diagnosisGuards(db, appointment?.id, content.charges)
   await commit(db, who, [
-    ...diagnoses,
+    ...diagnoses, ...carry.guards,
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     ...(starter ? [
       guard(db, 'NOT EXISTS(SELECT 1 FROM bm_note_revisions WHERE note_id=? AND number>0)', noteId),
-      stmt(db, 'UPDATE bm_notes SET template=? WHERE id=? AND signed_at IS NULL', t?.key ?? '', noteId),
-    ] : [stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template) VALUES(?,?,?,?,?,?)', noteId, client.id, appointment?.id ?? null, author, now(), t?.key ?? '')]),
-    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by,documentation) VALUES(?,1,?,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
-      content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy, JSON.stringify(content.documentation)),
+      stmt(db, 'UPDATE bm_notes SET template=?,template_snapshot=? WHERE id=? AND signed_at IS NULL', t?.key ?? '', t ? JSON.stringify(t) : null, noteId),
+    ] : [stmt(db, 'INSERT INTO bm_notes(id,client_id,appointment_id,author_id,created_at,template,template_snapshot) VALUES(?,?,?,?,?,?,?)', noteId, client.id, appointment?.id ?? null, author, now(), t?.key ?? '', t ? JSON.stringify(t) : null)]),
+    stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,drafted_by,documentation,clinical) VALUES(?,1,?,?,?,?,?,?,?,?)', noteId, content.body, draftedBy === 'scribe' ? 'Drafted by the scribe' + (scribeNote ? ': ' + scribeNote : '') : '', now(),
+      content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), draftedBy, JSON.stringify(content.documentation), JSON.stringify(clinical)),
     audit(db, who, draftedBy === 'scribe' ? 'note.scribe_drafted' : 'note.written', client.id as string, noteId, t?.key ?? 'free text'),
     ...(request?.statements({ id: noteId, revision: 1, template: t?.key ?? '' }) ?? []),
   ])
@@ -128,13 +142,18 @@ export async function amendNote(db: D1Database, who: Actor, input: Data) {
     insist(!await pendingSubmission(db,note.id),'note_waiting_for_supervisor',409)
     const latest = (await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_note_revisions WHERE note_id=?', note.id))!.n
     insist(input.revision === undefined || Number(input.revision) === latest, 'note_changed_reload', 409)
-    const content = written(input, template(note.template))
-    assistantNote(who, note.template, content.charges)
+    const previous = await one(db, 'SELECT clinical FROM bm_note_revisions WHERE note_id=? AND number=?', note.id, latest)
+    const definition = latest === 0 && !note.template_snapshot ? await resolveTemplate(db,note.template) : noteTemplate(note)
+    const carry = latest === 0 && definition ? await carryForward(db,who,note.client_id,note.appointment_id,definition) : { sections: {}, clinical: emptyClinical(), guards: [] }
+    const clinical = clinicalInput(input, previous?.clinical ? JSON.parse(previous.clinical) : carry.clinical)
+    const content = written({ ...input, clinical }, definition)
+    assistantNote(who, definition ? `${definition.discipline}.${definition.kind}` : note.template, content.charges)
     const diagnoses = await diagnosisGuards(db, note.appointment_id, content.charges)
     await commit(db, who, [
-      ...diagnoses,
-      stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation) VALUES(?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
-        optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation)),
+      ...diagnoses, ...carry.guards,
+      ...(latest === 0 ? [stmt(db,'UPDATE bm_notes SET template_snapshot=? WHERE id=? AND signed_at IS NULL',definition ? JSON.stringify(definition) : null,note.id)] : []),
+      stmt(db, 'INSERT INTO bm_note_revisions(note_id,number,body,reason,written_at,sections,charges,documentation,clinical) VALUES(?,?,?,?,?,?,?,?,?)', note.id, latest + 1, content.body,
+        optional(input.reason, 'amendment_reason', 300) ?? '', now(), content.sections && JSON.stringify(content.sections), JSON.stringify(content.charges), JSON.stringify(content.documentation), JSON.stringify(clinical)),
       audit(db, who, 'note.amended', note.client_id as string, note.id as string, `revision ${latest + 1}`),
       ...(request?.statements({ id: note.id as string, revision: latest + 1 }) ?? []),
     ])
@@ -162,12 +181,18 @@ export async function notesFor(db: D1Database, who: Actor, clientId: string) {
     const daily=await one(db,'SELECT * FROM bm_assistant_signed_notes WHERE note_id=?',n.id)
     const endorsement=daily?await one(db,'SELECT * FROM bm_assistant_supervision WHERE note_id=?',n.id):null
     if(reviewOnly&&daily?.supervisor_id===author)submitted.push({revision:n.signed_revision})
-    const own = revisions.filter(r => r.note_id === n.id && (!reviewOnly || submitted.some(s=>s.revision===r.number))).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
+    const own = revisions.filter(r => r.note_id === n.id && (!reviewOnly || submitted.some(s=>s.revision===r.number))).map(r => ({ number: r.number, body: r.body, reason: r.reason, writtenAt: r.written_at, draftedBy: r.drafted_by, clinical: parse(r.clinical), documentation: parse(r.documentation) ?? documentationInput({}), sections: parse(r.sections), charges: parse(r.charges) ?? [] }))
+    const definition = own[0]?.number === 0 && !n.template_snapshot ? await resolveTemplate(db,n.template) : noteTemplate(n)
+    if (own[0]?.number === 0 && definition && n.author_id === author) {
+      const carry = await carryForward(db,who,clientId,n.appointment_id,definition)
+      own[0].sections = definition.sections.map(s=>({id:s.id,label:s.label,text:carry.sections[s.id] ?? ''}))
+      own[0].clinical = carry.clinical
+    }
     const basis = await primaryUnitMethod(db, clientId, n.visit_at as string)
     const submissions = await rows(db,`SELECT s.*,r.decision,r.reason,r.supervision_given FROM bm_note_submissions s LEFT JOIN bm_note_reviews r ON r.submission_id=s.id WHERE s.note_id=? AND (? OR s.supervisor_id=?) ORDER BY s.submitted_at DESC`,n.id,reviewOnly?0:1,author ?? '')
     const pending = submissions.find(s=>!s.decision)
     return { assistantDaily:daily?{rule:JSON.parse(daily.rule_snapshot),endorsement}:null, canRecordSupervision:daily?.supervisor_id===author&&!endorsement, supervisorRead:reviewOnly, submissions, pending, canCosign: !!pending && pending.supervisor_id===author, id: n.id, appointmentId: n.appointment_id, authorId: n.author_id, authorName: n.author_name, createdAt: n.created_at, visitAt: n.visit_at, mine: n.author_id === author,
-      template: n.template, title: template(n.template)?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
+      templateDefinition: definition, template: n.template, title: definition?.title ?? 'Treatment note', status: n.signed_at ? 'signed' : 'draft',
       signature: n.signed_at ? { name: n.signer_name, credentials: n.signer_credentials, signedAt: n.signed_at, revision: n.signed_revision, sha256: n.signed_sha256 } : null,
       documentationAlerts: !n.signed_at && n.appointment_id ? await documentationAlerts(db, n.appointment_id, revisions.find(r => r.note_id === n.id), n.template) : [],
       defensibility: parse((await one(db, 'SELECT result FROM bm_note_checks WHERE note_id=? AND (? OR revision=?) ORDER BY checked_at DESC,id DESC LIMIT 1', n.id,reviewOnly?0:1,own[0]?.number ?? -1))?.result),

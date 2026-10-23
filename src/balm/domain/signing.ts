@@ -1,3 +1,6 @@
+import { cpt } from '../charting/cpt'
+import { noteTemplate } from '../charting/template-catalog'
+import { validateClinical } from '../charting/clinical-validation'
 import {dailySignature} from './assistant-daily'
 // Review and sign: the author signs the exact revision they reviewed with their
 // typed name and credentials; the signature records the time and the SHA-256 of
@@ -33,7 +36,7 @@ function signer(staff: Data, input: Data) {
 
 /** What a signature seals: the note, the exact revision, its content and the signer, at the time of signing. */
 export const signedDigest = (note: Data, revision: Data, sections: unknown, by: { name: string; credentials: string }, signedAt: string) =>
-  sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, documentation: revision.documentation, signer: by, signedAt }))
+  sha256(JSON.stringify({ note: note.id, revision: revision.number, template: note.template, body: revision.body, sections, charges: revision.charges, documentation: revision.documentation, ...(revision.clinical ? { clinical: revision.clinical, templateDefinition: note.template_snapshot } : {}), signer: by, signedAt }))
 
 export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'author' | 'submit' | 'cosign' = 'author') {
   human(who)
@@ -56,12 +59,14 @@ export async function signNote(db: D1Database, who: Actor, input: Data, mode: 'a
   }
   const latest = (await one(db, 'SELECT * FROM bm_note_revisions WHERE note_id=? ORDER BY number DESC LIMIT 1', note.id))!
   insist(input.revision !== undefined && Number(input.revision) === latest.number, 'note_changed_reload', 409)
-  if (mode !== 'cosign') assistantNote(who, note.template, JSON.parse(latest.charges as string || '[]'))
-  const t = template(note.template), sections = latest.sections ? JSON.parse(latest.sections as string) : null
+  if (mode !== 'cosign') { const definition = noteTemplate(note); assistantNote(who, definition ? `${definition.discipline}.${definition.kind}` : note.template, JSON.parse(latest.charges as string || '[]')) }
+  const t = noteTemplate(note), sections = latest.sections ? JSON.parse(latest.sections as string) : null
   if (t) {
-    const blank = t.sections.find(s => s.required && !sections.find((x: Data) => x.id === s.id)?.text)
-    insist(!blank, `complete_${blank?.id}_before_signing`)
+    validateClinical(t, latest, sections ?? [])
   } else insist(String(latest.body).trim(), 'note_is_empty')
+  for (const charge of JSON.parse(latest.charges as string || '[]')) {
+    if (cpt(charge.code)?.timed) insist(charge.minutes > 0, `Record minutes for intervention ${charge.code} before signing.`)
+  }
   const requiredVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_payer_documentation')
   const policyVersion = await one(db, 'SELECT COALESCE(SUM(version),0) AS total FROM bm_policies')
   const alerts = note.appointment_id ? await documentationAlerts(db, note.appointment_id, latest, note.template) : []

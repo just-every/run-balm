@@ -1,3 +1,4 @@
+import { resolveTemplate } from '../charting/template-catalog'
 // The scribe: the owner enters the install's own model key on the Clinic page
 // (sealed at rest, never sent back to a browser); a practitioner gives the visit's
 // dictation or bullet points and gets an unsigned draft note to review and sign.
@@ -110,7 +111,7 @@ async function draft(env: Bindings, who: Actor, input: Data) {
   const client = await clientVisible(env.DB, who, input.clientId)
   const appointment = await ownAppointment(env.DB, who, client.id as string, input.appointmentId)
   insist(appointment, 'choose_the_visit')
-  const t = template(input.template || appointment.note_template)
+  const t = await resolveTemplate(env.DB, input.template || appointment.note_template)
   insist(t, 'choose_a_template')
   const dictation = text(input.dictation, 'dictation', 20_000)
   const state = await scribeState(env)

@@ -1,3 +1,4 @@
+import { clinicalFields, clinicalSummary, composeCarry } from './clinical-fields'
 import { evaluationCodes } from '../domain/role-access'
 import { defensibility } from './defensibility'
 import { alertBadges } from './alerts'
@@ -12,16 +13,16 @@ import { clinician, empty, entry, field, form, h, hidden, panel, select, stamp, 
 const draftForm = (s: any, command: string, path: string, body: string, button: string) => form(command, path, body, button).replace('<form ', `<form autocomplete="off" data-actor-id="${h(s.actor.id)}" `)
 
 const CHARGE_ROWS = 6
-const templateChoices = (current: string, dailyOnly = false) => ` ${dailyOnly ? '' : '<option value="">Free-text note</option>'}${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${templates.filter(t => t.discipline === d && (!dailyOnly || t.kind === 'daily')).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
-export const templateSelect = (name: string, label: string, current: string, dailyOnly = false) => `<label>${h(label)}<select name="${h(name)}">${templateChoices(current, dailyOnly)}</select></label>`
+const templateChoices = (current: string, dailyOnly = false, catalog = templates) => ` ${dailyOnly ? '' : '<option value="">Free-text note</option>'}${Object.entries(disciplines).map(([d, label]) => `<optgroup label="${h(label)}">${catalog.filter(t => t.discipline === d && (!dailyOnly || t.kind === 'daily')).map(t => `<option value="${h(t.key)}"${t.key === current ? ' selected' : ''}>${h(t.title)}</option>`).join('')}</optgroup>`).join('')}`
+export const templateSelect = (name: string, label: string, current: string, dailyOnly = false, catalog = templates) => `<label>${h(label)}<select name="${h(name)}">${templateChoices(current, dailyOnly, catalog)}</select></label>`
 
 function chargeRows(charges: any[], assistant = false) {
   const options = (value: string) => `<option value="">No code</option>${codes.filter(c => !assistant || !evaluationCodes.has(c.code)).map(c => `<option value="${h(c.code)}"${c.code === value ? ' selected' : ''}>${h(c.code)} ${h(c.description)}${c.timed ? '' : ' (untimed)'}</option>`).join('')}`
-  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}`).join('')}</fieldset>`
+  return `<fieldset class="charges"><legend>CPT codes and minutes</legend><p class="help">Timed units follow the covering primary payer’s method shown below after saving. Cash visits use CMS; untimed codes bill one unit. For each code, optionally select up to four ICD-10 codes already recorded on this visit, separated by commas. If CMS remainders tie for the last units, check the codes you choose, then save before signing.</p>${Array.from({ length: CHARGE_ROWS }, (_, n) => `<div class="pair"><label>Code<select name="charge_code_${n}">${options(charges[n]?.code ?? '')}</select></label><label>Minutes<input name="charge_minutes_${n}" type="number" min="0" max="480" step="1" value="${h(charges[n]?.minutes || '')}"></label></div><label class="check"><input type="checkbox" name="charge_cms_tie_${n}" value="on"${charges[n]?.cmsTieChosen ? ' checked' : ''}><span>Prefer code ${n + 1} for a tied CMS unit</span></label>${field(`charge_diagnoses_${n}`, `ICD-10 diagnoses for code ${n + 1}`, (charges[n]?.diagnosisCodes ?? []).join(', '), 'text', 'maxlength="80" placeholder="M25.561, M54.50"')}${field(`charge_parameters_${n}`, 'Intervention parameters', charges[n]?.parameters ?? '', 'text', 'maxlength="2000"')}`).join('')}</fieldset>`
 }
 
 function sectionFields(t: any, values: Record<string, string>) {
-  return t.sections.map((s: any) => `<label>${h(s.label)}${s.required ? '' : ' <span class="help">(optional)</span>'}<textarea name="section_${h(s.id)}" maxlength="8000" placeholder="${h(s.help)}">${h(values[s.id] ?? '')}</textarea></label>`).join('')
+  return t.sections.map((s: any) => s.choices?.length ? select('section_' + s.id, s.label, [['','Choose'], ...s.choices.map((v:string)=>[v,v])], values[s.id] ?? '') : `<label>${h(s.label)}${s.required ? '' : ' <span class="help">(optional)</span>'}<textarea name="section_${h(s.id)}" maxlength="8000" placeholder="${h(s.help)}">${h(values[s.id] ?? '')}</textarea></label>`).join('')
 }
 
 /** Current primary-payer preview; issued invoices retain their frozen basis. */
@@ -38,7 +39,8 @@ function content(r: any) {
   const choice = (r.charges ?? []).filter((c: any) => c.cmsTieChosen).map((c: any) => c.code)
   const diagnosisLinks = (r.charges ?? []).filter((c: any) => c.diagnosisCodes?.length).map((c: any) => `${c.code}: ${c.diagnosisCodes.join(', ')}`)
   const linked = diagnosisLinks.length ? `<p class="help">Selected ICD-10 diagnoses · ${h(diagnosisLinks.join(' · '))}</p>` : ''
-  const recorded = linked + (choice.length ? `<p class="help">Recorded CMS tie preference: ${h(choice.join(', '))}. Used only for equal timed remainders.</p>` : '')
+  const interventions = (r.charges ?? []).length ? `<h4>Interventions</h4><ul>${r.charges.map((c:any)=>`<li>${h(c.code)} · ${h(c.minutes)} minutes${c.parameters ? ' · '+h(c.parameters) : ''}</li>`).join('')}</ul>` : ''
+  const recorded = interventions + linked + (choice.length ? `<p class="help">Recorded CMS tie preference: ${h(choice.join(', '))}. Used only for equal timed remainders.</p>` : '')
   if (!r.sections) return recorded + `<div class="note">${h(r.body)}</div>`
   return recorded + `<dl class="answers">${r.sections.map((s: any) => `<dt>${h(s.label)}</dt><dd>${s.text ? h(s.text) : '<span class="help">Not written</span>'}</dd>`).join('')}</dl>`
 }
@@ -47,16 +49,17 @@ const me = (s: any) => (s.staff ?? []).find((x: any) => x.id === s.actor.staffId
 
 function noteEntry(s: any, f: any, n: any) {
   const path = `/app/clients/${f.client.id}`, [latest, ...older] = n.revisions, visit = f.appointments.find((a: any) => a.id === n.appointmentId)
-  const t = template(n.template), values = Object.fromEntries((latest.sections ?? []).map((x: any) => [x.id, x.text]))
-  const head = `<p>${n.status === 'signed' ? status('Signed') : status('Draft · not signed')} ${visit ? `${h(visit.service)} · ${when(s, visit.start_at)}` : ''}<br><span class="help">By ${h(n.authorName)} · started ${stamp(s, n.createdAt)} · revision ${latest.number}</span></p>`
+  const t = n.templateDefinition ?? template(n.template), values = Object.fromEntries((latest.sections ?? []).map((x: any) => [x.id, x.text]))
+  const context = t?.bodyRegion || t?.diagnosisVariant ? `<p class="help">${h(t.bodyRegion ?? '')}${t.diagnosisVariant ? ' · '+h(t.diagnosisVariant) : ''} · template version ${h(t.version)}</p>` : ''
+  const head = context + `<p>${n.status === 'signed' ? status('Signed') : status('Draft · not signed')} ${visit ? `${h(visit.service)} · ${when(s, visit.start_at)}` : ''}<br><span class="help">By ${h(n.authorName)} · started ${stamp(s, n.createdAt)} · revision ${latest.number}</span></p>`
   const scribe = n.status !== 'signed' && latest.draftedBy === 'scribe' ? `<div class="notice" role="note"><strong>Drafted by the scribe from your dictation.</strong> Review and correct every section and code before you sign. The scribe never signs.${latest.reason.length > 21 ? ` <br>${h(latest.reason)}` : ''}</div>` : ''
   const signature = n.signature ? `<p class="signature">Electronically signed by <strong>${h(n.signature.name)}, ${h(n.signature.credentials)}</strong> · ${stamp(s, n.signature.signedAt)} · revision ${h(n.signature.revision)}<br><span class="help">Locked. Signature digest ${h(String(n.signature.sha256).slice(0, 16))}…</span></p>` : ''
   const addenda = n.addenda.length ? `<h4>Addenda</h4>${n.addenda.map((a: any) => `<div class="note">${h(a.body)}</div><p class="help">Addendum signed by ${h(a.name)}, ${h(a.credentials)} · ${stamp(s, a.writtenAt)}</p>`).join('')}` : ''
-  const history = older.length ? `<details><summary>Earlier revisions (${older.length})</summary>${older.map((r: any) => `<p class="help">Revision ${r.number} · ${stamp(s, r.writtenAt)}${r.reason ? ' · ' + h(r.reason) : ''}</p>${content(r)}`).join('')}</details>` : ''
+  const history = older.length ? `<details><summary>Earlier revisions (${older.length})</summary>${older.map((r: any) => `<p class="help">Revision ${r.number} · ${stamp(s, r.writtenAt)}${r.reason ? ' · ' + h(r.reason) : ''}</p>${content(r)}${clinicalSummary(r.clinical)}`).join('')}</details>` : ''
   let actions = ''
   if (n.mine && n.status !== 'signed' && !n.pending) {
     const edit = t ? sectionFields(t, values) : textarea('body', 'Note', latest.body, 'required maxlength="20000"')
-    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + chargeRows(latest.charges, s.actor.staffKind === 'assistant') + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
+    actions += `<details><summary>Edit draft</summary>${draftForm(s, 'note.amend', path, hidden('id', n.id) + hidden('revision', latest.number) + edit + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(latest.clinical) : '') + chargeRows(latest.charges, s.actor.staffKind === 'assistant') + documentationFields(latest.documentation, s.staff) + field('reason', 'What changed (optional)', '', 'text', 'maxlength="300"'), 'Save draft')}</details>`
     const early = visit && Date.parse(visit.start_at) > Date.now(), canceled = visit?.status === 'cancelled'
     if (canceled) actions += `<p class="help">This visit was canceled, so this draft cannot be signed.</p>`
     else if (early) actions += `<p class="help">You can sign this note once the visit has started (${when(s, visit.start_at)}).</p>`
@@ -74,11 +77,8 @@ function noteEntry(s: any, f: any, n: any) {
   if(n.assistantDaily)actions+='<p class="help">Assistant daily signature under owner-recorded '+h(n.assistantDaily.rule.state)+' state/payer rule. '+h(n.assistantDaily.endorsement?'Supervision recorded by '+n.assistantDaily.endorsement.supervisor_name:'Supervision must be recorded by the named therapist before claiming.')+'</p>'
   const authorSignatures=(n.submissions ?? []).map((x:any)=>`<p class="signature">Author signature: <strong>${h(x.author_name)}, ${h(x.author_credentials)}</strong> · ${stamp(s,x.submitted_at)} · revision ${h(x.revision)} · ${h(x.decision ?? 'awaiting supervisor')}<br><span class="help">Digest ${h(String(x.sha256).slice(0,16))}…${x.supervision_given ? '<br>Supervision: '+h(x.supervision_given.replace('_',' ')) : ''}${x.reason ? '<br>Returned: '+h(x.reason) : ''}</span></p>`).join('')
   if (n.mine && n.status === 'signed' && !['assistant','student','fellow'].includes(s.actor.staffKind)) actions += `<details><summary>Add an addendum</summary>${form('note.addendum', path, hidden('id', n.id) + textarea('body', 'Addendum', '', 'required maxlength="8000"') + '<p class="help">The signed note stays as it is. The addendum is signed with your name and the time.</p>', 'Sign and add addendum')}</details>`
-  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
+  return entry(`${n.title}`, head + documentationWarnings(n.documentationAlerts ?? []) + scribe + content(latest) + clinicalSummary(latest.clinical) + documentationSummary(latest.documentation, s.staff) + billing(n.billing) + noteMeasures(s, f, n) + progressChanges(s, f, n) + authorSignatures + signature + addenda + history + defensibility(s, n, path) + actions, `note-${n.id}`)
 }
-
-/** Goals carried forward from the practitioner's latest signed note on this file. */
-const carriedGoals = (f: any) => f.notes.find((n: any) => n.mine && n.status === 'signed' && n.revisions[0].sections?.some((x: any) => x.id === 'goals' && x.text))?.revisions[0].sections.find((x: any) => x.id === 'goals').text ?? ''
 
 function compose(s: any, f: any, ask: any) {
   const path = `/app/clients/${f.client.id}`, mine = f.appointments.filter((a: any) => a.practitioner_id === s.actor.staffId && a.status !== 'cancelled')
@@ -90,15 +90,16 @@ function compose(s: any, f: any, ask: any) {
   const visitDate = (a: any) => usDate(a.start_at, zoneOf(s))
   const assistant = s.actor.staffKind === 'assistant'
   const chosen = visit ? (ask.template ?? (assistant && template(visit.note_template)?.kind !== 'daily' ? 'pt.daily' : visit.note_template) ?? '') : ''
-  const t = template(chosen)
+  const t = (f.clinicalTemplates ?? templates).find((t:any)=>t.key===chosen)
   const start = `<form method="get" action="${h(path)}"><label>Visit<select name="compose" required>${mine.map((a: any) => `<option value="${h(a.id)}"${a.id === suggested?.id ? ' selected' : ''}>${h(a.service)} · ${h(visitDate(a))} · ${h(a.status)}</option>`).join('')}</select></label>`
-    + `${visit ? templateSelect('template', 'Template', chosen, assistant) : '<p class="help">The note starts from the template set on the visit’s service; you can choose another next.</p>'}<button type="submit" class="secondary">${visit ? 'Use this template' : 'Start a note'}</button></form>`
+    + `${visit ? templateSelect('template', 'Template', chosen, assistant, f.clinicalTemplates ?? templates) : '<p class="help">The note starts from the template set on the visit’s service; you can choose another next.</p>'}<button type="submit" class="secondary">${visit ? 'Use this template' : 'Start a note'}</button></form>`
   if (!visit) return `<details><summary>Write a note</summary>${start}</details>`
   const scribe = !t || ['assistant','student','fellow'].includes(s.actor.staffKind) ? '' : s.scribe?.ready
     ? `<details open><summary>Draft with the scribe</summary>${form('note.scribe', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t.key) + textarea('dictation', 'Dictation or bullet points for this visit', '', 'required maxlength="20000" placeholder="Pt reports... Ther ex 23 min: ... Manual 10 min: ... Plan: ..."') + '<p class="help">The scribe drafts the sections and CPT minutes from what you write here, using this clinic’s own AI model. You review and sign; it never signs.</p>', 'Draft the note')}</details>`
     : `<p class="help">${h(s.scribe?.line ?? 'Add a key to use the scribe.')}${s.actor.role === 'owner' && !s.scribe?.managed ? ' <a href="/app/clinic#scribe">Add it in Clinic</a>.' : ''}</p>`
-  const body = t ? sectionFields(t, { goals: carriedGoals(f) }) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
-  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + chargeRows([], assistant) + documentationFields({}, s.staff), 'Save draft')
+  const carry = composeCarry(f, visit, t)
+  const body = t ? sectionFields(t, carry.sections) : textarea('body', 'Treatment note', '', 'required maxlength="20000"')
+  const write = draftForm(s, 'note.write', path, hidden('clientId', f.client.id) + hidden('appointmentId', visit.id) + hidden('template', t?.key ?? '') + body + ((t?.schemaVersion ?? 0) >= 2 ? clinicalFields(carry.clinical) : '') + chargeRows([], assistant) + documentationFields({}, s.staff), 'Save draft')
   return `<details open><summary>Write a note: ${h(t?.title ?? 'free text')} for ${h(visit.service)} on ${h(visitDate(visit))}</summary>${start}${scribe}${write}</details>`
 }
 

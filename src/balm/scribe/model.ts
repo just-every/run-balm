@@ -37,7 +37,7 @@ function schema(t: Template) {
   return {
     type: 'object', additionalProperties: false, required: ['sections', 'charges', 'note'],
     properties: {
-      sections: { type: 'object', additionalProperties: false, required: t.sections.map(s => s.id), properties: Object.fromEntries(t.sections.map(s => [s.id, { type: 'string' }])) },
+      sections: { type: 'object', additionalProperties: false, required: t.sections.map(s => s.id), properties: Object.fromEntries(t.sections.map(s => [s.id, { type: 'string', ...(s.choices?.length ? { enum: ['',...s.choices] } : {}) }])) },
       charges: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['code', 'minutes'], properties: { code: { type: 'string', enum: codes.map(c => c.code) }, minutes: { type: 'integer' } } } },
       note: { type: 'string' },
     },
@@ -45,7 +45,7 @@ function schema(t: Template) {
 }
 
 function prompt(t: Template, visitMinutes: number, dictation: string) {
-  return `Template: ${t.title}\nSections:\n${t.sections.map(s => `- ${s.id} (${s.label}): ${s.help}`).join('\n')}\n\nCPT codes:\n${codes.map(c => `${c.code} ${c.description}${c.timed ? ' (timed)' : ' (untimed)'}`).join('\n')}\n\nScheduled visit length: ${visitMinutes} minutes.\n\n<dictation>\n${dictation}\n</dictation>`
+  return `Template: ${t.title}\nSections:\n${t.sections.map(s => `- ${s.id} (${s.label}): ${s.help}${s.choices?.length ? ' Choose only: '+s.choices.join(', ')+', or leave blank if not dictated.' : ''}`).join('\n')}\n\nCPT codes:\n${codes.map(c => `${c.code} ${c.description}${c.timed ? ' (timed)' : ' (untimed)'}`).join('\n')}\n\nScheduled visit length: ${visitMinutes} minutes.\n\n<dictation>\n${dictation}\n</dictation>`
 }
 
 function request(c: ScribeConfig, t: Template, user: string): { headers: Record<string, string>; body: unknown; answer: (body: any) => any } {
@@ -89,6 +89,7 @@ export async function draftNote(c: ScribeConfig, t: Template, visitMinutes: numb
 export function normalise(a: any, t: Template): Draft {
   const sections = Object.fromEntries(t.sections.map(s => {
     const v = a?.sections?.[s.id]
+    if (typeof v === 'string' && v.trim() && s.choices?.length && !s.choices.includes(v.trim())) throw new ScribeError(`The AI model returned an unsupported choice for ${s.label}.`)
     return [s.id, typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, 8000) : '']
   }))
   const minutes = new Map<string, number>()
