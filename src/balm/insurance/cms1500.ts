@@ -8,7 +8,7 @@ export function cms1500(c:ClaimSnapshot,claimId:string) {
  const fields:string[]=[],birth=(date:string)=>date?date.slice(5,7)+' '+date.slice(8,10)+' '+date.slice(0,4):''
  const put=(left:number,top:number,value:unknown,width=2,font=10)=>fields.push(`<span style="left:${left}in;top:${top}in;width:${width}in;font-size:${font}pt">${escape(value)}</span>`)
  put(5.0,.55,c.payer.name,2.9)
- put(c.payer.medicare ? .35 : 4.65,1.5,'X',.16);put(5.25,1.5,c.subscriber.memberId,2.9)
+ put(c.payer.medicare ? .35 : 4.95,1.5,'X',.16);put(5.25,1.5,c.subscriber.memberId,2.9)
  put(.35,1.84,`${c.patient.last}, ${c.patient.first}`,2.8);put(3.35,1.84,birth(c.patient.dob),1.2)
  if(['M','F'].includes(c.patient.sex))put(c.patient.sex==='M'?4.45:4.95,1.84,'X',.16)
  put(5.25,1.84,`${c.subscriber.last}, ${c.subscriber.first}`,2.9)
