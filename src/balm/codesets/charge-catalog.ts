@@ -16,7 +16,7 @@ export async function resolveChargeCatalog(db: D1Database, date?: string): Promi
   const hcpcs=await releaseAt(db,'hcpcs',on)
   const official=hcpcs?await rows(db,'SELECT code,description FROM bm_code_items WHERE release_id=? AND effective_on<=? AND (deleted_on IS NULL OR deleted_on>?)',hcpcs.id,on,on):[]
   const provenance=(r:typeof release)=>({id:r!.id,version:r!.version,effectiveOn:r!.effective_on})
-  return items.flatMap(item => {
+  return items.flatMap<Code>(item => {
     insist(item.timed === 0 || item.timed === 1, 'licensed_cpt_requires_reviewed_timing')
     if(/^[A-Z]\d{4}$/.test(item.code)){
       const row=official.find(code=>code.code===item.code)
