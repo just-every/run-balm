@@ -96,6 +96,23 @@ export async function codeSetsBrowserJourney(h,edge,options={}){
 
 /** Pass a fresh, unseeded public harness to prove first-install missing state.
  * This intentionally never deletes production tables to manufacture the state. */
+async function dailyCloseCodes(page,h,phase){
+ await page.goto(h.origin+'/app')
+ const warnings=page.locator('[data-close-category="codeSets"]')
+ assert.ok((await h.state()).dailyClose.codeSets.length>0)
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:1000})
+  await receipt(page,'CODE-001-daily-close-'+phase,width,warnings)
+  const control=page.locator('.control-tip').first(),tip=control.getByRole('tooltip')
+  await control.scrollIntoViewIfNeeded();await control.focus();assert.equal(await tip.isVisible(),true)
+  await receipt(page,'CODE-001-calendar-focus-tooltip',width,control)
+  await control.evaluate(el=>el.blur());await page.mouse.move(0,0);await control.hover()
+  await page.waitForTimeout(100);assert.equal(await tip.isVisible(),false)
+  await page.waitForTimeout(250);assert.equal(await tip.isVisible(),true)
+  await receipt(page,'CODE-001-calendar-hover-tooltip',width,control)
+ }
+}
+
 export async function codeSetsMissingBrowser(h){
  if(process.env.BALM_UI_SCREENSHOTS)await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
  const {browser,page}=await browserContext(h)
@@ -127,6 +144,8 @@ test('CODE-001: first installation names missing releases and older public impor
  try{
   await h.finishSetup();await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane'})
   await codeSetsMissingBrowser(h)
+  const missing=await browserContext(h)
+  try{await dailyCloseCodes(missing.page,h,'missing')}finally{await missing.browser.close()}
   const pending=await h.cmd('codes.update',{...edge.ptp[0],batchLimit:1,licenseAcknowledged:true,licenseBasis:'Synthetic test-only CMS/AMA license acknowledgment'})
   assert.equal(pending.status,'incomplete')
   const {browser,page}=await browserContext(h)
@@ -138,6 +157,8 @@ test('CODE-001: first installation names missing releases and older public impor
    await page.locator('[data-code-update-result]').filter({hasText:'Code release loaded'}).waitFor()
    panel=page.locator('#clinical-codes');assert.match(await panel.textContent(),/Update due/)
    for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await receipt(page,'CODE-001-overdue-release',width,panel)}
+   assert.ok((await h.state()).dailyClose.codeSets.some(c=>c.kind==='ptp'&&c.stale&&!c.missing))
+   await dailyCloseCodes(page,h,'overdue')
   }finally{await browser.close()}
  }finally{await h.close()}
 })

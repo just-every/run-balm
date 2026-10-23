@@ -178,7 +178,8 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     assert.ok(sent.includes('Ther ex 23 min')); assert.ok(!sent.includes('Ava') && !sent.includes('1992-06-15'))
     const draft = (await view(h, client.id, priya.cookie)).notes.find(n => n.id === drafted.id)
     assert.deepEqual([draft.status, draft.template, draft.revisions[0].draftedBy], ['draft', 'pt.daily', 'scribe'])
-    assert.deepEqual(draft.revisions[0].charges, [{ code: '97110', minutes: 23 }, { code: '97140', minutes: 10 }])
+    const licensed=(await h.state()).billingCodeCatalog
+    assert.deepEqual(draft.revisions[0].charges,[['97110',23],['97140',10]].map(([code,minutes])=>({...licensed.find(c=>c.code===code),minutes})))
     // The scribe never signs: the practitioner completes the missing goals and signs.
     await h.cmd('note.sign', { id: drafted.id, revision: 1, signature: 'Priya', attest: true }, priya.cookie, 400)
     await h.cmd('note.amend', { ...chartFixture(), id: drafted.id, revision: 1, totalTimedMinutes: 33, totalTreatmentMinutes: 33, sections: { ...Object.fromEntries(draft.revisions[0].sections.map(s => [s.id, s.text])), diagnosis: 'M25.561', response: 'Synthetic treatment response reviewed by the clinician', goals: 'STG 1 progressing.' }, charges: draft.revisions[0].charges.map(c=>({...c,parameters:'Synthetic clinician-reviewed intervention parameters'})) }, priya.cookie)
