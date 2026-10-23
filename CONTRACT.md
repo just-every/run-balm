@@ -425,8 +425,8 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | Clauses | Done | Partial | Missing | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Published | 15 | 0 | 0 | 15 |
-| Target and push further | 41 | 28 | 26 | 95 |
-| All | 56 | 28 | 26 | 110 |
+| Target and push further | 42 | 28 | 25 | 95 |
+| All | 57 | 28 | 25 | 110 |
 
 | Clause | Title | Kind | Status | Evidence | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -505,7 +505,7 @@ The 19 October 2026 throughput round completes `SCHED-009`, `HIPAA-003` and `CHA
 | `INS-009` | Medicare therapy rules | target | done | `src/balm/insurance/medicare.ts`; `src/balm/insurance/medicare-claim.ts`; `src/balm/insurance/facts.ts`; `src/balm/ui/insurance-medicare.ts`; `tests/insurance.test.mjs`; `tests/archive.test.mjs`; `docs/insurance.md` |  |
 | `INS-010` | Workers' comp, auto and injury cases | target | missing |  | No workers comp, auto or injury cases |
 | `INS-011` | Institutional claims for rehab agencies | target | missing |  | No institutional claims |
-| `INS-012` | Manual payer payment posting | target | missing |  | No payer payment batches, EOB posting or recoupments |
+| `INS-012` | Manual payer payment posting | target | done | `tests/insurance.test.mjs` (INS-012: balanced manual EOB batches post group checks, CARC/PR, interest and recoupments once into statements and deposits) / `tests/manual-payer-journey.mjs`: two-claim workers-comp check, CARC 45 and deductible, refused unbalanced close with no money effects, interest, separate third-claim recoupment/reopened payer A/R, repeated claim entries, denial queue, signed-in statement, EOB access refusals and exact deposit CSV; `tests/manual-payer-browser.mjs` (real check/line/scan/close forms, reopened ledger, deposits and patient balance at 1440/390); `tests/archive.test.mjs` (INS-012: CLI archive preserves jobs and restores fixed manual EOB batches, signed recoupments and deposit arithmetic); `tests/report.test.mjs` (REPORT-002: charges, payments, adjustments, A/R aging: existing money and deposit reconciliation) | Owner/biller-only drafts post no money; one guarded balanced close preserves the original payment and records takebacks as separate signed cash entries. EOB scans are fixed after close; HIPAA-002 withdraws a shared raw scan when one linked patient is destroyed, retaining other patients’ native records and anonymous business totals. No bank access or automatic payer transport. |
 | `INS-013` | Secondary, tertiary and crossover claims | target | missing |  | No coordination of benefits, secondary claims or crossover handling |
 | `CODE-001` | Versioned code sets and edit tables | target | missing |  | No ICD-10-CM, HCPCS, CPT or NCCI/MUE tables or update command |
 | `REPORT-001` | Operational reports | target | done | `src/balm/reports/operational.ts`; `src/balm/ui/reports.ts`; `tests/report.test.mjs` (REPORT-001, REF-001); `src/balm/reports/referrals.ts` | Owner-only per-practitioner visits, plan-of-care completion, new evaluations, utilization/productivity and payroll counts with date/practitioner filters and CSV export. Plan-of-care completion counts per episode of care (`REF-003`). Referral conversion by source and provider (`REF-001`). The location filter is carried by `SCHED-007`. |
