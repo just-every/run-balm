@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto'
 import { harness } from './harness.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { assertPrivateStorage, edgeAddress, effects, portalToken, publicRequest, securityClinic, untilLimited } from './security-clinic.mjs'
+import { portalLogin } from './portal-billing.mjs'
 
 test('SEC-002: booking origin and atomic pending cap refuse without writes; intake is hashed, private and one use', { timeout: 120_000 }, async () => {
   const h = await harness()
@@ -345,5 +346,24 @@ test('only the owner changes a sign-in email; a staff session keeps its own job'
     const corrected = await h.send('/auth/email', { email: 'jordan@clinic.example' }, fresh)
     assert.equal(corrected.status, 200, corrected.text)
     assert.equal(corrected.value.email, 'jordan@clinic.example')
+  } finally { await h.close() }
+})
+
+test('a public booking cannot put a patient’s email on a second file or end their portal access', { timeout: 120_000 }, async () => {
+  const h = await harness()
+  try {
+    const { starts, booking } = await securityClinic(h)
+    const email = 'portal@patient.example'
+    await h.cmd('client.save', { firstName: 'Portal', lastName: 'Patient', dateOfBirth: '1975-09-12', email })
+    const cookie = await portalLogin(h, email)
+    assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200)
+    const before = await effects(h)
+    // Someone else's name and birth date with the patient's email.
+    const refused = await publicRequest(h, '/book', booking(starts[0], { email }))
+    assert.equal(refused.status, 409)
+    assert.match(refused.text, /patient portal/)
+    assert.deepEqual(await effects(h), before, 'no second file, visit, intake or email')
+    assert.equal((await h.send('/portal/home', undefined, cookie)).status, 200, 'the patient stays signed in')
+    assert.equal((await h.send('/portal/home', undefined, await portalLogin(h, email))).status, 200, 'and can still sign in')
   } finally { await h.close() }
 })

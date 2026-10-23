@@ -229,6 +229,9 @@ export async function bookOnline(db: D1Database, input: Data) {
   const existing = matches[0]
   // A returning patient adds a practitioner from the patient portal, where their email is proven.
   if (existing) insist(await one(db, 'SELECT 1 WHERE ' + inCare, existing.id, practitioner.id, existing.id), 'book_a_new_practitioner_from_the_patient_portal', 409)
+  // An address nobody has proven never starts a second file beside the patient who has it: they sign in to the portal.
+  const unclaimed = 'NOT EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL)'
+  if (!existing) insist(await one(db, 'SELECT 1 WHERE ' + unclaimed, client.email), 'this_email_is_already_on_a_patient_file', 409)
   if (double) insist(await patientFits(db, existing?.id as string ?? null, practitioner.id as string, service.id as string, start.toISOString(), end.toISOString()), 'slot_unavailable', 409)
   const eligibility = await checkSelfService(db, { clientId: existing?.id as string | undefined, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString() })
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
@@ -236,6 +239,7 @@ export async function bookOnline(db: D1Database, input: Data) {
     unchanged, ...eligibility.guards,
     guard(db, `((SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE lower(c.email)=? AND a.status='booked' AND a.start_at>?)<3)`, client.email, now()),
     ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
+      guard(db, unclaimed, client.email),
       stmt(db, "INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'online')", clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),

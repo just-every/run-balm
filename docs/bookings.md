@@ -8,7 +8,7 @@ Your booking page is `/book` on your Balm's address. A new client:
 
 They land on their private intake link, which is also emailed to them when mail is set up. If someone else took the same time a moment earlier, the booking is refused and they choose another.
 
-A client whose name, date of birth and email exactly match an existing file continues that file with a practitioner they have already seen; a new practitioner is booked from the signed-in patient portal. One email address can hold at most three upcoming online bookings. Set **Online booking** to **Closed** on the **Clinic** page to stop taking bookings.
+A client whose name, date of birth and email exactly match an existing file continues that file with a practitioner they have already seen; a new practitioner is booked from the signed-in patient portal. An email already on a file with other details is refused here, so that patient keeps their portal sign-in; the clinic adds a second patient who shares an email. One email address can hold at most three upcoming online bookings. Set **Online booking** to **Closed** on the **Clinic** page to stop taking bookings.
 
 ## The schedule
 
