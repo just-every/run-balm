@@ -31,7 +31,15 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "pnpm run test:balm"
+        "node --test --test-concurrency=1 tests/balm.test.mjs tests/setup.test.mjs tests/demo.test.mjs tests/schedule.test.mjs tests/reminders.test.mjs tests/movein.test.mjs tests/intake-portal.test.mjs tests/portal.test.mjs tests/disclosures.test.mjs tests/alerts.test.mjs tests/report.test.mjs tests/retention.test.mjs tests/security.test.mjs"
+      ]
+    },
+    {
+      "name": "domain-billing",
+      "browser": false,
+      "hosted": false,
+      "commands": [
+        "node --test --test-concurrency=1 tests/payments.test.mjs tests/charting.test.mjs tests/insurance.test.mjs tests/cases.test.mjs tests/daily-close.test.mjs tests/authorization.test.mjs"
       ]
     },
     {
