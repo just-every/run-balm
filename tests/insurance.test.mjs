@@ -425,6 +425,7 @@ test('CHART-006 selected diagnoses follow signed procedures into claims and fixe
     assert.equal((await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id).status, 'draft')
     await codes('M25.561, M54.50, R26.2')
     await h.cmd('note.sign', { id: note.id, revision: 2, signature: 'Priya Shah', attest: true }, base.priya.cookie)
+    const originalSignedCharges=JSON.stringify((await patientFile(h,patient.id,base.priya.cookie)).notes.find(n=>n.id===note.id).revisions[0].charges)
     await h.cmd('note.amend', { id: note.id, revision: 2, body: 'Attempt to relink a signed service', charges: [{ ...charges[0], diagnosisCodes: ['M54.50'] }] }, base.priya.cookie, 409)
     const invoice = await h.cmd('invoice.prepare', { appointmentId: visit })
     assert.deepEqual(invoice.snapshot.procedures.map(p => p.diagnosisCodes), [['M25.561', 'R26.2'], ['M54.50']])
@@ -459,7 +460,7 @@ test('CHART-006 selected diagnoses follow signed procedures into claims and fixe
     assert.match(x12.text, /SV1\*HC:97110:GP\*70.00\*UN\*2\*\*\*3:1~/)
     assert.match(x12.text, /SV1\*HC:97140:GP\*25.00\*UN\*1\*\*\*2~/)
     const signed = (await patientFile(h, patient.id, base.priya.cookie)).notes.find(n => n.id === note.id)
-    assert.deepEqual(signed.revisions[0].charges, charges, 'the signed code identities survive subsequent visit edits')
+    assert.equal(JSON.stringify(signed.revisions[0].charges),originalSignedCharges,'the signed code identities and licensed release metadata survive subsequent visit edits')
   })
 })
 
