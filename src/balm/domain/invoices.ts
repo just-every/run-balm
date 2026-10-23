@@ -20,7 +20,7 @@ export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 
 /** The facts an invoice freezes; approval re-reads them and compares byte for byte. */
 export async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
-  const row = await one(db, `SELECT a.id,a.start_at,a.status,a.client_id,c.first_name,c.last_name,c.date_of_birth,p.name AS practitioner,p.profession,p.provider_number,
+  const row = await one(db, `SELECT a.id,a.start_at,a.status,a.coverage_choice,a.client_id,c.first_name,c.last_name,c.date_of_birth,p.name AS practitioner,p.profession,p.provider_number,
     s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.practice_npi,st.tax_id_type,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
@@ -89,7 +89,9 @@ export async function approveInvoice(db: D1Database, who: Actor, input: Data) {
   const { row, value } = await snapshot(db, invoice.appointment_id as string, invoice.amount_cents as number)
   insist(row.status === 'attended' && JSON.stringify(value) === invoice.snapshot, 'invoice_facts_changed_prepare_again', 409)
   const number = ((await one<{ n: number }>(db, 'SELECT MAX(number) AS n FROM bm_invoices'))?.n ?? 0) + 1
-  const cobSetup = await stageSetup(db,{client_id:invoice.client_id},{invoiceId:invoice.id as string,serviceDate:hostDateAt(new Date(row.start_at as string),row.time_zone as string)})
+  const cobSetup = ['uninsured','self_pay'].includes(String(row.coverage_choice))
+    ? Object.assign([guard(db,'EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND coverage_choice=?)',invoice.appointment_id,row.coverage_choice)],{insuranceHeld:false})
+    : await stageSetup(db,{client_id:invoice.client_id},{invoiceId:invoice.id as string,serviceDate:hostDateAt(new Date(row.start_at as string),row.time_zone as string)})
   const approvedAt = now(), bytes = artifact(number, value, approvedAt, row.time_zone as string)
   await commit(db, who, [
     stmt(db, "UPDATE bm_invoices SET status='approved',number=?,artifact=?,artifact_sha256=?,approved_by=?,approved_at=?,version=version+1 WHERE id=? AND status='draft' AND version=?",
