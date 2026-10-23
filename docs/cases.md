@@ -31,7 +31,7 @@ The top line of each case is the first stage that stalled, or else the furthest 
 The agent lines up these steps when the records call for them, each with the records it used:
 
 - **Re-verify eligibility** when coverage was never checked, is older than 30 days, or the last response was not active. Approving prepares the 270 inquiry for the next visit (and sends it through the clearinghouse adapter when one is set up).
-- **Request more authorized visits** when 2 or fewer are left, the authorization ends within 14 days, or a claim was denied for a missing authorization (CARC 197). Approving emails the request to the case’s authorization contact with the latest signed note attached as a PDF, a progress report first.
+- **Request more authorized visits** when 2 or fewer are left, the authorization ends within 14 days, or a claim was denied for a missing authorization (CARC 197). Approving emails the request to the case’s authorization contact with the latest signed note attached as a PDF, a progress report first. Because it carries a signed note, only the owner approves this request or drafts its wording.
 - **Send the claim** for an attended visit with a signed note and an approved invoice. Approving prepares and scrubs the claim and puts it in its own 837P batch (sent through the adapter when one is set up).
 - **Fix and resubmit a denial**, with the payer’s reason and what to do. A missing-authorization denial waits until the payer’s authorization is recorded. Approving prepares the corrected claim and batches it.
 - **Send a patient statement** once the payer has paid and the patient owes a balance, at most every 14 days. Approving emails the patient a private link to their statement.

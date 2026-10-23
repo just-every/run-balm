@@ -15,7 +15,7 @@ const nppesNames = (name: string) => { const parts = name.split(' '); return { f
 import { perform } from './actions'
 import { caseFacts } from './facts'
 import { stages, standing } from './stages'
-import { steps } from './steps'
+import { steps, supportingNote } from './steps'
 import { draftWording, wordingStatus } from './wording'
 
 const deskOnly = (who: Actor) => { human(who); need(who, 'owner', 'reception') }
@@ -89,6 +89,8 @@ async function caseStep(env: Bindings, input: Data) {
 async function draft(env: Bindings, who: Actor, input: Data) {
   const { c, step } = await caseStep(env, input)
   insist(step.draftable, 'only_letters_have_drafted_wording')
+  // Drafting reads the case's signed note; the desk never reads note text.
+  insist(who.role === 'owner' || !supportingNote(c.facts), 'only_the_owner_drafts_from_a_signed_note', 403)
   const wording = await draftWording(env, c.facts)
   await commit(env.DB, who, [stmt(env.DB, 'INSERT INTO bm_case_drafts(referral_id,step_key,wording,drafted_by,drafted_at) VALUES(?,?,?,?,?) ON CONFLICT(referral_id,step_key) DO UPDATE SET wording=excluded.wording,drafted_by=excluded.drafted_by,drafted_at=excluded.drafted_at', c.referral.id, step.key, wording, who.email, now()),
     audit(env.DB, who, 'case.wording_drafted', c.client.id, c.referral.id, step.kind)])
@@ -98,6 +100,8 @@ async function draft(env: Bindings, who: Actor, input: Data) {
 /** A person approves the exact step they reviewed; Balm then does it and keeps the record. */
 async function approve(env: Bindings, who: Actor, input: Data) {
   const { c, step } = await caseStep(env, input), db = env.DB
+  // A signed note leaves the clinic only on the owner's approval, to the recipient they reviewed.
+  insist(who.role === 'owner' || !step.sends?.attachment, 'only_the_owner_sends_a_signed_note', 403)
   insist(input.digest === step.digest, 'The case changed after this page was opened. Review the step again before approving.', 409)
   insist(!step.blocked, step.blocked ?? 'step_blocked', 409)
   const wording = step.draftable ? text(input.wording, 'wording', 4000) : '', key = id()

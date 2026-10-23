@@ -20,7 +20,9 @@ function outcome(r: any, kind: string) {
   return `${r.replaces ? 'Corrected claim' : 'Claim'} ${r.claimStatus}${r.reference ? ` (reference ${r.reference})` : ''}${r.line ? `. ${r.line}` : ''}`
 }
 
-function stepCard(c: any, step: any, wording: any) {
+function stepCard(c: any, step: any, wording: any, owner: boolean) {
+  // A request carrying a signed note waits for the owner, who reviews it and its recipient.
+  if (step.sends?.attachment && !owner) return `<div class="case-step"><h4>${h(step.title)}</h4><p>${h(step.why)}</p><p class="help">Records used</p>${cites(step.citations)}<p class="notice" role="note">The owner approves this request because it attaches a signed note.</p></div>`
   const ids = hidden('caseId', c.referral.id) + hidden('key', step.key) + hidden('digest', step.digest)
   const sends = step.sends ? `<p class="case-sends">Sends to <strong>${h(step.sends.to)}</strong>: “${h(step.sends.subject)}”${step.sends.attachment ? `<br>Attached: ${h(step.sends.attachment.label)}` : ''}</p>` : ''
   const letter = step.sends?.fixed ? `<pre class="case-letter">${h(step.sends.fixed)}</pre>` : ''
@@ -41,7 +43,7 @@ function nextUp(c: any) {
 function caseCard(s: any, c: any, wording: any) {
   const r = c.referral
   const track = `<ol class="case-track">${c.stages.map((x: any) => `<li class="case-stage is-${h(x.state)}"><span class="case-dot" aria-hidden="true"></span><span class="case-stage-text"><strong>${h(x.label)}</strong> <span class="case-state">${h(stateWord[x.state])}</span><br>${x.cite ? `<a href="${h(x.cite.href)}">${h(x.text)}</a>` : h(x.text)}${x.next ? `<br><span class="case-todo">Next: <a href="${h(x.next.href)}">${h(x.next.text)}</a></span>` : ''}</span></li>`).join('')}</ol>`
-  const next = c.steps.length ? `<section class="case-next"><h3>${c.steps.length === 1 ? 'Next step' : `Next steps (${c.steps.length})`}</h3>${c.steps.map((x: any) => stepCard(c, x, wording)).join('')}</section>` : nextUp(c)
+  const next = c.steps.length ? `<section class="case-next"><h3>${c.steps.length === 1 ? 'Next step' : `Next steps (${c.steps.length})`}</h3>${c.steps.map((x: any) => stepCard(c, x, wording, s.actor?.role === 'owner')).join('')}</section>` : nextUp(c)
   const history = c.history.length ? `<details class="case-history"><summary>Approved steps (${c.history.length})</summary><ul class="plain">${c.history.map((x: any) => `<li><strong>${h(x.title)}</strong><br>Approved by ${h(x.approved_by)} (${h(x.approved_role)}) ${stamp(s, x.approved_at)} · ${h(x.status === 'sending' ? 'in progress' : outcome(x.result, x.kind))}${x.wording ? `<details><summary>Wording sent</summary><p class="secure-body">${h(x.wording)}</p></details>` : ''}</li>`).join('')}</ul></details>` : ''
   return `<article class="case" id="case-${h(r.id)}"><header class="case-head"><div><h2><a href="/app/clients/${h(c.client.id)}">${h(c.client.name)}</a></h2><p class="help">${h(c.payer ?? 'Self-pay')} · referral from ${h(r.referring_first)} ${h(r.referring_last)}${r.diagnosis ? ` · ${h(r.diagnosis)}` : ''}${r.reason ? ` · ${h(r.reason)}` : ''}</p></div><p class="case-standing is-${h(c.standing.state)}">${h(c.standing.text)}</p></header>${referralLine(s, c)}${track}${next}${history}</article>`
 }
