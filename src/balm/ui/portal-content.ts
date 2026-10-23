@@ -14,7 +14,7 @@ const card = (id: string, title: string, body: string) => `<section id="${id}" c
 function exercises(d: any) {
   const today = new Intl.DateTimeFormat('en-CA', {timeZone:d.clinic.time_zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
   return d.exercises.map((e:any)=>{
-    const dosage=`${h(e.sets)} ${pt(d,'sets')} × ${h(e.reps)} ${pt(d,'reps')} · ${h(e.frequency)} · ${pt(d,'Hold')} ${h(e.holdSeconds??0)} ${pt(d,'seconds')}`
+    const dosage=`${h(e.sets)} ${pt(d,'sets')} × ${h(e.reps)} ${pt(d,'reps')} · ${h(e.libraryId?pt(d,e.frequency):e.frequency)} · ${pt(d,'Hold')} ${h(e.holdSeconds??0)} ${pt(d,'seconds')}`
     const fields=hidden('id',e.id)+`<label>${pt(d,'Session date')}<input name="day" type="date" value="${h(today)}" max="${h(today)}" required></label><label>${pt(d,'Pain (0–10, optional)')}<input name="pain" type="number" min="0" max="10" step="1"></label>`
     return `<article class="exercise-row">${e.image?`<img src="${h(e.image)}" alt="${h(d.language==='es'&&e.titleEs?e.titleEs:e.title)} instruction image">`:''}<div class="exercise-text"><h3>${h(d.language==='es'&&e.titleEs?e.titleEs:e.title)}</h3><p class="reps">${dosage}</p><p class="instructions">${h(d.language==='es'&&e.instructionsEs?e.instructionsEs:e.instructions)}</p>${e.license?`<p class="help">${h(e.license)} · ${h(e.source)}</p>`:''}${e.doneDates.length?`<p class="completion">${e.doneDates.length} sessions logged · ${h(e.doneDates.at(-1))}</p>`:''}</div><div class="row-actions">${e.doneDates.includes(today)?`<span class="completed" role="status">✓ ${pt(d,'Done today')}</span>`:''}${patientForm('exercise.done',fields,pt(d,'Mark done'))}</div></article>`
   }).join('')||`<p>${pt(d,'Your clinician has not assigned a home program yet.')}</p>`

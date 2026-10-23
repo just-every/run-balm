@@ -46,7 +46,7 @@ export async function requestPortalLink(env: Bindings, request: Request, emailIn
 }
 
 export interface Patient {
-  guardianEmail?: string
+  guardianEmail?: string;guardianGrantId?:string
   sessionId: string; clientId: string; clientVersion: number; email: string; firstName: string; lastName: string; expiresAt: string
 }
 const liveSession = `SELECT s.id AS sessionId,s.client_id AS clientId,s.client_version AS clientVersion,s.email,c.first_name AS firstName,c.last_name AS lastName,s.expires_at AS expiresAt

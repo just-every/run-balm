@@ -11,7 +11,7 @@ export async function exerciseLibrary(db:D1Database,who:Actor,input:Data={}){
  const words=String(input.q??'').trim().toLowerCase().split(/\s+/).filter(Boolean)
  const filtered=all.filter(e=>(!input.discipline||e.discipline===input.discipline)&&(!input.region||e.region===input.region)&&(!input.equipment||e.equipment===input.equipment)&&words.every(w=>[e.title,e.titleEs,e.instructions,e.instructionsEs,e.equipment].join(' ').toLowerCase().includes(w)))
  await commit(db,who,[audit(db,who,'exercise.library_searched',null)])
- return {exercises:filtered.slice(0,100),total:filtered.length,shippedCount:shippedExercises.length,counts:Object.fromEntries(['pt','ot','slp'].map(d=>[d,shippedExercises.filter(e=>e.discipline===d).length])),regions:[...new Set(all.map(e=>e.region))].sort(),equipment:[...new Set(all.map(e=>e.equipment))].sort()}
+ return {query:{q:String(input.q??''),discipline:String(input.discipline??''),region:String(input.region??''),equipment:String(input.equipment??'')},exercises:filtered.slice(0,100),total:filtered.length,shippedCount:shippedExercises.length,counts:Object.fromEntries(['pt','ot','slp'].map(d=>[d,shippedExercises.filter(e=>e.discipline===d).length])),regions:[...new Set(all.map(e=>e.region))].sort(),equipment:[...new Set(all.map(e=>e.equipment))].sort()}
 }
 /** Bounded RFC 4180 CSV parser: quotes and embedded commas and newlines are kept. */
 function csv(source:string){
@@ -59,7 +59,7 @@ export async function assignLibraryProgram(db:D1Database,who:Actor,input:Data){
  const ids=Array.isArray(input.exerciseIds)?input.exerciseIds:typeof input.exerciseIds==='string'?input.exerciseIds.split(/[ ,]+/).filter(Boolean):[]
  insist(ids.length>=1&&ids.length<=20&&new Set(ids).size===ids.length,'choose_1_to_20_distinct_exercises')
  const all=[...shippedExercises,...(await rows(db,'SELECT * FROM bm_practice_exercises')).map(practice)]
- const chosen=ids.map(key=>{const item=all.find(e=>e.id===key);insist(item,'library_exercise_not_found',404);return item})
+ const chosen=ids.map(key=>{const item=all.find(e=>e.id===key);insist(item,'library_exercise_not_found',404);const dose=input.dosages?.[key]??{};return {...item,sets:integer(dose.sets??item.sets,'sets',1,100),reps:text(String(dose.reps??item.reps),'reps',100),holdSeconds:integer(dose.holdSeconds??item.holdSeconds,'hold_seconds',0,600),frequency:text(dose.frequency??item.frequency,'frequency',100)}})
  const at=now(),assigned=chosen.map(item=>({item,key:id()}))
  await commit(db,who,[clientAuthority(db,who,client.id),guard(db,"EXISTS(SELECT 1 FROM bm_notes WHERE id=? AND client_id=? AND (?='owner' OR author_id=?))",noteId,client.id,who.role,practitionerId(who)??''),
  ...assigned.map(({item:e,key})=>stmt(db,`INSERT INTO bm_home_exercises(id,client_id,title,sets,reps,frequency,instructions,image,assigned_by,assigned_at,source_note_id,hold_seconds,library_id,instructions_es,title_es,exercise_license,exercise_source)

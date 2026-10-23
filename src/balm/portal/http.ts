@@ -1,3 +1,4 @@
+import {guardianActor} from './guardians'
 import {programPdf} from './programs'
 import {consumeSmsCode,requestSmsCode} from './sms-auth'
 import { recordDownload } from './records'
@@ -46,9 +47,9 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
     const recordPath=path.match(/^\/portal\/records\/([\w-]+)\.(pdf|json)$/)
     if(recordPath&&request.method==='GET')return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',patient)
     const payerEstimate=path.match(/^\/portal\/aeobs\/([\w-]+)\.pdf$/)
-    if(payerEstimate&&request.method==='GET'){const doc=await aeobOriginal(env.DB,patient.clientId,payerEstimate[1],true);await commit(env.DB,null,[portalGuard(env.DB,patient),audit(env.DB,patientActor,'aeob.downloaded',patient.clientId,payerEstimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
+    if(payerEstimate&&request.method==='GET'){const doc=await aeobOriginal(env.DB,patient.clientId,payerEstimate[1],true);await commit(env.DB,null,[portalGuard(env.DB,patient),audit(env.DB,guardianActor(patient),'aeob.downloaded',patient.clientId,payerEstimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
     const estimate=path.match(/^\/portal\/estimates\/([\w-]+)\.pdf$/)
-    if(estimate && request.method==='GET'){const doc=await estimateOriginal(env.DB,patient.clientId,estimate[1]);await commit(env.DB,null,[portalGuard(env.DB,patient),audit(env.DB,patientActor,'estimate.downloaded',patient.clientId,estimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
+    if(estimate && request.method==='GET'){const doc=await estimateOriginal(env.DB,patient.clientId,estimate[1]);await commit(env.DB,null,[portalGuard(env.DB,patient),audit(env.DB,guardianActor(patient),'estimate.downloaded',patient.clientId,estimate[1])]);return new Response(doc.bytes,{headers:{...headers,'content-type':'application/pdf','content-disposition':`attachment; filename="${doc.name}"`}})}
     const attachment = path.match(/^\/portal\/messages\/attachments\/([\w-]+)$/)
     if (attachment && request.method === 'GET') return await portalAttachment(env.DB, patient, attachment[1])
     if (path === '/portal/signout' && request.method === 'POST') return redirect('/portal', (await signOutPortal(env.DB, request)).cookie)

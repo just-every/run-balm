@@ -109,6 +109,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   await h.db.prepare('INSERT INTO bm_note_submissions(id,note_id,revision,supervisor_id,author_name,author_credentials,submitted_at,sha256) VALUES(?,?,1,?,?,?,?,?)').bind(submissionId,noteId,priya.id,'Historical student','SPT','1990-01-02T02:55:00.000Z','synthetic-balm-4').run()
   await h.db.prepare("INSERT INTO bm_note_reviews(submission_id,decision,reason,reviewed_at,reviewed_by) VALUES(?,'cosigned','',?,?)").bind(submissionId,'1990-01-02T03:00:00.000Z',priya.email).run()
   await h.db.prepare('UPDATE bm_notes SET signed_at=?,signed_revision=1,signer_name=?,signer_credentials=?,signed_sha256=? WHERE id=?').bind('1990-01-02T03:00:00.000Z','Historical Clinician','PT','historical-signature',noteId).run()
+  const historicalExercise=crypto.randomUUID()
+  await h.db.prepare("INSERT INTO bm_home_exercises(id,client_id,title,sets,reps,frequency,instructions,assigned_by,assigned_at,source_note_id,hold_seconds) VALUES(?,?,'Historical home program',1,'5','Daily','Historical private instructions',?,'1990-01-02T03:00:00.000Z',?,3)").bind(historicalExercise,patient.id,priya.email,noteId).run()
+  await h.db.prepare("INSERT INTO bm_home_exercise_done(exercise_id,day,done_at,pain) VALUES(?,'1990-01-03','1990-01-03T03:00:00.000Z',2)").bind(historicalExercise).run()
   await h.db.prepare("INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)").bind('1990-01-02T03:00:00.000Z','clinician@clinic.example','practitioner','note.break_glass_read',patient.id,noteId,'Patient-specific emergency narrative').run()
   // A second historical note was finalized under an explicit assistant daily rule.
   const historicalAssistant=await h.staff('HistoricalAssistant','assistant',{discipline:'pt',supervisorId:priya.id,credentials:'PTA'})

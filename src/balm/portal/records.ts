@@ -1,3 +1,4 @@
+import {guardianActor} from './guardians'
 import { audit, commit, guard, human, id, insist, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { patientActor, portalGuard, type Patient } from './auth'
 import { base64, recordExport } from './record-export'
@@ -19,7 +20,7 @@ export async function requestRecord(db: D1Database, patient: Patient) {
   const key=id(),at=now(),due=new Date(Date.parse(at)+30*86400_000).toISOString()
   await commit(db,null,[portalGuard(db,patient),
     stmt(db,'INSERT INTO bm_record_requests(id,client_id,requested_at,due_at) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM bm_record_requests WHERE client_id=? AND released_at IS NULL)',key,patient.clientId,at,due,patient.clientId),
-    audit(db,patientActor,'record.requested',patient.clientId),
+    audit(db,guardianActor(patient),'record.requested',patient.clientId),
   ])
   return one(db,'SELECT id,due_at FROM bm_record_requests WHERE client_id=? AND released_at IS NULL',patient.clientId)
 }
@@ -72,7 +73,7 @@ export async function recordDownload(db: D1Database, key: string, format: 'pdf'|
   const parts=await rows(db,'SELECT content FROM bm_record_parts WHERE package_id=? AND format=? ORDER BY part',row.id,format)
   const value=parts.map(p=>p.content).join('')
   insist(parts.length && await sha256(value)===row[format==='pdf'?'pdf_sha256':'fhir_sha256'],'record_integrity_check_failed',409)
-  await commit(db,isPatient?null:who,[...(isPatient?[portalGuard(db,who)]:[]),audit(db,isPatient?patientActor:who,'record.downloaded',row.client_id,row.request_id,format)])
+  await commit(db,isPatient?null:who,[...(isPatient?[portalGuard(db,who)]:[]),audit(db,isPatient?guardianActor(who):who,'record.downloaded',row.client_id,row.request_id,format)])
   const bytes=format==='fhir'?new TextEncoder().encode(value):Uint8Array.from(atob(value),c=>c.charCodeAt(0))
   return new Response(bytes,{headers:{'content-type':format==='pdf'?'application/pdf':'application/fhir+json','content-disposition':`attachment; filename="patient-record.${format==='pdf'?'pdf':'json'}"`,'cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'"}})
 }

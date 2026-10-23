@@ -34,22 +34,24 @@ export async function recordExport(db: D1Database, clientId: string, packageId: 
     ...([client.email,client.phone].some(Boolean) ? {telecom:[...(client.email?[{system:'email',value:client.email}]:[]),...(client.phone?[{system:'phone',value:client.phone}]:[])]} : {}) }
   const resources: Data[] = [patient]
   const blocks: Block[] = [{kind:'facts',rows:[['Patient',`${client.first_name} ${client.last_name}`],['Date of birth',client.date_of_birth??'Not recorded'],['Record prepared',at],['Email',client.email??'Not recorded'],['Phone',client.phone??'Not recorded']]}]
-  const addText = (key: string, title: string, date: string, lines: string[], code = '34133-9') => {
+  const addText = (key: string, title: string, date: string, lines: string[], code = '34133-9',status='current',docStatus?:string) => {
     const content = [title,...lines].join('\n')
     blocks.push({kind:'heading',text:title},{kind:'notes',lines})
-    resources.push({resourceType:'DocumentReference',id:key,meta:{profile:[core+'us-core-documentreference']},text:narrative(title),status:'current',
+    resources.push({resourceType:'DocumentReference',id:key,meta:{profile:[core+'us-core-documentreference']},text:narrative(title),status,...(docStatus?{docStatus}:{}),
       type:{coding:[{system:'http://loinc.org',code}]},category:[{coding:[{system:'http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category',code:'clinical-note'}]}],
       subject,date,content:[{attachment:{contentType:'text/plain',data:encoded(content),title,creation:date}}]})
   }
   const appointments = await rows(db,`SELECT a.id,a.start_at,a.end_at,a.status,p.name AS practitioner,s.name AS service
     FROM bm_appointments a JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id WHERE a.client_id=? ORDER BY a.start_at,a.id`,clientId)
   for (const visit of appointments) addText('visit-'+visit.id,`${visit.service} · ${visit.start_at}`,visit.start_at,readable(visit))
-  const notes = await rows(db,`SELECT n.id,n.created_at,n.template,n.signed_at,n.signer_name,n.signer_credentials,r.number,r.body,r.sections,r.charges,r.documentation,r.clinical,r.written_at
+  const notes = await rows(db,`SELECT n.id,n.created_at,n.template,n.signed_at,n.signed_revision,n.signer_name,n.signer_credentials,r.number,r.body,r.sections,r.charges,r.documentation,r.clinical,r.written_at
     FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id WHERE n.client_id=? ORDER BY n.created_at,n.id,r.number`,clientId)
   for (const note of notes) {
-    const title = `${note.template || 'Treatment note'} · revision ${note.number} · ${note.signed_at?'Signed':'Unsigned draft'}`
-    const lines = readable({...note,sections:parse(note.sections),charges:parse(note.charges),documentation:parse(note.documentation),clinical:parse(note.clinical)})
-    addText(`note-${note.id}-${note.number}`,title,note.written_at,lines,'11506-3')
+    const signed=!!note.signed_at&&note.number===note.signed_revision
+    const superseded=notes.some(n=>n.id===note.id&&n.number>note.number)
+    const title = `${note.template || 'Treatment note'} · revision ${note.number} · ${signed?'Signed original':superseded?'Earlier unsigned revision':'Unsigned draft'}`
+    const lines = readable({...note,signed_at:signed?note.signed_at:null,signer_name:signed?note.signer_name:null,signer_credentials:signed?note.signer_credentials:null,sections:parse(note.sections),charges:parse(note.charges),documentation:parse(note.documentation),clinical:parse(note.clinical)})
+    addText(`note-${note.id}-${note.number}`,title,note.written_at,lines,'11506-3',superseded?'superseded':'current',signed?'final':'preliminary')
   }
   const addenda = await rows(db,'SELECT a.id,a.body,a.written_at,a.signer_name,a.signer_credentials FROM bm_note_addenda a JOIN bm_notes n ON n.id=a.note_id WHERE n.client_id=? ORDER BY a.written_at,a.id',clientId)
   for (const a of addenda) addText('addendum-'+a.id,'Signed addendum',a.written_at,readable(a),'11506-3')

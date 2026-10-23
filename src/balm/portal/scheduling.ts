@@ -1,3 +1,4 @@
+import {guardianActor} from './guardians'
 import type { Bindings } from '../../auth.server'
 import { audit, commit, insist, one, rows, type Data } from '../domain/model'
 import { bookOwnAppointment } from '../scheduling/patient-booking'
@@ -29,7 +30,7 @@ export async function portalSchedule(env: Bindings, patient: Patient, input: Dat
     const policy = await getVisitPolicy(db)
     available.slots = available.slots.filter(s => Date.parse(s.startAt) >= Date.now() + policy.noticeHours * 3600_000)
   }
-  await commit(db, null, [portalGuard(db, patient), audit(db, patientActor, 'portal.scheduling_opened', patient.clientId, moving?.id ?? null)])
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'portal.scheduling_opened', patient.clientId, moving?.id ?? null)])
   const rooms=await rows(db,'SELECT r.id,r.name,l.name AS location FROM bm_rooms r JOIN bm_room_locations x ON x.room_id=r.id JOIN bm_locations l ON l.id=x.location_id WHERE r.active=1 AND l.active=1 ORDER BY l.name,r.name')
   return { rooms, clinic, patient: { firstName: patient.firstName, lastName: patient.lastName }, services, practitioners, params, moving, slots: available }
 }

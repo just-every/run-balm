@@ -194,7 +194,9 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-03-07',email:'marisol@patient.example'})
     const other=await h.cmd('client.save',{firstName:'Una',lastName:'Other',email:'una@patient.example'})
     const visit=await pastVisit(h,patient.id,priya,service.id)
-    await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Patient record narrative: knee improving.'},priya.cookie)
+    const noteDraft=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Patient record narrative: earlier unsigned observations.'},priya.cookie)
+    await h.cmd('note.amend',{id:noteDraft.id,revision:1,body:'Patient record narrative: knee improving.'},priya.cookie)
+    await h.cmd('note.sign',{id:noteDraft.id,revision:2,signature:'Priya',credentials:'PT, DPT',attest:true},priya.cookie)
     const patientCookie=await portalLogin(h,'marisol@patient.example'),otherCookie=await portalLogin(h,'una@patient.example')
     assert.equal((await h.form('/portal/action',{name:'record.request',clientId:other.id},patientCookie)).status,303)
     assert.equal((await h.form('/portal/action',{name:'record.request'},patientCookie)).status,303)
@@ -217,7 +219,11 @@ test('patient record requests keep a 30-day deadline, release exact reviewed ori
     assert.deepEqual(fhir.value.entry.filter(e=>e.resource.resourceType==='Patient').map(e=>e.resource.id),[patient.id])
     assert.ok(!fhir.text.includes('una@patient.example')&&!fhir.text.includes('token_hash')&&!fhir.text.includes('SESSION_SECRET'))
     const note=fhir.value.entry.find(e=>e.resource.type?.coding?.some(c=>c.code==='11506-3'))
-    assert.match(Buffer.from(note.resource.content[0].attachment.data,'base64').toString(),/knee improving/)
+    const noteRecords=fhir.value.entry.filter(e=>e.resource.type?.coding?.some(c=>c.code==='11506-3')).map(e=>e.resource)
+    assert.equal(noteRecords.filter(n=>n.docStatus==='final').length,1)
+    assert.ok(noteRecords.some(n=>n.status==='superseded'&&n.docStatus==='preliminary'))
+    assert.ok(noteRecords.some(n=>n.status==='current'&&n.docStatus==='final'&&Buffer.from(n.content[0].attachment.data,'base64').toString().includes('knee improving')))
+    assert.ok(noteRecords.filter(n=>n.docStatus==='preliminary').every(n=>!Buffer.from(n.content[0].attachment.data,'base64').toString().includes('signer_name:')))
     assert.equal((await h.send('/api/balm/records/'+prepared.packageId+'.json',undefined,priya.cookie)).status,403)
     await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:prepared.sha256},h.owner,400)
     await h.cmd('record.release',{id:request.id,packageId:prepared.packageId,sha256:'0'.repeat(64),confirm:true},h.owner,409)
@@ -424,8 +430,13 @@ test('a fresh licensed exercise library supports filtered search, atomic media C
   assert.equal(search.value.total,2)
   assert.ok(search.value.exercises.every(e=>e.region==='shoulder'&&e.equipment==='resistance band'))
   const selected=library.value.exercises.filter(e=>e.discipline==='pt').slice(0,5)
-  const assigned=await h.cmd('exercise.program.assign',{clientId:patient.id,noteId:note.id,exerciseIds:selected.map(e=>e.id)},priya.cookie)
+  const assigned=await h.cmd('exercise.program.assign',{clientId:patient.id,noteId:note.id,exerciseIds:selected.map(e=>e.id),dosages:{[selected[0].id]:{sets:2,reps:'8',holdSeconds:3,frequency:'Twice daily'}}},priya.cookie)
   assert.equal(assigned.ids.length,5)
+  const fixedProgram=(await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value.homeExercises
+  const custom=fixedProgram.find(e=>e.libraryId===selected[0].id)
+  assert.deepEqual([custom.sets,custom.reps,custom.holdSeconds,custom.frequency],[2,'8',3,'Twice daily'])
+  await h.cmd('exercise.program.assign',{clientId:patient.id,noteId:note.id,exerciseIds:[selected[0].id],dosages:{[selected[0].id]:{sets:0}}},priya.cookie,400)
+  assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,priya.cookie)).value.homeExercises.length,5)
   const cookie=await portalLogin(h,'library@patient.example')
   const portal=(await h.send('/portal/home',undefined,cookie)).text
   for(const e of selected){assert.ok(portal.includes(e.title));assert.ok(portal.includes(e.image))}
@@ -452,5 +463,46 @@ test('a fresh licensed exercise library supports filtered search, atomic media C
   await viewportProof(h,[{name:'library-search-and-assignment',path:'/app/clients/'+patient.id+'?q=resistance%20band&discipline=pt&region=shoulder',cookie:priya.cookie,selector:'#exercise-library'},
    {name:'library-csv-media-import',path:'/app/clients/'+patient.id,cookie:priya.cookie,open:'Import practice exercises with images',selector:'form[action*="exercise.library.import"]'},
    {name:'library-patient-spanish',path:'/portal/home',cookie,selector:'#program'}])
+ }finally{await h.close()}
+})
+
+
+test('only the owner applies a digest-reviewed patient contact or insurance update and changed patient facts refuse stale proposals', {timeout:120000},async()=>{
+ const h=await harness({browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ try{
+  await h.finishSetup()
+  const {service,practitioners:[priya]}=await clinic(h)
+  const patient=await h.cmd('client.save',{firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-01-01',email:'updates@patient.example'})
+  await pastVisit(h,patient.id,priya,service.id)
+  const cookie=await portalLogin(h,'updates@patient.example')
+  await h.form('/portal/action',{name:'profile.insurance',payer:'Updated synthetic payer',memberId:'UPDATED-MEMBER',group:'UPDATED-GROUP',subscriber:'Marisol Diaz',relationship:'self',confirm:'on'},cookie)
+  const payer=await h.cmd('insurance.payer.save',{name:'Updated synthetic payer',payerId:'UPDATED'})
+  const file=()=>h.send('/api/balm/clients/'+patient.id,undefined,h.owner)
+  const insurance=(await file()).value.portalProfileChanges.find(r=>r.kind==='insurance')
+  const verified={id:insurance.id,sha256:insurance.sha256,verified:true,payerId:payer.id,relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2026-01-01',priority:1}
+  await h.cmd('profile.review',verified,priya.cookie,403)
+  await h.cmd('profile.review',{...verified,verified:false},h.owner,400)
+  await h.cmd('profile.review',{...verified,sha256:'0'.repeat(64)},h.owner,409)
+  await viewportProof(h,[{name:'owner-verifies-patient-update',path:'/app/clients/'+patient.id,cookie:h.owner,open:'Verify and apply patient update',selector:'form[action*="profile.review"]'}])
+  await h.cmd('profile.review',verified)
+  const after=(await file()).value
+  assert.equal(after.insurance.policies[0].member_id,'UPDATED-MEMBER')
+  assert.equal(after.insurance.policies[0].group_number,'UPDATED-GROUP')
+  assert.equal(after.insurance.policies[0].eligibility_status,'unknown')
+  assert.ok(after.portalProfileChanges.find(r=>r.id===insurance.id).reviewed_at)
+  await h.cmd('profile.review',verified,h.owner,404)
+  await h.form('/portal/action',{name:'profile.contact',email:'new-updates@patient.example',phone:'3125550104',confirm:'on'},cookie)
+  const contact=(await file()).value.portalProfileChanges.find(r=>r.kind==='contact')
+  await h.cmd('profile.review',{id:contact.id,sha256:contact.sha256,verified:true})
+  assert.equal((await h.send('/portal/home',undefined,cookie)).status,303)
+  assert.equal((await file()).value.client.email,'new-updates@patient.example')
+  const current=await portalLogin(h,'new-updates@patient.example')
+  await h.form('/portal/action',{name:'profile.contact',email:'stale-updates@patient.example',phone:'3125550105',confirm:'on'},current)
+  const stale=(await file()).value.portalProfileChanges.find(r=>r.kind==='contact'&&!r.reviewed_at)
+  await h.cmd('client.save',{id:patient.id,firstName:'Marisol',lastName:'Diaz',dateOfBirth:'1980-01-01',email:'new-updates@patient.example',phone:'3125550106'})
+  await h.cmd('profile.review',{id:stale.id,sha256:stale.sha256,verified:true},h.owner,409)
+  const events=(await h.db.prepare('SELECT action,detail FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
+  for(const action of ['portal.insurance_update_applied','portal.contact_update_applied'])assert.ok(events.some(r=>r.action===action),action)
+  assert.ok(!JSON.stringify(events).includes('UPDATED-MEMBER'))
  }finally{await h.close()}
 })

@@ -2,6 +2,8 @@
 // home program, forms, statements and the care-team thread. Tokens only.
 export const portalStyle = `
 html{scroll-behavior:smooth}
+.portal-section p>a,.portal-section article a{display:inline-flex;min-height:24px;align-items:center}
+
 .portal-top{margin:0 0 22px;padding-top:18px}.portal-top h1{margin:0 0 4px}.portal-top p{margin:0;font-size:15px}
 .portal-notice{margin:0 0 18px;padding:12px 16px;border:1px solid var(--sage-tint);border-left:3px solid var(--sage);border-radius:10px;background:var(--sage-wash);color:var(--body)}
 .portal-error{border-color:var(--coral-tint);border-left-color:var(--coral);background:var(--coral-wash);color:var(--ink)}
