@@ -87,6 +87,10 @@ async function archiveFixture(){
     await h.cmd('client.alert.save',{clientId:maya.id,kind:'precaution',text:'Archive weight-bearing restriction'})
     await h.cmd('holiday.save',{date:'2099-11-26',name:'Thanksgiving clinic closure'})
     const chartDocument=await h.cmd('chart.document.upload',mriUpload(maya.id,'2026-10-01'))
+    const injuryPatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Carrier archive',dateOfBirth:'1980-01-01'})
+    const injuryPolicy=await h.cmd('insurance.policy.save',{clientId:injuryPatient.id,payerId:payer.id,memberId:'synthetic-balm-260',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2026-01-01'})
+    await h.cmd('insurance.injury.save',{policyId:injuryPolicy.id,kind:'workers_comp',claimNumber:'synthetic-balm-261',adjuster:'Synthetic Adjuster',adjusterEmail:'adjuster@example.test',employerAttorney:'Synthetic Employer',billingRequirements:'Carrier claim number',authorizationRequirements:'Carrier authorization',reportRequirements:'Progress report',source:'synthetic-balm-262 original carrier instructions'})
+
     await h.cmd('agent.create',{label:'Excluded secret'})
     const feed=await h.cmd('calendar.feed.create',{},priya.cookie)
     const feedToken=feed.calendarFeedPath.split('/')[2].split('.')[0]
@@ -127,6 +131,8 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       const setupState=(await restoredClinic.send('/api/balm/state',undefined,cookie)).value
       assert.equal(setupState.insurance.schedules[0].source,'synthetic-balm-114 future contract')
       assert.equal(setupState.insurance.licenses[0].number,'synthetic-balm-115')
+      assert.equal(setupState.insurance.injuryCases[0].claim_number,'synthetic-balm-261')
+      assert.equal(setupState.insurance.injuryCases[0].source,'synthetic-balm-262 original carrier instructions')
       const runout=await restoredClinic.cmd('insurance.runout.read',{},cookie)
       assert.equal(runout.claims[0].source_claim,'synthetic-balm-221')
       assert.equal(runout.totals.importedCents,1000);assert.equal(runout.totals.remainingCents,0)

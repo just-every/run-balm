@@ -789,3 +789,33 @@ test('MOVE-007: a scanned paper EOB closes one mixed native, legacy and unmatche
   if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-paper-suspense',path:'/app/insurance',cookie:owner,selector:'#runout'},{name:'MOVE-007-paper-deposit',path:'/app/insurance',cookie:owner,selector:'#payer-batch-'+paper.id}])}
  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
 })
+
+test('INS-010: owner records carrier instructions and a patient-bound progress report in a PWK claim, while unconfigured report delivery refuses without sending',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={policyId:c.policy.id,kind:'workers_comp',claimNumber:'synthetic-balm-251',adjuster:'Synthetic Adjuster',adjusterEmail:'adjuster@example.test',employerAttorney:'Synthetic Employer',billingRequirements:'Use carrier claim number on every bill',authorizationRequirements:'Carrier authorization required for the current episode',reportRequirements:'Progress report with the billed visit',source:'synthetic-balm-252 carrier written instructions'}
+  await h.cmd('insurance.injury.save',input,c.biller.cookie,403)
+  const injury=await h.cmd('insurance.injury.save',input,owner)
+  const pdf='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\nsynthetic-balm-253 progress report\n%%EOF').toString('base64')
+  const report=await h.cmd('chart.document.upload',{clientId:c.patient.id,title:'Synthetic progress report',documentType:'other',documentDate:c.serviceDate,attachment:pdf,attachmentName:'synthetic-balm-253.pdf',searchText:'Required carrier progress report'},owner)
+  const other=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Other injury',dateOfBirth:'1980-01-01'})
+  const unrelated=await h.cmd('chart.document.upload',{clientId:other.id,title:'Other report',documentType:'other',documentDate:c.serviceDate,attachment:pdf,attachmentName:'synthetic-balm-254.pdf'},owner)
+  const attach={id:injury.id,appointmentId:c.appointmentId,documentId:report.id,attachmentControl:'synthetic-balm-255',attest:true}
+  await h.cmd('insurance.injury.attach',{...attach,documentId:unrelated.id},owner,409)
+  await h.cmd('insurance.injury.attach',attach,c.biller.cookie,403)
+  const linked=await h.cmd('insurance.injury.attach',attach,owner);assert.equal(linked.transport,'unavailable')
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id},owner)
+  assert.equal(claim.status,'ready');assert.equal(claim.snapshot.injury.documentId,report.id)
+  await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},c.biller.cookie,403)
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]},owner)
+  const downloaded=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  assert.equal(downloaded.status,200);assert.match(downloaded.text,/REF\*Y4\*SYNTHETIC-BALM-251/);assert.match(downloaded.text,/PWK\*OZ\*AA\*\*\*AC\*SYNTHETIC-BALM-255/);assert.match(downloaded.text,/SBR\*P\*18\*[^~]*\*WC~/)
+  assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,c.biller.cookie)).status,403)
+  const refused=await h.cmd('insurance.batch.submit',{id:batch.id},owner,409);assert.equal(refused.code,'injury_report_transport_not_configured_no_claim_sent')
+  assert.ok(!h.outboundRequests.some(r=>r.origin==='https://clearinghouse.clinic.example'))
+  assert.equal((await h.state(c.biller.cookie)).insurance.injuryCases,null)
+  assert.equal((await patientFile(h,c.patient.id,c.biller.cookie)).insurance.claims.find(q=>q.id===claim.id).snapshot.injury,undefined)
+  const state=await h.state();assert.equal(state.insurance.injuryCases[0].claim_number,input.claimNumber);assert.equal(state.insurance.injuryCases[0].report_requirements,input.reportRequirements)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'INS-010-carrier-requirements',path:'/app/insurance',cookie:owner,selector:'#injury-cases'}])}
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-256'},outbound:async()=>{throw Error('Unconfigured clinical report transport must refuse before egress')}})
+})

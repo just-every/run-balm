@@ -42,7 +42,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
     audit(db,who,replaces?'insurance.claim_corrected':'insurance.claim_prepared',replaces?.client_id??(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,key),
     ...(replaces?[stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),replaces.id,'corrected',JSON.stringify({replacementId:key}),at)]:[])
   ])
-  const visible=JSON.parse(JSON.stringify(facts));if(who.role!=='owner'&&who.staffRole!=='practitioner'){delete visible.distinctServices;if(visible.coding){delete visible.coding.priorContext;visible.coding.proposals=(visible.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}delete visible.medicalNecessity;for(const service of Object.values(visible.medicareServices??{}) as Data[])delete service.assistantBasis}
+  const visible=JSON.parse(JSON.stringify(facts));if(who.role!=='owner')delete visible.injury;if(who.role!=='owner'&&who.staffRole!=='practitioner'){delete visible.distinctServices;if(visible.coding){delete visible.coding.priorContext;visible.coding.proposals=(visible.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}delete visible.medicalNecessity;for(const service of Object.values(visible.medicareServices??{}) as Data[])delete service.assistantBasis}
   return {id:key,status:errors.length?'draft':'ready',errors,proposals:visible.coding?.proposals??[],amountCents:cents,snapshot:visible}
 }
 export async function correctClaim(db:D1Database,who:Actor,input:Data) {

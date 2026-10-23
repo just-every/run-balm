@@ -33,6 +33,8 @@ export const custody = [
   {"table":"bm_case_drafts","client":false,"links":[["referral_id","bm_referrals","id"]]},
   {"table":"bm_case_steps","client":false,"links":[["referral_id","bm_referrals","id"]]},
   {"table":"bm_chart_documents","client":true,"links":[["client_id","bm_clients","id"]]},
+  {"table":"bm_injury_cases","client":true,"links":[["policy_id","bm_policies","id"]]},
+  {"table":"bm_injury_visits","client":false,"links":[["case_id","bm_injury_cases","id"],["document_id","bm_chart_documents","id"],["appointment_id","bm_appointments","id"]]},
   {"table":"bm_claims","client":true,"links":[["invoice_id","bm_invoices","id"],["policy_id","bm_policies","id"],["appointment_id","bm_appointments","id"],["client_id","bm_clients","id"]]},
   {"table":"bm_migrated_claims","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_runout_opening_credits","client":false,"links":[["migrated_id","bm_migrated_claims","id"],["invoice_id","bm_invoices","id"]]},

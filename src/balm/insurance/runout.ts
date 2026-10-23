@@ -28,8 +28,10 @@ export async function runoutCommand(db:D1Database,initial:Actor,name:string,inpu
   insist(activity?.n===0,'correction_invoice_already_has_postings',409)
   facts.frequency='7';facts.originalControl=legacy.payer_control
   const errors=scrubClaim(facts);insist(!errors.length,'complete_and_scrub_original_charge_records_before_correction',409)
+  insist(!await one(db,'SELECT 1 FROM bm_migrated_claims m JOIN bm_claims c ON c.id=m.native_claim_id WHERE c.invoice_id=?',claim.invoice_id),'invoice_already_carries_a_legacy_receivable',409)
   const opening=legacy.billed_cents-legacy.balance_cents
   await commit(db,who,[openGuard(db),clientGuard(db,who,legacy.client_id),
+   guard(db,'NOT EXISTS(SELECT 1 FROM bm_migrated_claims m JOIN bm_claims c ON c.id=m.native_claim_id WHERE c.invoice_id=?)',claim.invoice_id),
    guard(db,'NOT EXISTS(SELECT 1 FROM bm_invoice_payments WHERE invoice_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoice_adjustments WHERE invoice_id=?)',claim.invoice_id,claim.invoice_id),
    stmt(db,"UPDATE bm_claims SET snapshot=?,version=version+1,updated_at=? WHERE id=? AND version=? AND status='ready'",JSON.stringify(facts),now(),claim.id,claim.version),guard(db,'changes()=1'),
    ...(opening?[stmt(db,'INSERT INTO bm_runout_opening_credits(id,migrated_id,invoice_id,amount_cents,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)',id(),legacy.id,claim.invoice_id,opening,who.email,now())]:[]),

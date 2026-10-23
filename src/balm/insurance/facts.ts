@@ -1,3 +1,4 @@
+import {injuryFacts} from './injury'
 import {scheduleBasis,scheduleFees} from './schedules'
 import {claimRequirements} from './claim-requirements'
 import {claimCoding} from './coding'
@@ -97,5 +98,6 @@ export async function claimFacts(db:D1Database,who:Actor,input:Data):Promise<Cla
   applyMedicareServices(value)
   value.coding=await claimCoding(db,value)
   value.requirements=await claimRequirements(db,value,policy.client_id,visit.id)
+  const injury=await injuryFacts(db,visit.id,policy.id);if(injury)value.injury=injury
   return value
 }

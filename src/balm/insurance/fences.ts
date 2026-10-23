@@ -9,6 +9,7 @@ import type { ClaimSnapshot } from './types'
 export function claimFactGuards(db:D1Database,claim:Data,s:ClaimSnapshot) {
   const b=s.basis!
   return [
+    ...(s.injury?[guard(db,'EXISTS(SELECT 1 FROM bm_injury_visits v JOIN bm_chart_documents d ON d.id=v.document_id WHERE v.appointment_id=? AND v.case_id=? AND v.document_id=? AND v.attachment_control=? AND d.sha256=?)',claim.appointment_id,s.injury.caseId,s.injury.documentId,s.injury.attachmentControl,s.injury.documentSha256)]:[]),
     ...requirementGuards(db,s,claim.client_id),
     ...(s.requirements?.plan?[guard(db,'EXISTS(SELECT 1 FROM bm_plans_of_care WHERE id=? AND version=?)',s.requirements.plan.id,s.requirements.plan.version)]:[]),
     ...(s.requirements?.rule?[guard(db,'EXISTS(SELECT 1 FROM bm_payer_claim_requirements WHERE payer_id=? AND version=?)',s.payer.id,s.requirements.rule.version)]:[]),

@@ -6,6 +6,7 @@ export type InsuranceEnv = Bindings & { BALM_INSURANCE_ADAPTER_URL?: string; BAL
 export type ScrubError = { code: string; field: string; message: string; children?: Record<string,any>[]; version?:string; releaseId?:string }
 export type ClaimLine = { code: string; minutes: number; units: number; modifiers: string[]; amountCents: number; allowedCents?:number; diagnosisPointers: number[] }
 export type ClaimSnapshot = {
+  injury?: Awaited<ReturnType<typeof import('./injury').injuryFacts>>
   requirements?: Awaited<ReturnType<typeof import('./claim-requirements').claimRequirements>>
   coding?: Awaited<ReturnType<typeof validateCoding>>
   distinctServices?: DistinctService[]
