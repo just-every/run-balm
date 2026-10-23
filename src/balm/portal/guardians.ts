@@ -8,7 +8,7 @@ import {portalCookie,portalToken,portalNotice,type Patient} from './auth'
 // confidential-care restrictions for each child before granting any access.
 const minor="c.date_of_birth IS NOT NULL AND date(c.date_of_birth,'+18 years')>date('now')"
 const live=`g.revoked_at IS NULL AND c.erased_at IS NULL AND ${minor}`
-export const guardianActor=(patient:Patient)=>patient.guardianEmail?{email:'guardian-portal:'+patient.sessionId,role:'guardian'}:{email:'patient-portal',role:'patient'}
+export const guardianActor=(patient:Patient)=>patient.guardianEmail?{email:'guardian-portal:'+(patient.guardianGrantId??patient.sessionId),role:'guardian'}:{email:'patient-portal',role:'patient'}
 export async function guardianGrants(db:D1Database,who:Actor,clientId:string){
  if(who.role!=='owner')return null
  const list=await rows(db,'SELECT id,email,name,relationship,granted_at,revoked_at FROM bm_guardian_grants WHERE client_id=? ORDER BY granted_at DESC,id',clientId)
@@ -52,16 +52,16 @@ export async function consumeGuardianLink(env:Bindings,request:Request,token:str
  const link=await one(env.DB,'SELECT * FROM bm_guardian_links WHERE token_hash=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>?',await sha256(token),now())
  if(!link)return null
  insist(await takeEmailRate(env,'portal',link.email,'confirm'),portalNotice,429)
- const first=await one(env.DB,`SELECT c.id,c.version FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND ${live} ORDER BY c.id LIMIT 1`,link.email)
+ const first=await one(env.DB,`SELECT c.id,c.version,g.id AS grantId FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND ${live} ORDER BY c.id LIMIT 1`,link.email)
  insist(first,'portal_link_not_available',410)
  const value=portalToken(),key=id(),at=now()
  await commit(env.DB,null,[guard(env.DB,`EXISTS(SELECT 1 FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND c.id=? AND c.version=? AND ${live}) AND NOT EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL)`,link.email,first.id,first.version,link.email),
   stmt(env.DB,'UPDATE bm_guardian_links SET used_at=? WHERE id=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>?',at,link.id,at),guard(env.DB,'changes()=1'),
-  stmt(env.DB,'INSERT INTO bm_guardian_sessions(id,token_hash,email,client_id,client_version,created_at,expires_at) VALUES(?,?,?,?,?,?,?)',key,await sha256(value),link.email,first.id,first.version,at,new Date(Date.now()+8*3600000).toISOString()),audit(env.DB,{email:'guardian-portal:'+key,role:'guardian'},'portal.signed_in',first.id,key)])
+  stmt(env.DB,'INSERT INTO bm_guardian_sessions(id,token_hash,email,client_id,client_version,created_at,expires_at) VALUES(?,?,?,?,?,?,?)',key,await sha256(value),link.email,first.id,first.version,at,new Date(Date.now()+8*3600000).toISOString()),audit(env.DB,{email:'guardian-portal:'+first.grantId,role:'guardian'},'portal.signed_in',first.id,key)])
  return {cookie:portalCookie(request,value,8*3600)}
 }
 export async function guardianPatient(db:D1Database,token:string):Promise<Patient>{
- const row=await one(db,`SELECT s.id AS sessionId,s.client_id AS clientId,c.version AS clientVersion,s.email AS guardianEmail,c.email,c.first_name AS firstName,c.last_name AS lastName,s.expires_at AS expiresAt
+ const row=await one(db,`SELECT s.id AS sessionId,s.client_id AS clientId,c.version AS clientVersion,s.email AS guardianEmail,g.id AS guardianGrantId,c.email,c.first_name AS firstName,c.last_name AS lastName,s.expires_at AS expiresAt
  FROM bm_guardian_sessions s JOIN bm_clients c ON c.id=s.client_id JOIN bm_guardian_grants g ON g.client_id=c.id AND g.email=s.email
  WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.client_version=c.version AND ${live}
  AND NOT EXISTS(SELECT 1 FROM bm_clients x WHERE lower(x.email)=s.email AND x.erased_at IS NULL)`,await sha256(token),now())
@@ -73,13 +73,15 @@ export const guardianGuard=(db:D1Database,patient:Patient)=>guard(db,`EXISTS(SEL
  AND NOT EXISTS(SELECT 1 FROM bm_clients x WHERE lower(x.email)=s.email AND x.erased_at IS NULL))`,patient.sessionId,patient.clientId,patient.clientVersion,now())
 export async function guardianChildren(db:D1Database,patient:Patient){
  if(!patient.guardianEmail)return []
- return rows(db,`SELECT c.id,c.first_name,c.last_name FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND ${live} ORDER BY c.first_name,c.id`,patient.guardianEmail)
+ const list=await rows(db,`SELECT c.id,c.first_name,c.last_name,g.id AS grantId FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND ${live} ORDER BY c.first_name,c.id`,patient.guardianEmail)
+ await commit(db,null,[guardianGuard(db,patient),...list.map(c=>guard(db,`EXISTS(SELECT 1 FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.id=? AND g.email=? AND ${live})`,c.grantId,patient.guardianEmail)),...list.map(c=>audit(db,guardianActor(patient),'guardian.children_read',c.id))])
+ return list
 }
 export async function selectGuardianChild(db:D1Database,patient:Patient,input:Data){
  insist(patient.guardianEmail,'guardian_session_required',403)
- const clientId=text(input.id,'child',100),client=await one(db,`SELECT c.id,c.version FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND c.id=? AND ${live}`,patient.guardianEmail,clientId)
+ const clientId=text(input.id,'child',100),client=await one(db,`SELECT c.id,c.version,g.id AS grantId FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND c.id=? AND ${live}`,patient.guardianEmail,clientId)
  insist(client,'patient_not_in_your_guardian_portal',404)
  await commit(db,null,[guardianGuard(db,patient),guard(db,`EXISTS(SELECT 1 FROM bm_guardian_grants g JOIN bm_clients c ON c.id=g.client_id WHERE g.email=? AND c.id=? AND c.version=? AND ${live})`,patient.guardianEmail,clientId,client.version),
-  stmt(db,'UPDATE bm_guardian_sessions SET client_id=?,client_version=? WHERE id=?',clientId,client.version,patient.sessionId),audit(db,guardianActor(patient),'guardian.child_selected',clientId)])
+  stmt(db,'UPDATE bm_guardian_sessions SET client_id=?,client_version=? WHERE id=?',clientId,client.version,patient.sessionId),audit(db,guardianActor({...patient,guardianGrantId:client.grantId}),'guardian.child_selected',clientId)])
  return {redirect:'/portal/home'}
 }

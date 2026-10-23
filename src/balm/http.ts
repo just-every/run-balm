@@ -1,6 +1,6 @@
 import {exerciseLibrary} from './portal/library'
 import {guardianCommand,guardianGrants} from './portal/guardians'
-import {profileForStaff} from './portal/profile'
+import {profileForStaff,reviewProfile} from './portal/profile'
 import { integrationCommand, integrationState, requireScope, scopedRead } from './portal/integrations'
 import { recordCommand, recordDownload, recordRequests } from './portal/records'
 import { codeSetCommand, codeSetStatus } from './codesets'
@@ -150,6 +150,7 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name==='profile.review')return reviewProfile(env.DB,who,input)
   if(name.startsWith('guardian.'))return guardianCommand(env.DB,who,name,input)
   if(name.startsWith('integration.'))return integrationCommand(env,who,name,input)
   if(name.startsWith('record.'))return recordCommand(env.DB,who,name,input)
@@ -180,6 +181,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'chart.break_glass.acknowledge') return acknowledgeBreakGlass(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
   if(name==='exercise.program.assign'&&!Array.isArray(input.exerciseIds)&&input.exerciseIds===undefined)input.exerciseIds=Object.keys(input).filter(k=>k.startsWith('exercise_')&&input[k]==='on').map(k=>k.slice(9))
+  if(name==='exercise.program.assign'&&input.dosages===undefined&&Array.isArray(input.exerciseIds))input.dosages=Object.fromEntries(input.exerciseIds.filter(key=>input['sets_'+key]!==undefined).map(key=>[key,{sets:input['sets_'+key],reps:input['reps_'+key],holdSeconds:input['hold_'+key],frequency:input['frequency_'+key]}]))
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)

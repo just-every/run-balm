@@ -1,7 +1,7 @@
 /** These are UI phrases only. Patient messages, clinic-authored instructions,
  * names and clinical records are never passed through this dictionary. */
 const es:Record<string,string>={
- 'Your care':'Su atención','Upcoming visits':'Próximas citas','Intake forms':'Formularios de admisión','Home program':'Programa en casa','Messages':'Mensajes','Statements':'Estados de cuenta','Sign out':'Cerrar sesión','Private portal':'Portal privado','Skip to content':'Saltar al contenido',
+ 'Daily':'Diariamente','Your care':'Su atención','Upcoming visits':'Próximas citas','Intake forms':'Formularios de admisión','Home program':'Programa en casa','Messages':'Mensajes','Statements':'Estados de cuenta','Sign out':'Cerrar sesión','Private portal':'Portal privado','Skip to content':'Saltar al contenido',
  'Your next visit and home program, together.':'Su próxima cita y su programa en casa, juntos.','Welcome':'Bienvenido/a','Menu':'Menú',
  'Your next visits':'Sus próximas citas','Home exercise program':'Programa de ejercicios en casa','Statements and payments':'Estados de cuenta y pagos','Past visits':'Citas anteriores',
  'Follow your clinician’s instructions. Mark each exercise done when you finish.':'Siga las instrucciones de su terapeuta. Marque cada ejercicio como completado al terminar.',
