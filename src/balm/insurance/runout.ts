@@ -86,7 +86,7 @@ export async function runoutCommand(db:D1Database,initial:Actor,name:string,inpu
 /** Only an unambiguous payer-scoped identity can post automatically. */
 export async function matchMigrated(db:D1Database,payerId:string,r:RemitClaim){
  let matches=await rows(db,'SELECT * FROM bm_migrated_claims WHERE payer_id=? AND (patient_control=? OR (?<>\'\' AND payer_control=?))',payerId,r.id,r.control,r.control)
- if(!matches.length&&r.patient&&r.serviceDate)matches=await rows(db,`SELECT m.* FROM bm_migrated_claims m JOIN bm_clients c ON c.id=m.client_id WHERE m.payer_id=? AND lower(c.first_name)=lower(?) AND lower(c.last_name)=lower(?) AND m.service_date=? AND m.billed_cents=? AND c.erased_at IS NULL`,payerId,r.patient.first,r.patient.last,r.serviceDate,r.chargeCents)
+ if(!matches.length&&r.patient&&r.serviceDate)matches=await rows(db,`SELECT m.* FROM bm_migrated_claims m JOIN bm_clients c ON c.id=m.client_id WHERE m.payer_id=? AND lower(c.first_name)=lower(?) AND lower(c.last_name)=lower(?) AND m.service_date=? AND m.billed_cents=? AND c.erased_at IS NULL AND (SELECT COUNT(*) FROM bm_clients same WHERE lower(same.first_name)=lower(c.first_name) AND lower(same.last_name)=lower(c.last_name) AND same.erased_at IS NULL)=1`,payerId,r.patient.first,r.patient.last,r.serviceDate,r.chargeCents)
  return matches.length===1?matches[0]:null
 }
 export function runoutPosting(db:D1Database,who:Actor,claim:Data,r:RemitClaim,importId:string|null,paperBatchId:string|null=null){

@@ -819,3 +819,25 @@ test('INS-010: owner records carrier instructions and a patient-bound progress r
   if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'INS-010-carrier-requirements',path:'/app/insurance',cookie:owner,selector:'#injury-cases'}])}
  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-256'},outbound:async()=>{throw Error('Unconfigured clinical report transport must refuse before egress')}})
 })
+
+test('MOVE-007: name/date/amount fallback posts only for one clinic patient and one migrated claim',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const input={source:'synthetic-balm-270',csv:`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-271,${c.patient.id},${c.payer.id},synthetic-balm-272,synthetic-balm-273,${c.serviceDate},60.00,60.00,open\n`}
+  const add=async(value)=>{const p=await h.cmd('insurance.runout.preview',value,owner);return h.cmd('insurance.runout.apply',{...value,fingerprint:p.fingerprint,expectedBalanceCents:p.balanceCents},owner)}
+  await add(input)
+  const remit=(trace,amount)=>`ST*835*0001*005010X221A1~BPR*I*${amount}*C*CHK************20261023~TRN*1*${trace}*1234567890~N1*PR*AETNA*XV*60054~CLP*${trace}*1*${amount}*${amount}*0*CI*UNKNOWN~NM1*QC*1*LEE*MAYA~DTM*232*${c.serviceDate.replaceAll('-','')}~SE*8*0001~`
+  const first=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-274',60)},owner)
+  assert.equal(first.claims[0].migrated,true)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+  const next={...input,csv:input.csv.replaceAll('271','275').replaceAll('272','276').replaceAll('273','277').replaceAll('60.00','70.00')}
+  const moved=await add(next)
+  await h.cmd('client.save',{firstName:'Maya',lastName:'Lee',dateOfBirth:'1990-01-01'})
+  const ambiguous=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-278',70)},owner)
+  assert.equal(ambiguous.claims[0].suspense,true,'a same-named clinic patient prevents automatic identity selection even when only one claim matches')
+  const report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.remainingCents,7000);assert.equal(report.suspense[0].paid_cents,7000)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:moved.claims[0],attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+ })
+})
