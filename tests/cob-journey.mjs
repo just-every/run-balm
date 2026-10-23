@@ -104,6 +104,10 @@ export async function cobJourney(h,output,hooks={}) {
  const cash=await prepare('SelfPay',[primary],{coverageChoice:'self_pay',deliveryMethod:'portal'})
  assert.equal((await file(cash)).billing.ledger.patientBalanceCents,cash.invoice.snapshot.amountCents,'the explicit self-pay choice does not open a payer hold')
  const waiting=await prepare('Waiting',[primary,secondary])
+ await h.cmd('pay.copay.save',{clientId:waiting.patient.id,copay:'10.00'})
+ await h.cmd('payment.record',{invoiceId:waiting.invoice.id,amountCents:1100,reference:'synthetic-balm-32'},h.owner,409)
+ await h.cmd('payment.record',{invoiceId:waiting.invoice.id,amountCents:500,reference:'synthetic-balm-33'})
+ await hooks.copay?.({h,c:waiting,biller})
  await h.cmd('insurance.cob.wait.save',{waitDays:1,source:'Clinic owner reviewed payer contract: one elapsed day before a manual billing review.'})
  const decision={invoiceId:waiting.invoice.id,reason:'Owner reviewed the remaining payer and authorizes patient billing after the configured wait.',attest:true}
  await h.cmd('insurance.cob.patient.decide',decision,biller.cookie,403)
@@ -112,7 +116,7 @@ export async function cobJourney(h,output,hooks={}) {
  // Arrange elapsed time only; the policy and decision use their public doors.
  await h.db.prepare('UPDATE bm_cob_stages SET updated_at=? WHERE invoice_id=?').bind(new Date(Date.now()-2*86400000).toISOString(),waiting.invoice.id).run()
  await h.cmd('insurance.cob.patient.decide',decision)
- assert.equal((await file(waiting)).billing.ledger.patientBalanceCents,waiting.invoice.snapshot.amountCents)
+ assert.equal((await file(waiting)).billing.ledger.patientBalanceCents,waiting.invoice.snapshot.amountCents-500)
  assert.ok((await h.cmd('insurance.cob.read',{})).stages.filter(s=>s.invoice_id===waiting.invoice.id).every(s=>s.decided_by))
  if(output){await mkdir(output,{recursive:true});await writeFile(output+'/secondary.x12',x12);await writeFile(output+'/tertiary.x12',x123)}
  return {biller,c,crossed,manual,paperClaim,packet}

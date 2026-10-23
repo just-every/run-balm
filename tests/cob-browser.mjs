@@ -35,6 +35,16 @@ try{
  }
  const data=await cobJourney(h,process.env.BALM_COB_VALIDATION,{
   held:args=>ledgerProof('held',args),released:args=>ledgerProof('released',args),
+  copay:async({c,biller})=>{
+   await signIn(biller.cookie)
+   for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});await page.goto(h.origin+'/app/clients/'+c.patient.id)
+    await page.getByText('Record a copay received',{exact:true}).click()
+    const form=page.locator('form[action*="name=payment.record"]')
+    assert.equal(await form.locator('[name=amount]').inputValue(),'5.00')
+    await capture('cob-copay-'+width,'form[action*="name=payment.record"]')
+   }
+  },
   paperPrepare:async({paperClaim,biller,eob})=>{
    await signIn(biller.cookie);await page.setViewportSize({width:1440,height:1000})
    await page.goto(h.origin+'/app/insurance',{waitUntil:'networkidle'})
