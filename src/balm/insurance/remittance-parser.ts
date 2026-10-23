@@ -3,7 +3,7 @@ import { cents, parseX12 } from './x12'
 import type { CobLine } from './cob-types'
 
 export type Adjustment={group:'CO'|'PR'|'OA'|'PI';reason:string;amountCents:number;line:number|null;quantity?:number}
-export type RemitClaim={id:string;status:string;chargeCents:number;paidCents:number;prCents:number;control:string;adjustments:Adjustment[];remarks:string[];lines:(CobLine & {adjustments:Adjustment[]})[];crossedTo?:{name:string;code:string}}
+export type RemitClaim={id:string;status:string;chargeCents:number;paidCents:number;prCents:number;control:string;adjustments:Adjustment[];remarks:string[];lines:(CobLine & {adjustments:Adjustment[]})[];patient?:{first:string;last:string};serviceDate?:string;crossedTo?:{name:string;code:string}}
 export function parseRemittance(raw:unknown) {
   const parsed=parseX12(raw,'835'),segments=parsed.segments
   insist(!segments.some(s=>s[0]==='PLB'),'remittance_provider_adjustments_not_supported_import_nothing')
@@ -39,6 +39,9 @@ export function parseRemittance(raw:unknown) {
         const a:Adjustment={group:s[1] as Adjustment['group'],reason:s[i],amountCents:cents(s[i+1],'adjustment'),line,...(s[i+2]?{quantity:Number(s[i+2])}:{})}
         current.adjustments.push(a);if(line!==null)current.lines[line].adjustments.push(a)
       }
+    } else if(s[0]==='NM1'&&current&&s[1]==='QC'){current.patient={last:s[3]??'',first:s[4]??''}
+    } else if(s[0]==='DTM'&&current&&s[1]==='232'){current.serviceDate=validDate(s[2])
+    } else if(s[0]==='DTM'&&current&&s[1]==='472'){current.serviceDate=validDate(s[2])
     } else if(s[0]==='NM1'&&current&&s[1]==='TT') {
       insist(!current.crossedTo&&s[3],'remittance_requires_one_named_crossover_carrier');current.crossedTo={name:s[3],code:s[9]??''}
     } else if(s[0]==='REF'&&current&&line!==null&&s[1]==='6R')current.lines[line].reference=s[2]

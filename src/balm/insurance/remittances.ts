@@ -1,3 +1,4 @@
+import {matchMigrated,runoutPosting} from './runout'
 import { audit, commit, guard, id, insist, now, one, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { payerAuthority } from './manual-payers'
 import { remitIdentity, remitPrior } from './cob-remittance'
@@ -16,6 +17,13 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
   const key=id(),at=now(),statements:D1PreparedStatement[]=[payerAuthority(db,who),stmt(db,"INSERT INTO bm_insurance_imports(id,kind,sha256,trace,payer_id,amount_cents,imported_by,imported_at) VALUES(?,'835',?,?,?,?,?,?)",key,hash,parsed.trace,payerId,parsed.amountCents,who.email,at)]
   const outcomes=[]
   for(const r of parsed.claims) {
+    if(!await one(db,'SELECT 1 FROM bm_claims WHERE id=?',r.id)){
+      insist(who.role==='owner','unmatched_remittance_requires_owner_review',403)
+      const migrated=await matchMigrated(db,payerId,r)
+      if(migrated){const posting=runoutPosting(db,who,migrated,r,key);statements.push(...posting.statements);outcomes.push(posting.outcome)}
+      else {const suspenseId=id();statements.push(stmt(db,'INSERT INTO bm_remittance_suspense(id,import_id,payer_id,patient_control,paid_cents,detail,reason,created_at) VALUES(?,?,?,?,?,?,?,?)',suspenseId,key,payerId,r.id,r.paidCents,JSON.stringify(r),'No unique migrated claim match; payment held in suspense',at),audit(db,who,'insurance.remittance_held_in_suspense',null,suspenseId));outcomes.push({id:suspenseId,suspense:true,paidCents:r.paidCents})}
+      continue
+    }
     const {claim,facts,crossover}=await remitIdentity(db,who,r,payerId)
     const stage=await stageForClaim(db,claim),forwarded=await crossoverTarget(db,claim,r.crossedTo)
     const prior=await remitPrior(db,claim,facts,r,key)
@@ -47,6 +55,7 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
       stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'835',JSON.stringify(r),at),audit(db,who,'insurance.remittance_posted',claim.client_id,claim.id))
     outcomes.push({id:claim.id,policyId:claim.policy_id,crossover,forwardedTo:forwarded?.policy_id??null,status,paidCents:r.paidCents,adjustmentCents:writeoff,patientResponsibilityCents:r.prCents,errors})
   }
+  statements.push(stmt(db,'INSERT INTO bm_runout_deposits(import_id,native_cents) VALUES(?,?)',key,outcomes.filter(o=>!('migrated' in o)&&!('suspense' in o)).reduce((sum,o)=>sum+o.paidCents,0)))
   await commit(db,who,statements)
   return {id:key,depositCents:parsed.amountCents,claims:outcomes,duplicate:false}
 }

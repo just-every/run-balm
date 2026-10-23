@@ -62,6 +62,11 @@ async function archiveFixture(){
     const intakePage=await h.send('/intake/'+token)
     assert.equal((await h.form('/intake/'+token,{formId:'intake-v1',q_reason:'Restored ankle sprain',q_emergency:'Kim 0400',q_consent:'yes',consentVersion:intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee',...insurance})).status,303)
     const maya=(await h.state()).clients.find(c=>c.first_name==='Maya')
+    const runoutCsv=`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-221,${maya.id},${payer.id},synthetic-balm-222,synthetic-balm-223,2026-01-01,10.00,10.00,open\n`
+    const runoutInput={source:'synthetic-balm-220',csv:runoutCsv},runoutPreview=await h.cmd('insurance.runout.preview',runoutInput)
+    await h.cmd('insurance.runout.apply',{...runoutInput,fingerprint:runoutPreview.fingerprint,expectedBalanceCents:1000})
+    await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:'ST*835*0001*005010X221A1~BPR*I*5*C*CHK************20261023~TRN*1*synthetic-balm-224*1234567890~N1*PR*ARCHIVE*XV*ARCHIVE~CLP*synthetic-balm-222*1*10*5*0*CI*synthetic-balm-223~CAS*CO*45*5~SE*8*0001~'})
+
     const visit=await pastVisit(h,maya.id,priya,service.id,h.owner,2,{coverageChoice:'self_pay',deliveryMethod:'portal'})
     await h.cmd('appointment.attend',{id:visit})
     const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
@@ -122,6 +127,10 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       const setupState=(await restoredClinic.send('/api/balm/state',undefined,cookie)).value
       assert.equal(setupState.insurance.schedules[0].source,'synthetic-balm-114 future contract')
       assert.equal(setupState.insurance.licenses[0].number,'synthetic-balm-115')
+      const runout=await restoredClinic.cmd('insurance.runout.read',{},cookie)
+      assert.equal(runout.claims[0].source_claim,'synthetic-balm-221')
+      assert.equal(runout.totals.importedCents,1000);assert.equal(runout.totals.remainingCents,0)
+      assert.equal(runout.posted.paidCents,500);assert.equal(runout.deposits[0].depositCents,500)
       const clinicianCookie=await restoredClinic.signIn('priya@clinic.example')
       await restoredClinic.cmd('note.amend',{id:checkedNote.id,revision:1,body:'Synthetic treatment after restore.',charges:[{code:'97110',minutes:30},{code:'97140',minutes:8}]},clinicianCookie)
       const restoredPreview=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,clinicianCookie)).value.notes.find(n=>n.id===checkedNote.id).billing

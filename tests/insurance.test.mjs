@@ -660,3 +660,67 @@ test('INS-001: dated plan contracts price service-date units and fees without re
   }
  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
 })
+
+test('MOVE-007: reviewed aging and mixed 835 retain migrated payments and unmatched suspense without losing or duplicating a deposit',async()=>{
+ await run(async h=>{
+  const c=await setup(h),owner=h.owner
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.appointmentId,policyId:c.policy.id})
+  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]});await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
+  const csvHeader='Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\n'
+  const csv=csvHeader+`synthetic-balm-201,${c.patient.id},${c.payer.id},synthetic-balm-202,synthetic-balm-203,${c.serviceDate},100.00,80.00,open\n`
+  const input={source:'synthetic-balm-200',csv}
+  await h.cmd('insurance.runout.preview',input,c.biller.cookie,403)
+  const preview=await h.cmd('insurance.runout.preview',input,owner)
+  assert.equal(preview.count,1);assert.equal(preview.balanceCents,8000)
+  await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8100},owner,409)
+  await h.cmd('insurance.runout.apply',{...input,csv:csv.replace('80.00','70.00'),fingerprint:preview.fingerprint,expectedBalanceCents:7000},owner,409)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).claims.length,0)
+  const applied=await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)
+  const make=(trace,claims)=>{
+   const segments=['ST*835*0001*005010X221A1',`BPR*I*${claims.reduce((t,r)=>t+r.paid,0).toFixed(2)}*C*CHK************20261023`,`TRN*1*${trace}*1234567890`,'N1*PR*AETNA*XV*60054',...claims.flatMap(r=>[`CLP*${r.id}*${r.denied?'4':'1'}*${r.billed}*${r.paid}*${r.pr??0}*CI*${r.control??''}`,`CAS*CO*${r.denied?'197':'45'}*${r.co}`,...(r.pr?[`CAS*PR*3*${r.pr}`]:[]),...(r.patient?[`NM1*QC*1*${r.patient.last}*${r.patient.first}`,`DTM*232*${c.serviceDate.replaceAll('-','')}`]:[])])]
+   return segments.join('~')+`~SE*${segments.length+1}*0001~`
+  }
+  const mixed=make('synthetic-balm-204',[
+   {id:claim.id,billed:95,paid:60,co:20,pr:15,control:'synthetic-balm-205'},
+   {id:'synthetic-balm-202',billed:100,paid:50,co:20,pr:30,control:'synthetic-balm-203'},
+   {id:'synthetic-balm-206',billed:40,paid:30,co:10,control:'synthetic-balm-207'},
+  ])
+  // A failed native line refuses the complete mixed import; no partial ledger writes.
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed.replace(`CLP*${claim.id}*1*95`,`CLP*${claim.id}*1*96`)},owner,400)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,8000)
+  const posted=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed},owner)
+  assert.equal(posted.depositCents,14000);assert.equal(posted.claims.length,3)
+  let report=await h.cmd('insurance.runout.read',{},owner)
+  assert.equal(report.totals.importedCents,8000);assert.equal(report.totals.remainingCents,1000)
+  assert.equal(report.posted.paidCents,5000);assert.equal(report.posted.adjustmentCents,2000)
+  assert.equal(report.totals.importedCents-report.posted.paidCents-report.posted.adjustmentCents,report.totals.remainingCents)
+  assert.equal(report.suspense.length,1);assert.equal(report.suspense[0].paid_cents,3000)
+  assert.equal(report.deposits[0].nativeCents,6000);assert.equal(report.deposits[0].migratedCents,5000);assert.equal(report.deposits[0].suspenseCents,3000)
+  assert.equal(report.deposits[0].nativeCents+report.deposits[0].migratedCents+report.deposits[0].suspenseCents,report.deposits[0].depositCents)
+  assert.equal(Object.values(report.totals.byPayerAge).reduce((t,n)=>t+n,0),1000)
+  const native=(await patientFile(h,c.patient.id)).insurance.claims.find(q=>q.id===claim.id)
+  assert.equal(native.payer_paid_cents,6000)
+  assert.equal((await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:mixed},owner)).duplicate,true)
+  assert.equal((await h.cmd('insurance.runout.apply',{...input,fingerprint:preview.fingerprint,expectedBalanceCents:8000},owner)).imported,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner,409)
+  const screen=await h.send('/app/insurance',undefined,owner);assert.match(screen.text,/Unmatched remittances/);assert.match(screen.text,/synthetic-balm-206/)
+  const deskState=await h.state(c.biller.cookie);assert.equal(deskState.insurance.runout,null)
+  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'MOVE-007-mixed-835',path:'/app/insurance',cookie:owner,selector:'#runout',open:'Migrated claims'}])}
+  // Later reviewed source aging can identify the suspense claim without replaying the original deposit.
+  const secondCsv=csvHeader+`synthetic-balm-208,${c.patient.id},${c.payer.id},synthetic-balm-209,synthetic-balm-207,${c.serviceDate},40.00,40.00,open\n`
+  const second={source:input.source,csv:secondCsv},secondPreview=await h.cmd('insurance.runout.preview',second,owner)
+  const secondApplied=await h.cmd('insurance.runout.apply',{...second,fingerprint:secondPreview.fingerprint,expectedBalanceCents:4000},owner)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:applied.claims[0],attest:true},owner,409)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:secondApplied.claims[0],attest:true},owner)
+  await h.cmd('insurance.runout.resolve',{id:report.suspense[0].id,claimId:secondApplied.claims[0],attest:true},owner,409)
+  report=await h.cmd('insurance.runout.read',{},owner);assert.equal(report.suspense.length,0)
+  assert.equal(report.totals.remainingCents,1000)
+  assert.equal(report.deposits[0].nativeCents+report.deposits[0].migratedCents+report.deposits[0].suspenseCents,14000)
+  // Payer-control and patient/date/amount fallback both match, with the latter refusing ambiguity.
+  const remainder=make('synthetic-balm-210',[{id:'unknown-legacy-control',billed:100,paid:10,co:0,pr:90,control:'synthetic-balm-203'}])
+  await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remainder},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
+  await h.cmd('insurance.runout.close',{attest:true},owner)
+  assert.equal((await h.cmd('insurance.runout.read',{},owner)).closed,true)
+ },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})

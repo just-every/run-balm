@@ -119,3 +119,17 @@ The note shows the current payer calculation. An approved invoice and its superb
 In Insurance setup, open **Dated plans and fee schedules**. Record the contract source, effective date, complete CPT prices and timed-unit method. Copy a plan name exactly from the patient’s policy, or leave it blank for all plans. A plan revision takes priority over the payer baseline. Within each scope, contracted schedules take priority over standard, then the latest effective date applies. Existing payer setup remains the baseline until a dated revision covers the service. Record a later revision when the contract changes; issued invoices retain their original pricing and unit basis.
 
 **Provider licenses** records the practitioner, state, number, valid dates and source. Only the owner records and reads these facts. Balm labels them as owner-recorded; it does not check a licensing board.
+
+## Reviewed pre-cutover insurance A/R
+
+The owner can carry **reviewed conversion CSVs** of legacy claims through the command API. This is a separate A/R ledger, not a native WebPT/Jane package importer, and does not create duplicate Balm invoices. Keep the incumbent's original aging report. Match its patients to Balm patient IDs and its carriers to Balm payer IDs before import. Maximum 100 claims per reviewed file. Exact UTF-8 CSV headers:
+
+```csv
+Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status
+```
+
+Amounts are positive US dollars (balance may be zero), service dates are ISO dates, and status is `open`, `denied` or `rejected`. `Payer control` may be blank until assigned. Retain the incumbent's source claim number and patient control number unchanged. Call `insurance.runout.preview` with `source` (the stable source-system name) and `csv`; review its records, count and balance total. Call `insurance.runout.apply` with the same inputs, the returned `fingerprint` and `expectedBalanceCents` from the source aging. A changed original or an incorrect control total is refused. Repeating an unchanged source claim adds nothing, including after its balance changes through a payment.
+
+An owner imports a mixed 835 using the existing payer-file upload. Balm checks its own claim IDs first, then unambiguous payer-scoped migrated patient/payer control numbers, then a uniquely matching patient name, service date (DTM 232/472) and billed amount. Ambiguous or unknown claims remain in **Insurance → Pre-cutover insurance A/R → Unmatched remittances**, with the complete parsed original and payment held in suspense. Every payment contributes to the deposit. The owner may explicitly match a queued line to a reviewed migrated claim; payer, billed amount, remaining balance and once-only posting are checked again. Unsupported OA/PI adjustments and overpayments refuse the whole file. Patient responsibility remains on the legacy balance for review; it never creates an automatic patient statement.
+
+The run-out report retains imported, paid, adjusted and remaining amounts by payer and age. Closing requires all migrated balances and every unmatched line to be cleared. Corrections/resubmissions of legacy claims and paper EOB matching are not yet available. The conservative default is owner-only access, no automatic outbound or destructive action; retention destruction waits while any unmatched remittance still needs identity review.

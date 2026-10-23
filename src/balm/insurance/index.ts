@@ -1,3 +1,4 @@
+import {runoutCommand} from './runout'
 import {saveBillingSchedule,saveProviderLicense} from './schedules'
 import {saveClaimRequirements} from './claim-requirements'
 import {cobCommand} from './cob'
@@ -26,6 +27,7 @@ export type { InsuranceEnv, ClaimSnapshot, ScrubError } from './types'
  * clinical assertions remain exclusive to clinicians and the clinic owner. */
 export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:string,input:Data) {
   insist(input&&typeof input==='object'&&!Array.isArray(input),'invalid_input')
+  if(name.startsWith('insurance.runout.'))return runoutCommand(env.DB,initial,name,input)
   if(name.startsWith('insurance.cob.'))return cobCommand(env.DB,initial,name,input)
   const clinical=['insurance.claim.necessity','insurance.denial.appeal','insurance.medicare.service.save'].includes(name)
   const who=await insuranceActor(env.DB,initial,!clinical),db=env.DB
