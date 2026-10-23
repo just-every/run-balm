@@ -119,7 +119,7 @@ export async function claimWork(db: D1Database, initial: Actor, input: Data = {}
       return { kind, rule: rule ?? null, dueOn, completed, adjudication: adjudication ?? null, overdue: !completed && !!dueOn && dueOn < today,
         unknown: !rule ? 'No payer filing instruction recorded.' : !anchor ? 'Payer adjudication date must be recorded before this deadline can be calculated.' : null }
     })
-    return { ...c, ageDays, age: ageOf(ageDays), reasons, reasonCodes: reasons.length ? reasons.map(r => r.code) : ['unpaid'], deadlines,
+    return { ...c, payer_id:c.payer_id, ageDays, age: ageOf(ageDays), reasons, reasonCodes: reasons.length ? reasons.map(r => r.code) : ['unpaid'], deadlines,
       next: reasons.length ? reasons.map(r => r.next).join(' ') : ['exported', 'batched'].includes(c.status) ? 'Submit the prepared claim; downloading a file does not send it.' : 'Follow up with the payer and record its answer.',
       actions: historyById.get(c.id)!.actions, externalActions: historyById.get(c.id)!.externalActions }
   })
