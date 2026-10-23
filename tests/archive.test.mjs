@@ -438,7 +438,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('estimate.deliver',{id:estimate.id,sha256:issued.sha256,method:'handed',deliveredOn:today,attest:true})
   const packet=await h.cmd('intake.prepare',{title:'Portable LEFS packet',serviceId:service.id,questions:[{id:'reason',label:'Reason',type:'short',required:true}],instruments:[{kind:'lefs',items:Array.from({length:20},(_,i)=>'Synthetic item '+i)}]})
   const form=await h.cmd('intake.publish',{id:packet.id})
-  const booked=await bookOnline(h,service.id,priya.id,(await slots(h,service.id,priya.id))[0],{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
+  const booked=await bookOnline(h,service.id,student.id,(await slots(h,service.id,student.id))[0],{firstName:'Synthetic',lastName:'Portability',dateOfBirth:'1980-01-01',email:'portable@patient.example'})
   const path=booked.location.split('?')[0],page=await h.send(path)
   const fields={formId:form.id,q_reason:'Synthetic portable answer',consentVersion:page.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Synthetic Portability',signerRelationship:'patient',signatureTyped:'Synthetic Portability'}
   for(let i=1;i<=20;i++)fields['q_out_lefs_'+i]='3'
