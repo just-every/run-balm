@@ -31,12 +31,12 @@ export async function viewportProof(h,scenes){
       await control.evaluate(el=>{
        window.tooltipObservation=new Promise(resolve=>el.addEventListener('pointerenter',()=>{
         const results=[];const tip=el.querySelector('[role=tooltip]')
-        setTimeout(()=>results.push(getComputedStyle(tip).visibility),100)
-        setTimeout(()=>{results.push(getComputedStyle(tip).visibility);resolve(results)},400)
+        setTimeout(()=>results.push(getComputedStyle(tip).opacity),100)
+        setTimeout(()=>{results.push(getComputedStyle(tip).opacity);resolve(results)},400)
        },{once:true}))
       })
       await control.hover()
-      assert.deepEqual(await page.evaluate(()=>window.tooltipObservation),['hidden','visible'],'hover tooltip appears after its short delay')
+      assert.deepEqual(await page.evaluate(()=>window.tooltipObservation),['0','1'],'hover tooltip appears after its short delay')
       await page.mouse.move(0,0);await control.focus()
       assert.equal(await tip.evaluate(el=>getComputedStyle(el).visibility),'visible','keyboard focus shows the tooltip immediately')
       await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+label.replace(' ','-')+'-'+width+'.png'})
