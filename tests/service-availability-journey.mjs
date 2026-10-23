@@ -82,6 +82,29 @@ export async function serviceAvailabilityJourney(h){
  assert.deepEqual(await get(evaluation.id,priya.id,nr.id),[])
  await h.cmd('schedule.exception',{practitionerId:priya.id,date:plus(from,6),mode:'remove'})
  await h.cmd('hours.save',{practitionerId:priya.id,hours})
+ // A location day can cross the clinic's insurance date. Eligibility keeps clinic dates,
+ // while the available week and booking confirmation keep the chosen location date.
+ const night=await h.staff('NightTherapist','practitioner',{discipline:'pt'})
+ await h.cmd('hours.save',{practitionerId:night.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
+ const nightLocation=await h.cmd('location.save',{name:'Evening clinic',timeZone:'America/Los_Angeles',hours:hours.map(w=>({...w,start:'21:00',end:'24:00'}))})
+ const nightRoom=await h.cmd('room.save',{name:'Evening treatment room'})
+ await h.cmd('room.location',{roomId:nightRoom.id,locationId:nightLocation.id})
+ const nightService=await h.cmd('service.save',{name:'Evening follow-up',durationMinutes:45,priceCents:9500,practitionerIds:[night.id],locationIds:[nightLocation.id],selfBookAuthRequired:true})
+ const nightDate=plus(from,8),clinicNextDate=plus(nightDate,1)
+ const payer=await h.cmd('insurance.payer.save',{name:'Synthetic date-boundary payer',payerId:'SYNTHETICNIGHT',unitMethod:'cms'})
+ const policy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:payer.id,memberId:'synthetic-balm-7',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:from})
+ await h.cmd('insurance.authorization.save',{policyId:policy.id,practitionerId:night.id,number:'synthetic-balm-8',startsOn:clinicNextDate,endsOn:plus(nightDate,10),visits:12})
+ const nightQuery='/portal/schedule?'+new URLSearchParams({serviceId:nightService.id,practitionerId:night.id,roomId:nightRoom.id,from:nightDate})
+ const nightPage=await h.send(nightQuery,undefined,portal)
+ assert.equal(nightPage.status,200)
+ const nightOptions=[...nightPage.text.matchAll(/<option value="(\d{4}-[^"]+Z)">/g)].map(m=>m[1])
+ const dateAt=(at,zone)=>new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at))
+ const thatNight=nightOptions.filter(t=>dateAt(t,'America/Los_Angeles')===nightDate)
+ assert.ok(thatNight.length,'an authorized late location-local time is offered')
+ assert.ok(thatNight.every(t=>dateAt(t,'America/Chicago')>=clinicNextDate),'clinic-date authorization is rechecked across one location day')
+ const late=thatNight.at(-1)
+ assert.equal(dateAt(late,'America/Chicago'),clinicNextDate)
+ assert.equal((await h.form('/portal/action',{name:'appointment.book',serviceId:nightService.id,practitionerId:night.id,roomId:nightRoom.id,start:late},portal)).status,303,'a location-local time is bookable even when its clinic date is tomorrow')
  const serviceForm='form[action*="name=service.save"]:has(input[name="id"][value="'+follow.id+'"])'
  const saveServiceInBrowser=async({page})=>{
   let form=page.locator(serviceForm)
@@ -95,7 +118,9 @@ export async function serviceAvailabilityJourney(h){
   assert.deepEqual(JSON.parse(saved.location_ids).sort(),[north.id,south.id].sort(),'all checked locations survive the actual browser form')
   form=page.locator(serviceForm);await form.locator('..').locator('summary').click()
  }
- const scenes=[{name:'SCHED-007-service-form',path:'/app/clinic',cookie:h.owner,selector:serviceForm+' fieldset',interact:saveServiceInBrowser},{name:'SCHED-007-schedule',path:'/app?date='+from,cookie:h.owner,tooltips:['Previous day','Next day']},{name:'SCHED-007-clinic',path:'/app/clinic',cookie:h.owner,selector:'#locations',openSelector:'#locations details:nth-of-type(2) summary'},{name:'SCHED-007-service-assignment',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'form[action*="name=service.save"] fieldset'},{name:'SCHED-007-service',path:'/app/clinic',cookie:h.owner,open:'Edit service',selector:'input[name="beforeBuffer"]'},{name:'SCHED-007-time-off',path:'/app/clinic',cookie:h.owner,selector:'#date-rules'},{name:'SCHED-007-book-north',path:query(evaluation.id,priya.id,nr.id)},{name:'SCHED-007-book-south',path:query(follow.id,sam.id,sr.id)},{name:'SCHED-007-portal',path:'/portal/schedule?'+new URLSearchParams({serviceId:follow.id,practitionerId:priya.id,roomId:nr.id,from}),cookie:portal},{name:'SCHED-007-draft',path:'/app/clients/'+patient.id+'?compose='+visit.id,cookie:priya.cookie,selector:'.charges'}]
+ const evaluationForm='form[action*="name=service.save"]:has(input[name="id"][value="'+evaluation.id+'"])'
+ const evaluationSummary='details:has(> '+evaluationForm+') > summary'
+ const scenes=[{name:'SCHED-007-date-boundary',path:nightQuery,cookie:portal,selector:'select[name="start"]',interact:async({page})=>{await page.locator('select[name="start"]').selectOption(thatNight[0])}},{name:'SCHED-007-service-form',path:'/app/clinic',cookie:h.owner,selector:serviceForm+' fieldset',interact:saveServiceInBrowser},{name:'SCHED-007-schedule',path:'/app?date='+from,cookie:h.owner,tooltips:['Previous day','Next day']},{name:'SCHED-007-clinic',path:'/app/clinic',cookie:h.owner,selector:'#locations',openSelector:'#locations details:has(> summary:text-is("North clinic")) > summary'},{name:'SCHED-007-service-assignment',path:'/app/clinic',cookie:h.owner,openSelector:evaluationSummary,selector:evaluationForm+' fieldset'},{name:'SCHED-007-service',path:'/app/clinic',cookie:h.owner,openSelector:evaluationSummary,selector:evaluationForm+' input[name="beforeBuffer"]'},{name:'SCHED-007-time-off',path:'/app/clinic',cookie:h.owner,selector:'#date-rules'},{name:'SCHED-007-book-north',path:query(evaluation.id,priya.id,nr.id)},{name:'SCHED-007-book-south',path:query(follow.id,sam.id,sr.id)},{name:'SCHED-007-portal',path:'/portal/schedule?'+new URLSearchParams({serviceId:follow.id,practitionerId:priya.id,roomId:nr.id,from}),cookie:portal},{name:'SCHED-007-draft',path:'/app/clients/'+patient.id+'?compose='+visit.id,cookie:priya.cookie,selector:'.charges'}]
  await viewportProof(h,scenes)
  return {north,south,nr,sr,evaluation,follow,priya,sam,patient,visit,from,scenes}
 }

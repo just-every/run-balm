@@ -1,3 +1,4 @@
+import { hostDateAt } from '../availability/timezone'
 import type { Bindings } from '../../auth.server'
 import { openSlots, patientPlacement, placementGuards, resourceBusy } from '../domain/booking'
 import { audit, commit, DomainError, guard, insist, now, one, sha256, stmt, text, type Data } from '../domain/model'
@@ -14,7 +15,9 @@ export async function eligiblePatientSlots(db: D1Database, clientId: string, inp
   const available = await openSlots(db, {...input,roomId:moved?.room_id??input.roomId}, excludeAppointmentId ? [excludeAppointmentId] : [])
   const busy = moved && available.slots.length ? await resourceBusy(db, moved, available.slots[0].startAt, available.slots[available.slots.length - 1].endAt) : []
   const candidates = available.slots.filter(s => rules.enabled && Date.parse(s.startAt) >= Date.now() + rules.noticeMinutes * 60_000 && !busy.some(b => b.start_at < s.endAt && b.end_at > s.startAt))
-  const firstByDay = new Map(candidates.map(s => [s.hostDate, s]))
+  const clinicZone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
+  const eligibilityDate=(slot:{startAt:string})=>hostDateAt(new Date(slot.startAt),clinicZone)
+  const firstByDay = new Map(candidates.map(s => [eligibilityDate(s), s]))
   const allowed = new Set<string>()
   await Promise.all([...firstByDay].map(async ([date, slot]) => {
     try {
@@ -24,7 +27,7 @@ export async function eligiblePatientSlots(db: D1Database, clientId: string, inp
       if (!(error instanceof DomainError) || !eligibilityRefusals.has(error.code)) throw error
     }
   }))
-  return { ...available, selfService: rules, slots: candidates.filter(s => allowed.has(s.hostDate)) }
+  return { ...available, selfService: rules, slots: candidates.filter(s => allowed.has(eligibilityDate(s))) }
 }
 
 const patient = { email: 'Patient via private visit link', role: 'patient' }
