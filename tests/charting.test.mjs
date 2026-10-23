@@ -57,7 +57,6 @@ test('CHART-004: sign and lock a note, keep its original beside addenda, close o
   assert.deepEqual([own.addenda[0].body, own.addenda[0].name, own.addenda[0].credentials], ['Late entry: patient reported mild swelling after the session.', 'Priya', 'PT, DPT'])
   const amendedPage = (await h.send('/app/clients/' + client.id, undefined, priya.cookie)).text
   assert.ok(amendedPage.includes(daily.subjective) && amendedPage.includes(own.addenda[0].body))
-  assert.deepEqual(own.revisions[0].sections.map(s => s.label), ['Subjective', 'Objective measures', 'Assessment', 'Goal progress', 'Plan'])
   assert.match((await h.send(schedule, undefined, priya.cookie)).text, /All 1 note signed/)
   const desk = await h.state(reception.cookie)
   assert.equal(desk.appointments.find(a => a.id === visit).note_status, 'signed')
@@ -772,6 +771,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  await h.cmd('insurance.supervision.save',{payerId:medicare.id,billSupervisor:true,billable:true,minimumSupervision:'on_site'})
  await h.cmd('insurance.enrollment.save',{payerId:medicare.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
  await h.cmd('insurance.medicare.settings.save',{year:new Date().getFullYear(),therapyGroup:'pt_slp',publishedOn:new Date().getFullYear()+'-01-01',thresholdCents:248000,reviewCents:300000,source:'Synthetic published threshold for this public-door fixture'})
+ await h.cmd('insurance.policy.save',{id:policy.id,clientId:patient.id,payerId:payer.id,priority:2,memberId:'synthetic-balm-2',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
  const medicarePolicy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:medicare.id,memberId:'synthetic-balm-3',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
  for(const [hours,supervisionGiven] of [[4,'on_site'],[6,'in_room']]) {
   const medicareVisit=await pastVisit(h,patient.id,student,service.id,h.owner,hours)

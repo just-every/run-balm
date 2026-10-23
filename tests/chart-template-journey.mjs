@@ -25,7 +25,7 @@ export async function templateJourney(h) {
     const episode=await h.cmd('episode.open',{clientId:patient.id,title:name,directAccess:true})
     const signature=(note,revision=1,status=200)=>h.cmd('note.sign',{id:note.id,revision,signature:name,credentials:discipline.toUpperCase(),attest:true},clinician.cookie,status)
     const file=async()=> (await h.send('/api/balm/clients/'+patient.id,undefined,clinician.cookie)).value
-    const evalVisit=await pastVisit(h,patient.id,clinician,service.id,h.owner,30,{episodeId:episode.id})
+    const evalVisit=await pastVisit(h,patient.id,clinician,service.id,h.owner,18,{episodeId:episode.id})
     const evaluationFixture=chartFixture('evaluation',discipline)
     const evaluation=await h.cmd('note.write',{clientId:patient.id,appointmentId:evalVisit,template:`${discipline}.evaluation`,...evaluationFixture,clinical:{...evaluationFixture.clinical,goals:[]}},clinician.cookie)
     const noGoals=await signature(evaluation,1,400);assert.match(noGoals.message ?? noGoals.code,/goals/i)
@@ -36,7 +36,7 @@ export async function templateJourney(h) {
     // A later-signed record in another episode and a later service date in this
     // episode must never contaminate the earlier daily visit's carried facts.
     const otherEpisode=await h.cmd('episode.open',{clientId:patient.id,title:'synthetic-balm-4',directAccess:true})
-    for(const [hours,episodeId] of [[27,otherEpisode.id],[11,episode.id]]) {
+    for(const [hours,episodeId] of [[17,otherEpisode.id],[2,episode.id]]) {
       const separateVisit=await pastVisit(h,patient.id,clinician,service.id,h.owner,hours,{episodeId})
       const separate=chartFixture('evaluation',discipline)
       separate.sections.diagnosis='M54.50';separate.sections.plan='Synthetic separate visit plan'
@@ -45,7 +45,7 @@ export async function templateJourney(h) {
       await signature(separateNote)
     }
     for(let day=0;day<3;day++) {
-      const visit=await pastVisit(h,patient.id,clinician,service.id,h.owner,25-day*5,{episodeId:episode.id})
+      const visit=await pastVisit(h,patient.id,clinician,service.id,h.owner,16-day*2,{episodeId:episode.id})
       const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:`${discipline}.daily`},clinician.cookie)
       const draft=(await file()).notes.find(n=>n.id===note.id).revisions[0]
       const section=id=>draft.sections.find(s=>s.id===id)?.text
@@ -62,7 +62,7 @@ export async function templateJourney(h) {
       if(day===0&&process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:`CHART-002-${discipline}-daily`,path:'/app/clients/'+patient.id,cookie:clinician.cookie,selector:'text=Goals and status'}])}
     }
     for(const [n,kind] of ['progress','reevaluation','discharge'].entries()) {
-      const visit=await pastVisit(h,patient.id,clinician,service.id,h.owner,9-n*2,{episodeId:episode.id})
+      const visit=await pastVisit(h,patient.id,clinician,service.id,h.owner,10-n*2,{episodeId:episode.id})
       const complete=chartFixture(kind,discipline);complete.clinical.goals[0].status='met';complete.clinical.goals[1].status='partly_met'
       const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,template:`${discipline}.${kind}`,...complete},clinician.cookie)
       await signature(note)
