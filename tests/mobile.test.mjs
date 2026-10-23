@@ -152,6 +152,8 @@ test('MOBILE-001: tablet visit, disconnected draft/reconnect, missing session, l
     await program.locator('[name=instructions]').fill('Stand by a stable counter, 3 sets of 10 seconds daily. Stop if dizzy.')
     await program.getByRole('button',{name:'Assign exercise',exact:true}).click()
     assert.equal((await file()).homeExercises.length,1)
+    await page.getByText('Prepare again from the current visit',{exact:true}).click()
+    await page.getByRole('button',{name:'Re-prepare invoice',exact:true}).click()
     const approve = page.locator('form[action*="name=invoice.approve"]')
     await approve.locator('input[type=checkbox]').check()
     await approve.getByRole('button',{name:'Approve and number invoice',exact:true}).click()
