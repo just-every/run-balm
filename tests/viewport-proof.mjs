@@ -24,6 +24,18 @@ export async function viewportProof(h,scenes){
     if(selector)await page.locator(selector).first().scrollIntoViewIfNeeded()
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
     await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+width+'.png'})
+    if(name==='PAY-007-schedule'){
+     for(const label of ['Previous day','Next day']){
+      const control=page.getByRole('link',{name:label,exact:true}),tip=control.getByRole('tooltip')
+      await page.mouse.move(0,0);await control.blur();await control.hover()
+      assert.equal(await tip.evaluate(el=>getComputedStyle(el).visibility),'hidden','hover does not show the tooltip immediately')
+      await tip.waitFor({state:'visible'})
+      await page.mouse.move(0,0);await control.focus()
+      assert.equal(await tip.evaluate(el=>getComputedStyle(el).visibility),'visible','keyboard focus shows the tooltip immediately')
+      await page.screenshot({path:process.env.BALM_UI_SCREENSHOTS+'/'+name+'-'+label.replace(' ','-')+'-'+width+'.png'})
+      await control.blur()
+     }
+    }
    }
   }
  }finally{await browser.close()}

@@ -1,4 +1,5 @@
 import { coverageFields, pendingEstimatePanel } from './estimates'
+import { controlLink, controlTooltipStyle } from './control-tooltip'
 import { visitFeePanel } from './visit-policy'
 import { dailyClosePanel } from './daily-close'
 import { breakGlassNoticePanel } from './care-team'
@@ -43,7 +44,7 @@ export function scheduleTop(s: any) {
   const c = s.calendar
   if (!c) return ''
   const title = c.view === 'week' ? `${longDate(c.dates[0], { month: 'short', day: 'numeric' })} – ${longDate(c.dates[6], { month: 'short', day: 'numeric', year: 'numeric' })}` : longDate(c.date, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
-  return `<div class="datenav"><a class="step" href="${h(calendarLink({ ...c, date: c.previous }))}" aria-label="Previous ${c.view}">${icon('back')}</a><strong>${h(title)}</strong><a class="step" href="${h(calendarLink({ ...c, date: c.next }))}" aria-label="Next ${c.view}">${icon('chevron')}</a>${c.date === c.today ? '' : `<a class="button secondary small" href="${h(calendarLink({ ...c, date: c.today }))}">Today</a>`}</div><span class="grow"></span>`
+  return controlTooltipStyle + `<div class="datenav">${controlLink('previous-date-tip',calendarLink({ ...c, date: c.previous }),`Previous ${c.view}`,icon('back'))}<strong>${h(title)}</strong>${controlLink('next-date-tip',calendarLink({ ...c, date: c.next }),`Next ${c.view}`,icon('chevron'))}${c.date === c.today ? '' : `<a class="button secondary small" href="${h(calendarLink({ ...c, date: c.today }))}">Today</a>`}</div><span class="grow"></span>`
     + (canBook(s) && services(s).length && practitioners(s).length ? `<a class="button new" href="${h(calendarLink(c))}#book">${icon('plus')}Book a visit</a>` : '')
 }
 
