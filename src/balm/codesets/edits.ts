@@ -8,8 +8,9 @@ export type DistinctService = { code1:string; code2:string; modifier:typeof dist
  * its signature. Claim callers must supply attestations only from signed notes. */
 export function distinctServices(who:Actor,input:unknown):DistinctService[] {
   if(input===undefined)return []
-  insist(who.role!=='agent'&&who.staffRole==='practitioner','a_clinician_must_attest_distinct_services',403)
   insist(Array.isArray(input)&&input.length<=20,'invalid_distinct_service_attestations')
+  if(!input.length)return []
+  insist(who.role!=='agent'&&who.staffRole==='practitioner','a_clinician_must_attest_distinct_services',403)
   return input.map(a=>{
     insist(a&&a.attested===true&&typeof a.reason==='string'&&a.reason.trim().length>=8&&a.reason.length<=2000,'record_why_these_services_were_clinically_distinct')
     const code1=normalizeCode(a.code1),code2=normalizeCode(a.code2)

@@ -29,7 +29,7 @@ export async function codeSetClaimAdapter(h){
   const note=await h.cmd('note.write',{clientId:patient,appointmentId:visit,body:'Synthetic clinician-recorded historical service documentation for code-set acceptance.',charges,clinical:{distinctServices:input.distinctServices??[]}},clinician.cookie)
   await h.cmd('note.sign',{id:note.id,revision:1,signature,credentials:'PT',attest:true},clinician.cookie)
   const invoice=await h.cmd('invoice.prepare',{appointmentId:visit});await h.cmd('invoice.approve',{id:invoice.id})
-  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:visit,policyId:policy.id},clinician.cookie)
+  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:visit,policyId:policy.id})
   assert.equal(claim.snapshot.serviceDate,input.date)
   return claim
  }
