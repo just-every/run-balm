@@ -1,4 +1,3 @@
-import {claimWork} from './claim-work'
 import {manualPayerState} from './manual-payers'
 import { audit, commit, guard, insist, now, one, practitionerId, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { insuranceActor, insuranceClient, clientGuard, claimFor } from './access'
@@ -59,7 +58,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
     const existing = await existingVisitWarnings(db, clientId)
     for(const v of visits.filter(v => v.client_id === clientId)) warnings[v.id] = existing[v.id] ?? []
   }
-  return {work:(who.role==='owner'||who.staffKind==='biller')&&(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))?.time_zone?await claimWork(db,initial):null,manualPayers:await manualPayerState(db,who),settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {work:null,manualPayers:await manualPayerState(db,who),settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)
