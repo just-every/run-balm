@@ -687,6 +687,8 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     await check(c.priya.cookie,409)
     assert.equal((await c.file()).notes.find(n=>n.id===c.note.id).status,'signed')
   },{outbound:edge.outbound})
+  const cobEdge=modelEdge(),{cobDefensibilityJourney}=await import('./cob-defensibility-journey.mjs')
+  await run(h=>cobDefensibilityJourney(h,cobEdge),{outbound:cobEdge.outbound})
 })
 
 
