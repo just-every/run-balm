@@ -139,7 +139,13 @@ test('OWN-001: a treatment note is readable only by its practitioner and the own
   const context = await h.send('/api/balm/agent/context', undefined, '', { authorization: 'Bearer ' + agent.token })
   assert.equal(context.status, 200); assert.ok(!context.text.includes('knee pain'))
   assert.equal((await h.send('/api/balm/clients/' + client.id, undefined, '', { authorization: 'Bearer ' + agent.token })).status, 401)
-  const audit = (await view(h.owner)).audit
+  // Follow the public audit cursor: added clinical reads can fill the first page.
+  let auditFile = await view(h.owner)
+  const audit = [...auditFile.audit]
+  while (auditFile.auditPage.older !== null) {
+    auditFile = (await h.send('/api/balm/clients/' + client.id + '?auditBefore=' + auditFile.auditPage.older, undefined, h.owner)).value
+    audit.push(...auditFile.audit)
+  }
   for (const [who, action] of [[priya.email, 'note.written'], [priya.email, 'note.amended'], [h.auth.OWNER_EMAIL, 'note.read'], [priya.email, 'note.read'], [h.auth.OWNER_EMAIL, 'agent.context']]) assert.ok(audit.some(a => a.actor_email === who && a.action === action), action)
   assert.ok(!audit.some(a => a.actor_email === sam.email && a.action === 'note.read'))
 }))

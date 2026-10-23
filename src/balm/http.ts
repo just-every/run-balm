@@ -1,3 +1,8 @@
+import {exerciseLibrary} from './portal/library'
+import {guardianCommand,guardianGrants} from './portal/guardians'
+import {profileForStaff,reviewProfile} from './portal/profile'
+import { integrationCommand, integrationState, requireScope, scopedRead } from './portal/integrations'
+import { recordCommand, recordDownload, recordRequests } from './portal/records'
 import { codeSetCommand, codeSetStatus } from './codesets'
 import { resolveChargeCatalog } from './codesets/charge-catalog'
 import { codesetFormInput } from './ui/code-sets'
@@ -89,7 +94,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -102,7 +107,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
   const composeVisit = file.appointments.find(a=>a.id===historyInput.compose)
   const composedDate = composeVisit ? hostDateAt(new Date(composeVisit.start_at as string),zone) : undefined
-  const enriched = { ...file, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, guardianGrants:await guardianGrants(env.DB,who,clientId),portalProfileChanges:await profileForStaff(env.DB,who,clientId), billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), exerciseLibrary: who.role==='owner'||who.staffRole==='practitioner' ? await exerciseLibrary(env.DB,who,historyInput):null,homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -145,6 +150,10 @@ async function noticeOthers(env: Bindings, offerId: string) {
 
 async function execute(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
   roleCommand(who,name)
+  if(name==='profile.review')return reviewProfile(env.DB,who,input)
+  if(name.startsWith('guardian.'))return guardianCommand(env.DB,who,name,input)
+  if(name.startsWith('integration.'))return integrationCommand(env,who,name,input)
+  if(name.startsWith('record.'))return recordCommand(env.DB,who,name,input)
   if(name.startsWith('codes.'))return codeSetCommand(env.DB,who,name,codesetFormInput(input))
   if(name==='insurance.payer_line.add')input=manualPayerForm(input)
   if(name.startsWith('note_release.'))return releaseCommand(env.DB,who,name,input)
@@ -171,6 +180,8 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'chart.break_glass.end') return endBreakGlass(env.DB, who, input)
   if (name === 'chart.break_glass.acknowledge') return acknowledgeBreakGlass(env.DB, who, input)
   if (name.startsWith('calendar.feed.')) return feedCommand(env.DB, who, name)
+  if(name==='exercise.program.assign'&&!Array.isArray(input.exerciseIds)&&input.exerciseIds===undefined)input.exerciseIds=Object.keys(input).filter(k=>k.startsWith('exercise_')&&input[k]==='on').map(k=>k.slice(9))
+  if(name==='exercise.program.assign'&&input.dosages===undefined&&Array.isArray(input.exerciseIds))input.dosages=Object.fromEntries(input.exerciseIds.filter(key=>input['sets_'+key]!==undefined).map(key=>[key,{sets:input['sets_'+key],reps:input['reps_'+key],holdSeconds:input['hold_'+key],frequency:input['frequency_'+key]}]))
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
@@ -251,7 +262,13 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
       if (typeof value === 'string') { input[key] = value; continue }
       if (value.size > (moving || licensed ? 20_000_000 : 1_000_000)) fail(moving || licensed ? 'This file is larger than 20 MB. Use a smaller reviewed export.' : 'The file is larger than 1 MB.', 413)
       if (value.size) {
-        if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
+        if(actionName==='exercise.library.import'&&key==='csv'){input.csv=await value.text()}
+        else if(actionName==='exercise.library.import'&&key.startsWith('media_')){
+          if(!['image/png','image/jpeg','image/webp'].includes(value.type))fail('use_png_jpeg_or_webp_media')
+          const data=new Uint8Array(await value.arrayBuffer());let binary='';for(const byte of data)binary+=String.fromCharCode(byte)
+          const map=(input.media??={}) as Record<string,string>;map[value.name]='data:'+value.type+';base64,'+btoa(binary)
+        }
+        else if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
         else if (key === 'abnDocument') {
           if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
           const bytes = new Uint8Array(await value.arrayBuffer())
@@ -473,8 +490,17 @@ export async function balmResponse(request: Request, original: Bindings): Promis
     if (path === WEBHOOK_PATH) return await paymentsPublicResponse(request, env, path, false) ?? json({ error: 'Not found' }, 404)
     if (request.method === 'POST' && !isAgent && !sameOrigin(request, env)) fail('cross_site_request_refused', 403)
     who = await principal(request, env, isAgent)
+    if(isAgent){
+      const scopeRead=path.match(/^\/api\/balm\/agent\/(appointments|patients|charges|payments)$/)
+      if(scopeRead&&request.method==='GET')return json(await scopedRead(env.DB,who,scopeRead[1],Object.fromEntries(url.searchParams)))
+      if(path==='/api/balm/agent/context'&&request.method==='GET')requireScope(who,'context.read')
+      else if(path!=='/api/balm/agent/command')fail('key_scope_refused',403)
+    }
     if (request.method === 'GET') {
       roleRead(who,path)
+      if(path==='/api/balm/exercises')return json(await exerciseLibrary(env.DB,who,Object.fromEntries(url.searchParams)))
+      const recordPath=path.match(/^\/api\/balm\/records\/([\w-]+)\.(pdf|json)$/)
+      if(recordPath)return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',who)
       if (manager(who) && path === '/api/balm/reports/location') return json((await locationState(env.DB,who,Object.fromEntries(url.searchParams))).location)
       const chartDocument = path.match(/^\/api\/balm\/chart-documents\/([\w-]+)$/)
       if (chartDocument) return await downloadDocument(env.DB, who, chartDocument[1])
@@ -603,7 +629,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
+        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people
@@ -616,6 +642,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         const body = await inputBody(request)
         if (typeof body.name !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input)) fail('provide_a_command_name_and_input_object')
         if (isAgent && !preparations.includes(String(body.name))) fail('agents_can_only_prepare', 403)
+        if(isAgent)requireScope(who,String(body.name))
         return json({ result: await execute(request, env, who, String(body.name), body.input as Record<string, unknown>) })
       }
     }

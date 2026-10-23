@@ -1,3 +1,4 @@
+import { keyScopes, legacyScopes } from './portal/integrations'
 import {requireSecondStep} from './security/second-step'
 // Adapted from Strap's native invitations and owner-bound preparation keys
 // (src/strap/credentials.ts, just-every/run-strap @ 92c3892).
@@ -11,10 +12,10 @@ export async function principal(request: Request, env: Bindings, agent = false):
   if (agent) {
     const token = request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
     if (!token || token.length > 200) fail('agent_credential_required', 401)
-    const key = await env.DB.prepare(`SELECT k.owner_id FROM bm_agent_keys k JOIN oa_operators o ON o.id=k.owner_id
-      WHERE k.token_hash=? AND k.revoked_at IS NULL AND k.expires_at>? AND o.role='owner' AND o.status='active' AND o.version=k.owner_version`).bind(await sha256(token!), Date.now()).first<{ owner_id: string }>()
+    const key = await env.DB.prepare(`SELECT k.id,k.scopes,k.owner_id FROM bm_agent_keys k JOIN oa_operators o ON o.id=k.owner_id
+      WHERE k.token_hash=? AND k.revoked_at IS NULL AND k.expires_at>? AND o.role='owner' AND o.status='active' AND o.version=k.owner_version`).bind(await sha256(token!), Date.now()).first<{ id:string; scopes:string|null; owner_id: string }>()
     if (!key) fail('agent_credential_expired_or_revoked', 401)
-    return actor(env.DB, key!.owner_id, true)
+    return {...await actor(env.DB, key!.owner_id, true),keyId:key!.id,keyScopes:key!.scopes===null?legacyScopes:JSON.parse(key!.scopes)} as Actor
   }
   const session = await operatorAuth(env).getSession(request)
   if (!session) fail('sign_in_required', 401)
@@ -24,7 +25,7 @@ export async function principal(request: Request, env: Bindings, agent = false):
 
 export async function agentKeys(env: Bindings, who: Actor) {
   if (who.role !== 'owner') return []
-  return (await env.DB.prepare('SELECT id,label,created_at AS createdAt,expires_at AS expiresAt,revoked_at AS revokedAt FROM bm_agent_keys WHERE owner_id=? ORDER BY created_at DESC').bind(who.id).all()).results
+  return (await env.DB.prepare('SELECT id,label,scopes,created_at AS createdAt,expires_at AS expiresAt,revoked_at AS revokedAt FROM bm_agent_keys WHERE owner_id=? ORDER BY created_at DESC').bind(who.id).all()).results
 }
 
 export async function credentialCommand(request: Request, env: Bindings, who: Actor, name: string, input: Record<string, unknown>) {
@@ -32,16 +33,17 @@ export async function credentialCommand(request: Request, env: Bindings, who: Ac
   if (name === 'agent.create') {
     const label = String(input.label ?? '').trim()
     insist(label && label.length <= 80, 'invalid_label')
+    const scopes = input.scopes === undefined ? null : typeof input.scopes === 'string' ? input.scopes.split(/[ ,]+/).filter(Boolean) : input.scopes
+    insist(scopes===null || Array.isArray(scopes)&&scopes.length>0&&scopes.length<=keyScopes.length&&scopes.every(s=>typeof s==='string'&&(keyScopes as readonly string[]).includes(s)), 'invalid_key_scopes')
     const keyId = crypto.randomUUID(), token = 'balm_' + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, ''), at = Date.now()
-    const result = await env.DB.prepare(`INSERT INTO bm_agent_keys(id,owner_id,owner_version,label,token_hash,created_at,expires_at)
-      SELECT ?,id,version,?,?,?,? FROM oa_operators WHERE id=? AND role='owner' AND status='active'`).bind(keyId, label, await sha256(token), at, at + 30 * 86400_000, who.id).run()
-    insist(result.meta.changes === 1, 'owner_access_changed', 403)
-    await commit(env.DB, who, [audit(env.DB, who, 'agent_key.created', null, keyId)])
-    return { id: keyId, token, expiresAt: at + 30 * 86400_000 }
+    const insert = env.DB.prepare(`INSERT INTO bm_agent_keys(id,owner_id,owner_version,label,token_hash,created_at,expires_at,scopes)
+      SELECT ?,id,version,?,?,?,?,? FROM oa_operators WHERE id=? AND role='owner' AND status='active'`).bind(keyId, label, await sha256(token), at, at + 30 * 86400_000, scopes===null?null:JSON.stringify([...new Set(scopes)]), who.id)
+    await commit(env.DB, who, [insert,audit(env.DB, who, 'agent_key.created', null, keyId)])
+    return { id: keyId, token, expiresAt: at + 30 * 86400_000, scopes: scopes??legacyScopes }
   }
   if (name === 'agent.revoke') {
-    await env.DB.prepare('UPDATE bm_agent_keys SET revoked_at=? WHERE id=? AND owner_id=? AND revoked_at IS NULL').bind(Date.now(), String(input.id ?? ''), who.id).run()
-    await commit(env.DB, who, [audit(env.DB, who, 'agent_key.revoked', null, String(input.id ?? ''))])
+    const revoke=env.DB.prepare('UPDATE bm_agent_keys SET revoked_at=? WHERE id=? AND owner_id=? AND revoked_at IS NULL').bind(Date.now(), String(input.id ?? ''), who.id)
+    await commit(env.DB, who, [revoke,audit(env.DB, who, 'agent_key.revoked', null, String(input.id ?? ''))])
     return { revoked: true }
   }
   if (name === 'staff.invite') {

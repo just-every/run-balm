@@ -1,8 +1,9 @@
+import {integrationPanel,scopeChoices} from './portal-integrations'
 // Agent access: the owner connects an AI assistant from this page alone. It says
 // what a key lets an assistant do, gives the key once with a copy button, walks
 // through ChatGPT and command-line assistants step by step, and lists what the
 // clinic never shares.
-import { copyBox, empty, entry, field, form, h, hidden, panel, result, rows, stamp, status } from './shared'
+import { copyBox, empty, entry, field, form, h, hidden, panel, result, rows, select, stamp, status } from './shared'
 
 
 const can = '<ul class="plain"><li><strong>Can read:</strong> the schedule, clients’ names, email addresses and phone numbers, services, practitioners’ hours, invoices and drafts waiting for approval. Each read is recorded in the access audit of every client it names.</li>'
@@ -40,8 +41,8 @@ const never = '<ul class="plain"><li>Never paste the agent key into a chat messa
 export function agent(s: any, notice: any) {
   const created = result(notice)
   const token = created?.token ? String(created.token) : ''
-  const keys = rows(s, 'agentKeys').map(k => entry(k.label, `${status(k.revokedAt ? 'Revoked' : Number(k.expiresAt) <= Date.now() ? 'Expired' : 'Active')}<p>Created ${stamp(s, k.createdAt)}<br>Expires ${stamp(s, k.expiresAt)}</p>${!k.revokedAt ? form('agent.revoke', '/app/agent', hidden('id', k.id), 'Revoke agent access', true) : ''}`)).join('')
-  const step1 = panel('1. Create a key', form('agent.create', '/app/agent', field('label', 'Which assistant is this for?', '', 'text', 'required maxlength="80" placeholder="ChatGPT on the front desk computer"'), 'Create agent key')
+  const keys = rows(s, 'agentKeys').map(k => entry(k.label, `<p>Permissions: ${h(k.scopes ? JSON.parse(k.scopes).join(', ') : 'Original assistant workspace')}</p>${status(k.revokedAt ? 'Revoked' : Number(k.expiresAt) <= Date.now() ? 'Expired' : 'Active')}<p>Created ${stamp(s, k.createdAt)}<br>Expires ${stamp(s, k.expiresAt)}</p>${!k.revokedAt ? form('agent.revoke', '/app/agent', hidden('id', k.id), 'Revoke agent access', true) : ''}`)).join('')
+  const step1 = panel('1. Create a key', form('agent.create', '/app/agent', field('label', 'Which assistant is this for?', '', 'text', 'required maxlength="80" placeholder="ChatGPT on the front desk computer"')+select('scopes','Key permissions',scopeChoices,'appointments.read'), 'Create agent key')
     + '<p class="help">A key works for 30 days. Create a new one when it expires.</p>')
   const step2 = panel('2. Copy the key', token
     ? `<div class="notice" role="status"><strong>Copy this key now.</strong> It is shown only once; Balm keeps only a fingerprint of it.</div>${copyBox('agent-key', 'Agent key', token)}<p>Expires ${stamp(s, created.expiresAt)}.</p>`
@@ -50,6 +51,7 @@ export function agent(s: any, notice: any) {
     + `${panel('What an assistant can do with a key', can, 'full')}<div class="grid">${step1}${step2}</div>`
     + panel('3. Connect your assistant', connect(s, token), 'full')
     + `<div class="grid">${panel('What the clinic never shares', never)}${panel('Agent keys', keys || empty('No agent keys yet.'))}</div>`
+    + integrationPanel(s,created)
     + '<p class="help">For developers: <a href="https://github.com/just-every/run-balm/blob/main/docs/AGENT-COMMANDS.md">the agent commands and their fields</a>.</p>'
 }
 
