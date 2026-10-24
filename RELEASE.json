@@ -2,7 +2,7 @@
   "version": "0.1.1",
   "previousVersion": "0.1.0",
   "date": "2026-10-24",
-  "publicReleaseNotes": "Prepare Balm for hosted installation with a digest-bound setup manifest, generated deployment specification, explicit recovery operations and managed email relay configuration. Existing clinic workflows and migration history are preserved. This metadata prepares a later native release; no release or tag is created in this round.",
+  "publicReleaseNotes": "Prepare Balm for hosted installation with a digest-bound setup manifest, generated deployment specification, explicit recovery operations and managed email relay configuration. Preserve existing clinic workflows and migration history, and update the native installer and release tooling to rer 0.2.80.",
   "extensionPointChanges": [],
   "migrations": [
     "migrations/core/0026_balm_insurance.sql",
@@ -80,5 +80,5 @@
     "migrations/core/0100_dependency_keys_sealed.sql"
   ],
   "breaking": false,
-  "agentUpdateInstructions": "Back up the clinic before adoption. Apply the added migrations forward without changing earlier migration bytes. Configure the selected email provider and verified sender for hosted use, retain private settings outside source, and verify owner sign-in and clinic workflows before routing traffic. The checkout pins rer 0.2.79; a later round adopts rer 0.2.80 and creates the native release."
+  "agentUpdateInstructions": "Back up the clinic before adoption. Apply the added migrations forward without changing earlier migration bytes. Configure the selected email provider and verified sender for hosted use, retain private settings outside source, and verify owner sign-in and clinic workflows before routing traffic. Use the exact rer 0.2.80 pin for native installation, export and restore."
 }
