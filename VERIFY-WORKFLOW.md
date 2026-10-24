@@ -11,10 +11,11 @@ The two workflows use the same declared shards:
 
 | Workflow | Triggers | Coverage |
 | --- | --- | --- |
-| Verify | Pushes to every branch, pull requests and manual dispatch | `push` shards |
-| Nightly journeys | Nightly schedule, `v*` release-tag pushes and manual dispatch | Both `push` and `nightly` shards |
+| Verify | Pushes to every branch and `v*` release tags, pull requests and manual dispatch | `push` shards |
+| Nightly journeys | Nightly schedule and manual dispatch | Both `push` and `nightly` shards |
+| Release checks | `v*` release-tag pushes and manual dispatch | Both `push` and `nightly` shards |
 
-Release tags use Nightly journeys' full coverage. The nightly workflow calls Verify with the full tier. Verify plans its matrix
+Release tags run Verify and Release checks, which has the full coverage. The nightly and release workflows call Verify with the full tier. Verify plans its matrix
 from `verification.json`, then runs the shards in parallel on Ubuntu 24.04.
 Push shards have a 12-minute timeout; the nightly workflow allows longer for the
 full installation journeys. The final `verify` aggregate remains the stable

@@ -113,3 +113,13 @@ rer verify
 ```
 
 The tests run the real Worker on workerd and D1 through its public doors (sign-in, booking, intake links, the command API and the agent door) plus the public `rer export`/`rer import` CLI. Builds and deploys run no tests. The run site (`rer build --site`: the homepage, `/run` and the docs built from `docs/*.md`) is in `src/site`; the app's screens use Base's theme until their design round.
+
+## Release listing
+
+| Field | Value |
+|---|---|
+| Listing id (`seed.json.id`) | `balm` |
+| `runUrl` | https://run-balm.com/run |
+| `storesFiles` | `true`: message attachments and chart documents (JPEG, PNG, WebP or PDF, up to 1 MB each) are stored in D1 with their SHA-256; Balm uses no R2 bucket. |
+
+The release app capture at `.github/assets/release/balm-app-1440.png` is the real local app signed in as the owner of the Cedar Grove Physical Therapy demo clinic. Its SHA-256 is `8e091746b3792be8c97a9b92fa1ac28a85b9407ef76d51685bc52fe8d7467565` for the Site source gallery.

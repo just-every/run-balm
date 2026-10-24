@@ -1,8 +1,6 @@
 name: Nightly journeys
 
 on:
-  push:
-    tags: ['v*']
   schedule:
     - cron: '23 3 * * *'
   workflow_dispatch:

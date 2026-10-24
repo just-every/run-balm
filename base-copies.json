@@ -21,6 +21,15 @@
       },
       "modes": {
         ".github/workflows/verify-nightly.yml": "100644"
+      },
+      "adapted": {
+        ".github/workflows/verify-nightly.yml": "11f94fec479228d71ba6d7dd6ea7796c0d42c544"
+      },
+      "acknowledged": {
+        ".github/workflows/verify-nightly.yml": {
+          "sha256": "0308e0fd004fddd9cc7be58374d3fbf469e2902b2b192ae5f53319ac7eb5cfcd",
+          "mode": "100644"
+        }
       }
     },
     {
@@ -38,7 +47,7 @@
       },
       "acknowledged": {
         ".github/workflows/verify.yml": {
-          "sha256": "8d50f0c8a5fb64c749da5080d7fe27eaa1483244da3f2622cb87489c2b952390",
+          "sha256": "f827f16c7e268765f67253ca459974650540e6f2f9653829b7e416bf559eec0f",
           "mode": "100644"
         }
       }
@@ -1843,6 +1852,15 @@
       },
       "modes": {
         "VERIFY-WORKFLOW.md": "100644"
+      },
+      "adapted": {
+        "VERIFY-WORKFLOW.md": "11f94fec479228d71ba6d7dd6ea7796c0d42c544"
+      },
+      "acknowledged": {
+        "VERIFY-WORKFLOW.md": {
+          "sha256": "2d77cf5a8cafbaa3da7b88f47a24aeb34429002d052921aacaab10d8c1b1d275",
+          "mode": "100644"
+        }
       }
     }
   ]
