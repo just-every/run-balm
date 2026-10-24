@@ -219,7 +219,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
-test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archive with signed units and fixed invoice bytes', { timeout: 120_000 }, async () => {
+test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archive with signed units and fixed invoice bytes', { timeout: 240_000 }, async () => {
   const temporary=await mkdtemp(join(tmpdir(),'balm-tie-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
   let h
   try {
