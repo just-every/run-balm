@@ -1,9 +1,20 @@
 import { Check, Copy, Icon, Stage } from '../parts'
 
 const IMPORT = [['Patients', '1,284'], ['Upcoming appointments', '312'], ['Signed notes', '9,406'], ['Open balances', '$18,240.65 · totals match']]
-const STEPS = ['git clone https://github.com/just-every/run-balm.git balm', 'cd balm', 'rer install', 'rer setup', 'rer dev']
+// The one start line every Run Edit Run page shows, and the alternative for people who already have Node.
+const START = 'curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm'
+const ALTERNATIVE = 'Already have Node 22 or later? npx -y @runeditrun/rer dev just-every/run-balm'
 
-/** 09: the short close, a Jane import with its totals, the five commands that run Balm at your clinic, and who it is
+/** A command that wraps only between words, keeping the installer's `install.sh | sh` together. */
+function words(line: string) {
+  return line.split(/(\S*install\.sh \| sh|\S+)/).map((part, index) => {
+    const pipe = /^(.*\/)(install\.sh \| sh)$/.exec(part)
+    if (pipe) return <span key={index}><span className="keep">{pipe[1]}</span><wbr /><span className="keep">{pipe[2]}</span></span>
+    return part.trim() ? <span key={index} className="keep">{part}</span> : part
+  })
+}
+
+/** 09: the short close, a Jane import with its totals, the one line that runs Balm at your clinic, and who it is
  * built for. */
 export function MoveIn() {
   return <Stage id="move-in" ground="09">
@@ -21,7 +32,7 @@ export function MoveIn() {
       <p className="eyebrow">Run it at your clinic</p>
       <div className="terminal" role="group" aria-label="Terminal">
         <p className="terminal-dots" aria-hidden="true"><span /><span /><span /></p>
-        <pre><code>{STEPS.map(step => <span key={step} className="terminal-line"><b aria-hidden="true">$</b> {step.startsWith('git clone') ? <>git clone https://github.com/<wbr /><span className="keep">just-every/run-balm.git balm</span></> : step}</span>)}</code></pre>
+        <pre><code><span className="terminal-line"><b aria-hidden="true">$</b> {words(START)}</span><span className="terminal-line terminal-comment"><b aria-hidden="true">#</b> {words(ALTERNATIVE)}</span></code></pre>
       </div>
       <article className="card scope-card">
         <span className="chip-icon tone-sage"><Icon name="leaf" /></span>

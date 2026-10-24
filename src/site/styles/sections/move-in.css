@@ -1,5 +1,5 @@
 /* 09 Bring your clinic over.: copy and the Jane import left; the five commands and who Balm is built for right (page-09).
-   The terminal's clone line wraps inside its card on phones; nothing scrolls. */
+   The terminal's start line wraps inside its card on phones; nothing scrolls. */
 .stage-move-in .stage-body { display: grid; grid-template-columns: calc(var(--u) * 640) 1fr; column-gap: calc(var(--u) * 50); padding: calc(var(--u) * 168) calc(var(--u) * 76) calc(var(--u) * 120) calc(var(--u) * 80); }
 .stage-move-in .copy { padding-left: calc(var(--u) * 6); }
 @media (min-width: 1100px) { .stage-move-in .copy h2 { font-size: calc(var(--u) * 65); } }
@@ -20,6 +20,7 @@
 .stage-move-in .terminal pre { margin: calc(var(--u) * 22) 0 0; font: 500 max(11px, calc(var(--u) * 16.5))/1.95 var(--font-mono); white-space: normal; }
 .terminal-line { display: block; padding-left: 1.5em; text-indent: -1.5em; }
 .terminal-line b { font-weight: 700; color: #7fd18e; margin-right: .3em; }
+.terminal-comment, .terminal-comment b { color: #a9c2bd; }
 .scope-card { flex: 1; display: flex; align-items: center; gap: calc(var(--u) * 30); margin-top: calc(var(--u) * 30); padding: calc(var(--u) * 28) calc(var(--u) * 40) calc(var(--u) * 28) calc(var(--u) * 30); border-radius: calc(var(--u) * 24); }
 .scope-card .chip-icon { width: calc(var(--u) * 86); height: calc(var(--u) * 86); background: #dfe9d9; color: #2c4a3a; }
 .scope-card .chip-icon .icon { width: 46%; height: 46%; stroke-width: 1.6; }

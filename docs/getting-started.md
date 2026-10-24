@@ -4,13 +4,13 @@ Balm runs on your own computer: your clinic's records stay in a database in your
 
 ## Start Balm
 
-Install Git, then run one line in a terminal to install the `rer` launcher, get Balm and start it:
+Run one line in a terminal to install the `rer` launcher, get Balm into `run-balm` and start it:
 
 ```sh
-npx -y @runeditrun/rer dev just-every/run-balm
+curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm
 ```
 
-No Node? `curl -fsSL https://runeditrun.com/install.sh | sh -s -- dev just-every/run-balm` does the same and brings its own Node; it changes no shell settings, so if it prints an `export PATH=…` line, run that line to use `rer` again later. To set Balm up without starting it, use `setup` in place of `dev`.
+Git is required; rer brings Node and pnpm. Already have Node 22 or later? `npx -y @runeditrun/rer dev just-every/run-balm` does the same. The installer changes no shell settings, so if it prints an `export PATH=…` line, run that line to use `rer` again later. To set Balm up without starting it, use `setup` in place of `dev`.
 
 The first start can take several minutes while `rer dev` installs everything and prepares the local database. If it is interrupted, run it again.
 
