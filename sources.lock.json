@@ -93,6 +93,10 @@
     }
   ],
   "files": {
+    ".github/assets/release/balm-app-1440.png": {
+      "sha256": "8e091746b3792be8c97a9b92fa1ac28a85b9407ef76d51685bc52fe8d7467565",
+      "executable": false
+    },
     ".github/workflows/release.yml": {
       "sha256": "e7a27968608e510ac6bbae87346d5afc01ec440e633d3fe2f21f3bb523039bcc",
       "executable": false
@@ -1263,6 +1267,10 @@
     },
     "release-history/0.1.0.json": {
       "sha256": "2226da049316f0f9cf8a28bab5c3153dff6bd9043af561e2e8ce3c81577f0561",
+      "executable": false
+    },
+    "release-history/0.1.1.json": {
+      "sha256": "a73c25dee934d7aee142f5aff282f13a16db512cfaa59988ef5d7ab7ec536c43",
       "executable": false
     },
     "RELEASE.json": {
