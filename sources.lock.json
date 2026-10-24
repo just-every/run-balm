@@ -130,7 +130,7 @@
       "executable": false
     },
     "base-copies.json": {
-      "sha256": "ef1a2f8bfb087c8e3412c12d361193e221dbc9ebc2a3764e3212b593bac59c7b",
+      "sha256": "9520a3718da034fdaaa53ebf2ef0d26c2250564f539c525ce69b37e0092a2ec3",
       "executable": false
     },
     "CHANGELOG.md": {
@@ -142,7 +142,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "94f41abf4a6268dddec0d23a734fb0b05bba6ebc7cf8d2b325da0d3a98d4212f",
+      "sha256": "25fb9ad432c5156ef5539a6ae1370990ad8d31f57d8ea2402c3e09e23f350472",
       "executable": false
     },
     "DEMO.md": {
@@ -282,7 +282,7 @@
       "executable": false
     },
     "management/integration/deployment-spec.json": {
-      "sha256": "4c55124a3fb983707b41ad279927b7b5e4b3eee6d6c396b94160cf69f77ac385",
+      "sha256": "d5082ee074d63070c313150d50ad77a7257490e3f03d14277e83fc4b2207c88d",
       "executable": false
     },
     "migrations/core/0001_owner.sql": {
@@ -673,6 +673,10 @@
       "sha256": "6f22a75e28f44547eec205f5fec1990927aad0ec7679b211acbf5d9d16b03bf9",
       "executable": false
     },
+    "migrations/core/0100_dependency_keys_sealed.sql": {
+      "sha256": "9c8fa5f94c48a230f326cd4d666cbc2bd1e7d5a18327b89e65b339ac6a533d9a",
+      "executable": false
+    },
     "ONBOARDING.md": {
       "sha256": "5d20f1bd0c24def0cd6c1165d1a58d0472ad0f02f2b60047014bda962eaf4274",
       "executable": false
@@ -690,7 +694,7 @@
       "executable": false
     },
     "packaging.json": {
-      "sha256": "44403ca8dc9aebd80c3202f7ff8e16305f9112b457282c55dcb68b62e6bb71d7",
+      "sha256": "c0e5917b4fca4c1c5a9ed67faaef829c1e055b2151ad5be7f35332dfb7e239d2",
       "executable": false
     },
     "pnpm-lock.yaml": {
@@ -1258,15 +1262,15 @@
       "executable": false
     },
     "RELEASE.json": {
-      "sha256": "ac291213e5d80511021a5fd92106325523a0cd7d4e4c41cdbe519890c2f8f95d",
+      "sha256": "70a6eca38a21ef5949c9416545a776235018a79652c097ebb56cd7ec4c87b8e1",
       "executable": false
     },
     "rer-project.json": {
-      "sha256": "dcc1c2e065be897f8c7432789161bf031788b31d1112328854ac8d6f4fb8d865",
+      "sha256": "946089e06032ed6c3b984d50b706dfbbd53fac831475c81942f76b25ed9499e8",
       "executable": false
     },
     "rer-setup.json": {
-      "sha256": "b5cebe7ef899cb550109fda2d7eb88d7eb7da91bf94a705044bcba4b1dbf2366",
+      "sha256": "423d2ba1ca1aebc0faf0c20d35ce6a8090b478b341c78161e88f918133b69291",
       "executable": false
     },
     "RUN-LOCALLY.md": {
@@ -1350,7 +1354,7 @@
       "executable": false
     },
     "scripts/delivery/base/packaging.json": {
-      "sha256": "44403ca8dc9aebd80c3202f7ff8e16305f9112b457282c55dcb68b62e6bb71d7",
+      "sha256": "c0e5917b4fca4c1c5a9ed67faaef829c1e055b2151ad5be7f35332dfb7e239d2",
       "executable": false
     },
     "scripts/delivery/base/paths.mjs": {
@@ -1478,7 +1482,7 @@
       "executable": false
     },
     "src/auth.server.ts": {
-      "sha256": "e8022118b1d3b10d154c0657451167193dc68a3239a36fdd9242fea78274ea8c",
+      "sha256": "72aef4135eb2b58ddb0351645c68ee215946d36f9a3a8140f9d5785f2cd23184",
       "executable": false
     },
     "src/balm/agent-openapi.ts": {
@@ -4994,7 +4998,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "1540acfc4b0b66889a49a4cdc19e6a2a3f7e2b0b403851d50c110d25d22bddf1",
+      "sha256": "d4724b97e3e918e2d8893a9bb1e9f27e46064bc0f70f3fa407b229eff11133c6",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5270,7 +5274,7 @@
       "executable": false
     },
     "tests/harness.mjs": {
-      "sha256": "134a904dcddefc20282f8abc5cd8182f016993dfedf1d72db31bdd9f532f8637",
+      "sha256": "95b1dbaaf8e5970c8dfc40343bf036d668d432af1871302932b692137c28a7aa",
       "executable": false
     },
     "tests/insurance.test.mjs": {

@@ -45,7 +45,8 @@
       ],
       "secretNames": [
         "SESSION_SECRET",
-        "SETUP_TOKEN"
+        "SETUP_TOKEN",
+        "INSTALLATION_KEY"
       ],
       "optionalSecretNames": [
         "MAIL_API_KEY",
@@ -58,7 +59,8 @@
         "BALM_RESEND_WEBHOOK_KEY",
         "BALM_RESEND_EVENT_NAMESPACE",
         "BALM_SENDGRID_WEBHOOK_KEY",
-        "BALM_SENDGRID_EVENT_NAMESPACE"
+        "BALM_SENDGRID_EVENT_NAMESPACE",
+        "INSTALLATION_KEY_PREVIOUS"
       ],
       "healthPath": "/health",
       "recovery": "Follow docs/backup.md. Pause writes and scheduled work, retain the exact source revision and private settings, restore the owner-controlled encrypted backup into fresh empty resources, re-export and compare clinic data, then verify owner sign-in before routing traffic. Preserve all applied migration names and bytes.",

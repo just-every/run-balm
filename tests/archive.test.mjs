@@ -42,7 +42,7 @@ async function archiveFixture(){
   let h
   try {
     for (const path of [source,restored,erased,refused]) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:2e6 })
+    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:4e6 })
     const webhookKey='whsec_'+Buffer.from('synthetic-balm-1').toString('base64')
     h=await harness({root:source,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
@@ -224,7 +224,7 @@ test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archi
   let h
   try {
     for(const path of [source,restored])await checkout(path)
-    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
     h=await harness({root:source})
     const {service,practitioners:[priya]}=await clinic(h)
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
@@ -278,7 +278,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
       assert.equal(bucket.log.length, 0, 'Managed never contacts storage')
     } finally { await managed.close() }
     for (const path of [source, scratch, refused]) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 2e6 })
+    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 4e6 })
     h = await harness({ root: source, outbound: bucket.fetchHandler })
     await clinic(h, []); await h.finishSetup()
     const tick = async at => (await h.mf.getWorker()).scheduled({ scheduledTime: at, cron: '* * * * *' })
@@ -409,7 +409,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
  let h
  try {
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
   h=await harness({root:source})
   const {service,practitioners:[priya]}=await clinic(h)
   const student=await h.staff('ArchiveStudent','student',{discipline:'pt',supervisorId:priya.id,credentials:'SPT'})
@@ -503,7 +503,7 @@ test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches,
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:2e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
   h=await harness({root:source})
   const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null

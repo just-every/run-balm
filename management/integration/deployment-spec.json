@@ -588,6 +588,12 @@
       "name": "0099_balm_unsent_import_events.sql",
       "sha256": "6f22a75e28f44547eec205f5fec1990927aad0ec7679b211acbf5d9d16b03bf9",
       "sql": "-- An import undo may remove derived notifications only before any approval.\n-- Approved deliveries remain retained, regardless of their transport outcome.\nDROP TRIGGER bm_integration_events_kept;\nCREATE TRIGGER bm_integration_events_kept BEFORE DELETE ON bm_integration_events\nWHEN NOT EXISTS (\n SELECT 1 FROM bm_retention_scope s JOIN bm_retention_permits p ON p.preview_id=s.preview_id\n WHERE s.table_name='bm_integration_events' AND s.record_rowid=OLD.rowid\n) AND NOT (\n NOT EXISTS(SELECT 1 FROM bm_integration_deliveries d WHERE d.event_id=OLD.id)\n AND EXISTS(SELECT 1 FROM bm_movein_jobs j JOIN bm_movein_records r ON r.job_id=j.id\n  WHERE j.state='undoing' AND r.target_table='bm_appointments' AND r.target_id=OLD.appointment_id)\n)\nBEGIN SELECT RAISE(ABORT,'integration_history_kept'); END;\n"
+    },
+    {
+      "binding": "DB",
+      "name": "0100_dependency_keys_sealed.sql",
+      "sha256": "9c8fa5f94c48a230f326cd4d666cbc2bd1e7d5a18327b89e65b339ac6a533d9a",
+      "sql": "ALTER TABLE rer_dependency_installation ADD COLUMN keys_sealed INTEGER NOT NULL DEFAULT 0 CHECK(keys_sealed IN (0,1));\n-- Nonsecret version history lets restored rows name an unavailable retired key\n-- without confusing ciphertext tampering or a wrong current secret with restore.\nALTER TABLE rer_dependency_installation ADD COLUMN key_ids TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(key_ids) AND json_type(key_ids)='array');\n"
     }
   ],
   "compatibilityDate": "2026-09-08",
@@ -607,7 +613,8 @@
   },
   "secretNames": [
     "SESSION_SECRET",
-    "SETUP_TOKEN"
+    "SETUP_TOKEN",
+    "INSTALLATION_KEY"
   ],
   "optionalSecretNames": [
     "MAIL_API_KEY",
@@ -620,7 +627,8 @@
     "BALM_RESEND_WEBHOOK_KEY",
     "BALM_RESEND_EVENT_NAMESPACE",
     "BALM_SENDGRID_WEBHOOK_KEY",
-    "BALM_SENDGRID_EVENT_NAMESPACE"
+    "BALM_SENDGRID_EVENT_NAMESPACE",
+    "INSTALLATION_KEY_PREVIOUS"
   ],
   "schedules": [
     "* * * * *"

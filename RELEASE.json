@@ -76,7 +76,8 @@
     "migrations/core/0096_balm_patient_language.sql",
     "migrations/core/0097_balm_exercise_library.sql",
     "migrations/core/0098_balm_profile_review.sql",
-    "migrations/core/0099_balm_unsent_import_events.sql"
+    "migrations/core/0099_balm_unsent_import_events.sql",
+    "migrations/core/0100_dependency_keys_sealed.sql"
   ],
   "breaking": false,
   "agentUpdateInstructions": "Back up the clinic before adoption. Apply the added migrations forward without changing earlier migration bytes. Configure the selected email provider and verified sender for hosted use, retain private settings outside source, and verify owner sign-in and clinic workflows before routing traffic. The checkout pins rer 0.2.79; a later round adopts rer 0.2.80 and creates the native release."
