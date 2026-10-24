@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "id": "just-every/run-balm",
+  "toolchain": {
+    "id": "runeditrun/edition-authoring",
+    "version": "1.1.0"
+  },
+  "parent": null,
+  "components": [
+    {
+      "id": "runeditrun/base",
+      "role": "foundation",
+      "source": {
+        "kind": "local",
+        "paths": [
+          "scripts/delivery/base/setup-manifest.mjs",
+          "src/auth.server.ts",
+          "src/mail.server.mjs",
+          "src/server.dev.ts",
+          "src/server.ts",
+          "scripts/installer/local.mjs",
+          "scripts/installer/ui/seed.mjs",
+          "public/rer-theme.css"
+        ],
+        "origin": {
+          "repository": "https://github.com/runeditrun/base",
+          "revision": "4280971d7c0295b8a88c3e1179048efcbbe14f30",
+          "path": ".",
+          "paths": [
+            "modules/delivery-producer/setup-manifest.mjs",
+            "foundation/template/src/auth.server.ts",
+            "foundation/template/src/mail.server.mjs",
+            "foundation/template/src/server.dev.ts",
+            "foundation/template/src/server.ts",
+            "foundation/template/scripts/installer/local.mjs",
+            "foundation/template/scripts/installer/ui/seed.mjs",
+            "foundation/template/public/rer-theme.css"
+          ]
+        },
+        "mappings": [
+          {
+            "path": "scripts/delivery/base/setup-manifest.mjs",
+            "originPath": "modules/delivery-producer/setup-manifest.mjs"
+          },
+          {
+            "path": "src/auth.server.ts",
+            "originPath": "foundation/template/src/auth.server.ts"
+          },
+          {
+            "path": "src/mail.server.mjs",
+            "originPath": "foundation/template/src/mail.server.mjs"
+          },
+          {
+            "path": "src/server.dev.ts",
+            "originPath": "foundation/template/src/server.dev.ts"
+          },
+          {
+            "path": "src/server.ts",
+            "originPath": "foundation/template/src/server.ts"
+          },
+          {
+            "path": "scripts/installer/local.mjs",
+            "originPath": "foundation/template/scripts/installer/local.mjs"
+          },
+          {
+            "path": "scripts/installer/ui/seed.mjs",
+            "originPath": "foundation/template/scripts/installer/ui/seed.mjs"
+          },
+          {
+            "path": "public/rer-theme.css",
+            "originPath": "foundation/template/public/rer-theme.css"
+          }
+        ]
+      }
+    },
+    {
+      "id": "just-every/run-balm",
+      "role": "edition",
+      "source": {
+        "kind": "local",
+        "paths": [
+          "src/balm",
+          "packaging.json",
+          "rer-setup.json"
+        ]
+      }
+    }
+  ]
+}

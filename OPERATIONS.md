@@ -78,3 +78,9 @@ On Clinic → Backups the owner supplies an S3-compatible bucket and only the pu
 Set an expiry rule on the bucket: Balm never deletes or overwrites backups, so records you erase or destroy stay encrypted in older backups until that rule removes them. To protect against ransomware, turn on S3 Object Lock (governance mode) or an R2 bucket lock for no longer than that expiry, and where your provider allows it, give Balm a key that cannot delete objects. Unfinished multipart uploads are aborted. Run `rer run backup:drill` after setup and whenever you change the key.
 
 `backup:restore --object KEY` saves the newest backup’s journal beside an older restore; give that journal to `rer import` to fence later erasures. A fresh destination without the newer journal cannot know about them. RER Managed hosting offers no backups. See [backup setup and recovery](docs/backup.md). Live receipts against Amazon S3 and Cloudflare R2, and the off-site backup target’s BAA record, belong to `HIPAA-005`.
+
+## Hosted installation package
+
+`packaging.json` declares Balm’s build, setup, verification, recovery and mail policy. After the real `pnpm run build`, run `pnpm delivery:spec` to refresh the committed deployment specification and `pnpm check:deployment-spec` to verify it. Package the Worker, assets and unchanged migrations with `node scripts/delivery/base/cli.mjs package --config packaging.json --output rer-package`; generated output stays private and ignored.
+
+Managed email uses the assigned `MAIL_PROVIDER`, `MAIL_FROM`, `MAIL_RELAY_URL` and private `MAIL_API_KEY`. Assisted installs select their own provider and verified sender in the setup manifest. Development and demo mail remain suppressed. Follow [the backup and recovery guide](docs/backup.md) before moving a clinic or applying migrations.

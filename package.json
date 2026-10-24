@@ -1,6 +1,6 @@
 {
   "name": "@clinic/balm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -34,7 +34,9 @@
     "rer": "rer",
     "test:balm": "node --test --test-concurrency=1 tests/balm.test.mjs tests/setup.test.mjs tests/demo.test.mjs tests/schedule.test.mjs tests/payments.test.mjs tests/charting.test.mjs tests/reminders.test.mjs tests/insurance.test.mjs tests/cases.test.mjs tests/movein.test.mjs tests/intake-portal.test.mjs tests/portal.test.mjs tests/disclosures.test.mjs tests/alerts.test.mjs tests/daily-close.test.mjs tests/report.test.mjs tests/retention.test.mjs tests/authorization.test.mjs tests/security.test.mjs tests/integ.test.mjs",
     "test:archive": "rer queue verify:archive -- node --test --test-concurrency=1 tests/archive.test.mjs",
-    "test:site": "node --test tests/site/*.test.mjs"
+    "test:site": "node --test tests/site/*.test.mjs",
+    "delivery:spec": "node scripts/build-deployment-spec.mjs",
+    "check:deployment-spec": "node scripts/build-deployment-spec.mjs --check"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.41",
@@ -48,7 +50,7 @@
     "@cloudflare/vite-plugin": "1.54.5",
     "@cloudflare/workers-types": "5.20260908.1",
     "@playwright/test": "1.63.0",
-    "@runeditrun/rer": "0.2.63",
+    "@runeditrun/rer": "0.2.79",
     "@types/node": "22.18.6",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",

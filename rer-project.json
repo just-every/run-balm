@@ -3,5 +3,25 @@
   "projectId": "just-every/run-balm",
   "name": "Balm",
   "sourceRepository": "https://github.com/just-every/run-balm",
-  "license": "MIT"
+  "license": "MIT",
+  "deployment": {
+    "target": "cloudflare-workers",
+    "artifactFile": "rer-worker-artifact.json"
+  },
+  "operations": {
+    "setup": "pnpm install --frozen-lockfile && pnpm exec rer install",
+    "build": "pnpm run build",
+    "verify": "pnpm run verify && pnpm check:deployment-spec && pnpm exec rer check --profile first-party",
+    "artifact": "node scripts/delivery/base/cli.mjs artifact --config packaging.json",
+    "recovery": "Follow docs/backup.md. Pause writes and scheduled work, retain the exact source revision and private settings, restore the owner-controlled encrypted backup into fresh empty resources, re-export and compare clinic data, then verify owner sign-in before routing traffic. Preserve all applied migration names and bytes."
+  },
+  "verification": {
+    "migrationDirectories": [
+      "migrations/core"
+    ]
+  },
+  "setup": {
+    "path": "rer-setup.json",
+    "sha256": "b5cebe7ef899cb550109fda2d7eb88d7eb7da91bf94a705044bcba4b1dbf2366"
+  }
 }

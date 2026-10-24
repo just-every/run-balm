@@ -17,3 +17,6 @@ exports/
 .rer/demo-host/
 
 .rer/deploy/
+
+rer-package/
+delivery-artifact/

@@ -102,7 +102,7 @@ It deletes the Worker and D1 database rer created for that environment, confirms
 
 ## Develop
 
-Balm pins `@runeditrun/rer@0.2.45` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
+Balm pins `@runeditrun/rer@0.2.79` (package mode) and started from Base's committed foundation `ada9f574d8a7247edc3a1180b593ad182b1fbb37`. See [source adaptation](docs/SOURCES.md), [local operations](RUN-LOCALLY.md) and the [agent guide](AGENTS.md).
 
 ```sh
 pnpm run test:balm

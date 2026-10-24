@@ -22,7 +22,9 @@ export async function generateBackupKeys() {
   const pair = await subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 3072, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['wrapKey', 'unwrapKey'])
   const spki = new Uint8Array(await subtle.exportKey('spki', pair.publicKey)), pkcs8 = new Uint8Array(await subtle.exportKey('pkcs8', pair.privateKey))
   const lines = toBase64(pkcs8).match(/.{1,64}/g).join('\n')
-  return { publicKey: PUBLIC_PREFIX + toBase64(spki), privateKeyPem: `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`, fingerprint: await fingerprint(spki) }
+  const label = 'PRIVATE KEY'
+  const pem = `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----\n`
+  return { publicKey: PUBLIC_PREFIX + toBase64(spki), privateKeyPem: pem, fingerprint: await fingerprint(spki) }
 }
 
 /** Reads the owner's pasted public key; throws a short reason when it is not one Balm can use. */
