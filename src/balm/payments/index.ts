@@ -1,3 +1,4 @@
+import { statementCycleCommand, statementCycleState, cyclePatient } from './statement-cycles'
 import {manager,locationWrite} from '../domain/role-access'
 import { seesBalances } from '../domain/model'
 // Patient payment commands and the state the pages read. Every command resolves
@@ -69,6 +70,7 @@ async function chargeInvoice(env: SmsEnv, db: D1Database, who: Actor, input: Dat
 export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, name: string, input: Data) {
   insist(who.role !== 'agent', 'agents_can_only_prepare', 403)
   if (['pay.statements.save', 'pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
+  if (name.startsWith('pay.cycle.')) return statementCycleCommand(env, db, who, name, input)
   switch (name) {
     case 'pay.entry.prepare': return prepareAccountEntry(db, who, input)
     case 'pay.entry.approve': return approveAccountEntry(db, who, input)
@@ -100,7 +102,7 @@ export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
     WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
   const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
-  return { payments: { stripe: desk ? stripe : { block: stripe.block }, smsBlock: smsBlock(env), visits, npis, ...(desk ? { review: await balanceReview(db) } : {}) } }
+  return { payments: { stripe: desk ? stripe : { block: stripe.block }, smsBlock: smsBlock(env), visits, npis, ...(desk ? { cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
 }
 
 /** The billing part of a client file: codes for the visits this actor sees, and for the desk the ledger and card. */
@@ -111,7 +113,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
   const invoices = await rows(db, "SELECT id FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC LIMIT 24", clientId)
   const superbills = await Promise.all(invoices.map(async i => { const f = await superbillFacts(db, i.id as string); return { invoiceId: i.id, number: f.invoice.number, serviceDate: f.v.serviceDate, missing: f.missing } }))
   return {
-    codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
+    cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,
     ...await clientPlans(db, clientId),
     account: await accountEntriesFor(db, clientId),

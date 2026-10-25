@@ -109,7 +109,7 @@ export async function portalStatement(db: D1Database, patient: Patient) {
 
 export async function portalDocument(db: D1Database, patient: Patient, kind: 'receipt' | 'superbill' | 'statement', key: string) {
   insist(kind === 'receipt' || kind === 'superbill' || kind === 'statement', 'document_not_found', 404)
-  const allowed = kind === 'statement' ? await one(db, 'SELECT id FROM bm_patient_statements WHERE id=? AND client_id=?', key, patient.clientId) : kind === 'receipt'
+  const allowed = kind === 'statement' ? await one(db, 'SELECT id FROM bm_patient_statements WHERE id=? AND client_id=? UNION ALL SELECT id FROM bm_cycle_statements WHERE id=? AND client_id=?', key, patient.clientId, key, patient.clientId) : kind === 'receipt'
     ? await one(db, "SELECT id FROM bm_card_payments WHERE id=? AND client_id=? AND status='succeeded' AND receipt_number IS NOT NULL UNION ALL SELECT id FROM bm_posted_account_entries WHERE id=? AND client_id=? AND receipt_base64 IS NOT NULL", key, patient.clientId, key, patient.clientId)
     : await one(db, "SELECT id FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", key, patient.clientId)
   insist(allowed, 'document_not_found', 404)

@@ -1,3 +1,4 @@
+import { patientCyclePanel } from './statement-cycles'
 import { periodSuperbillForm } from './superbill-period'
 // Patient payments in the staff pages: Stripe and NPIs in Clinic, check-in with
 // the copay on the day view, and a client file's ledger, card, links and codes.
@@ -90,6 +91,6 @@ export function billingPanels(s: any, f: any, notice: any) {
   return `${linkResult(s, notice)}` + panel('Billing and payments', `${periodSuperbillForm('/api/balm/period-superbills/' + f.client.id + '.pdf')}${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>Per visit or inclusive date range, with CPT and ICD-10 codes, practice and rendering NPIs, fees, payments and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
-    + codesPanel(s, f, path)
+    + codesPanel(s, f, path) + patientCyclePanel(s, f)
 }
 

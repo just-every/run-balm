@@ -1,3 +1,4 @@
+import { statementBatch } from './statement-cycles'
 import { takeAddressRate, takePatientRate } from '../public-rates'
 import { externalReceipts } from './account-documents'
 import { statementsFor, statementOriginal } from './statements'
@@ -107,12 +108,14 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
 
 /** The desk's downloads: a superbill, a statement or a receipt (owner and reception). */
 export async function paymentDocument(db: D1Database, who: Actor, path: string, params = new URLSearchParams()): Promise<Response | null> {
+  const batch = await statementBatch(db, who, path)
+  if (batch) return batch
   const match = path.match(/^\/api\/balm\/(superbills|period-superbills|statements|issued-statements|receipts)\/([\w-]+)\.pdf$/)
   if (!match) return null
   need(who, 'owner', 'reception'); human(who)
   const [, kind, key] = match
   const owner = kind === 'superbills' ? await one(db, "SELECT client_id FROM bm_invoices WHERE id=? AND status='approved'", key)
-    : kind === 'issued-statements' ? await one(db, 'SELECT client_id FROM bm_patient_statements WHERE id=?', key)
+    : kind === 'issued-statements' ? await one(db, 'SELECT client_id FROM bm_patient_statements WHERE id=? UNION ALL SELECT client_id FROM bm_cycle_statements WHERE id=?', key, key)
     : kind === 'receipts' ? await one(db, "SELECT client_id FROM bm_card_payments WHERE id=? AND status='succeeded' UNION ALL SELECT client_id FROM bm_posted_account_entries WHERE id=? AND receipt_base64 IS NOT NULL", key, key) : await one(db, 'SELECT id AS client_id FROM bm_clients WHERE id=? AND erased_at IS NULL', key)
   insist(owner, 'not_found', 404)
   const doc = kind === 'issued-statements' ? await statementOriginal(db, owner.client_id as string, key) : kind === 'period-superbills' ? await periodSuperbillPdf(db, key, params.get('from') ?? '', params.get('to') ?? '') : kind === 'superbills' ? await superbillPdf(db, key) : kind === 'receipts' ? await receiptPdf(db, key) : await statementPdf(db, key)

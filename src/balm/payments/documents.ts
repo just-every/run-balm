@@ -55,19 +55,19 @@ export async function superbillPdf(db: D1Database, invoiceId: string) {
   return { name: `superbill-${number}.pdf`, bytes: pdf({ header: f.v.clinic.name, title: 'Superbill', blocks }) }
 }
 
-export async function statementPdf(db: D1Database, clientId: string) {
+export async function statementPdf(db: D1Database, clientId: string, issued?: {at: string; dunning: string; address?: string}) {
   const client = await one(db, 'SELECT first_name,last_name FROM bm_clients WHERE id=?', clientId), clinic = await one(db, 'SELECT * FROM bm_settings WHERE id=1')
   insist(client && clinic, 'client_not_found', 404)
-  const l = await ledger(db, clientId), zone = clinic.time_zone as string, today = usDate(new Date().toISOString(), zone)
+  const l = await ledger(db, clientId), zone = clinic.time_zone as string, today = usDate(issued?.at ?? new Date().toISOString(), zone)
   const blocks: Block[] = [
     { kind: 'facts', rows: [...clinicFacts(clinic), ['Patient', `${client.first_name} ${client.last_name}`], ['Statement date', today], ['Balance due', dollars(Math.max(l.patientBalanceCents, 0))]] },
     { kind: 'heading', text: 'Charges and payments' },
     { kind: 'table', columns: [{ label: 'Date', width: 1.3 }, { label: 'Description', width: 4.4 }, { label: 'Charges', width: 1.2, right: true }, { label: 'Paid / adjusted', width: 1.2, right: true }, { label: 'Balance', width: 1.2, right: true }],
       rows: l.lines.map(x => [usDate(x.at, zone), x.description, x.chargeCents ? dollars(x.chargeCents) : '', x.paymentCents ? dollars(x.paymentCents) : '', dollars(x.balanceCents)]),
       totals: [['Total charges', dollars(l.chargesCents)], ['Total payments', dollars(l.paymentsCents)], ['Adjustments', dollars(l.adjustmentsCents)], ['Pending insurance (not patient due)', dollars(l.insurancePendingCents)], [l.patientBalanceCents < 0 ? 'Credit' : 'Patient balance due', dollars(Math.abs(l.patientBalanceCents))]] },
-    { kind: 'notes', lines: [l.lines.length ? 'Pay online from the private link the clinic sent you, or at your next visit.' : 'No charges yet.'] },
+    { kind: 'notes', lines: [...(issued ? [issued.dunning] : []), l.lines.length ? 'Pay online from the private link the clinic sent you, or at your next visit.' : 'No charges yet.'] },
   ]
-  return { name: `statement-${today.replace(/[ ,]+/g, '-')}.pdf`, bytes: pdf({ header: clinic.clinic_name as string, title: 'Statement', blocks }), balanceCents: l.patientBalanceCents }
+  return { name: `statement-${today.replace(/[ ,]+/g, '-')}.pdf`, bytes: pdf({ header: clinic.clinic_name as string, title: 'Statement', blocks, ...(issued?.address ? {envelope: {sender: [String(clinic.clinic_name), String(clinic.address ?? '')], recipient: [`${client.first_name} ${client.last_name}`, ...issued.address.split('\n')]}} : {}) }), balanceCents: l.patientBalanceCents }
 }
 
 export async function receiptPdf(db: D1Database, paymentId: string) {

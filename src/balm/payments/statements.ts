@@ -3,7 +3,7 @@ import { statementPdf } from './documents'
 
 // Encode bounded, three-byte-aligned chunks rather than spreading a whole PDF
 // into a single function call. Only the final chunk may contain base64 padding.
-function originalBase64(bytes: Uint8Array) {
+export function originalBase64(bytes: Uint8Array) {
   const chunks: string[] = []
   for (let offset = 0; offset < bytes.length; offset += 24_576) {
     chunks.push(btoa(String.fromCharCode(...bytes.subarray(offset, offset + 24_576))))
@@ -14,12 +14,12 @@ function originalBase64(bytes: Uint8Array) {
 /** Call only after resolving live desk or portal authority for this patient. */
 export function statementsFor(db: D1Database, clientId: string) {
   return rows(db, `SELECT id,reminder_id,due_on,amount_cents,issued_at FROM bm_patient_statements
-    WHERE client_id=? ORDER BY issued_at DESC,id DESC`, clientId)
+    WHERE client_id=? UNION ALL SELECT id,NULL AS reminder_id,due_on,amount_cents,issued_at FROM bm_cycle_statements WHERE client_id=? ORDER BY issued_at DESC,id DESC`, clientId, clientId)
 }
 
 /** Exact patient association is required even when a caller already knows the id. */
 export async function statementOriginal(db: D1Database, clientId: string, statementId: string) {
-  const original = await one(db, `SELECT id,due_on,original_base64 FROM bm_patient_statements WHERE client_id=? AND id=?`, clientId, statementId)
+  const original = await one(db, `SELECT id,due_on,original_base64 FROM bm_patient_statements WHERE client_id=? AND id=? UNION ALL SELECT id,due_on,original_base64 FROM bm_cycle_statements WHERE client_id=? AND id=?`, clientId, statementId, clientId, statementId)
   insist(original, 'statement_not_found', 404)
   const binary = atob(original.original_base64 as string), bytes = new Uint8Array(binary.length)
   for (let offset = 0; offset < binary.length; offset++) bytes[offset] = binary.charCodeAt(offset)

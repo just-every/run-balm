@@ -1,3 +1,4 @@
+import { statementCyclePanel } from './statement-cycles'
 import { paymentReviewPanel } from './payment-plans'
 import { invoiceEntry } from './clients'
 import { empty, entry, form, h, hidden, owner, panel, rows, stamp, status } from './shared'
@@ -13,5 +14,5 @@ export function invoices(s: any) {
   const drafts = all.filter(i => i.status === 'draft'), issued = all.filter(i => i.status !== 'draft')
   const history = owner(s) ? panel('Approval history', rows(s, 'approvals').length ? rows(s, 'approvals').map(a => entry(`${a.subject_type} approved by ${a.approved_by}`, `<p>${stamp(s, a.approved_at)} · prepared by ${h(a.prepared_by)} (${h(a.prepared_role)})</p><p class="help">SHA-256 of the approved content: <code>${h(a.sha256)}</code></p>`)).join('') : empty('Approved invoices, reminders and intake forms are recorded here.'), 'full') : ''
   return `<h1>Invoices and reminders</h1><p>Invoices are prepared from attended appointments, by staff or an agent, and numbered only when a person approves them. Patients pay by their card on file, from their private pay link, or at the desk: record desk payments here. Use the Insurance page to track claims and payer responses.</p>
-    <div class="grid">${panel('Waiting for approval', drafts.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('Nothing waiting.'))}${panel('Issued invoices', issued.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('No invoices issued yet.'))}${reminders(s)}${paymentReviewPanel(s)}${history}</div>`
+    <div class="grid">${panel('Waiting for approval', drafts.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('Nothing waiting.'))}${panel('Issued invoices', issued.map(i => invoiceEntry(s, i, '/app/invoices')).join('') || empty('No invoices issued yet.'))}${statementCyclePanel(s)}${reminders(s)}${paymentReviewPanel(s)}${history}</div>`
 }

@@ -9,7 +9,7 @@ export type Block =
   | { kind: 'facts'; rows: [string, string][] }
   | { kind: 'table'; columns: Column[]; rows: string[][]; totals?: [string, string][] }
   | { kind: 'notes'; lines: string[] }
-export type PdfDocument = { header: string; title: string; blocks: Block[] }
+export type PdfDocument = { header: string; title: string; blocks: Block[]; envelope?: {sender: string[]; recipient: string[]} }
 
 const CP1252: Record<string, number> = { '€': 0x80, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '…': 0x85, '−': 0x2d }
 
@@ -79,6 +79,11 @@ export function pdf(doc: PdfDocument): Uint8Array<ArrayBuffer> {
   const rule = () => page().push(`0.75 w ${M} ${y.toFixed(2)} m ${W - M} ${y.toFixed(2)} l S`)
   const room = (needed: number) => { if (y - needed < M) { pages.push([]); y = H - M; return true } return false }
 
+  if (doc.envelope) {
+    y = 738; for (const line of doc.envelope.sender) { text(54, 10, line); y -= 12 }
+    y = 660; for (const line of doc.envelope.recipient) { text(54, 11, line); y -= 14 }
+    y = 570
+  }
   text(M, 11, doc.header, true); y -= 30
   text(M, 22, doc.title, true); y -= 28
   for (const [blockIndex,block] of doc.blocks.entries()) {
@@ -114,6 +119,11 @@ export function pdf(doc: PdfDocument): Uint8Array<ArrayBuffer> {
     if (block.kind === 'notes') for (const n of block.lines) { for (const r of wrap(n, W - 2 * M, 9)) { room(13); text(M, 9, r); y -= 13 } y -= 4 }
   }
 
+  return serializePdf(pages)
+}
+
+function serializePdf(pages: string[][]): Uint8Array<ArrayBuffer> {
+  const W = 612, H = 792
   // Objects: 1 catalog, 2 pages, 3 Helvetica, 4 Helvetica-Bold, then page + content pairs.
   const objects: string[] = []
   const font = (name: string) => `<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`
@@ -132,4 +142,13 @@ export function pdf(doc: PdfDocument): Uint8Array<ArrayBuffer> {
   body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
   // Every character above is one byte (literals escape non-ASCII as octal).
   return Uint8Array.from(body, ch => ch.charCodeAt(0))
+}
+
+/** Only native, uncompressed Balm PDFs with the shared two-font resource map. */
+export function nativePdfBatch(originals: Uint8Array[]) {
+  const pages = originals.flatMap(bytes => {
+    const source = Array.from(bytes, b => String.fromCharCode(b)).join('')
+    return [...source.matchAll(/\nstream\n([\s\S]*?)\nendstream/g)].map(match => [match[1]])
+  })
+  return serializePdf(pages)
 }
