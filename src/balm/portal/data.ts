@@ -1,3 +1,4 @@
+import { patientOutcomes, respondOutcome } from '../cases/outcomes-patient'
 import {chooseLanguage,patientLanguage} from './language'
 import {guardianActor,guardianChildren,selectGuardianChild} from './guardians'
 import {patientProfile,submitProfile} from './profile'
@@ -41,6 +42,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     audit(db, guardianActor(patient), 'statement.opened', patient.clientId),
   ])
   return {
+    outcomeFollowthrough: await patientOutcomes(db, patient),
     language:await patientLanguage(db,patient),
     guardianChildren:await guardianChildren(db,patient),clientId:patient.clientId,profile:await patientProfile(db,patient),
     recordRequests: await patientRecordRequests(db,patient),
@@ -86,6 +88,7 @@ async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
 
 export async function portalAction(env: Bindings, patient: Patient, name: string, input: Data) {
   switch (name) {
+    case 'outcome.respond':return respondOutcome(env.DB,patient,input)
     case 'language.choose':return chooseLanguage(env.DB,patient,input)
     case 'guardian.select':return selectGuardianChild(env.DB,patient,input)
     case 'profile.contact':case 'profile.insurance':return submitProfile(env.DB,patient,name,input)

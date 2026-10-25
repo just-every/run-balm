@@ -9,9 +9,9 @@ async function schema(db: D1Database) {
   return rows<{ table_name: string; column_name: string }>(db, `SELECT m.name AS table_name,p.name AS column_name FROM sqlite_schema m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name GLOB 'bm_*' ORDER BY m.name,p.cid`)
 }
 export const snapshot = (columns: string[], alias = 't') => `json_object(${columns.flatMap(c => ["'" + c.replaceAll("'", "''") + "'", alias + '.' + quote(c)]).join(',')})`
-export const reportFor = (plan: BundlePlan) => ({ timeZone: plan.timeZone, counts: plan.counts, reconciliation: plan.reconciliation, diagnostics: plan.diagnostics, unmappedColumns: plan.unmappedColumns, unmappedRows: plan.unmappedRows })
+export const reportFor = (plan: BundlePlan) => ({ timeZone: plan.timeZone, counts: plan.counts, reconciliation: plan.reconciliation, diagnostics: plan.diagnostics, unmappedColumns: plan.unmappedColumns, unmappedRows: plan.unmappedRows, migrationReport: plan.migrationReport, mappingDigest: plan.mappingDigest })
 
-export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, acceptanceReason: string) {
+export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, acceptanceReason: string, approvedMapping = false) {
   const jobId = crypto.randomUUID(), at = now(), { bundle } = plan
   const clients = new Map(plan.patients.map(p => [p.sourceId, p.id]))
   const patients = plan.patients.map(p => ({ ...p, identity: identityText(p.firstName, p.lastName, p.dateOfBirth) }))
@@ -25,6 +25,13 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_movein_jobs WHERE source_json=?)', plan.sourceJson),
     stmt(db, `INSERT INTO bm_movein_jobs(id,provider,fingerprint,state,created_at,created_by,acceptance_reason,source_json,report_json) VALUES(?,?,?,'applied',?,?,?,?,?)`, jobId, bundle.provider, plan.fingerprint, at, who.id, acceptanceReason, plan.sourceJson, report.length > 200_000 ? JSON.stringify({ chunked: true }) : report),
   ]
+  if (approvedMapping) {
+    body.push(guard(db, "EXISTS(SELECT 1 FROM bm_audit WHERE action='movein.mapping_prepared' AND subject_id=? AND detail=?)", plan.fingerprint, plan.mappingDigest))
+    for (const [type, digest] of [['mapping', plan.mappingDigest], ['cutover', plan.fingerprint]]) body.push(
+      stmt(db, 'INSERT INTO bm_approvals(id,subject_type,subject_id,prepared_by,prepared_role,approved_by,approved_at,sha256) VALUES(?,?,?,?,?,?,?,?)', crypto.randomUUID(), 'movein.' + type, jobId + ':' + type, plan.preparation!.actor_email, plan.preparation!.actor_role, who.email, at, digest),
+      audit(db, who, 'movein.' + type + '_approved', null, jobId, digest),
+    )
+  }
   for (const [kind, value] of [['source', plan.sourcePayload], ['report', report]] as const) {
     if (kind === 'source' ? value === plan.sourceJson : value.length <= 200_000) continue
     textChunks(value).forEach((data, part) => body.push(stmt(db, 'INSERT INTO bm_movein_payloads(job_id,kind,part,data) VALUES(?,?,?,?)', jobId, kind, part, data)))

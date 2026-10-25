@@ -3,7 +3,7 @@ import { audit, commit, guard, human, id, insist, integer, now, one, rows, stmt,
 import { managedInstall } from '../payments/stripe-api'
 import { seal, unseal } from '../scribe/seal'
 
-export const keyScopes = ['finance.reconcile.prepare','context.read','appointments.read','patients.read','charges.read','payments.read','invoice.prepare','reminder.prepare','intake.prepare'] as const
+export const keyScopes = ['migration.prepare','finance.reconcile.prepare','context.read','appointments.read','patients.read','charges.read','payments.read','invoice.prepare','reminder.prepare','intake.prepare'] as const
 export const legacyScopes = ['context.read','invoice.prepare','reminder.prepare','intake.prepare']
 type KeyActor = Actor & { keyId?: string; keyScopes?: string[] }
 export function requireScope(who: Actor, scope: string) {

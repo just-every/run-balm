@@ -37,7 +37,7 @@ export async function sendDueFollowups(env: Bindings, scheduledTime = Date.now()
         guard(db, 'EXISTS(SELECT 1 FROM bm_followup_settings WHERE kind=? AND enabled=1 AND version=?)', f.kind, f.settings_version),
         guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND erased_at IS NULL)', f.client_id, f.client_version),
         guard(db, 'NOT EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND status=\'booked\' AND start_at>?) OR ? IN (\'welcome\',\'discharge\')', f.client_id, at, f.kind),
-        guard(db, '((SELECT COUNT(*) FROM bm_followup_attempts WHERE client_id=? AND attempted_at>?) < (SELECT followup_contact_limit FROM bm_settings WHERE id=1))', f.client_id, since),
+        guard(db, '((SELECT COUNT(*) FROM bm_followup_attempts WHERE client_id=? AND attempted_at>?) + (SELECT COUNT(*) FROM bm_outcome_attempts WHERE client_id=? AND attempted_at>?) < (SELECT followup_contact_limit FROM bm_settings WHERE id=1))', f.client_id, since, f.client_id, since),
         stmt(db, 'INSERT INTO bm_followup_attempts(id,followup_id,client_id,sequence,attempted_at) VALUES(?,?,?,?,?)', attempt, f.id, f.client_id, f.sent_count + 1, at),
         audit(db, system, 'followup.attempted', f.client_id, attempt, f.kind),
       ])

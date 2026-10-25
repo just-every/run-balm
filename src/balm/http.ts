@@ -1,3 +1,4 @@
+import { outcomeCommand, outcomesFor } from './cases/outcomes'
 import {exerciseLibrary} from './portal/library'
 import {guardianCommand,guardianGrants} from './portal/guardians'
 import {profileForStaff,reviewProfile} from './portal/profile'
@@ -108,7 +109,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
   const composeVisit = file.appointments.find(a=>a.id===historyInput.compose)
   const composedDate = composeVisit ? hostDateAt(new Date(composeVisit.start_at as string),zone) : undefined
-  const enriched = { ...file, guardianGrants:await guardianGrants(env.DB,who,clientId),portalProfileChanges:await profileForStaff(env.DB,who,clientId), billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), exerciseLibrary: who.role==='owner'||who.staffRole==='practitioner' ? await exerciseLibrary(env.DB,who,historyInput):null,homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, outcomeFollowthrough: file.careAccess?.teamOnly || file.careAccess?.supervisionOnly ? null : await outcomesFor(env.DB, who, clientId, env.AUTH_ORIGIN), guardianGrants:await guardianGrants(env.DB,who,clientId),portalProfileChanges:await profileForStaff(env.DB,who,clientId), billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), exerciseLibrary: who.role==='owner'||who.staffRole==='practitioner' ? await exerciseLibrary(env.DB,who,historyInput):null,homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -184,6 +185,8 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if(name==='exercise.program.assign'&&!Array.isArray(input.exerciseIds)&&input.exerciseIds===undefined)input.exerciseIds=Object.keys(input).filter(k=>k.startsWith('exercise_')&&input[k]==='on').map(k=>k.slice(9))
   if(name==='exercise.program.assign'&&input.dosages===undefined&&Array.isArray(input.exerciseIds))input.dosages=Object.fromEntries(input.exerciseIds.filter(key=>input['sets_'+key]!==undefined).map(key=>[key,{sets:input['sets_'+key],reps:input['reps_'+key],holdSeconds:input['hold_'+key],frequency:input['frequency_'+key]}]))
   if (name.startsWith('exercise.')) return portalCommand(env.DB, who, name, input)
+  if(name==='outcome.enroll'&&!Array.isArray(input.exerciseIds)&&input.exerciseIds===undefined)input.exerciseIds=Object.keys(input).filter(k=>k.startsWith('exercise_')&&input[k]==='on').map(k=>k.slice(9))
+  if (name.startsWith('outcome.')) return outcomeCommand(env, who, name, input)
   if (name.startsWith('case.')) return caseCommand(env, who, name, input)
   if (name === 'insurance.verify') return verifyInsurance(env.DB, who, input)
   if (name === 'insurance.read') return readInsurance(env, who, input)
@@ -625,7 +628,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         let result: unknown
         try { result = await execute(request, env, who, name, input) } catch (error) {
           const failure = message(error)
-          if (name !== 'movein.apply' || failure.status >= 500) throw error
+          if (!['movein.apply', 'movein.cutover'].includes(name) || failure.status >= 500) throw error
           const preview = await bundleCommand(env.DB, who, 'movein.preview', input)
           return await page(env, who, back, { error: failure.text, result: { ...preview, reviewInput: input } }, failure.status)
         }
@@ -633,20 +636,20 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['retention.preview', 'movein.preview', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
+        if (!['retention.preview', 'movein.preview', 'movein.prepare', 'movein.cutover', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people
           return redirect(offered && back.startsWith('/app?') ? `${back}&offered=${offered}` : offered && back === '/app' ? `/app?offered=${offered}` : back)
         }
-        if (name === 'movein.preview') return await page(env, who, back, { result: { ...(result as object), reviewInput: input } })
+        if (name === 'movein.preview' || name === 'movein.prepare') return await page(env, who, back, { result: { ...(result as object), reviewInput: input } })
         return await page(env, who, back, { ...(['series.preview', 'import.preview', 'import.journal'].includes(name) ? {} : { message: 'Saved.' }), result: name === 'import.preview' ? { ...(result as object), csv: input.csv } : result })
       }
       if (path === '/api/balm/command' || path === '/api/balm/agent/command') {
         const body = await inputBody(request)
         if (typeof body.name !== 'string' || !body.input || typeof body.input !== 'object' || Array.isArray(body.input)) fail('provide_a_command_name_and_input_object')
         if (isAgent && !preparations.includes(String(body.name))) fail('agents_can_only_prepare', 403)
-        if(isAgent)requireScope(who,String(body.name))
+        if(isAgent)requireScope(who,body.name==='movein.prepare'?'migration.prepare':String(body.name))
         return json({ result: await execute(request, env, who, String(body.name), body.input as Record<string, unknown>) })
       }
     }

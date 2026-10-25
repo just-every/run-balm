@@ -3,7 +3,7 @@ const groups: Record<string,string[]> = {
   'Patient identity and imported identity history':['clients','import_client_revisions'],
   'Visits, recurring bookings and waitlist offers':['series','appointments','waitlist','offers','offer_recipients','visit_cancellations'],
   'Treatment notes, measures and signatures':['notes','assistant_signed_notes','assistant_supervision','note_releases','note_release_approvals','note_release_revocations','note_submissions','note_reviews','note_revisions','note_addenda','measures','movein_notes'],
-  'Care plans and home exercises':['plans_of_care','home_exercises','home_exercise_done'],
+  'Care plans and home exercises':['outcome_schedules','outcome_requests','outcome_attempts','outcome_responses','outcome_briefs','plans_of_care','home_exercises','home_exercise_done'],
   'Intake answers, consent and uploaded images':['intake_responses','intake_consents','intake_photos','intake_identity','intake_insurance','consent_declines','consent_links'],
   'Chart documents and clinical alerts':['chart_documents','client_alerts'],
   'Messages, attachments and private conversation links':['messages','message_attachments','message_links'],

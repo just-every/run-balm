@@ -84,3 +84,5 @@ test('a request that attaches a signed note goes out only on the owner’s appro
 })
 
 test('month reconciliation cites missing ERA and duplicate settlement originals and only approves preparations', {timeout:120000}, async()=>{const {financeReviewJourney}=await import('./finance-review-journey.mjs');await run(financeReviewJourney)})
+
+test('AGENT-006: episode questionnaires follow up once within shared limits and a cited score and adherence brief becomes a clinician-edited progress report', {timeout:120000}, async()=>{const {outcomeFollowthroughJourney}=await import('./outcome-followthrough-journey.mjs');await run(outcomeFollowthroughJourney)})

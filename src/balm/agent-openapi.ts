@@ -29,11 +29,17 @@ export function agentOpenApi(origin: string) {
             content: { 'application/json': { schema: {
               type: 'object', required: ['name', 'input'], additionalProperties: false,
               properties: {
-                name: { type: 'string', enum: ['invoice.prepare', 'reminder.prepare', 'intake.prepare', 'finance.reconcile.prepare'] },
+                name: { type: 'string', enum: ['invoice.prepare', 'reminder.prepare', 'intake.prepare', 'finance.reconcile.prepare', 'movein.prepare'] },
                 input: {
                   type: 'object', additionalProperties: false,
                   description: 'invoice.prepare and reminder.prepare take appointmentId (from readClinic). invoice.prepare may also take amountCents (whole cents, for example 9500 for $95.00; leave it out for the service price). intake.prepare takes title and questions.',
                   properties: {
+                    provider: { type: 'string', enum: ['webpt','jane','simplepractice','cliniko'], description: 'For movein.prepare, with the explicit migration.prepare scope.' },
+                    practitionerId: { type: 'string' },
+                    serviceId: { type: 'string' },
+                    expectedTotals: { type: 'object', description: 'Owner-supplied source control totals for reconciliation.' },
+                    dateFormat: { type: 'string', enum: ['MDY','DMY','YMD'] },
+                    files: { type: 'array', items: { type: 'object', required: ['kind','name','csv'], properties: { kind: { type: 'string', enum: ['patients','appointments','balances','insurance'] }, name: { type: 'string' }, csv: { type: 'string' } } }, description: 'Owner-supplied export files. Clinical note files are refused at the agent door; returned metadata excludes field examples and patient records.' },
                     month: { type: 'string', description: 'YYYY-MM for finance.reconcile.prepare; requires its explicit finance scope. Only prepares cited review items, with no outbound request or refund.' },
                     appointmentId: { type: 'string' },
                     amountCents: { type: 'integer', minimum: 0 },

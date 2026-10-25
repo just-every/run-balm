@@ -12,6 +12,8 @@ export function bundleFormInput(input: Record<string, unknown>) {
   }
   const next: Record<string, any> = { ...original, ...input }
   delete next.bundleBase64
+  // Approval checkboxes must be present in this submission, never inherited.
+  for (const approval of ['mappingApproval', 'cutoverApproval']) if (input[approval] === undefined) delete next[approval]
   if (!Array.isArray(next.files)) next.files = kinds.filter(kind => typeof input[kind] === 'string' && input[kind]).map(kind => ({ kind, name: input[kind + 'Name'] ?? kind + '.csv', csv: input[kind] }))
   const expected: Record<string, any> = {}
   if (input.expectedPatients !== undefined && input.expectedPatients !== '') expected.patients = Number(input.expectedPatients)

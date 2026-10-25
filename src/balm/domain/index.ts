@@ -25,7 +25,7 @@ import { addToWaitlist, removeFromWaitlist, waitlistFor } from './waitlist'
 export { actor, DomainError, type Actor } from './model'
 
 /** What an agent key may do: prepare work for a person to approve. */
-export const preparations = ['finance.reconcile.prepare', 'invoice.prepare', 'reminder.prepare', 'intake.prepare']
+export const preparations = ['movein.prepare', 'finance.reconcile.prepare', 'invoice.prepare', 'reminder.prepare', 'intake.prepare']
 export const approvals = ['invoice.approve', 'reminder.approve', 'intake.publish']
 
 const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Promise<unknown>> = {

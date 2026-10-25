@@ -32,8 +32,13 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(recorded_at) FROM bm_disclosures WHERE client_id=?),''),
     COALESCE((SELECT MAX(assigned_at) FROM bm_home_exercises WHERE client_id=?),''),
     COALESCE((SELECT MAX(created_at) FROM bm_plans_of_care WHERE client_id=?),''),
-    COALESCE((SELECT MAX(recorded_at) FROM bm_measures WHERE client_id=?),'')
-  ) AS at`,...Array(8).fill(client.id))
+    COALESCE((SELECT MAX(recorded_at) FROM bm_measures WHERE client_id=?),''),
+    COALESCE((SELECT MAX(submitted_at) FROM bm_outcome_responses WHERE client_id=?),''),
+    COALESCE((SELECT MAX(prepared_at) FROM bm_outcome_briefs WHERE client_id=?),''),
+    COALESCE((SELECT MAX(created_at) FROM bm_outcome_schedules WHERE client_id=?),''),
+    COALESCE((SELECT MAX(created_at) FROM bm_outcome_requests WHERE client_id=?),''),
+    COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
+  ) AS at`,...Array(13).fill(client.id))
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []

@@ -1,4 +1,4 @@
-import type { FileKind } from '../formats.ts'
+import type { FileKind, Provider } from '../formats.ts'
 
 type Column = { key: string; names: string[]; required?: boolean }
 const field = (key: string, names: string[], required = false): Column => ({ key, names, required })
@@ -19,3 +19,9 @@ export const layouts: Record<FileKind, Column[]> = {
   insurance: [source, patient, field('payer', ['Payer', 'Insurer', 'Primary Insurance'], true), field('memberId', ['Member ID', 'Insurance ID'], true), field('groupNumber', ['Group Number', 'Group ID'])],
 }
 export const headerKey = (text: string) => text.trim().toLowerCase().replace(/[_\s]+/g, ' ')
+
+/** The proposal and the importer share the same header decisions. */
+export function columnsFor(provider: Provider, kind: FileKind, headers: string[]) {
+  return layouts[kind].map(c => provider === 'webpt' && kind === 'patients' && c.key === 'phone' && headers.some(h => ['Cell Phone', 'Home Phone', 'Phone'].includes(h))
+    ? { ...c, names: [headers.includes('Cell Phone') ? 'Cell Phone' : headers.includes('Home Phone') ? 'Home Phone' : 'Phone'] } : c)
+}

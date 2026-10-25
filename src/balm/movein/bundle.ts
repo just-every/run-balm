@@ -2,6 +2,8 @@ import { audit, commit, guard, one, rows, type Actor } from '../domain/model.ts'
 import { ImportError, requiredText } from './errors.ts'
 import { planBundle, isError } from './bundle-plan.ts'
 import { applyBundle, undoBundle } from './bundle-storage.ts'
+import { agentMappingReport } from './mapping-report.ts'
+import { requireScope } from '../portal/integrations.ts'
 
 async function owner(db: D1Database, who: Actor) {
   if (who.role !== 'owner') throw new ImportError('owner_required', 403)
@@ -29,7 +31,10 @@ async function journal(db: D1Database, jobId: string) {
 
 /** All writes use one guarded D1 batch; no partial apply/resume state exists. */
 export async function bundleCommand(db: D1Database, who: Actor, name: string, input: Record<string, unknown>) {
-  await owner(db, who)
+  if (who.role === 'agent' && name === 'movein.prepare') {
+    requireScope(who, 'migration.prepare')
+    if (Array.isArray(input.files) && input.files.some(f => f?.kind === 'notes')) throw new ImportError('clinical_access_denied', 403)
+  } else await owner(db, who)
   if (name === 'movein.journal') {
     const value = await journal(db, requiredText(input.jobId, 'jobId'))
     await commit(db, who, [audit(db, who, 'movein.journal_read', null, value.job.id)])
@@ -40,20 +45,28 @@ export async function bundleCommand(db: D1Database, who: Actor, name: string, in
     if (value.job.state !== 'undone') await undoBundle(db, who, jobId)
     return journal(db, jobId)
   }
-  if (name !== 'movein.preview' && name !== 'movein.apply') throw new ImportError('unknown_movein_command', 400)
+  if (!['movein.preview', 'movein.prepare', 'movein.apply', 'movein.cutover'].includes(name)) throw new ImportError('unknown_movein_command', 400)
   const plan = await planBundle(db, input)
-  if (name === 'movein.preview') {
-    await commit(db, who, [audit(db, who, 'movein.previewed', null, null, plan.provider)])
-    const { bundle: _bundle, sourceJson: _sourceJson, sourcePayload: _sourcePayload, practitionerVersion: _practitioner, serviceVersion: _service, ...value } = plan
-    return value
+  if (name === 'movein.preview' || name === 'movein.prepare') {
+    await commit(db, who, [name === 'movein.prepare' ? audit(db, who, 'movein.mapping_prepared', null, plan.fingerprint, plan.mappingDigest) : audit(db, who, 'movein.previewed', null, null, plan.provider)])
+    if (who.role === 'agent') return { fingerprint: plan.fingerprint, mappingDigest: plan.mappingDigest, mappingPrepared: true, canApply: plan.canApply, counts: plan.counts,
+      migrationReport: agentMappingReport(plan.migrationReport), diagnostics: plan.diagnostics.map(({ severity, code, row }) => ({ severity, code, row })), ownerReviewRequired: true }
+    const { bundle: _bundle, sourceJson: _sourceJson, sourcePayload: _sourcePayload, practitionerVersion: _practitioner, serviceVersion: _service, preparation: _preparation, ...value } = plan
+    return { ...value, mappingPrepared: name === 'movein.prepare' || plan.mappingPrepared }
   }
   if (requiredText(input.fingerprint, 'fingerprint') !== plan.fingerprint) throw new ImportError('review_fingerprint_mismatch', 409, 'Preview the exact source files and mapping before applying.')
+  const approvedMapping = name === 'movein.cutover' || plan.mappingPrepared
+  if (approvedMapping) {
+    if (!plan.preparation) throw new ImportError('mapping_preparation_required', 409, 'Prepare this exact source and reconciliation before approving cutover.')
+    if (input.mappingApproval !== plan.mappingDigest) throw new ImportError('mapping_approval_required', 409, 'The owner must approve the exact proposed mapping and reconciliation.')
+    if (input.cutoverApproval !== plan.fingerprint) throw new ImportError('cutover_approval_required', 409, 'The owner must explicitly approve cutover after reviewing the mapping.')
+  }
   const existing = plan.existingJob
   if (existing) return journal(db, existing.id)
   if (plan.diagnostics.some(isError)) throw new ImportError('movein_validation_failed', 409, 'Resolve every error in the preview before applying.')
   const acceptanceReason = typeof input.acceptanceReason === 'string' ? input.acceptanceReason.trim() : ''
   if (plan.requiresAcceptance && (!acceptanceReason || acceptanceReason.length > 2000)) throw new ImportError('movein_acceptance_required', 409, 'Accept the reconciliation differences and unmapped records with a reason, or fix the source and preview again.')
-  const jobId = await applyBundle(db, who, plan, acceptanceReason)
+  const jobId = await applyBundle(db, who, plan, acceptanceReason, approvedMapping)
   return journal(db, jobId)
 }
 

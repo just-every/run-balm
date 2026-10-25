@@ -1,3 +1,4 @@
+import { episodeChoice } from '../episodes'
 import { noteChargeCatalog } from '../codesets/charge-catalog'
 import { clinicalInput, emptyClinical, goalNarrative } from '../charting/clinical-input'
 import { carryForward } from '../charting/note-carry'
@@ -105,10 +106,11 @@ export async function createNote(db: D1Database, who: Actor, input: Data, drafte
   for (const section of t?.sections ?? []) if (input['section_' + section.id] !== undefined) inherited[section.id] = input['section_' + section.id]
   const catalog = await noteChargeCatalog(db, appointment?.id as string | undefined)
   const content = written({ ...input, sections: inherited, clinical }, t, catalog.items), noteId = (starter?.id as string) ?? id()
+  const filing = !appointment ? await episodeChoice(db, who, client.id as string, 'note', noteId, input.episodeId) : []
   assistantNote(who, t ? `${t.discipline}.${t.kind}` : '', content.charges)
   const diagnoses = await diagnosisGuards(db, appointment?.id, content.charges)
   await commit(db, who, [
-    catalog.guard, ...diagnoses, ...carry.guards,
+    catalog.guard, ...diagnoses, ...carry.guards, ...filing,
     // A practitioner writes only for a client they are booked with.
     guard(db, 'EXISTS(SELECT 1 FROM bm_appointments WHERE client_id=? AND practitioner_id=?)', client.id, author),
     ...(starter ? [

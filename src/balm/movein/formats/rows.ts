@@ -1,11 +1,11 @@
 import type { Bundle, BundleFile, DateFormat } from '../formats.ts'
-import { layouts, headerKey } from './columns.ts'
+import { columnsFor, headerKey } from './columns.ts'
 import type { CsvRow } from './reader.ts'
 import { calendarDate, timestamp, usdCents } from './values.ts'
 
 export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], format: DateFormat): void {
   const diagnostic = (severity: 'error' | 'warning', code: string, message: string, row?: number, column?: string) => bundle.diagnostics.push({ severity, code, message, file: file.name, ...(row === undefined ? {} : { row }), ...(column ? { column } : {}) })
-  const headers = rows[0]?.cells.map(v => v.trim()) ?? [], keys = headers.map(headerKey), columns = layouts[file.kind].map(c => bundle.provider === 'webpt' && file.kind === 'patients' && c.key === 'phone' && headers.some(h => ['Cell Phone', 'Home Phone', 'Phone'].includes(h)) ? { ...c, names: [headers.includes('Cell Phone') ? 'Cell Phone' : headers.includes('Home Phone') ? 'Home Phone' : 'Phone'] } : c)
+  const headers = rows[0]?.cells.map(v => v.trim()) ?? [], keys = headers.map(headerKey), columns = columnsFor(bundle.provider, file.kind, headers)
   const at = new Map<string, number>()
   for (const column of columns) {
     const matches = keys.flatMap((key, index) => column.names.some(n => headerKey(n) === key) ? [index] : [])

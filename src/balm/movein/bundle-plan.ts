@@ -3,6 +3,7 @@ import { normalizeBundle } from './formats.ts'
 import { ImportError } from './errors.ts'
 import { sha256, rows, one } from '../domain/model.ts'
 import { identityText } from './targets.ts'
+import { mappingReport } from './mapping-report.ts'
 
 export type Totals = { patients: number; appointmentsByMonth: Record<string, number>; balancesByPatient: Record<string, number>; documents: number; insurance: number }
 export type BundlePlan = Awaited<ReturnType<typeof planBundle>>
@@ -46,7 +47,7 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   if (typeof input.provider !== 'string' || !Array.isArray(input.files) || input.files.some(f => !f || typeof f !== 'object' || typeof f.name !== 'string' || typeof f.kind !== 'string' || typeof f.csv !== 'string')) throw new ImportError('invalid_bundle', 400)
   const settings = await one(db, 'SELECT time_zone,version FROM bm_settings WHERE id=1')
   const bundle = normalizeBundle(input, settings!.time_zone as string), diagnostics = [...bundle.diagnostics]
-  const diagnostic = (code: string, message: string, error = false) => diagnostics.push({ severity: error ? 'error' : 'warning', code, message, file: '' })
+  const diagnostic = (code: string, message: string, error = false, location = { file: '', row: undefined as number | undefined }) => diagnostics.push({ severity: error ? 'error' : 'warning', code, message, ...location })
   const practitionerId = typeof input.practitionerId === 'string' ? input.practitionerId : ''
   const serviceId = typeof input.serviceId === 'string' ? input.serviceId : ''
   const timeZone = settings!.time_zone as string
@@ -66,10 +67,11 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const patients = await Promise.all(bundle.patients.map(async p => ({ ...p, id: await targetId(bundle.provider, 'patient', p.sourceId), identityHash: await sha256(identityText(p.firstName, p.lastName, p.dateOfBirth)) })))
   const bundleIdentities = new Set<string>()
   for (const p of patients) {
-    if (bundleIdentities.has(p.identityHash)) diagnostic('duplicate_patient_identity', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) has the same name and birth date as another row. Resolve the identity before importing.`, true)
+    const location = { file: p.file, row: p.row }
+    if (bundleIdentities.has(p.identityHash)) diagnostic('duplicate_patient_identity', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) has the same name and birth date as another row. Resolve the identity before importing.`, true, location)
     bundleIdentities.add(p.identityHash)
-    if (identities.has(identityText(p.firstName, p.lastName, p.dateOfBirth))) diagnostic('existing_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) already exists in Balm.`, true)
-    if (erasedIdentities.has(p.identityHash)) diagnostic('erased_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) was previously erased.`, true)
+    if (identities.has(identityText(p.firstName, p.lastName, p.dateOfBirth))) diagnostic('existing_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) already exists in Balm.`, true, location)
+    if (erasedIdentities.has(p.identityHash)) diagnostic('erased_patient', `${p.firstName} ${p.lastName} (${p.file}, row ${p.row}) was previously erased.`, true, location)
   }
   if (bundle.appointments.length && (!staff.length || !services.length)) diagnostic('appointment_mapping_required', 'Map an active practitioner and service to import appointments. Unmapped appointments will be omitted.')
   const mapped = !!staff.length && !!services.length
@@ -86,10 +88,14 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
     placed.push({ id: a.id, start_at: a.startAt, end_at: a.endAt, capacity, visit: a })
   }
   const mismatches = compare(source, planned)
+  const migrationReport = mappingReport(bundle, diagnostics, source, planned, mismatches, mapped)
+  const mappingDigest = await sha256(JSON.stringify({ fingerprint, migrationReport }))
+  const preparation = await one(db, "SELECT actor_email,actor_role FROM bm_audit WHERE action='movein.mapping_prepared' AND subject_id=? AND detail=? ORDER BY sequence DESC LIMIT 1", fingerprint, mappingDigest)
   const requiresAcceptance = mismatches.length > 0 || diagnostics.some(d => !isError(d)) || bundle.unmappedColumns.length > 0 || bundle.unmappedRows.length > 0
   return { bundle, sourceJson, sourcePayload, timeZone, settingsVersion: settings!.version, provider: bundle.provider, fingerprint, patients, appointments, notes: bundle.notes, balances: bundle.balances, insurance: bundle.insurance,
     practitionerId, serviceId, practitionerVersion: staff[0]?.version, serviceVersion: services[0]?.version,
     counts: { patients: patients.length, appointments: appointments.length, notes: bundle.notes.length, balances: bundle.balances.length, insurance: bundle.insurance.length },
     diagnostics, unmappedColumns: bundle.unmappedColumns, unmappedRows: bundle.unmappedRows,
-    reconciliation: { source, planned, mismatches }, requiresAcceptance, canApply: !diagnostics.some(isError), existingJob: previous[0] ?? null }
+    reconciliation: { source, planned, mismatches }, migrationReport, mappingDigest, mappingPrepared: !!preparation, preparation,
+    requiresAcceptance, canApply: !diagnostics.some(isError), existingJob: previous[0] ?? null }
 }

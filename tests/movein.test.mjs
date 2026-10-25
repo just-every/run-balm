@@ -3,20 +3,24 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
 import { clinic } from './clinic.mjs'
+import {agentFences, assertMapping, customFields, migrationBrowser} from './migration-agent-journey.mjs'
 
 const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance']
 // The fixtures' booked appointments: two overlapping on the 2nd of the month after next and one on the 1st of the month after that, so they stay upcoming, outside the reminder window and in two months on any date.
 const month = ahead => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + ahead); return d.toISOString().slice(0, 7) }
 const dated = csv => csv.replaceAll('{{MONTH1}}', month(2)).replaceAll('{{MONTH2}}', month(3))
 for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
-  test(`CHART-009 ${provider}: preview, reconcile, atomic apply, duplicate-free repeat and whole-bundle undo`, () => run(async h => {
+  test(`CHART-009 AGENT-008 ${provider}: propose mapping, reconcile, owner-approved atomic cutover, duplicate-free repeat and whole-bundle undo`, () => run(async h => {
     await h.finishSetup()
     const { service, practitioners: [therapist] } = await clinic(h)
     const reception = await h.staff('Rosa', 'reception')
-    const files = await Promise.all(kinds.map(async kind => ({ kind, name: `${kind}.csv`, csv: dated(await readFile(`tests/fixtures/movein/${provider}/${kind}.csv`, 'utf8')) })))
+    const files = customFields(await Promise.all(kinds.map(async kind => ({ kind, name: `${kind}.csv`, csv: dated(await readFile(`tests/fixtures/movein/${provider}/${kind}.csv`, 'utf8')) }))))
     const input = { provider, files, practitionerId: therapist.id, serviceId: service.id, dateFormat: 'MDY' }
     await h.cmd('movein.preview', input, reception.cookie, 403)
-    const preview = await h.cmd('movein.preview', input)
+    await h.cmd('movein.prepare', input, reception.cookie, 403)
+    if(provider==='cliniko')await agentFences(h,input)
+    const preview = await h.cmd('movein.prepare', input)
+    assertMapping(preview)
     assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
     assert.deepEqual(preview.counts, { patients: 2, appointments: 3, notes: 1, balances: 2, insurance: 2 })
     assert.deepEqual(preview.reconciliation.source, preview.reconciliation.planned)
@@ -24,6 +28,10 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     assert.equal(Object.values(preview.reconciliation.planned.balancesByPatient).reduce((a, b) => a + b), 16550)
     assert.ok(preview.unmappedColumns.some(c => c.column === 'Legacy flag'))
     assert.equal((await h.state()).clients.length, 0)
+    await h.cmd('movein.cutover', { ...input, fingerprint: preview.fingerprint, acceptanceReason:'Checked source.' },h.owner,409)
+    await h.cmd('movein.apply', { ...input, fingerprint: preview.fingerprint, acceptanceReason:'Checked source.' },h.owner,409)
+    await h.cmd('movein.cutover', { ...input, fingerprint: preview.fingerprint, mappingApproval:preview.mappingDigest,acceptanceReason:'Checked source.' },h.owner,409)
+    await h.cmd('movein.cutover', { ...input, fingerprint: preview.fingerprint, cutoverApproval:preview.fingerprint,acceptanceReason:'Checked source.' },h.owner,409)
     const changed = structuredClone(input)
     changed.files[0].csv = changed.files[0].csv.replace('Santos', 'Santos-Revised')
     await h.cmd('movein.apply', { ...changed, fingerprint: preview.fingerprint, acceptanceReason: 'Reviewed omissions.' }, h.owner, 409)
@@ -35,12 +43,27 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     const mismatch = await h.cmd('movein.preview', { ...input, expectedTotals })
     assert.ok(mismatch.reconciliation.mismatches.some(m => m.metric === 'patients'))
     assert.ok(mismatch.reconciliation.mismatches.some(m => m.metric === 'balancesByPatient:' + balancePatient))
+    const difference=mismatch.migrationReport.balanceDifferences.find(d=>d.patientId===balancePatient)
+    assert.equal(difference.differenceCents,100)
+    assert.equal(difference.uploadedCents,difference.plannedCents)
+    assert.match(difference.explanation,/no additional balance/)
+    assert.ok(difference.records.every(r=>r.file==='balances.csv'&&r.row>=2))
     await h.cmd('movein.apply', { ...input, expectedTotals, fingerprint: mismatch.fingerprint }, h.owner, 409)
     assert.equal((await h.state()).clients.length, 0)
-    const accepted = { ...input, fingerprint: preview.fingerprint, acceptanceReason: 'Checked converted reports and omitted legacy flag; retained original chart packages separately.' }
-    const applied = await h.cmd('movein.apply', accepted)
+    const invalid=structuredClone(input)
+    invalid.files.find(f=>f.kind==='balances').csv+='\nmissing-patient,12.00'
+    const invalidReport=await h.cmd('movein.prepare',invalid)
+    assert.ok(invalidReport.migrationReport.unmappedRecords.some(r=>r.reason==='missing_patient_reference'&&r.blocking&&r.explanations.some(e=>e.includes('patient ID absent'))))
+    await h.cmd('movein.cutover',{...invalid,fingerprint:invalidReport.fingerprint,mappingApproval:invalidReport.mappingDigest,cutoverApproval:invalidReport.fingerprint,acceptanceReason:'Cannot override invalid references.'},h.owner,409)
+    assert.equal((await h.state()).clients.length,0)
+    const accepted = { ...input, fingerprint: preview.fingerprint, mappingApproval:preview.mappingDigest,cutoverApproval:preview.fingerprint, acceptanceReason: 'Checked converted reports and omitted custom fields; retained original chart packages separately.' }
+    const applied = await h.cmd('movein.cutover', accepted)
     assert.equal(applied.job.state, 'applied')
     assert.equal(applied.records.length, 10)
+    const approvals=(await h.db.prepare('SELECT subject_type,sha256 FROM bm_approvals WHERE subject_id IN (?,?)').bind(applied.job.id+':mapping',applied.job.id+':cutover').all()).results
+    assert.ok(approvals.some(a=>a.subject_type==='movein.mapping'&&a.sha256===preview.mappingDigest))
+    assert.ok(approvals.some(a=>a.subject_type==='movein.cutover'&&a.sha256===preview.fingerprint))
+    assert.deepEqual(applied.job.report.migrationReport,preview.migrationReport)
     const state = await h.state()
     assert.equal(state.clients.length, 2)
     assert.equal(state.appointments.length, 3)
@@ -76,7 +99,8 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     assert.equal(end.clients.length, 0)
     assert.equal(end.appointments.length, 0)
     assert.equal((await h.cmd('movein.undo', { jobId: applied.job.id })).job.state, 'undone')
-  }))
+    if(provider==='cliniko')await migrationBrowser(h,input)
+  },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
 }
 
 test('downloaded WebPT reports and SimplePractice spreadsheets move in through the page, including a clinic-size patient list', () => run(async h => {

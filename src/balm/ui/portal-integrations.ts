@@ -1,6 +1,6 @@
 import {copyBox,field,form,h,hidden,panel,select,stamp} from './shared'
 
-export const scopeChoices:[string,string][]=[['appointments.read','Read schedule only'],['appointments.read invoice.prepare','Read schedule and prepare invoices'],['patients.read','Read patient contacts only'],['charges.read','Read invoice amounts only'],['payments.read','Read recorded payments only'],['context.read invoice.prepare reminder.prepare intake.prepare','Assistant workspace and all three preparations']]
+export const scopeChoices:[string,string][]=[['migration.prepare','Prepare migration mapping only'],['appointments.read','Read schedule only'],['appointments.read invoice.prepare','Read schedule and prepare invoices'],['patients.read','Read patient contacts only'],['charges.read','Read invoice amounts only'],['payments.read','Read recorded payments only'],['context.read invoice.prepare reminder.prepare intake.prepare','Assistant workspace and all three preparations']]
 export function integrationPanel(s:any,created:any){
  const d=s.integrations
  if(!d)return ''

@@ -1,3 +1,4 @@
+import { patientOutcomeFollowthrough } from './outcome-followthrough'
 import {pt} from './portal-language'
 import {guardianPatientPanel,patientProfilePanel} from './portal-profile'
 import { patientRecordPanel } from './portal-records'
@@ -50,5 +51,5 @@ function messages(d: any) {
 }
 
 export function portalHomeContent(d: any) {
-  return `<div class="columns"><div class="left">${guardianPatientPanel(d)}${card('visits', pt(d,'Your next visits'), visits(d))}<section class="card program" id="program"><h2>${pt(d,'Home exercise program')}</h2><p class="intro">${pt(d,'Follow your clinician’s instructions. Mark each exercise done when you finish.')}</p><p><a href="/portal/program.pdf">${pt(d,'Download printable program PDF')}</a></p>${exercises(d)}</section>${card('intake', pt(d,'Intake forms'), forms(d))}${card('statements', pt(d,'Statements and payments'), statements(d))}${patientPaymentPlans(d.paymentPlans)}${patientProfilePanel(d)}${patientRecordPanel(d)}${d.past.length ? card('past', pt(d,'Past visits'), d.past.map((a: any) => `<article class="visit-item"><h3>${h(a.service)}</h3><p>${h(localTime(a.start_at, d.clinic.time_zone))} · ${h(a.status)}<br>${h(a.practitioner)}</p></article>`).join('')) : ''}</div>${messages(d)}</div>`
+  return `<div class="columns"><div class="left">${guardianPatientPanel(d)}${card('visits', pt(d,'Your next visits'), visits(d))}<section class="card program" id="program"><h2>${pt(d,'Home exercise program')}</h2><p class="intro">${pt(d,'Follow your clinician’s instructions. Mark each exercise done when you finish.')}</p><p><a href="/portal/program.pdf">${pt(d,'Download printable program PDF')}</a></p>${exercises(d)}</section>${patientOutcomeFollowthrough(d.outcomeFollowthrough)}${card('intake', pt(d,'Intake forms'), forms(d))}${card('statements', pt(d,'Statements and payments'), statements(d))}${patientPaymentPlans(d.paymentPlans)}${patientProfilePanel(d)}${patientRecordPanel(d)}${d.past.length ? card('past', pt(d,'Past visits'), d.past.map((a: any) => `<article class="visit-item"><h3>${h(a.service)}</h3><p>${h(localTime(a.start_at, d.clinic.time_zone))} · ${h(a.status)}<br>${h(a.practitioner)}</p></article>`).join('')) : ''}</div>${messages(d)}</div>`
 }
