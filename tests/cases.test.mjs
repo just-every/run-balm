@@ -82,3 +82,5 @@ test('a request that attaches a signed note goes out only on the owner’s appro
     assert.equal(h.mail.filter(m => m.to.includes('requests@elsewhere.example')).length, 1, 'the owner approves the exact step they reviewed')
   })
 })
+
+test('month reconciliation cites missing ERA and duplicate settlement originals and only approves preparations', {timeout:120000}, async()=>{const {financeReviewJourney}=await import('./finance-review-journey.mjs');await run(financeReviewJourney)})

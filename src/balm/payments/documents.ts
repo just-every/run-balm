@@ -1,6 +1,7 @@
 // The patient's documents: a superbill per visit (to submit to their insurer),
 // a statement across visits, and a receipt per card payment. Each is built from
 // the approved invoice's frozen facts and the ledger, never from note text.
+import { retailReceipt } from './retail'
 import { unitMethodLabel } from '../insurance/unit-method'
 import { externalReceipt } from './account-documents'
 import { dollars, invoiceNumber } from '../domain/invoices'
@@ -72,7 +73,7 @@ export async function statementPdf(db: D1Database, clientId: string, issued?: {a
 
 export async function receiptPdf(db: D1Database, paymentId: string) {
   const p = await one(db, `SELECT cp.*,c.first_name,c.last_name FROM bm_card_payments cp JOIN bm_clients c ON c.id=cp.client_id WHERE cp.id=? AND cp.status='succeeded'`, paymentId), clinic = await one(db, 'SELECT * FROM bm_settings WHERE id=1')
-  if (!p) return externalReceipt(db, paymentId)
+  if (!p) return await one(db,'SELECT id FROM bm_retail_sales WHERE id=?',paymentId) ? retailReceipt(db,paymentId) : externalReceipt(db, paymentId)
   insist(clinic, 'receipt_not_found', 404)
   const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_invoice_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
   const unapplied = (p.amount_cents as number) - (p.applied_cents as number), number = receiptNumber(p.receipt_number as number)

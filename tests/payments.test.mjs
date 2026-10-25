@@ -486,3 +486,5 @@ test('statement cycles preserve mail batches, actual delivery outcomes and every
   const {statementCyclesJourney,statementCycleHarnessOptions}=await import('./statement-cycles-journey.mjs')
   await run(statementCyclesJourney,statementCycleHarnessOptions)
 })
+
+test('cash packages draw down at attendance and taxed gift sales reconcile with patient originals and deposits', {timeout:120000}, async()=>{const {retailJourney}=await import('./retail-journey.mjs');await run(retailJourney)})

@@ -28,6 +28,6 @@ export async function externalReceipt(db: D1Database, key: string) {
   return { name: `receipt-${externalReceiptNumber(key)}.pdf`, bytes: receiptBytes(entry.receipt_base64) }
 }
 export async function externalReceipts(db: D1Database, clientId: string) {
-  return (await rows(db, "SELECT id,kind,amount_cents,posted_at FROM bm_posted_account_entries WHERE client_id=? AND kind IN ('credit','refund') ORDER BY posted_at DESC,id", clientId))
+  return (await rows(db, "SELECT id,kind,amount_cents,posted_at FROM bm_posted_account_entries WHERE client_id=? AND kind IN ('credit','refund') UNION ALL SELECT id,kind,amount_cents+tax_cents AS amount_cents,recorded_at AS posted_at FROM bm_retail_sales WHERE client_id=? ORDER BY posted_at DESC,id", clientId,clientId))
     .map(e => ({ id: e.id, kind: e.kind, receipt_number: externalReceiptNumber(e.id), amount_cents: e.amount_cents, succeeded_at: e.posted_at }))
 }

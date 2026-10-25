@@ -29,11 +29,12 @@ export function agentOpenApi(origin: string) {
             content: { 'application/json': { schema: {
               type: 'object', required: ['name', 'input'], additionalProperties: false,
               properties: {
-                name: { type: 'string', enum: ['invoice.prepare', 'reminder.prepare', 'intake.prepare'] },
+                name: { type: 'string', enum: ['invoice.prepare', 'reminder.prepare', 'intake.prepare', 'finance.reconcile.prepare'] },
                 input: {
                   type: 'object', additionalProperties: false,
                   description: 'invoice.prepare and reminder.prepare take appointmentId (from readClinic). invoice.prepare may also take amountCents (whole cents, for example 9500 for $95.00; leave it out for the service price). intake.prepare takes title and questions.',
                   properties: {
+                    month: { type: 'string', description: 'YYYY-MM for finance.reconcile.prepare; requires its explicit finance scope. Only prepares cited review items, with no outbound request or refund.' },
                     appointmentId: { type: 'string' },
                     amountCents: { type: 'integer', minimum: 0 },
                     title: { type: 'string' },

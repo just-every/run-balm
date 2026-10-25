@@ -1,6 +1,9 @@
 /** Patient custody graph, including shared photo originals. Parent-first for selection; reverse for deletion. */
 export const custody = [
   {"table":"bm_clients","client":true,"links":[]},
+  {"table":"bm_retail_sales","client":true,"links":[]},
+  {"table":"bm_finance_observations","client":true,"links":[]},
+  {"table":"bm_finance_reviews","client":true,"links":[]},
   {"table":"bm_statement_preferences","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_cycle_statements","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_statement_deliveries","client":false,"links":[["statement_id","bm_cycle_statements","id"]]},
@@ -17,6 +20,8 @@ export const custody = [
   {"table":"bm_record_parts","client":false,"links":[["package_id","bm_record_packages","id"]]},
   {"table":"bm_series","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_appointments","client":true,"links":[["series_id","bm_series","id"],["client_id","bm_clients","id"]]},
+  {"table":"bm_package_assignments","client":true,"links":[]},
+  {"table":"bm_package_uses","client":true,"links":[]},
   {"table":"bm_integration_events","client":true,"links":[["appointment_id","bm_appointments","id"]]},
   {"table":"bm_integration_deliveries","client":false,"links":[["event_id","bm_integration_events","id"]]},
   {"table":"bm_policies","client":true,"links":[["client_id","bm_clients","id"]]},

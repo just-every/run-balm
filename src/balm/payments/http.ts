@@ -83,7 +83,7 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
     if (file) {
       const period = file === 'superbill.pdf'
       const doc = issuedStatement ? await statementOriginal(db, link.client_id, issuedStatement) : period ? await periodSuperbillPdf(db, link.client_id, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '') : superbill ? (insist(await one(db, "SELECT 1 FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", superbill, link.client_id), 'superbill_not_found', 404), await superbillPdf(db, superbill))
-        : receipt ? (insist(await one(db, 'SELECT 1 FROM bm_card_payments WHERE id=? AND client_id=? UNION ALL SELECT 1 FROM bm_posted_account_entries WHERE id=? AND client_id=? AND receipt_base64 IS NOT NULL', receipt, link.client_id, receipt, link.client_id), 'receipt_not_found', 404), await receiptPdf(db, receipt))
+        : receipt ? (insist(await one(db, 'SELECT 1 FROM bm_card_payments WHERE id=? AND client_id=? UNION ALL SELECT 1 FROM bm_posted_account_entries WHERE id=? AND client_id=? AND receipt_base64 IS NOT NULL UNION ALL SELECT 1 FROM bm_retail_sales WHERE id=? AND client_id=?', receipt, link.client_id, receipt, link.client_id, receipt, link.client_id), 'receipt_not_found', 404), await receiptPdf(db, receipt))
           : await statementPdf(db, link.client_id)
       await commit(db, null, [audit(db, patient, superbill || period ? 'superbill.downloaded' : receipt ? 'receipt.downloaded' : 'statement.downloaded', link.client_id, superbill ?? receipt ?? issuedStatement ?? link.id)])
       return pdfResponse(doc)
@@ -116,7 +116,7 @@ export async function paymentDocument(db: D1Database, who: Actor, path: string, 
   const [, kind, key] = match
   const owner = kind === 'superbills' ? await one(db, "SELECT client_id FROM bm_invoices WHERE id=? AND status='approved'", key)
     : kind === 'issued-statements' ? await one(db, 'SELECT client_id FROM bm_patient_statements WHERE id=? UNION ALL SELECT client_id FROM bm_cycle_statements WHERE id=?', key, key)
-    : kind === 'receipts' ? await one(db, "SELECT client_id FROM bm_card_payments WHERE id=? AND status='succeeded' UNION ALL SELECT client_id FROM bm_posted_account_entries WHERE id=? AND receipt_base64 IS NOT NULL", key, key) : await one(db, 'SELECT id AS client_id FROM bm_clients WHERE id=? AND erased_at IS NULL', key)
+    : kind === 'receipts' ? await one(db, "SELECT client_id FROM bm_card_payments WHERE id=? AND status='succeeded' UNION ALL SELECT client_id FROM bm_posted_account_entries WHERE id=? AND receipt_base64 IS NOT NULL UNION ALL SELECT client_id FROM bm_retail_sales WHERE id=?", key, key, key) : await one(db, 'SELECT id AS client_id FROM bm_clients WHERE id=? AND erased_at IS NULL', key)
   insist(owner, 'not_found', 404)
   const doc = kind === 'issued-statements' ? await statementOriginal(db, owner.client_id as string, key) : kind === 'period-superbills' ? await periodSuperbillPdf(db, key, params.get('from') ?? '', params.get('to') ?? '') : kind === 'superbills' ? await superbillPdf(db, key) : kind === 'receipts' ? await receiptPdf(db, key) : await statementPdf(db, key)
   await commit(db, who, [audit(db, who, `${kind === 'period-superbills' ? 'superbill' : kind.slice(0, -1)}.downloaded`, owner.client_id as string, key)])

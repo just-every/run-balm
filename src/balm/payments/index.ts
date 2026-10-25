@@ -1,3 +1,4 @@
+import { retailCommand, retailFor } from './retail'
 import { statementCycleCommand, statementCycleState, cyclePatient } from './statement-cycles'
 import {manager,locationWrite} from '../domain/role-access'
 import { seesBalances } from '../domain/model'
@@ -71,6 +72,7 @@ export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, na
   insist(who.role !== 'agent', 'agents_can_only_prepare', 403)
   if (['pay.statements.save', 'pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
   if (name.startsWith('pay.cycle.')) return statementCycleCommand(env, db, who, name, input)
+  if (name.startsWith('pay.retail.')) return retailCommand(db,who,name,input)
   switch (name) {
     case 'pay.entry.prepare': return prepareAccountEntry(db, who, input)
     case 'pay.entry.approve': return approveAccountEntry(db, who, input)
@@ -113,7 +115,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
   const invoices = await rows(db, "SELECT id FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC LIMIT 24", clientId)
   const superbills = await Promise.all(invoices.map(async i => { const f = await superbillFacts(db, i.id as string); return { invoiceId: i.id, number: f.invoice.number, serviceDate: f.v.serviceDate, missing: f.missing } }))
   return {
-    cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
+    retail: await retailFor(db,clientId), cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,
     ...await clientPlans(db, clientId),
     account: await accountEntriesFor(db, clientId),

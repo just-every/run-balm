@@ -63,6 +63,10 @@ async function archiveFixture({ signedTie = false } = {}){
     const intakePage=await h.send('/intake/'+token)
     assert.equal((await h.form('/intake/'+token,{formId:'intake-v1',q_reason:'Restored ankle sprain',q_emergency:'Kim 0400',q_consent:'yes',consentVersion:intakePage.text.match(/name="consentVersion" value="([^"]+)"/)[1],consentAccepted:'on',signerName:'Maya Lee',signerRelationship:'patient',signatureTyped:'Maya Lee',...insurance})).status,303)
     const maya=(await h.state()).clients.find(c=>c.first_name==='Maya')
+    const retail=await h.cmd('pay.retail.sell',{clientId:maya.id,confirm:true,kind:'gift_card',label:'Archive gift value',amountCents:2500,reference:'synthetic-balm-archive-gift'})
+    const retailOriginal=(await h.send(retail.receiptUrl,undefined,h.owner)).text
+    await h.cmd('finance.observation.record',{clientId:maya.id,kind:'eft',amountCents:2500,occurredOn:'2026-09-01',reference:'synthetic-balm-archive-eft',sourceReference:'synthetic-balm-archive-trace',evidence:'Owner reviewed synthetic EFT original'})
+    await h.cmd('finance.reconcile.prepare',{month:'2026-09'})
     const runoutCsv=`Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\nsynthetic-balm-221,${maya.id},${payer.id},synthetic-balm-222,synthetic-balm-223,2026-01-01,10.00,10.00,open\n`
     const runoutInput={source:'synthetic-balm-220',csv:runoutCsv},runoutPreview=await h.cmd('insurance.runout.preview',runoutInput)
     await h.cmd('insurance.runout.apply',{...runoutInput,fingerprint:runoutPreview.fingerprint,expectedBalanceCents:1000})
@@ -114,12 +118,12 @@ async function archiveFixture({ signedTie = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -141,6 +145,10 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
     const restoredClinic=await harness({root:restored,...identity})
     try {
       await assertSignedTie(restoredClinic, tie)
+      const retailCookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
+      assert.equal((await restoredClinic.send(retail.receiptUrl,undefined,retailCookie)).text,retailOriginal)
+      const finance=await restoredClinic.cmd('finance.reconcile.prepare',{month:'2026-09'},retailCookie)
+      assert.equal(finance.findings.length,1);assert.equal(finance.findings[0].kind,'missing_era')
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
       assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))

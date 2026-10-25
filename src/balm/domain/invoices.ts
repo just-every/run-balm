@@ -26,6 +26,9 @@ export async function snapshot(db: D1Database, appointmentId: string, amountCent
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
   // Freeze the same payer method and signed units used by pricing and claims.
+  const packaged=await one(db,'SELECT 1 FROM bm_package_uses WHERE appointment_id=?',appointmentId)
+  insist(!packaged || amountCents===undefined || amountCents===0,'package_visit_has_no_additional_charge',409)
+  if(packaged)amountCents=0
   const billing = await visitBilling(db, appointmentId)
   const procedures = (billing?.lines ?? []).map(l => ({ code: l.code, description: l.description, minutes: l.timed ? l.minutes : null, units: l.units, ...(l.cmsTieChosen ? { cmsTieChosen: true } : {}), ...(l.diagnosisCodes?.length ? { diagnosisCodes: l.diagnosisCodes } : {}) }))
   const diagnoses = (await rows(db, "SELECT code FROM bm_visit_codes WHERE appointment_id=? AND kind='icd10' ORDER BY position", appointmentId)).map(d => d.code as string)

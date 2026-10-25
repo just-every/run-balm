@@ -37,6 +37,8 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
+  if(await one(db,'SELECT id FROM bm_finance_observations WHERE client_id=?',client.id))reasons.push('finance_reconciliation_review_pending')
+  if(await one(db,'SELECT id FROM bm_retail_sales WHERE client_id=?',client.id))reasons.push('retail_custody_review_pending')
   if(await one(db,'SELECT 1 FROM bm_remittance_suspense WHERE resolved_claim IS NULL LIMIT 1'))reasons.push('unmatched_remittance_identity_review_required')
   if (!applied?.resolved) reasons.push('state_rule_requires_review')
   if (!client.date_of_birth) reasons.push('date_of_birth_required')

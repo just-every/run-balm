@@ -36,6 +36,14 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     db.prepare("SELECT start_at FROM bm_appointments WHERE status='attended'"),
     db.prepare("SELECT id,credit_id,kind,amount_cents,reference,posted_at FROM bm_posted_account_entries WHERE kind IN ('credit','refund')"),
   ])).map(x => x.results)
+  const retail=await db.prepare('SELECT * FROM bm_retail_sales').all<Data>()
+  for(const sale of retail.results){
+    const total=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
+    if(!gift){
+      invoices.push({id:sale.id,client_id:sale.client_id,amount_cents:total,start_at:sale.recorded_at,client:'Cash sale',open_payer:null})
+      payments.push({invoice_id:sale.id,amount_cents:total,reference:'retail:'+sale.id,recorded_at:sale.recorded_at,account_entry_id:sale.id,retail:true})
+    }
+  }
   const anonymous = await anonymousFinancialFacts(db)
   invoices.push(...anonymous[0])
   payments.push(...anonymous[1]); adjustments.push(...anonymous[2]); cards.push(...anonymous[3]); visits.push(...anonymous[4]); accountEntries.push(...anonymous[5])
@@ -101,6 +109,11 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
       deposits.push({ date, source: 'External unused-credit refund (not Stripe)', reference: entry.reference || 'Destroyed refund',
         receivedCents: -amount, postedCents: 0, creditCents: 0, unpostedCents: 0, refundedCents: amount })
     }
+  }
+  for(const sale of retail.results.filter(s=>inRange(s.recorded_at)&&!s.gift_id)){
+    const amount=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
+    const redeemed=retail.results.filter(s=>s.gift_id===sale.id&&before(s.recorded_at)).reduce((t,s)=>t+Number(s.amount_cents)+Number(s.tax_cents),0)
+    deposits.push({date:local(sale.recorded_at),source:gift?'Gift value purchased':'Cash sale',reference:sale.reference,receivedCents:amount,postedCents:gift?redeemed:amount,creditCents:gift?amount-redeemed:0,unpostedCents:0,refundedCents:0})
   }
   deposits.sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source))
 

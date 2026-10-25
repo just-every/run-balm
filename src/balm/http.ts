@@ -41,6 +41,7 @@ import { operationalCsv, operationalReports, reportKinds, type ReportKind } from
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
+import { reconciliationCommand } from './payments/reconciliation'
 import { approvals, command, preparations, snapshot, type Actor } from './domain'
 import { bookingScope, bookOnline, openSlots } from './domain/booking'
 import { calendarView } from './domain/calendar'
@@ -214,6 +215,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
   if (name === 'owner.name') return saveOwnerName(request, env, who, input)
+  if (name.startsWith('finance.')) return reconciliationCommand(env.DB,who,name,input)
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
