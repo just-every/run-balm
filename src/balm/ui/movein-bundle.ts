@@ -24,7 +24,7 @@ function mappingProposal(data: any) {
   const report = data.migrationReport
   if (!report) return ''
   return '<h3>Proposed field mapping</h3><p>The migration assistant uses the same supported header rules as the importer. Review every omitted field; unusual fields are never assigned a meaning automatically. Examples below are visible only to the owner.</p>'
-    + table(['File', 'Source column', 'Proposed destination', 'Examples of omitted values'], report.fields.map((f: any) => [h(f.file), h(f.column), h(f.target ?? 'Omitted — no supported field'), (f.examples ?? []).map((e: any) => `Row ${h(e.row)}: ${h(e.value)}`).join('<br>')]))
+    + table(['File', 'Source column', 'Proposed destination', 'Examples of omitted values'], report.fields.map((f: any) => [h(f.file), h(f.column), h(f.target ?? 'Omitted — no supported field'), (f.examples ?? []).map((e: any) => `Row ${h(e.row)}: ${h(e.value)}`).join('<br>')]), 'movein-records')
     + (report.unmappedRecords.length ? '<h3>Records needing a decision</h3><ul>' + report.unmappedRecords.map((r: any) => `<li>${h(r.file)}, row ${h(r.row)}: ${h(r.explanations.join(' '))} ${r.blocking ? '<strong>Cutover is blocked.</strong>' : 'This record is omitted; resolve it or explicitly accept the omission.'}</li>`).join('') + '</ul>' : '')
     + (report.balanceDifferences.length ? '<h3>Why balances differ</h3><ul>' + report.balanceDifferences.map((d: any) => `<li>Patient source ID ${h(d.patientId)}: ${h(d.explanation)}${d.records.map((r: any) => ` ${h(r.file)}, row ${h(r.row)}: ${h(money(r.cents))}.`).join('')}</li>`).join('') + '</ul>' : '')
     + (report.countDifferences.length ? '<ul>' + report.countDifferences.map((d: any) => `<li>${h(d.metric)}: ${h(d.explanation)}</li>`).join('') + '</ul>' : '')

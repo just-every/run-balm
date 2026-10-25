@@ -33,5 +33,6 @@ try {
       await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
     } }])
   }
+  await viewportProof(h, [{ name: 'migration-key-scope', path: '/app/agent', cookie: h.owner, selector: 'select[name=scopes]', interact: async ({page}) => { await page.locator('select[name=scopes]').selectOption('migration.prepare') } }])
   console.log('PASS migration mapping, explicit owner approval and saved cutover at 1440 and 390')
 } finally { await h.close() }
