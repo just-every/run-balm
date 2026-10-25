@@ -1,6 +1,6 @@
 # Acceptance
 
-Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause mirrors the builder-owned Status table in CONTRACT.md, including its subsequent row updates through 19 October 2026; the table began at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026). Its current counts are: 62 done, 28 partial and 20 missing of 110 clauses.
+Balm's acceptance is the journey each clause of [CONTRACT.md](CONTRACT.md) names, run through a public door: the app, `/book`, `/intake/<token>`, the portal, the API or the `rer` commands, with fakes only at the paid or network edge (clearinghouse, card processor, SMS, fax and mail sandboxes). A clause is accepted when its journey passes, not when code exists. The status beside each clause mirrors the builder-owned Status table in CONTRACT.md, including its subsequent row updates through 19 October 2026; the table began at commit `1744e3a2470ba3b8d3e57a5f0122f0171938b1ba` (17 October 2026). Its current counts are: 65 done, 28 partial and 17 missing of 110 clauses.
 
 ## First release
 

@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "25ca025f3d225718046de8cad55ecc86241fcc1ba964bde6cfed62f9144c2887",
+      "sha256": "626a8e4ee1efe2f76af1727891e22871513e334742d3bde7cf2d703776818aad",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "6f23acb7452dcc49fd0290e835caa69e0224cd9fc63d24bd033b88a7c21def9c",
+      "sha256": "18dcce38a1c97d892b931ae5ce4caff545491c61e7925156688a19af73a80846",
       "executable": false
     },
     "DEMO.md": {
@@ -2990,7 +2990,7 @@
       "executable": false
     },
     "src/balm/ui/statement-cycles.ts": {
-      "sha256": "1346d78df075839c8b9da32872309fb0526edd8b72001aadc078c8c6f2e638c8",
+      "sha256": "1d94f00adea6d4c4783d081bbdb77dab4adb90b11472ed9fc301ad64444b80fb",
       "executable": false
     },
     "src/balm/ui/style.ts": {
