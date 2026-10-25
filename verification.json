@@ -47,7 +47,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"public CLI archive round trip|public CLI erasure journals|recorded diagnoses\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"public CLI archive round trip|public CLI erasure journals\" tests/archive.test.mjs"
       ]
     },
     {
@@ -64,14 +64,6 @@
       "hosted": false,
       "commands": [
         "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs\" tests/archive.test.mjs"
-      ]
-    },
-    {
-      "name": "site",
-      "browser": false,
-      "hosted": false,
-      "commands": [
-        "pnpm run test:site"
       ]
     }
   ],

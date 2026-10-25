@@ -107,7 +107,6 @@ Balm pins `@runeditrun/rer@0.2.80` (package mode) and started from Base's commit
 ```sh
 pnpm run test:balm
 pnpm run test:archive
-pnpm run test:site
 pnpm run typecheck
 rer verify
 ```

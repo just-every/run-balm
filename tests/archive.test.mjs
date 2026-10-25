@@ -37,7 +37,7 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-async function archiveFixture(){
+async function archiveFixture({ signedTie = false } = {}){
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
@@ -110,15 +110,16 @@ async function archiveFixture(){
     await h.cmd('guardian.grant',{clientId:guardianChild.id,email:'archive-parent@family.example',name:'Archive Parent',relationship:'parent',verification:'Synthetic verified guardian authority and confidentiality review.',verified:true})
     const libraryCsv='title,title_es,instructions,instructions_es,discipline,region,position,equipment,sets,reps,hold_seconds,frequency,media\nArchive practice exercise,Ejercicio de archivo,Move as directed.,Muévase según la indicación.,ot,hand,seated,none,1,5,0,Daily,archive.png'
     await h.cmd('exercise.library.import',{csv:libraryCsv,media:{'archive.png':card},rights:true},priya.cookie)
+    const tie = signedTie ? await prepareSignedTie(h) : null
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}
+    return {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}=await archiveFixture()
+  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -139,6 +140,7 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
     assert.deepEqual(archiveRows(await readFile(again,'utf8')),archiveRows(bytes))
     const restoredClinic=await harness({root:restored,...identity})
     try {
+      await assertSignedTie(restoredClinic, tie)
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
       assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))
@@ -219,44 +221,36 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
-test('CHART-006 recorded diagnoses and CMS tie choice survive a public CLI archive with signed units and fixed invoice bytes', { timeout: 240_000 }, async () => {
-  const temporary=await mkdtemp(join(tmpdir(),'balm-tie-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
-  let h
-  try {
-    for(const path of [source,restored])await checkout(path)
-    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
-    h=await harness({root:source})
-    const {service,practitioners:[priya]}=await clinic(h)
-    const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
-    const visit=await pastVisit(h,patient.id,priya,service.id)
-    await h.cmd('appointment.attend',{id:visit})
-    await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561, M54.50'})
-    const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8,diagnosisCodes:['M25.561']},{code:'97140',minutes:8,cmsTieChosen:true,diagnosisCodes:['M54.50']}]},priya.cookie)
-    await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
-    const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
-    assert.deepEqual(invoice.snapshot.procedures.map(p=>p.units),[0,1])
-    await h.cmd('invoice.approve',{id:invoice.id})
-    const original=(await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,h.owner)).text
-    const identity={auth:h.auth,owner:h.owner}
-    await h.close();h=null
-    const archive=join(temporary,'tie.rer')
-    await command(source,['export','--output',archive,'--no-queue'])
-    await command(restored,['import','--input',archive,'--yes','--no-queue'])
-    h=await harness({root:restored,...identity})
-    const clinician=await h.signIn('priya@clinic.example')
-    const restoredNote=(await h.send('/api/balm/clients/'+patient.id,undefined,clinician)).value.notes.find(n=>n.id===note.id)
-    assert.equal(restoredNote.status,'signed')
-    assert.deepEqual(restoredNote.billing.lines.map(l=>l.units),[0,1])
-    assert.deepEqual(restoredNote.billing.cmsTie.selected,['97140'])
-    assert.deepEqual(restoredNote.revisions[0].charges.map(c=>c.diagnosisCodes),[['M25.561'],['M54.50']])
-    const restoredInvoice=(await h.send('/api/balm/clients/'+patient.id,undefined,await h.signIn(h.auth.OWNER_EMAIL))).value.invoices.find(i=>i.id===invoice.id)
-    assert.deepEqual(restoredInvoice.snapshot.procedures.map(p=>p.diagnosisCodes),[['M25.561'],['M54.50']])
-    await h.cmd('note.amend',{id:note.id,revision:1,body:'Attempted changed allocation',charges:[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}]},clinician,409)
-    const owner=await h.signIn(h.auth.OWNER_EMAIL)
-    assert.equal((await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,owner)).text,original)
-  } finally {if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
-})
+// Both archive cases use the same real export/import. Keep the signed-note,
+// diagnosis allocation, locked-unit and original-invoice assertions together.
+async function prepareSignedTie(h) {
+  const {service,practitioners:[priya]}=await clinic(h, ['TieClinician'])
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Tie choice',dateOfBirth:'1980-01-01'})
+  const visit=await pastVisit(h,patient.id,priya,service.id)
+  await h.cmd('appointment.attend',{id:visit})
+  await h.cmd('pay.codes.save',{appointmentId:visit,icd10:'M25.561, M54.50'})
+  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:visit,body:'Synthetic clinician-selected manual therapy unit.',charges:[{code:'97110',minutes:8,diagnosisCodes:['M25.561']},{code:'97140',minutes:8,cmsTieChosen:true,diagnosisCodes:['M54.50']}]},priya.cookie)
+  await h.cmd('note.sign',{id:note.id,revision:1,signature:'TieClinician',credentials:'PT',attest:true,supervisionGiven:'in_room'},priya.cookie)
+  const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
+  assert.deepEqual(invoice.snapshot.procedures.map(p=>p.units),[0,1])
+  await h.cmd('invoice.approve',{id:invoice.id})
+  const original=(await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,h.owner)).text
+  return { patient, note, invoice, original }
+}
 
+async function assertSignedTie(h, { patient, note, invoice, original }) {
+  const clinician=await h.signIn('tieclinician@clinic.example')
+  const restoredNote=(await h.send('/api/balm/clients/'+patient.id,undefined,clinician)).value.notes.find(n=>n.id===note.id)
+  assert.equal(restoredNote.status,'signed')
+  assert.deepEqual(restoredNote.billing.lines.map(l=>l.units),[0,1])
+  assert.deepEqual(restoredNote.billing.cmsTie.selected,['97140'])
+  assert.deepEqual(restoredNote.revisions[0].charges.map(c=>c.diagnosisCodes),[['M25.561'],['M54.50']])
+  const restoredInvoice=(await h.send('/api/balm/clients/'+patient.id,undefined,await h.signIn(h.auth.OWNER_EMAIL))).value.invoices.find(i=>i.id===invoice.id)
+  assert.deepEqual(restoredInvoice.snapshot.procedures.map(p=>p.diagnosisCodes),[['M25.561'],['M54.50']])
+  await h.cmd('note.amend',{id:note.id,revision:1,body:'Attempted changed allocation',charges:[{code:'97110',minutes:8,cmsTieChosen:true},{code:'97140',minutes:8}]},clinician,409)
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.equal((await h.send('/api/balm/invoices/'+invoice.id+'.html',undefined,owner)).text,original)
+}
 
 test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a recovery point, and the last one restores into a scratch deployment with a later change present', { timeout: 600_000 }, async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'balm-backup-')), source = join(temporary, 'source'), scratch = join(temporary, 'scratch'), refused = join(temporary, 'refused')
