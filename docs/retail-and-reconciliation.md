@@ -1,5 +1,3 @@
-# Cash sales and finance preparations
-
 These commands use the native signed-in owner door, `POST /api/balm/command`, with a JSON object containing `name` and `input`. They are partial capabilities; no provider charge, automatic renewal, refund or outbound request runs here. The existing patient portal supplies the original cash-sale receipts and current statement. Visit superbills retain their existing coding requirements; goods and gift value are not represented as insured services.
 
 `pay.retail.sell` accepts `clientId`, `kind` (`package`, `membership`, `product` or `gift_card`), `label`, positive integer `amountCents`, a unique `reference` for cash actually received, and `confirm: true`. Packages and finite memberships also require `serviceId` and `units`. Product sales require `taxState`, `taxEvidence` and an owner-verified `taxBasisPoints` rate, with tax rounded once to the nearest cent. Balm does not decide tax applicability. Pass `giftId` instead of recording new cash to redeem that patient's gift value. Gift purchases cannot use gift value. No expiry or transfer is implemented.
