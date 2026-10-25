@@ -1,0 +1,10 @@
+{
+  "version": "0.1.2",
+  "previousVersion": "0.1.1",
+  "date": "2026-10-25",
+  "publicReleaseNotes": "Add a release-bound capture of the populated clinic app and explicit listing, storage and run details, and run the full journeys as release checks on every release tag. No migrations or runtime changes.",
+  "extensionPointChanges": [],
+  "migrations": [],
+  "breaking": false,
+  "agentUpdateInstructions": "No migrations or runtime configuration changes are required for this patch. Keep the exact rer 0.2.80 pin for native installation, export and restore."
+}
