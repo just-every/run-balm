@@ -830,7 +830,7 @@ test('MOVE-007: name/date/amount fallback posts only for one clinic patient and 
   const first=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-274',60)},owner)
   assert.equal(first.claims[0].migrated,true)
   assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
-  const next={...input,csv:input.csv.replaceAll('271','275').replaceAll('272','276').replaceAll('273','277').replaceAll('60.00','70.00')}
+  const next={...input,csv:input.csv.replaceAll('synthetic-balm-271','synthetic-balm-275').replaceAll('synthetic-balm-272','synthetic-balm-276').replaceAll('synthetic-balm-273','synthetic-balm-277').replaceAll('60.00','70.00')}
   const moved=await add(next)
   await h.cmd('client.save',{firstName:'Maya',lastName:'Lee',dateOfBirth:'1990-01-01'})
   const ambiguous=await h.cmd('insurance.remittance.import',{payerId:c.payer.id,x12:remit('synthetic-balm-278',70)},owner)
