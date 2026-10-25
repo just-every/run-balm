@@ -453,6 +453,19 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('room.location',{roomId:scheduleRoom.id,locationId:scheduleLocation.id})
   const scheduleService=await h.cmd('service.save',{name:'Synthetic portable evaluation',durationMinutes:60,priceCents:15000,practitionerIds:[priya.id],locationIds:[scheduleLocation.id],cptDefaults:['97161'],beforeBuffer:10,afterBuffer:15})
   await h.cmd('schedule.exception',{locationId:scheduleLocation.id,date:'2099-03-02',mode:'closed',name:'Synthetic portable day off'})
+  const cyclePatient=await h.cmd('client.save',{firstName:'Postal',lastName:'Portability',email:'postal@patient.example'})
+  const cycleVisit=await pastVisit(h,cyclePatient.id,priya,service.id,h.owner,8)
+  await h.cmd('appointment.attend',{id:cycleVisit})
+  const cycleInvoice=await h.cmd('invoice.prepare',{appointmentId:cycleVisit})
+  await h.cmd('invoice.approve',{id:cycleInvoice.id})
+  await h.cmd('pay.cycle.preference',{clientId:cyclePatient.id,channel:'mail',address:'200 Main Street\nAustin TX 78701',authorized:true,evidence:'Patient signed monthly postal delivery authorization'})
+  const cycle=await h.cmd('pay.cycle.run',{cycleOn:'2025-01-01',confirm:true})
+  const statementFile=(await h.send('/api/balm/clients/'+cyclePatient.id,undefined,h.owner)).value
+  const cycleStatement=statementFile.billing.statements.find(s=>s.due_on==='2025-01-01')
+  assert.ok(cycleStatement,JSON.stringify({cycle,ledger:statementFile.billing.ledger}))
+  const statementPath='/api/balm/issued-statements/'+cycleStatement.id+'.pdf'
+  const statementBytes=(await h.send(statementPath,undefined,h.owner)).text
+  const batchPath='/api/balm/statement-batches/'+cycle.id+'.pdf',batchBytes=(await h.send(batchPath,undefined,h.owner)).text
   const auth=h.auth,ownerSession=h.owner
   await h.close();h=null
   const archive=join(temporary,'clinic.rer')
@@ -473,6 +486,14 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
   await h.cmd('appointment.book',{clientId:patient.id,practitionerId:priya.id,serviceId:scheduleService.id,roomId:scheduleRoom.id,date:'2099-03-02',time:'10:00'},owner,409)
   const file=await h.send('/api/balm/clients/'+patient.id,undefined,owner)
   assert.equal(file.status,200,file.text)
+  assert.equal((await h.send(statementPath,undefined,owner)).text,statementBytes)
+  assert.equal((await h.send(batchPath,undefined,owner)).text,batchBytes)
+  const restoredCycleFile=(await h.send('/api/balm/clients/'+cyclePatient.id,undefined,owner)).value
+  assert.equal(restoredCycleFile.billing.cycle.preference.channel,'mail')
+  assert.equal(restoredCycleFile.billing.cycle.deliveries[0].outcome,'prepared')
+  const restoredPatient=await portalLogin(h,'postal@patient.example')
+  assert.equal((await h.send('/portal/statements/'+cycleStatement.id+'.pdf',undefined,restoredPatient)).text,statementBytes)
+
   const fixed=file.value.notes.find(n=>n.id===note.id)
   const restoredDaily=file.value.notes.find(n=>n.id===dailyNote.id)
   assert.equal(restoredDaily.signature.name,'ArchiveAssistant');assert.equal(restoredDaily.assistantDaily.rule.id,dailyRule.id);assert.equal(restoredDaily.assistantDaily.endorsement.supervisor_name,'Priya')

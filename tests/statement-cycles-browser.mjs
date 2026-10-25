@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import {mkdir} from 'node:fs/promises'
 import {chromium} from '@playwright/test'
 import {harness} from './harness.mjs'
-import {statementCyclesJourney} from './statement-cycles-journey.mjs'
+import {statementCyclesJourney,statementCycleHarnessOptions} from './statement-cycles-journey.mjs'
 const output=process.env.BALM_UI_SCREENSHOTS
 assert.ok(output);await mkdir(output,{recursive:true})
-const h=await harness({browserHttps:true})
+const h=await harness({...statementCycleHarnessOptions,browserHttps:true})
 let browser
 try {
  browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})

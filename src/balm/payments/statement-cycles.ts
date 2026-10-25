@@ -1,3 +1,4 @@
+import { smsSender, usMobile } from '../sms'
 import type { Bindings } from '../../auth.server'
 import { clientVisible } from '../domain/clients'
 import { audit, commit, day, guard, human, id, insist, integer, need, now, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
@@ -17,13 +18,13 @@ export async function cyclePatient(db: D1Database, clientId: string) {
     deliveries: await rows(db, `SELECT d.*,s.cycle_id,s.amount_cents,s.due_on FROM bm_statement_deliveries d JOIN bm_cycle_statements s ON s.id=d.statement_id WHERE s.client_id=? ORDER BY d.occurred_at DESC,d.rowid DESC`, clientId) }
 }
 
-async function runCycle(env: Bindings, db: D1Database, who: Actor | null, cycleOn: string) {
+async function runCycle(env: Bindings, db: D1Database, who: Actor | null, cycleOn: string, at = now()) {
   const existing = await one(db, 'SELECT id FROM bm_statement_cycles WHERE cycle_on=?', cycleOn)
   if (existing) return { id: existing.id, duplicate: true, issued: 0 }
   const actor = who ?? { email: 'payment scheduler', role: 'payments' }
-  const at = now(), batchId = id(), epoch = (await one(db, 'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
+  const batchId = id(), epoch = (await one(db, 'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
   const minimum = Number((await one(db, 'SELECT minimum_cents FROM bm_statement_cycle_settings WHERE id=1'))!.minimum_cents)
-  const clients = await rows(db, `SELECT p.*,c.email,c.first_name,c.last_name FROM bm_statement_preferences p JOIN bm_clients c ON c.id=p.client_id WHERE c.erased_at IS NULL AND p.hold=0 AND p.returned_at IS NULL ORDER BY c.id`)
+  const clients = await rows(db, `SELECT p.*,c.email,c.phone,c.first_name,c.last_name FROM bm_statement_preferences p JOIN bm_clients c ON c.id=p.client_id WHERE c.erased_at IS NULL AND p.hold=0 AND p.returned_at IS NULL ORDER BY c.id`)
   const candidates: Data[] = []
   for (const client of clients) {
     const balance = (await ledger(db, client.client_id)).patientBalanceCents
@@ -43,8 +44,24 @@ async function runCycle(env: Bindings, db: D1Database, who: Actor | null, cycleO
     ...candidates.flatMap(c => [stmt(db, `INSERT INTO bm_cycle_statements(id,client_id,cycle_id,due_on,amount_cents,original_base64,issued_at,channel,address,patient_name,age_days,dunning) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, c.id,c.client_id,batchId,cycleOn,c.balance,c.original,at,c.channel,c.address,`${c.first_name} ${c.last_name}`,c.age,c.dunning),
       stmt(db, 'INSERT INTO bm_statement_deliveries VALUES(?,?,?,?,?,?,?)', id(),c.id,c.channel,c.channel === 'mail' ? 'prepared' : 'reserved',at,actor.email,batchId), audit(db,actor,'patient_statement.issued',c.client_id,c.id)]),
   ])
-  for (const c of candidates.filter(c => c.channel === 'email')) {
+  for (const c of candidates.filter(c => c.channel !== 'mail')) {
     // Exactly one attempt after durable reservation; uncertain outcomes need human review.
+    const preference = await one(db, 'SELECT hold,returned_at,channel FROM bm_statement_preferences WHERE client_id=?', c.client_id)
+    if (!preference || preference.hold || preference.returned_at || preference.channel !== c.channel) {
+      await commit(db,null,[stmt(db,'INSERT INTO bm_statement_deliveries VALUES(?,?,?,?,?,?,?)',id(),c.id,'email','cancelled',now(),'payment mail',batchId)])
+      continue
+    }
+    if (c.channel === 'text') {
+      const sender = env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1' ? null : smsSender(env)
+      let outcome = sender ? 'uncertain' : 'unavailable'
+      let reference: string = batchId
+      if (sender) try {
+        const result = await sender.send({to:usMobile(c.phone)!,body:`A statement is ready. Sign in to your patient portal for the original and payment options: ${new URL('/portal',env.AUTH_ORIGIN).href}`})
+        outcome = 'submitted'; reference = result.id
+      } catch { /* An uncertain text is never sent again automatically. */ }
+      await commit(db,null,[stmt(db,'INSERT INTO bm_statement_deliveries VALUES(?,?,?,?,?,?,?)',id(),c.id,'text',outcome,now(),'payment text',reference),audit(db,actor,'patient_statement.text_outcome',c.client_id,c.id,outcome)])
+      continue
+    }
     const submission = await dispatchPatientMail(env,c.email,`Statement from ${(await one(db,'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name}`,
       `A statement is ready. Sign in to your patient portal to open the fixed original and payment options:\n${new URL('/portal',env.AUTH_ORIGIN).href}\nStatement reference: ${c.id}`, {clientId:c.client_id,appointmentIds:[],kind:'reminder',deliveryId:c.id})
     await commit(db,null,[stmt(db,'INSERT INTO bm_statement_deliveries VALUES(?,?,?,?,?,?,?)',id(),c.id,'email',submission.state,now(),'payment mail',submission.providerMessageId ?? batchId),audit(db,actor,'patient_statement.email_outcome',c.client_id,c.id,submission.state)])
@@ -53,9 +70,9 @@ async function runCycle(env: Bindings, db: D1Database, who: Actor | null, cycleO
 }
 
 /** Recorded preferences authorize a monthly cycle; a missed tick runs once. */
-export async function scheduledStatementCycle(env: Bindings, db: D1Database, today: string) {
+export async function scheduledStatementCycle(env: Bindings, db: D1Database, today: string, at: string) {
   if (!await one(db, 'SELECT 1 FROM bm_statement_preferences WHERE hold=0 AND returned_at IS NULL')) return
-  return runCycle(env, db, null, today.slice(0,7)+'-01')
+  return runCycle(env, db, null, today.slice(0,7)+'-01', at)
 }
 
 export async function statementCycleCommand(env: Bindings, db: D1Database, who: Actor, name: string, input: Data) {
@@ -76,8 +93,9 @@ export async function statementCycleCommand(env: Bindings, db: D1Database, who: 
   const client=await clientVisible(db,who,input.clientId), clientId=String(client.id)
   if(name==='pay.cycle.preference') {
     const channel=text(input.channel,'channel',10), address=String(input.address ?? '').trim()
-    insist(['email','mail'].includes(channel),'invalid_statement_channel')
+    insist(['email','text','mail'].includes(channel),'invalid_statement_channel')
     insist(channel!=='email'||client.email,'the_patient_has_no_email_address',409)
+    insist(channel!=='text'||usMobile(client.phone),'the_patient_has_no_mobile_number',409)
     insist(channel!=='mail'||address.length>=10&&address.length<=300&&address.split('\n').length<=4,'enter_complete_mailing_address')
     insist(input.authorized===true||input.authorized==='on','record_the_patient_authorization_first')
     const evidence=text(input.evidence,'preference_evidence',1000),hold=input.hold===true||input.hold==='on'?1:0
@@ -88,7 +106,8 @@ export async function statementCycleCommand(env: Bindings, db: D1Database, who: 
   const statement=await one(db,"SELECT * FROM bm_cycle_statements WHERE id=? AND client_id=? AND channel='mail'",text(input.statementId,'statement',100),clientId)
   insist(statement,'statement_not_found',404)
   const on=day(input.occurredOn,'delivery_date'),reference=text(input.reference,'mail_reference',200),outcome=name==='pay.cycle.mailed'?'mailed':'returned'
-  insist(on<=clinicDay(now(),(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone),'delivery_date_cannot_be_future')
+  const zone=(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone
+  insist(on<=clinicDay(now(),zone)&&on>=clinicDay(statement.issued_at,zone),'delivery_date_must_follow_issue_and_not_be_future')
   await commit(db,who,[guard(db,'NOT EXISTS(SELECT 1 FROM bm_statement_deliveries WHERE statement_id=? AND outcome=?)',statement.id,outcome),stmt(db,'INSERT INTO bm_statement_deliveries VALUES(?,?,?,?,?,?,?)',id(),statement.id,'mail',outcome,on,who.email,reference),...(outcome==='returned'?[stmt(db,'UPDATE bm_statement_preferences SET returned_at=?,hold=1 WHERE client_id=?',on,clientId)]:[]),audit(db,who,'statement.'+outcome,clientId,statement.id)])
   return {outcome}
 }
@@ -103,6 +122,6 @@ export async function statementBatch(db: D1Database, who: Actor, path: string) {
   insist(items.length,'no_mailed_statements_in_batch',409)
   await commit(db,who,[...items.map(s=>audit(db,who,'statement_batch.exported',s.client_id,s.id,format))])
   const body=format==='pdf'?nativePdfBatch(await Promise.all(items.map(async s=>(await statementOriginal(db,s.client_id,s.id)).bytes))):
-    [['batch','statement','patient','address','amount_cents'],...items.map(s=>[batchId,s.id,s.patient_name,s.address,s.amount_cents]),[batchId,'TOTAL','','',items.reduce((n,s)=>n+Number(s.amount_cents),0)]].map(row=>row.map(v=>'"'+String(v).replace(/^[=+@-]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n')
+    [['batch','statement','patient','address','amount_cents','statement_pdf_base64'],...items.map(s=>[batchId,s.id,s.patient_name,s.address,s.amount_cents,s.original_base64]),[batchId,'TOTAL','','',items.reduce((n,s)=>n+Number(s.amount_cents),0),'']].map(row=>row.map(v=>'"'+String(v).replace(/^[=+@-]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n')
   return new Response(body,{headers:{'content-type':format==='pdf'?'application/pdf':'text/csv; charset=utf-8','content-disposition':`attachment; filename="statements-${batchId}.${format}"`,'cache-control':'no-store','x-content-type-options':'nosniff'}})
 }

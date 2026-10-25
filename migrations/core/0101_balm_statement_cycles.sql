@@ -1,5 +1,5 @@
 CREATE TABLE bm_statement_preferences (
- client_id TEXT PRIMARY KEY REFERENCES bm_clients(id),channel TEXT NOT NULL CHECK(channel IN ('email','mail')),
+ client_id TEXT PRIMARY KEY REFERENCES bm_clients(id),channel TEXT NOT NULL CHECK(channel IN ('email','text','mail')),
  address TEXT NOT NULL,hold INTEGER NOT NULL DEFAULT 0,returned_at TEXT,consent_evidence TEXT NOT NULL,recorded_by TEXT NOT NULL,recorded_at TEXT NOT NULL
 );
 CREATE TABLE bm_statement_cycles (id TEXT PRIMARY KEY,cycle_on TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,created_by TEXT NOT NULL);
