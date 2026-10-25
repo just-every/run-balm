@@ -1,0 +1,10 @@
+{
+  "version": "0.1.3",
+  "previousVersion": "0.1.2",
+  "date": "2026-10-25",
+  "publicReleaseNotes": "Keep the exact rer 0.2.80 pin and refresh the Base delivery metadata. Fix Assisted mail delivery by supplying the relay URL only to the rer provider, so SendGrid, Resend and Cloudflare accept their own provider settings. No database migrations.",
+  "extensionPointChanges": [],
+  "migrations": [],
+  "breaking": false,
+  "agentUpdateInstructions": "No database migrations are required. Keep the exact rer 0.2.80 pin. Assisted installations use their configured mail provider; only Managed relay delivery receives the relay URL."
+}

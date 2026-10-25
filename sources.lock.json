@@ -698,7 +698,7 @@
       "executable": false
     },
     "package.json": {
-      "sha256": "c78eae7a8a51d9942e6b2b15e5d168733172cecf307a22d8789b6292cf973637",
+      "sha256": "d30af3a7a9ba5c7c804f2335f2b4f09cc27f4fa435f3129f82e28a6beb437f8e",
       "executable": false
     },
     "packaging.json": {
@@ -1277,8 +1277,12 @@
       "sha256": "cafb706c07ad0ea8a7d5f4c458fffb1ef3d57dfef8cdd2634438a06b29507ea5",
       "executable": false
     },
-    "RELEASE.json": {
+    "release-history/0.1.3.json": {
       "sha256": "eb99f8b7d7df4e5ffc28200bfb4083267ab3923104d672eff9568e96311cbd36",
+      "executable": false
+    },
+    "RELEASE.json": {
+      "sha256": "ea3115d7fa052d58be8b7f69aebb32a4ec255659c683f10dec6bb258b0971645",
       "executable": false
     },
     "rer-project.json": {
@@ -1522,7 +1526,7 @@
       "executable": false
     },
     "seed.json": {
-      "sha256": "2faf25efca15ab97f68caddf0f9ecb78d2070533c0f969df1dc09645c7574a2e",
+      "sha256": "982b9bff67e8854fcf758e5046e1498158dd9541bdb32f88e0dfabc9dcae1348",
       "executable": false
     },
     "src/auth.server.ts": {
