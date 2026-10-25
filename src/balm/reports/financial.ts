@@ -36,7 +36,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     db.prepare("SELECT start_at FROM bm_appointments WHERE status='attended'"),
     db.prepare("SELECT id,credit_id,kind,amount_cents,reference,posted_at FROM bm_posted_account_entries WHERE kind IN ('credit','refund')"),
   ])).map(x => x.results)
-  const retail=await db.prepare('SELECT * FROM bm_retail_sales').all<Data>()
+  const retail=await db.prepare('SELECT id,client_id,kind,amount_cents,tax_cents,gift_id,reference,recorded_at FROM bm_retail_sales').all<Data>()
   for(const sale of retail.results){
     const total=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
     if(!gift){

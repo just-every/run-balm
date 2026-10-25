@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "3c4bf12878a2ef91ad39d0dc36113365ecfb7ba6e5329a21eb46f6f4a82b1dd0",
+      "sha256": "c584c279522b48702c9889953bede5761472738b283c94e1c828b5de399491d4",
       "executable": false
     },
     "AGENTS.md": {
@@ -2506,7 +2506,7 @@
       "executable": false
     },
     "src/balm/reports/financial.ts": {
-      "sha256": "10a630035affc249cb465f20d8ed8a84a5df5c07920d33da3c0f71b6dc404f8e",
+      "sha256": "99fee7659cf36e7c85d8485eda04d15c7d29054faf5a567763c56f3ea5667433",
       "executable": false
     },
     "src/balm/reports/operational.ts": {
