@@ -5458,11 +5458,11 @@
       "executable": false
     },
     "tests/retail-browser.mjs": {
-      "sha256": "783a1b0d5cabba0b3e46c50d9be1da16b12f3bf3242af3ac058831a8daf0ce68",
+      "sha256": "b349a110fab86000e3de236b38934543d82f89292d66899ad7a0224ba030ddb6",
       "executable": false
     },
     "tests/retail-journey.mjs": {
-      "sha256": "62875c66d4269bd1657aff20468c82203a55495c3016bf8b0ce02726e8ab7682",
+      "sha256": "3f34a1566c24bbb5eea8a13a58fb610310eb3fa8d3e33deffc7f65a8dde64ac1",
       "executable": false
     },
     "tests/retention.test.mjs": {

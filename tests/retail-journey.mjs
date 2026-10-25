@@ -64,7 +64,7 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal(statement.status,200);assert.ok(statement.text.includes('Brace'));assert.ok(statement.text.includes('Five cash visits'))
  const dates=file.billing.retail.map(s=>new Date(Date.parse(s.recorded_at)+10*3600000).toISOString().slice(0,10)).sort()
  const today=dates.at(-1)
- const report=(await h.send('/api/balm/reports/financial?from='+today+'&to='+today,undefined,h.owner)).value
+ const report=(await h.send('/api/balm/reports/financial?from='+dates[0]+'&to='+today,undefined,h.owner)).value
  assert.equal(report.summary.chargesCents,45413)
  assert.equal(report.summary.paymentsCents,45413)
  assert.equal(report.summary.arCents,0)
@@ -77,5 +77,5 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal((await h.send('/portal/receipts/'+brace.id+'.pdf',undefined,cookie)).text,after.text)
  const review=await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
  assert.ok(review)
- await proof({patient,cookie,today})
+ await proof({patient,cookie,today,from:dates[0]})
 }

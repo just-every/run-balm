@@ -13,8 +13,8 @@ try{
  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
  await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
  const page=await context.newPage()
- await retailJourney(h,async({patient,cookie,today})=>{
-  for(const [name,path,selector,session] of [['retail-ledger','/app/clients/'+patient.id,'#billing',h.owner],['retail-portal','/portal/home','#statements',cookie],['retail-reports','/app/reports?from='+today+'&to='+today,'#report-financial-summary',h.owner]]){
+ await retailJourney(h,async({patient,cookie,today,from})=>{
+  for(const [name,path,selector,session] of [['retail-ledger','/app/clients/'+patient.id,'#billing',h.owner],['retail-portal','/portal/home','#statements',cookie],['retail-reports','/app/reports?from='+from+'&to='+today,'#report-financial-summary',h.owner]]){
    const [key,...value]=session.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
    for(const width of [1440,390]){
     await page.setViewportSize({width,height:1000});await page.goto(h.origin+path)
