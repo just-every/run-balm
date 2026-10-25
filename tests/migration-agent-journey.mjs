@@ -38,6 +38,10 @@ export async function agentFences(h,input) {
   assert.equal(ownerReview.mappingPrepared,true)
   assert.equal(ownerReview.mappingDigest,prepared.value.result.mappingDigest)
   await h.cmd('movein.cutover',{...nonclinical,fingerprint:ownerReview.fingerprint,acceptanceReason:'Not yet approved.'},h.owner,409)
+  const inherited={...nonclinical,mappingApproval:ownerReview.mappingDigest,cutoverApproval:ownerReview.fingerprint}
+  const unchecked=await h.form('/app/action?name=movein.cutover&returnTo=%2Fapp%2Fimport',{bundleBase64:Buffer.from(JSON.stringify(inherited)).toString('base64'),fingerprint:ownerReview.fingerprint,acceptanceReason:'Approval must be checked in this submission.'},h.owner)
+  assert.equal(unchecked.status,409)
+  assert.equal((await h.state()).clients.length,0)
   const applied=await h.cmd('movein.cutover',{...nonclinical,fingerprint:ownerReview.fingerprint,mappingApproval:ownerReview.mappingDigest,cutoverApproval:ownerReview.fingerprint,acceptanceReason:'Owner reviewed the agent proposal and omitted custom fields against the source exports.'})
   const approval=await h.db.prepare('SELECT prepared_role,approved_by FROM bm_approvals WHERE subject_id=?').bind(applied.job.id+':mapping').first()
   assert.equal(approval.prepared_role,'agent')
