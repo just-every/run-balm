@@ -16,6 +16,7 @@ export async function authorizationRequestFixture(h,custom=false){
  const chosen=custom?await h.cmd('template.save',{baseKey:'pt.evaluation',title:'Knee therapy evaluation',bodyRegion:'Lower extremity',customFields:[]}):null
  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId,template:chosen?.id??'pt.evaluation',...chartFixture('evaluation')},priya.cookie)
  await h.cmd('note.measure',{noteId:note.id,kind:'score',name:'LEFS',value:'42',unit:'points'},priya.cookie)
+ await h.cmd('note.measure',{noteId:note.id,kind:'rom',name:'Knee flexion',side:'right',value:'95',unit:'degrees'},priya.cookie)
  const plan=await h.cmd('plan.send',{clientId:patient.id,noteId:note.id,episodeId:referral.episodeId,diagnoses:'M25.561',shortTermGoals:'Walk 10 minutes without pain',longTermGoals:'Resume independent community walking',frequencyPerWeek:2,durationWeeks:6,interventions:'Graded strengthening and gait training',startDate:await visitDate(h,appointmentId),physicianName:'Synthetic Physician',physicianEmail:'synthetic-balm-2@example.test',signature:'Priya Shah',credentials:'PT',attest:true},priya.cookie)
  const input={referralId:referral.id,noteId:note.id,planId:plan.id}
  const sign=()=>h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
@@ -34,7 +35,7 @@ export async function authorizationRequestJourney(h){
  const request=await h.cmd(command+'prepare',c.input)
  const original=await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,h.owner)
  assert.equal(original.status,200)
- for(const text of ['Synthetic presenting condition','Walk 10 minutes without pain','LEFS: 42 points','Priya Shah'])assert.ok(original.text.includes(text),text+' in fixed signed packet')
+ for(const text of ['Synthetic presenting condition','Walk 10 minutes without pain','LEFS: 42 points','Priya Shah','Knee flexion: 95 degrees','Synthetic precaution: protect the involved region','Perform 8 of 10 trials independently','Total treatment: 30 minutes'])assert.ok(original.text.includes(text),text+' in fixed signed packet')
  for(const cookie of ['',c.biller.cookie,c.reception.cookie,c.priya.cookie])assert.ok([401,403].includes((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,cookie)).status))
  const client=await file(c.biller.cookie)
  assert.equal(client.notes,null,'biller never receives clinical notes')

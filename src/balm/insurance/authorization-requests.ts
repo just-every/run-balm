@@ -17,10 +17,10 @@ async function requestFor(db:D1Database,who:Actor,key:unknown){
 }
 
 function packet(payload:Data){
- const n=payload.evaluation,p=payload.plan
+ const n=payload.evaluation,p=payload.plan,clinical=JSON.parse(n.clinical??'{}'),documentation=JSON.parse(n.documentation??'{}'),charges:Data[]=JSON.parse(n.charges??'[]')
  const blocks:Block[]=[{kind:'facts',rows:[['Patient',payload.patient],['Payer',payload.payer],['Member',payload.member],['Referral',payload.referralId],['Prepared by',payload.preparedBy]]},
  {kind:'heading',text:'Signed evaluation'},
- {kind:'notes',lines:[...(n.sections?JSON.parse(n.sections).flatMap((s:Data)=>[s.label,s.text]):[n.body]),'Signed by '+n.signer_name+' at '+n.signed_at,'Signature digest '+n.signed_sha256,...payload.addenda.flatMap((a:Data)=>['Addendum '+a.written_at+' by '+a.signer_name,a.body])]},
+ {kind:'notes',lines:[...(n.sections?JSON.parse(n.sections).flatMap((s:Data)=>[s.label,s.text]):[n.body]),'Signed by '+n.signer_name+' at '+n.signed_at,'Signature digest '+n.signed_sha256,'Precautions: '+(clinical.precautions||'None recorded'),...(clinical.goals??[]).map((g:Data)=>g.term+' goal: '+g.text+'; target '+g.target+'; deadline '+g.deadline+'; status '+g.status),...charges.map(c=>'Procedure '+c.code+': '+c.minutes+' minutes'+(c.parameters?' · '+c.parameters:'')),...['totalTreatmentMinutes','totalTimedMinutes'].filter(k=>documentation[k]!=null).map(k=>(k==='totalTreatmentMinutes'?'Total treatment':'Total timed treatment')+': '+documentation[k]+' minutes'),...payload.measures.filter((m:Data)=>m.kind!=='score').map((m:Data)=>m.name+': '+m.value+' '+m.unit+' · '+m.side+(m.sets?' · '+m.sets+' sets of '+m.reps:'')),...payload.addenda.flatMap((a:Data)=>['Addendum '+a.written_at+' by '+a.signer_name,a.body])]},
  {kind:'heading',text:'Signed plan of care'},
  {kind:'notes',lines:[p.content.diagnoses,p.content.shortTermGoals,p.content.longTermGoals,p.content.interventions,'Frequency '+p.content.frequencyPerWeek+' per week for '+p.content.durationWeeks+' weeks, starting '+p.content.startDate,'Therapist '+p.therapist_name+', '+p.therapist_credentials+' signed '+p.created_at,'Plan digest '+p.content_sha256,...(p.certified_at?['Physician '+p.certifier_name+' certified '+p.certified_at]:['Physician certification pending'])]},
  {kind:'heading',text:'Outcome scores from the signed evaluation'},
@@ -37,16 +37,17 @@ export async function authorizationRequestCommand(db:D1Database,initial:Actor,na
   const epoch=(await one(db,'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
   const referral=await one(db,`SELECT f.*,p.member_id,p.payer_id,p.version AS policy_version,y.name AS payer,c.first_name,c.last_name FROM bm_referrals f JOIN bm_policies p ON p.id=f.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=f.client_id WHERE f.id=? AND c.erased_at IS NULL`,text(input.referralId,'referral',100))
   insist(referral,'insured_referral_not_found',404)
-  const note=await one(db,`SELECT n.*,r.body,r.sections,CASE WHEN n.appointment_id IS NULL THEN ${filing('note','n.id')} ELSE ${filing('visit','n.appointment_id')} END AS episode FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.id=? AND n.client_id=? AND n.signed_at IS NOT NULL`,text(input.noteId,'evaluation',100),referral.client_id)
+  const note=await one(db,`SELECT n.*,r.body,r.sections,r.clinical,r.charges,r.documentation,CASE WHEN n.appointment_id IS NULL THEN ${filing('note','n.id')} ELSE ${filing('visit','n.appointment_id')} END AS episode FROM bm_notes n JOIN bm_note_revisions r ON r.note_id=n.id AND r.number=n.signed_revision WHERE n.id=? AND n.client_id=? AND n.signed_at IS NOT NULL`,text(input.noteId,'evaluation',100),referral.client_id)
   insist(note&&noteTemplate(note)?.kind==='evaluation','signed_evaluation_required',409)
   insist(note.episode===(referral.episode_id??''),'evaluation_must_belong_to_referral_episode',409)
   const plan=await one(db,`SELECT p.*,${filing('plan','p.id')} AS episode FROM bm_plans_of_care p WHERE p.id=? AND p.client_id=? AND p.note_id=? AND p.author_id=?`,text(input.planId,'plan',100),referral.client_id,note.id,note.author_id)
   insist(plan&&plan.episode===note.episode,'signed_evaluation_plan_required',409)
-  const scores=await rows(db,"SELECT name,value,unit FROM bm_measures WHERE note_id=? AND kind='score' ORDER BY recorded_at,id",note.id)
+  const measures=await rows(db,'SELECT kind,name,side,value,unit,sets,reps FROM bm_measures WHERE note_id=? ORDER BY recorded_at,id',note.id)
+  const scores=measures.filter(m=>m.kind==='score')
   insist(scores.length,'record_outcome_scores_in_the_evaluation_before_signing',409)
   const addenda=await rows(db,'SELECT body,signer_name,written_at,sha256 FROM bm_note_addenda WHERE note_id=? ORDER BY written_at,id',note.id)
   const at=now(),key=id()
-  const payload:Data={patient:referral.first_name+' '+referral.last_name,payer:referral.payer,payerId:referral.payer_id,member:referral.member_id,referralId:referral.id,preparedBy:who.email,evaluation:note,plan:{...plan,content:JSON.parse(plan.content)},scores,addenda}
+  const payload:Data={patient:referral.first_name+' '+referral.last_name,payer:referral.payer,payerId:referral.payer_id,member:referral.member_id,referralId:referral.id,preparedBy:who.email,evaluation:note,plan:{...plan,content:JSON.parse(plan.content)},scores,measures,addenda}
   // Store no physician sign-in token or other private link in the packet snapshot.
   delete payload.plan.sign_token_hash;delete payload.plan.sign_token_expires_at
   const serialized=JSON.stringify(payload),digest=await sha256(serialized)
