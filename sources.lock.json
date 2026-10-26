@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "3ee002fec7d3968defb03c872be1f02520bf93d5e3dd00ac781ea82a08f7200d",
+      "sha256": "2598bab3dcfcc37f382279f689291b34e3c6d5e2fc707a2de24576d51ada2ea6",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "03fbd6a6d5dd38ec2f616cecff51df32e8317fb4d78565bfdd26fc75d924e652",
+      "sha256": "2bc402f5db3e0dec975b13401ba71947e99a79754fd0d9876ae5827f2781ec88",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "a10eec563618d232f9a62c28f6e3654f9c1c850d03b6384e6b5a9928acd08313",
+      "sha256": "60350e3e9cab472a03861a524ba8dd735ac2a3c9edf1a222e28885684cff6e99",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -207,6 +207,10 @@
     },
     "docs/documentation.md": {
       "sha256": "131db5ddfb327fde88b1108d14ac81b923d80d0fbf2d698f2b59c7121da09835",
+      "executable": false
+    },
+    "docs/evidence/ACCT-001-sandbox.json": {
+      "sha256": "dec9b14cc4b213a62ea42db718e8a24d50582e0c715247e4dc18297cadd9e41a",
       "executable": false
     },
     "docs/evidence/INS-013-sources.md": {

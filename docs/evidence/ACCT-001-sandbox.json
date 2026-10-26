@@ -1,0 +1,116 @@
+{
+  "journey": "tests/accounting-sandbox.mjs",
+  "result": "PASS",
+  "day": "2026-10-20",
+  "providerJournalId": "259",
+  "docNumber": "BM-50e918872eb54aa6ad",
+  "providerJournalCountAfterReplay": 1,
+  "expectedAccountCents": {
+    "35": 16970,
+    "69": 2030,
+    "85": -19000
+  },
+  "observedAccountCents": {
+    "35": 16970,
+    "69": 2030,
+    "85": -19000
+  },
+  "postedLines": [
+    {
+      "description": "adjustment \u00b7 adjustment",
+      "amount": 20,
+      "postingType": "Debit",
+      "accountId": "69"
+    },
+    {
+      "description": "adjustment \u00b7 adjustment",
+      "amount": 20,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "payment \u00b7 card",
+      "amount": 15,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "payment \u00b7 card",
+      "amount": 15,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "fee \u00b7 card",
+      "amount": 0.3,
+      "postingType": "Debit",
+      "accountId": "69"
+    },
+    {
+      "description": "fee \u00b7 card",
+      "amount": 0.3,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "charge \u00b7 invoice",
+      "amount": 190,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "charge \u00b7 invoice",
+      "amount": 190,
+      "postingType": "Credit",
+      "accountId": "85"
+    },
+    {
+      "description": "payment \u00b7 cash",
+      "amount": 20,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "payment \u00b7 cash",
+      "amount": 20,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "payment \u00b7 era",
+      "amount": 60,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "payment \u00b7 era",
+      "amount": 60,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "payout \u00b7 card",
+      "amount": 9.7,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "payout \u00b7 card",
+      "amount": 9.7,
+      "postingType": "Credit",
+      "accountId": "35"
+    },
+    {
+      "description": "refund \u00b7 card",
+      "amount": 5,
+      "postingType": "Debit",
+      "accountId": "35"
+    },
+    {
+      "description": "refund \u00b7 card",
+      "amount": 5,
+      "postingType": "Credit",
+      "accountId": "35"
+    }
+  ]
+}
