@@ -1,5 +1,5 @@
 import { cardPaymentsJourney } from './card-payments-journey.mjs'
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { harness, run } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
@@ -568,4 +568,61 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
   assert.equal(f.billing.ledger.creditCents,3000);assert.equal(f.billing.ledger.lines.filter(x=>x.kind==='card').length,1)
   assert.equal(stripe.calls.filter(c=>c.path.endsWith('/present_payment_method')).length,1)
  }finally{await h.close()}
+})
+
+
+test('reviewed QuickBooks journals reconcile a mixed payment day and resume lost responses without duplicates', { timeout: 120_000 }, async () => {
+  const { accountingDayFixture, accountingDay, accountingNow } = await import('./accounting-day.mjs')
+  const { quickbooksEdge, accountingMappings } = await import('./fakes/quickbooks.mjs')
+  mock.timers.enable({ apis: ['Date'], now: accountingNow })
+  const stripe = fakeProviders(), qbo = quickbooksEdge()
+  let h
+  try {
+    h = await harness({ entry: 'tests/accounting-worker.ts', outbound: r => new URL(r.url).hostname === 'api.stripe.com' ? stripe.handler(r) : qbo.outbound(r) })
+    const day = await accountingDayFixture(h, stripe)
+    const connect = { realmId: '123', clientId: 'synthetic-balm-8', clientSecret: 'synthetic-balm-9', refreshToken: 'synthetic-balm-10', environment: 'sandbox', confirm: true }
+    await h.cmd('accounting.connect', connect, day.priya.cookie, 403)
+    await h.cmd('accounting.connect', { ...connect, confirm: false }, h.owner, 400)
+    await h.cmd('accounting.connect', connect)
+    assert.equal(qbo.writes.length, 0, 'connecting never posts money')
+    await h.cmd('accounting.prepare', { day: accountingDay }, h.owner, 409)
+    await h.cmd('accounting.mapping', { mappings: accountingMappings, confirm: true })
+    const before = await h.cmd('accounting.prepare', { day: accountingDay })
+    const input = { id: before.id, sha256: before.sha256, confirm: true }
+    assert.equal(qbo.writes.length, 0, 'review leaves the books unchanged')
+    await h.cmd('accounting.sync', { ...input, sha256: 'synthetic-balm-13' }, h.owner, 409)
+    await h.cmd('accounting.sync', { ...input, confirm: false }, h.owner, 400)
+    qbo.loseNextResponse()
+    await h.cmd('accounting.sync', input, h.owner, 409)
+    assert.equal(qbo.journals.size, 1, 'the provider committed before the response was lost')
+    const confirmed = await h.cmd('accounting.sync', input)
+    assert.equal(confirmed.status, 'confirmed')
+    await h.cmd('accounting.sync', input)
+    const again = await h.cmd('accounting.prepare', { day: accountingDay })
+    assert.equal(again.status, 'up_to_date')
+    assert.equal(qbo.journals.size, 1)
+    const lines = qbo.writes[0].Line, debits = Object.fromEntries(lines.filter(l => l.JournalEntryLineDetail.PostingType === 'Debit').map(l => [l.Description, Math.round(l.Amount * 100)]))
+    assert.deepEqual(debits, { 'payment · card': 1500, 'fee · card': 30, 'charge · invoice': 19000, 'payout · card': 970, 'payment · cash': 2000, 'payment · era': 6000, 'adjustment · adjustment': 2000, 'refund · card': 500 })
+    assert.equal(lines.filter(l => l.JournalEntryLineDetail.PostingType === 'Debit').reduce((n,l) => n + Math.round(l.Amount * 100), 0), lines.filter(l => l.JournalEntryLineDetail.PostingType === 'Credit').reduce((n,l) => n + Math.round(l.Amount * 100), 0))
+    assert.ok(!/Maya|Noah|97110|M25|synthetic-balm/.test(JSON.stringify(qbo.writes)), 'financial handoff has no patient identity, clinical content or original references')
+    const view = (await h.state()).accounting
+    assert.ok(!JSON.stringify(view).includes('synthetic-balm-10'))
+    assert.equal((await h.state(day.priya.cookie)).accounting, null)
+    const original = qbo.journals.get(confirmed.providerId), saved = structuredClone(original)
+    original.Line[0].Amount += 1
+    await h.cmd('accounting.sync', input, h.owner, 409)
+    assert.equal((await h.state()).accounting.batches[0].status, 'conflict')
+    assert.equal(qbo.journals.size, 1)
+    qbo.journals.set(confirmed.providerId, saved)
+    assert.equal((await h.cmd('accounting.sync', input)).status, 'confirmed')
+    await h.cmd('payment.record', { invoiceId: day.cashInvoice.id, amountCents: 1000, reference: 'synthetic-balm-14', paymentMethod: 'cash' })
+    const later = await h.cmd('accounting.prepare', { day: accountingDay })
+    assert.equal(later.sources, 1, 'late money becomes a separate journal with only its new source')
+    await h.cmd('accounting.sync', { id: later.id, sha256: later.sha256, confirm: true })
+    assert.equal(qbo.journals.size, 2)
+    const final = await h.cmd('accounting.prepare', { day: accountingDay })
+    assert.equal(final.status, 'up_to_date')
+    await h.cmd('accounting.disconnect', {})
+    await h.cmd('accounting.sync', input, h.owner, 409)
+  } finally { if (h) await h.close(); mock.timers.reset() }
 })

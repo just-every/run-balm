@@ -1,3 +1,4 @@
+import { accountingCommand, accountingView } from './payments/accounting'
 import { cardEntryView, intakeCardEntry } from './payments/card-entry'
 import { outcomeCommand, outcomesFor } from './cases/outcomes'
 import {exerciseLibrary} from './portal/library'
@@ -97,7 +98,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { accounting:await accountingView(env,who), integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -219,6 +220,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
   if (name === 'owner.name') return saveOwnerName(request, env, who, input)
+  if (name.startsWith('accounting.')) return accountingCommand(env,who,name,input)
   if (name.startsWith('finance.')) return reconciliationCommand(env.DB,who,name,input)
   if (name.startsWith('agent.') || name === 'staff.invite') return credentialCommand(request, env, who, name, input)
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
@@ -636,6 +638,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
           const preview = await bundleCommand(env.DB, who, 'movein.preview', input)
           return await page(env, who, back, { error: failure.text, result: { ...preview, reviewInput: input } }, failure.status)
         }
+        if (name === 'accounting.prepare') return await page(env, who, back, { message: (result as any).status === 'up_to_date' ? 'QuickBooks matches this day. No new journal is needed.' : 'Review the saved journal below, then approve the exact handoff.' })
+        if (name === 'accounting.sync') return await page(env, who, back, { message: 'The saved journal matches QuickBooks. Repeating it creates no new entry.' })
         if (name === 'chart.document.upload') return redirect('/app/clients/' + encodeURIComponent(String((result as any).clientId)) + '#chart-history')
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown

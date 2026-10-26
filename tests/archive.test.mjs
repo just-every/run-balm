@@ -551,7 +551,8 @@ test('retail and finance originals, paused entitlements and preparation authorit
   try {
     await checkout(source);await checkout(restored)
     await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
-    h=await harness({root:source})
+    const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge()
+    h=await harness({root:source,outbound:qbo.outbound})
     const {service}=await clinic(h)
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retail archive',dateOfBirth:'1950-01-01'})
     const member=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:2,amountCents:5000,label:'Synthetic finite membership',reference:'synthetic-balm-archive-member',confirm:true})
@@ -563,6 +564,8 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await h.cmd('finance.source.record',{...base,kind:'charge',reference:'synthetic-balm-archive-charge',sourceReference:'synthetic-balm-archive-original',confirm:true})
     const review=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).findings[0]
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
+    await h.cmd('accounting.connect',{realmId:'123',clientId:'synthetic-balm-8',clientSecret:'synthetic-balm-9',refreshToken:'synthetic-balm-10',environment:'sandbox',confirm:true})
+    await h.cmd('accounting.mapping',{mappings:accountingMappings,confirm:true})
     const key=await h.cmd('agent.create',{label:'Synthetic excluded finance grant',scopes:['finance.reconcile.prepare']})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
@@ -573,6 +576,7 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await command(restored,['import','--input',archive,'--yes','--no-queue'])
     h=await harness({root:restored,...identity})
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
+    assert.equal((await h.state(owner)).accounting.connection,null,'restored clinic must explicitly reconnect its accounting provider')
     assert.equal((await h.send(member.receiptUrl,undefined,owner)).text,original)
     const file=(await h.send('/api/balm/clients/'+patient.id,undefined,owner)).value
     assert.equal(file.billing.retail.find(x=>x.id===member.id).membership_state,'paused')

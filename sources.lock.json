@@ -173,6 +173,10 @@
       "sha256": "5a690f3a787a3f97025d39679d5ea9999b6b46d1bd1c6611c83f929fafab84de",
       "executable": false
     },
+    "docs/ACCOUNTING.md": {
+      "sha256": "c02bab98435e4c92b4bc076086bafa6da6e3273e7dc3e1f453cee94be4f2da31",
+      "executable": false
+    },
     "docs/AGENT-COMMANDS.md": {
       "sha256": "51cc41f7f677db7facd352e554acdfa4596570eec04d4089d3f4beb8c6664923",
       "executable": false
@@ -731,6 +735,14 @@
     },
     "migrations/core/0110_balm_membership_lifecycle.sql": {
       "sha256": "7c1938f042907190f17d78b605d2d01150a8fe12088a70ce1b9df07c60e1d29a",
+      "executable": false
+    },
+    "migrations/core/0111_balm_accounting.sql": {
+      "sha256": "33ebf2ec14d1ecfe3f0167cc933bda0df4e1fd7b76dd3a71a6b416ea7311710c",
+      "executable": false
+    },
+    "migrations/core/0112_balm_accounting_preserved.sql": {
+      "sha256": "48bf9113b2f0bd648a84fd23cd9f6a8bebaea926827eaa4a25084de9c806cf04",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -1590,7 +1602,7 @@
       "executable": false
     },
     "src/balm/archive-policy.mjs": {
-      "sha256": "b1487c8edc737fb9986881c1933abd7602486725634048f1ef40c80f36f4c42a",
+      "sha256": "77decaf17ac5c9e43f5450a53064156d2c68add3a0af993b4ba2cb5347561308",
       "executable": false
     },
     "src/balm/availability/date-bounds.ts": {
@@ -1890,7 +1902,7 @@
       "executable": false
     },
     "src/balm/domain/invoices.ts": {
-      "sha256": "4f03c81ebf3902e029006b4b995dfeb47ba1f3cfa2e99a23f9aba15330977833",
+      "sha256": "8d6700cb2d865ada3e99fbb5b2b5b92d252a08c9abeb0ffbdaac55b8730c875c",
       "executable": false
     },
     "src/balm/domain/measures.ts": {
@@ -1970,7 +1982,7 @@
       "executable": false
     },
     "src/balm/http.ts": {
-      "sha256": "b725108649bd316371fb6951ca3478bff8cc696d2249531d1c61392b7cd7bfb4",
+      "sha256": "e3398d40ad965b13b6001098a1ca144642f3eaed10e59fce77d41ac32b209606",
       "executable": false
     },
     "src/balm/identity-settings.ts": {
@@ -2341,6 +2353,22 @@
       "sha256": "cd3a34ca824730cda130d87821c1303c4dcc5d14e4722c844a4a592fbc8f2d96",
       "executable": false
     },
+    "src/balm/payments/accounting-api.ts": {
+      "sha256": "4f3a2f47bb7284eb8a72e493346c2fc3bd9b33aa1778ebfe0aab2365837510a0",
+      "executable": false
+    },
+    "src/balm/payments/accounting-journal.ts": {
+      "sha256": "03944a52f404ce8ab0ee71f26eb904aaeec6c23da6aabbd4d00e37c266230dab",
+      "executable": false
+    },
+    "src/balm/payments/accounting-sources.ts": {
+      "sha256": "f71a5c8c24ad7caf5ab3a7a387f273f781e7fe46ff9060ec3688a16c940c8159",
+      "executable": false
+    },
+    "src/balm/payments/accounting.ts": {
+      "sha256": "b9e3bd0113cc3b2176ff13f24e55e60fcf8c698ecb923f06c77109ae342668e5",
+      "executable": false
+    },
     "src/balm/payments/aeobs.ts": {
       "sha256": "e889f498be36e1f16fb23c32a17a1e145b21eed753c6d0e7feb602a1faa2d916",
       "executable": false
@@ -2582,7 +2610,7 @@
       "executable": false
     },
     "src/balm/retention/accounting.ts": {
-      "sha256": "b929ab4a9fb26699eeb117d95350ec4f3068ae9a6b8c8acbef344c5659e80f4a",
+      "sha256": "eaf2441419702cc421991f52b9fdfc818145165372f8a865d9d4b311b6894ea6",
       "executable": false
     },
     "src/balm/retention/custody.ts": {
@@ -2697,6 +2725,10 @@
       "sha256": "380eec1b05d4b0710fbd883695ec7a458a8b90875040c78b80d1847a743445a0",
       "executable": false
     },
+    "src/balm/ui/accounting.ts": {
+      "sha256": "fed3796562eee6a7121afd4d9c949fa145fc4fe928e904296097a01fb9f5c565",
+      "executable": false
+    },
     "src/balm/ui/agenda.ts": {
       "sha256": "97bcd8bc514328a64d5a013d916bfd3ab9d4056653d59b46944e0aed730a9c36",
       "executable": false
@@ -2770,7 +2802,7 @@
       "executable": false
     },
     "src/balm/ui/clients.ts": {
-      "sha256": "acf7f7ba3129dd8434b96cd4610aabc827fbc6aa0b3122100192c6ce485ae07c",
+      "sha256": "0f28bfb1f1fdea1722d2ec261a46c7545f590264c02db11ecde3562f2cb69d0f",
       "executable": false
     },
     "src/balm/ui/clinic-identity.ts": {
@@ -2778,7 +2810,7 @@
       "executable": false
     },
     "src/balm/ui/clinic.ts": {
-      "sha256": "bf46b74db74bad5eeed81cdeb473f06ae176f44b3ee83cc1b6cef9ac2936262b",
+      "sha256": "453bbae309c35055a027b1d2556f93c23da48cd03d9e14cc31eb9c6fca97b133",
       "executable": false
     },
     "src/balm/ui/clinical-fields.ts": {
@@ -5193,6 +5225,22 @@
       "sha256": "ca37c98990cdaf0d0b900f7ef61d667a8dacc37ac5914b628dd440b3d49a5257",
       "executable": false
     },
+    "tests/accounting-browser.mjs": {
+      "sha256": "7afd98b529ed57f2028a6a2e4dcdbf81e687acf145adfe0bb774f356a16c07c7",
+      "executable": false
+    },
+    "tests/accounting-day.mjs": {
+      "sha256": "0723d5df403b38d618588eed5d9432ec2ae95740ab2127a50088e6552e1ebd16",
+      "executable": false
+    },
+    "tests/accounting-sandbox.mjs": {
+      "sha256": "03b9d2ee53b07bfaabcc348f5ec5e6a9a60083bda3b906723806bce9e051be77",
+      "executable": false
+    },
+    "tests/accounting-worker.ts": {
+      "sha256": "f0529c5767aa16a48cfb52f711a4a3c8f6a8ad49f22f890ce3548b4101a3eaa4",
+      "executable": false
+    },
     "tests/agent-followthrough-browser.mjs": {
       "sha256": "b953295ae30d24cba76311edaa81606f26f624a982c888d339be6c824a6c8314",
       "executable": false
@@ -5206,7 +5254,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "3499371d2bdd586439c785f785de7e1c8d362d0e01380a6ec4dff8f9f507d60e",
+      "sha256": "f0bf3e020b06921051b2cd269a493f2b9b107bd97414cad84eb06b7f0a462966",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5327,6 +5375,10 @@
     },
     "tests/fakes/nppes.mjs": {
       "sha256": "54aec11b31991357b36f1c1079fcd7c501c8766bc4560eb04ea875128acfc259",
+      "executable": false
+    },
+    "tests/fakes/quickbooks.mjs": {
+      "sha256": "7c22a57a56ec6c10f59924ac96e33d3ea4b658ee0d5275360c6609ecb8fb7fd5",
       "executable": false
     },
     "tests/fakes/s3.mjs": {
@@ -5542,7 +5594,7 @@
       "executable": false
     },
     "tests/payments.test.mjs": {
-      "sha256": "9afdc921bfa05ba46dcc2aa5553c355f585771e144f5163d5083c72ee9546be6",
+      "sha256": "474a3b09e98418359b9e32599ec99897c307dff4f3820d5f0874562ffcda3b6f",
       "executable": false
     },
     "tests/portal-billing.mjs": {
@@ -5638,7 +5690,7 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "98aeb39e7b54de551616ed15a0a222bfa5fcfef6356c2e486f4818fdce2d4f35",
+      "sha256": "1d93a437aa77f30d4f968e6f7a9826ba64c160ae63ccae7a477d8763fd70fce9",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {

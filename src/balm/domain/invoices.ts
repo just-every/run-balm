@@ -141,6 +141,8 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
   const invoice = await one(db, "SELECT * FROM bm_invoices WHERE id=? AND status='approved'", text(input.invoiceId, 'invoice', 100))
   insist(invoice, 'approved_invoice_not_found', 404)
   const amount = integer(input.amountCents, 'amount_cents', 1, 10_000_000), reference = text(input.reference, 'reference', 120), paymentId = id()
+  const tender = String(input.paymentMethod ?? 'external')
+  insist(['cash','check','bank','external'].includes(tender), 'invalid_payment_method')
   const collectionAllowed = `NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold WHERE invoice_id=?) OR ${copayRoomSql()}>=?`
   insist(await one(db,'SELECT 1 WHERE '+collectionAllowed,invoice.id,invoice.id,amount),'patient_balance_waits_for_all_payers',409)
   insist(!await one(db, 'SELECT 1 FROM bm_invoice_payments WHERE reference=? UNION ALL SELECT 1 FROM bm_account_entries WHERE reference=?', reference, reference), 'payment_reference_used', 409)
@@ -148,6 +150,7 @@ export async function recordPayment(db: D1Database, who: Actor, input: Data) {
     guard(db,collectionAllowed,invoice.id,invoice.id,amount),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE reference=?)', reference),
     stmt(db, 'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)', paymentId, invoice.id, amount, reference, who.email, now()),
+    stmt(db, 'INSERT INTO bm_payment_tenders(payment_id,method) VALUES(?,?)', paymentId, tender),
     guard(db, "(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)<=(SELECT amount_cents-COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=bm_invoices.id),0) FROM bm_invoices WHERE id=? AND status='approved')", invoice.id, invoice.id),
     audit(db, who, 'payment.recorded', invoice.client_id as string, paymentId, `${amount} cents`),
   ])
