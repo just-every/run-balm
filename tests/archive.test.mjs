@@ -602,3 +602,33 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.equal(h.outboundRequests.filter(x=>x.origin.includes('stripe')||x.origin.includes('payer')).length,0)
   } finally {await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+test('prior authorization signed packets and recorded payer decisions survive a public CLI archive round trip',{timeout:240000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-authorization-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  h=await harness({root:source})
+  const {authorizationRequestFixture}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
+  await c.sign()
+  const request=await h.cmd('insurance.authorization_request.prepare',c.input)
+  const original=(await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,h.owner)).text
+  await h.cmd('insurance.authorization_request.submit',{...request,channel:'availity',submittedOn:c.today,reference:'synthetic-balm-8',attest:true},c.biller.cookie)
+  const result=await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},c.biller.cookie)
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'authorization.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.equal((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,owner)).text,original)
+  const file=(await h.send('/api/balm/clients/'+c.patient.id,undefined,owner)).value
+  const record=file.insurance.authorizationRequests[0]
+  assert.deepEqual([record.status,record.channel,record.submission_reference,record.decision_reference,record.authorization_id],['approved','availity','synthetic-balm-8','synthetic-balm-5',result.authorizationId])
+  assert.equal(file.insurance.authorizations.find(a=>a.id===result.authorizationId).remaining_visits,1)
+  assert.ok(file.audit.some(a=>a.action==='insurance.authorization_decision_recorded'))
+  await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},owner,409)
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})

@@ -131,4 +131,7 @@ export const custody = [
   {"table":"bm_visit_fees","client":true,"links":[["client_id","bm_clients","id"],["appointment_id","bm_appointments","id"]]},
   {"table":"bm_visit_reminders","client":false,"links":[["appointment_id","bm_appointments","id"]]},
   {"table":"bm_visit_reply_links","client":false,"links":[["reminder_id","bm_visit_reminders","id"]]},
+  {"table":"bm_authorization_requests","client":true,"links":[]},
+  {"table":"bm_authorization_submissions","client":false,"links":[["request_id","bm_authorization_requests","id"]]},
+  {"table":"bm_authorization_decisions","client":false,"links":[["request_id","bm_authorization_requests","id"]]},
 ] as const

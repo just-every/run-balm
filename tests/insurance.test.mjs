@@ -841,3 +841,8 @@ test('MOVE-007: name/date/amount fallback posts only for one clinic patient and 
   assert.equal((await h.cmd('insurance.runout.read',{},owner)).totals.remainingCents,0)
  })
 })
+
+test('signed evaluation authorization requests retain external decisions and create exactly one counted authorization',async()=>{
+ const {authorizationRequestJourney}=await import('./authorization-request-journey.mjs')
+ await run(authorizationRequestJourney)
+})

@@ -98,7 +98,7 @@ export async function markLost(db: D1Database, who: Actor, input: Data) {
 
 /** The patient's referrals with their stages, for the file's episodes panel. */
 export async function referralsFor(db: D1Database, clientId: string, zone: string) {
-  const list = await rows(db, `SELECT r.id,r.kind,r.source,r.received_on,r.referring_first,r.referring_last,r.referring_npi,r.npi_source,r.diagnosis,r.reason,r.episode_id,r.lost_at,r.lost_reason,
+  const list = await rows(db, `SELECT r.id,r.policy_id,r.kind,r.source,r.received_on,r.referring_first,r.referring_last,r.referring_npi,r.npi_source,r.diagnosis,r.reason,r.episode_id,r.lost_at,r.lost_reason,
     p.name AS provider_name,p.credential AS provider_credential,p.retrieved_at AS provider_retrieved_at FROM bm_referrals r LEFT JOIN bm_referring_providers p ON p.npi=r.referring_npi AND r.npi_source='nppes'
     WHERE r.client_id=? ORDER BY r.received_on DESC,r.created_at DESC`, clientId)
   const stages = await referralStages(db, list, zone)

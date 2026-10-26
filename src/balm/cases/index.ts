@@ -1,3 +1,4 @@
+import {authorizationRequestsFor} from '../insurance/authorization-requests'
 // The case agent: one case per referral, followed from referral and intake
 // through eligibility, authorization, visits, signed notes, claims and the ERA
 // to paid or denied. Where a case stands and what to do next are rules in code
@@ -37,6 +38,7 @@ export async function caseList(env: Bindings, who: Actor) {
   const rank = (c: typeof cases[number]) => c.steps.some(s => !s.blocked) ? 0 : c.standing.state === 'stalled' ? 1 : c.standing.state === 'waiting' ? 2 : 3
   const choices = await rows(env.DB, `SELECT c.id,c.first_name,c.last_name,p.id AS policy_id,y.name AS payer_name,p.member_id FROM bm_clients c LEFT JOIN bm_policies p ON p.client_id=c.id LEFT JOIN bm_payers y ON y.id=p.payer_id
     WHERE c.erased_at IS NULL ORDER BY c.last_name,c.first_name,p.priority`)
+  for(const c of cases)(c as Data).authorizationRequests=(await authorizationRequestsFor(env.DB,who,c.client.id))?.filter(r=>r.referral_id===c.referral.id)??null
   return { cases: cases.sort((a, b) => rank(a) - rank(b)), wording: await wordingStatus(env), choices }
 }
 

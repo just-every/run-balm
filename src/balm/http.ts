@@ -194,7 +194,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'insurance.read') return readInsurance(env, who, input)
   if (name === 'insurance.supervision.save') return command(env.DB,who,name,input)
   if (name.startsWith('insurance.')) {
-    if (name === 'insurance.authorization.save' && typeof input.cptCodes === 'string') input.cptScope = input.cptCodes.trim() ? input.cptCodes.trim().split(/[,\s]+/) : []
+    if (['insurance.authorization.save','insurance.authorization_request.decide'].includes(name) && typeof input.cptCodes === 'string') input.cptScope = input.cptCodes.trim() ? input.cptCodes.trim().split(/[,\s]+/) : []
     if (name === 'insurance.batch.prepare' && !Array.isArray(input.claimIds)) input.claimIds = Object.keys(input).filter(k => k.startsWith('claim_') && input[k] === 'on').map(k => k.slice(6))
     if (name === 'insurance.payer.save' && typeof input.feeSchedule === 'string') input.fees = input.feeSchedule.split(/\r?\n/).filter(line => line.trim()).map(line => {
       const [code, amount] = line.trim().split(/\s+/)
@@ -586,7 +586,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if(paper)return await cobPaperDownload(env.DB,who,paper[2],paper[1]==='paper-eob')
       const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
       if(eob)return await payerEobDownload(env.DB,who,eob[1])
-      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn)\/([\w-]+)$/)
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn|authorization-request)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })

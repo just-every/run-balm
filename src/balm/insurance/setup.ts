@@ -57,7 +57,7 @@ export async function savePolicy(db: D1Database, who: Actor, input: Data) {
     policyStatement(db,policy),audit(db,who,'insurance.policy_saved',client.id,key)])
   return { id:key,clientId:client.id }
 }
-export async function saveAuthorization(db: D1Database, who: Actor, input: Data) {
+export async function authorizationWrite(db: D1Database, who: Actor, input: Data) {
   const policy = await policyFor(db,who,input.policyId), key = input.id ? text(input.id,'authorization',100) : id()
   const start = day(input.startsOn,'starts_on'), end = day(input.endsOn,'ends_on')
   insist(end >= start,'authorization_end_precedes_start')
@@ -79,6 +79,12 @@ export async function saveAuthorization(db: D1Database, who: Actor, input: Data)
   const cptScope = JSON.stringify([...new Set(scope as string[])])
   // REF-003: a new authorization joins the chosen or only open episode; an edit keeps its filing.
   const filing = previous ? [] : await episodeChoice(db,who,policy.client_id as string,'authorization',key,input.episodeId)
-  await commit(db,who,[...filing,...(staff?[guard(db,"EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)",staff)]:[]),...(previous?[guard(db,'EXISTS(SELECT 1 FROM bm_authorizations WHERE id=? AND version=?)',key,previous.version)]:[]),stmt(db,`INSERT INTO bm_authorizations(id,policy_id,number,starts_on,ends_on,visits,practitioner_id,booking_action,allowance_kind,units,units_per_visit,cpt_scope,low_remainder) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET number=excluded.number,starts_on=excluded.starts_on,ends_on=excluded.ends_on,visits=excluded.visits,practitioner_id=excluded.practitioner_id,booking_action=excluded.booking_action,allowance_kind=excluded.allowance_kind,units=excluded.units,units_per_visit=excluded.units_per_visit,cpt_scope=excluded.cpt_scope,low_remainder=excluded.low_remainder,version=bm_authorizations.version+1`,key,policy.id,text(input.number,'authorization_number',50),start,end,visits,staff,action,kind,units,perVisit,cptScope,low),stmt(db,'UPDATE bm_policies SET version=version+1 WHERE id=?',policy.id),audit(db,who,'insurance.authorization_saved',policy.client_id,key)])
-  return { id:key }
+  const statements = [guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),...filing,...(staff?[guard(db,"EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL)",staff)]:[]),...(previous?[guard(db,'EXISTS(SELECT 1 FROM bm_authorizations WHERE id=? AND version=?)',key,previous.version)]:[]),stmt(db,`INSERT INTO bm_authorizations(id,policy_id,number,starts_on,ends_on,visits,practitioner_id,booking_action,allowance_kind,units,units_per_visit,cpt_scope,low_remainder) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET number=excluded.number,starts_on=excluded.starts_on,ends_on=excluded.ends_on,visits=excluded.visits,practitioner_id=excluded.practitioner_id,booking_action=excluded.booking_action,allowance_kind=excluded.allowance_kind,units=excluded.units,units_per_visit=excluded.units_per_visit,cpt_scope=excluded.cpt_scope,low_remainder=excluded.low_remainder,version=bm_authorizations.version+1`,key,policy.id,text(input.number,'authorization_number',50),start,end,visits,staff,action,kind,units,perVisit,cptScope,low),stmt(db,'UPDATE bm_policies SET version=version+1 WHERE id=?',policy.id),audit(db,who,'insurance.authorization_saved',policy.client_id,key)]
+  return { id:key, statements }
+}
+
+export async function saveAuthorization(db: D1Database, who: Actor, input: Data) {
+  const write = await authorizationWrite(db, who, input)
+  await commit(db, who, write.statements)
+  return { id: write.id }
 }

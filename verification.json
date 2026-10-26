@@ -48,7 +48,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"public CLI archive round trip|public CLI erasure journals\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"^(?!prior authorization).*public CLI (archive round trip|erasure journals)\" tests/archive.test.mjs"
       ]
     },
     {
@@ -65,6 +65,14 @@
       "hosted": false,
       "commands": [
         "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs\" tests/archive.test.mjs"
+      ]
+    },
+    {
+      "name": "portability-authorizations",
+      "browser": false,
+      "hosted": false,
+      "commands": [
+        "node --test --test-concurrency=1 --test-name-pattern=\"prior authorization signed packets\" tests/archive.test.mjs"
       ]
     }
   ],
