@@ -1,3 +1,4 @@
+import { base64Bytes, receiptBytes } from './account-documents'
 // The patient's documents: a superbill per visit (to submit to their insurer),
 // a statement across visits, and a receipt per card payment. Each is built from
 // the approved invoice's frozen facts and the ledger, never from note text.
@@ -75,8 +76,9 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
   const p = await one(db, `SELECT cp.*,c.first_name,c.last_name FROM bm_card_payments cp JOIN bm_clients c ON c.id=cp.client_id WHERE cp.id=? AND cp.status='succeeded'`, paymentId), clinic = await one(db, 'SELECT * FROM bm_settings WHERE id=1')
   if (!p) return await one(db,'SELECT id FROM bm_retail_sales WHERE id=?',paymentId) ? retailReceipt(db,paymentId) : externalReceipt(db, paymentId)
   insist(clinic, 'receipt_not_found', 404)
-  const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_invoice_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
-  const unapplied = (p.amount_cents as number) - (p.applied_cents as number), number = receiptNumber(p.receipt_number as number)
+  if (p.receipt_base64) return { name: `receipt-${receiptNumber(p.receipt_number as number)}.pdf`, bytes: receiptBytes(p.receipt_base64 as string) }
+  const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
+  const unapplied = (p.amount_cents as number) - posted.reduce((sum, item) => sum + Number(item.amount_cents), 0), number = receiptNumber(p.receipt_number as number)
   const blocks: Block[] = [
     { kind: 'facts', rows: [...clinicFacts(clinic), ['Receipt', number], ['Date', usDate(p.succeeded_at as string, clinic.time_zone as string)], ['Patient', `${p.first_name} ${p.last_name}`],
       ['For', p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
@@ -84,5 +86,8 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
       rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
     { kind: 'notes', lines: [`Stripe payment ${p.payment_intent}. Keep this receipt for your records.`] },
   ]
-  return { name: `receipt-${number}.pdf`, bytes: pdf({ header: clinic.clinic_name as string, title: `Receipt ${number}`, blocks }) }
+  const original = base64Bytes(pdf({ header: clinic.clinic_name as string, title: `Receipt ${number}`, blocks }))
+  await db.prepare('UPDATE bm_card_payments SET receipt_base64=? WHERE id=? AND receipt_base64 IS NULL').bind(original, paymentId).run()
+  const saved = (await one(db, 'SELECT receipt_base64 FROM bm_card_payments WHERE id=?', paymentId))!
+  return { name: `receipt-${number}.pdf`, bytes: receiptBytes(saved.receipt_base64 as string) }
 }

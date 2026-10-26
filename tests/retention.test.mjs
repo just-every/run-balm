@@ -1,3 +1,4 @@
+import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
@@ -204,7 +205,14 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
 }))
 
 // New financial record kinds retain anonymous arithmetic when their chart is destroyed.
-test('PAY-004 HIPAA-002: external receipts, allocations and unused-credit refunds retain totals without private originals',()=>run(async h=>{
+test('PAY-002 PAY-004 HIPAA-002: Stripe and external refunds retain totals without private originals',()=>{
+ const stripe=fakeProviders();let loseRefund=true
+ const outbound=async request=>{
+  const response=await stripe.handler(request)
+  if(loseRefund&&request.method==='POST'&&new URL(request.url).pathname==='/v1/refunds'){loseRefund=false;return Response.json({error:{message:'Refund response lost after acceptance'}},{status:503})}
+  return response
+ }
+ return run(async h=>{
   const {service,practitioners:[priya]}=await clinic(h)
   const patient=await h.cmd('client.save',{firstName:'External',lastName:'Private',dateOfBirth:'1950-01-01'})
   const visit=await pastVisit(h,patient.id,priya,service.id)
@@ -219,13 +227,29 @@ test('PAY-004 HIPAA-002: external receipts, allocations and unused-credit refund
     await h.cmd('pay.entry.approve',{id:e.id,sha256:e.sha256,attest:true});return e
   }
   await post('write_off','5.00','Private-writeoff',{invoiceId:invoice.id})
+  await h.cmd('pay.stripe.connect',{secretKey:'synthetic-balm-1'})
+  const link=await h.cmd('pay.link.create',{clientId:patient.id,purpose:'card',delivery:'shown'})
+  const path=new URL(link.url).pathname,started=await h.form(path+'?do=card',{consent:'on'})
+  assert.equal(started.status,303)
+  const session=stripe.complete(started.location.split('/').at(-1));await h.send(path+'?setup='+session.id)
+  const cardPayment=await h.cmd('pay.invoice.charge',{invoiceId:invoice.id})
+  const cardRefund=await h.cmd('pay.refund.prepare',{paymentId:cardPayment.id,amount:'30.00',reason:'Synthetic historical overcollection'})
+  const uncertain=await h.cmd('pay.refund.approve',{id:cardRefund.id,sha256:cardRefund.sha256,attest:true})
+  assert.equal(uncertain.status,'uncertain')
+  await h.cmd('retention.save',policy)
+  assert.ok((await file(h,patient.id)).retention.reasons.includes('stripe_refund_outcome_pending'))
+  await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
+  const confirmed=await h.cmd('pay.refund.reconcile',{id:cardRefund.id})
+  assert.equal(confirmed.status,'confirmed')
   const credit=await post('credit','100.00','Private-receipt')
   await post('refund','4.00','Private-refund',{creditId:credit.id})
-  const year=new Date().getUTCFullYear(),range=`from=${year}-01-01&to=${year}-12-31`
+  const clock=Date.now()+10*3600000,day=offset=>new Date(clock+offset*86400000).toISOString().slice(0,10),range=`from=${day(-1)}&to=${day(1)}`
   const before=(await h.send('/api/balm/reports/financial?'+range,undefined,h.owner)).value
+  assert.equal(before.deposits.total.refundedCents,3400)
   await h.cmd('retention.save',policy)
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
   assert.equal(preview.records.bm_account_entries,3);assert.equal(preview.records.bm_account_postings,3)
+  assert.equal(preview.records.bm_card_refunds,1);assert.equal(preview.records.bm_card_refund_allocations,1)
   await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   const after=(await h.send('/api/balm/reports/financial?'+range,undefined,h.owner)).value
   assert.deepEqual(after.summary,before.summary)
@@ -233,4 +257,5 @@ test('PAY-004 HIPAA-002: external receipts, allocations and unused-credit refund
   assert.deepEqual(after.agingByPatient.total,before.agingByPatient.total)
   assert.ok(!JSON.stringify(after).includes('Private-receipt')&&!JSON.stringify(after).includes('Private-refund'))
   assert.equal((await h.send('/api/balm/receipts/'+credit.id+'.pdf',undefined,h.owner)).status,404)
-}))
+},{outbound})
+})

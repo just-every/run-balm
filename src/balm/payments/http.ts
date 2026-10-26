@@ -1,3 +1,4 @@
+import { cardRefundReceipt, cardRefundsFor } from './refunds'
 import { statementBatch } from './statement-cycles'
 import { takeAddressRate, takePatientRate } from '../public-rates'
 import { externalReceipts } from './account-documents'
@@ -28,7 +29,7 @@ async function syncLink(env: Bindings, db: D1Database, link: any, url: URL) {
   if (await paymentBlock(env, db)) return
   const paid = url.searchParams.get('paid'), setup = url.searchParams.get('setup')
   if (paid) await syncCheckout(env, db, paid)
-  if (setup) await syncCardSetup(env, db, setup)
+  if (setup && await one(db, 'SELECT 1 FROM bm_card_setups WHERE id=? AND link_id=?', setup, link.id)) await syncCardSetup(env, db, setup)
   const since = new Date(Date.now() - 86400_000).toISOString()
   for (const p of await rows(db, "SELECT checkout_session FROM bm_card_payments WHERE link_id=? AND status IN ('open','processing') AND created_at>? AND checkout_session IS NOT NULL LIMIT 5", link.id, since)) await syncCheckout(env, db, p.checkout_session as string)
   for (const s of await rows(db, "SELECT id FROM bm_card_setups WHERE link_id=? AND status='open' AND created_at>? LIMIT 5", link.id, since)) await syncCardSetup(env, db, s.id as string)
@@ -39,14 +40,15 @@ async function payPage(env: Bindings, db: D1Database, link: any, token: string, 
   try { await syncLink(env, db, link, url) } catch (e) { error ??= failureText(e).text }
   const client = await one(db, 'SELECT id,first_name,last_name FROM bm_clients WHERE id=?', link.client_id), clinic = await one(db, 'SELECT clinic_name,time_zone,address FROM bm_settings WHERE id=1')
   const card = await liveCard(db, link.client_id)
+  const cardRefunds = await cardRefundsFor(db, link.client_id)
   const payments = await rows(db, "SELECT id,kind,amount_cents,status,card_brand,card_last4,receipt_number,succeeded_at,failure,checkout_session FROM bm_card_payments WHERE client_id=? AND status IN ('succeeded','processing') ORDER BY created_at DESC LIMIT 30", link.client_id)
   const invoices = await rows(db, "SELECT id FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC LIMIT 24", link.client_id)
   const superbills = (await Promise.all(invoices.map(async i => { const f = await superbillFacts(db, i.id as string); return f.missing.length ? null : { invoiceId: i.id, serviceDate: f.v.serviceDate } }))).filter(Boolean)
   const justPaid = url.searchParams.get('paid') ? payments.find(p => p.checkout_session === url.searchParams.get('paid')) : null
-  const justSaved = url.searchParams.get('setup') ? await one(db, "SELECT status FROM bm_card_setups WHERE id=?", url.searchParams.get('setup')) : null
+  const justSaved = url.searchParams.get('setup') ? await one(db, "SELECT status FROM bm_card_setups WHERE id=? AND link_id=?", url.searchParams.get('setup'), link.id) : null
   if (!link.opened_at) await db.prepare('UPDATE bm_pay_links SET opened_at=? WHERE id=? AND opened_at IS NULL').bind(new Date().toISOString(), link.id).run()
   await commit(db, null, [audit(db, patient, 'statement.opened', link.client_id, link.id)])
-  return renderPublic('pay', { clinic, client, token, purpose: link.purpose, card, ledger: await ledger(db, link.client_id), payments, superbills, externalReceipts: await externalReceipts(db, link.client_id), issuedStatements: await statementsFor(db, link.client_id), block: await paymentBlock(env, db),
+  return renderPublic('pay', { clinic, client, token, purpose: link.purpose, card, cardRefunds, ledger: await ledger(db, link.client_id), payments, superbills, externalReceipts: await externalReceipts(db, link.client_id), issuedStatements: await statementsFor(db, link.client_id), block: await paymentBlock(env, db),
     justPaid: justPaid ? { amount: justPaid.amount_cents, receipt: justPaid.receipt_number ? receiptNumber(justPaid.receipt_number as number) : null, status: justPaid.status } : null,
     justSaved: justSaved?.status ?? null, error }, notice.status ?? 200)
 }
@@ -68,9 +70,9 @@ async function stripeWebhook(request: Request, env: Bindings) {
 /** Patient and Stripe doors, before any session is read. Null when the path is not one of them. */
 export async function paymentsPublicResponse(request: Request, env: Bindings, path: string, sameOrigin: boolean): Promise<Response | null> {
   if (path === WEBHOOK_PATH && request.method === 'POST') return stripeWebhook(request, env)
-  const match = path.match(/^\/pay\/([A-Za-z0-9_-]{24,64})(?:\/(statement\.pdf|superbill\.pdf|superbills\/([\w-]+)\.pdf|receipts\/([\w-]+)\.pdf|statements\/([\w-]+)\.pdf))?$/)
+  const match = path.match(/^\/pay\/([A-Za-z0-9_-]{24,64})(?:\/(statement\.pdf|superbill\.pdf|superbills\/([\w-]+)\.pdf|receipts\/([\w-]+)\.pdf|statements\/([\w-]+)\.pdf|refund-receipts\/([\w-]+)\.pdf))?$/)
   if (!match) return null
-  const [, token, file, superbill, receipt, issuedStatement] = match, db = env.DB, url = new URL(request.url)
+  const [, token, file, superbill, receipt, issuedStatement, refundReceipt] = match, db = env.DB, url = new URL(request.url)
   if (request.method === 'POST' && !sameOrigin) return renderPublic('missing', { error: 'Cross-site request refused.' }, 403)
   if (!await takeAddressRate(env, request, 'payment')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
   let link: any
@@ -82,10 +84,10 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
   try {
     if (file) {
       const period = file === 'superbill.pdf'
-      const doc = issuedStatement ? await statementOriginal(db, link.client_id, issuedStatement) : period ? await periodSuperbillPdf(db, link.client_id, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '') : superbill ? (insist(await one(db, "SELECT 1 FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", superbill, link.client_id), 'superbill_not_found', 404), await superbillPdf(db, superbill))
+      const doc = refundReceipt ? (insist(await one(db, "SELECT 1 FROM bm_card_refunds WHERE id=? AND client_id=? AND status='confirmed'", refundReceipt, link.client_id), 'refund_receipt_not_found', 404), await cardRefundReceipt(db, refundReceipt)) : issuedStatement ? await statementOriginal(db, link.client_id, issuedStatement) : period ? await periodSuperbillPdf(db, link.client_id, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '') : superbill ? (insist(await one(db, "SELECT 1 FROM bm_invoices WHERE id=? AND client_id=? AND status='approved'", superbill, link.client_id), 'superbill_not_found', 404), await superbillPdf(db, superbill))
         : receipt ? (insist(await one(db, 'SELECT 1 FROM bm_card_payments WHERE id=? AND client_id=? UNION ALL SELECT 1 FROM bm_posted_account_entries WHERE id=? AND client_id=? AND receipt_base64 IS NOT NULL UNION ALL SELECT 1 FROM bm_retail_sales WHERE id=? AND client_id=?', receipt, link.client_id, receipt, link.client_id, receipt, link.client_id), 'receipt_not_found', 404), await receiptPdf(db, receipt))
           : await statementPdf(db, link.client_id)
-      await commit(db, null, [audit(db, patient, superbill || period ? 'superbill.downloaded' : receipt ? 'receipt.downloaded' : 'statement.downloaded', link.client_id, superbill ?? receipt ?? issuedStatement ?? link.id)])
+      await commit(db, null, [audit(db, patient, refundReceipt ? 'refund.receipt_downloaded' : superbill || period ? 'superbill.downloaded' : receipt ? 'receipt.downloaded' : 'statement.downloaded', link.client_id, refundReceipt ?? superbill ?? receipt ?? issuedStatement ?? link.id)])
       return pdfResponse(doc)
     }
     if (request.method === 'POST') {
@@ -108,6 +110,15 @@ export async function paymentsPublicResponse(request: Request, env: Bindings, pa
 
 /** The desk's downloads: a superbill, a statement or a receipt (owner and reception). */
 export async function paymentDocument(db: D1Database, who: Actor, path: string, params = new URLSearchParams()): Promise<Response | null> {
+  const refundPath = path.match(/^\/api\/balm\/refund-receipts\/([\w-]+)\.pdf$/)
+  if (refundPath) {
+    need(who, 'owner', 'reception'); human(who)
+    const r = await one(db, "SELECT client_id FROM bm_card_refunds WHERE id=? AND status='confirmed'", refundPath[1])
+    insist(r, 'refund_receipt_not_found', 404)
+    const doc = await cardRefundReceipt(db, refundPath[1])
+    await commit(db, who, [audit(db, who, 'refund.receipt_downloaded', r.client_id, refundPath[1])])
+    return pdfResponse(doc)
+  }
   const batch = await statementBatch(db, who, path)
   if (batch) return batch
   const match = path.match(/^\/api\/balm\/(superbills|period-superbills|statements|issued-statements|receipts)\/([\w-]+)\.pdf$/)

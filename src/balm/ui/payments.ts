@@ -1,3 +1,5 @@
+import { terminalSettings, terminalCheckIn } from './card-terminal'
+import { cardRefundsPanel } from './card-refunds'
 import { patientCyclePanel } from './statement-cycles'
 import { periodSuperbillForm } from './superbill-period'
 // Patient payments in the staff pages: Stripe and NPIs in Clinic, check-in with
@@ -15,7 +17,7 @@ export function clinicPayments(s: any) {
   if (st.managed) body = `<p>${h(st.block)}</p>`
   else if (st.connected) {
     const c = st.connected
-    body = `<p>${status(c.livemode ? 'Live mode' : 'Test mode')} Connected to <strong>${h(c.account)}</strong> (${h(c.accountId)}) with key ${h(c.keyHint)}, by ${h(c.connectedBy)} ${stamp(s, c.connectedAt)}.</p>`
+    body = `<p>${status(c.livemode ? 'Live mode' : 'Test mode')} Connected to <strong>${h(c.account)}</strong> (${h(c.accountId)}) by ${h(c.connectedBy)} ${stamp(s, c.connectedAt)}.</p>`
       + `<p class="help">${c.webhook ? 'Stripe tells Balm about each payment and saved card as it happens.' : 'This install has no public https address, so Stripe cannot call it back: Balm checks each payment and saved card when the patient returns to their link.'}${c.livemode ? '' : ' Test mode takes Stripe’s test cards only (4242 4242 4242 4242).'}</p>`
       + `<details><summary>Disconnect Stripe</summary><p>Saved cards stay in your Stripe account but Balm stops charging them until you connect the same account again.</p>${form('pay.stripe.disconnect', '/app/clinic', '<label class="check"><input type="checkbox" required><span>Disconnect this Stripe account.</span></label>', 'Disconnect Stripe', true)}</details>`
   } else body = '<p>Connect your clinic’s own Stripe account to save patients’ cards with their consent, charge copays at check-in and let patients pay balances from a link. Money goes straight to your Stripe account; Balm never sees card numbers.</p>'
@@ -23,11 +25,14 @@ export function clinicPayments(s: any) {
       + '<p class="help">In the Stripe Dashboard: Developers → API keys. A test-mode key (sk_test_…) lets you try everything with Stripe’s test cards first. Balm keeps the key sealed and never shows it again.</p>', 'Connect Stripe')
   const texts = `<p class="help">${p.smsBlock ? 'Pay links go by email until texting is set up (see Automatic visit reminders above).' : 'Pay links can also go by text.'}</p>`
   const npis = p.npis.length ? `<ul class="plain">${p.npis.map((x: any) => `<li>${form('pay.npi.save', '/app/clinic', hidden('staffId', x.id) + field('npi', `${x.name}: NPI`, x.npi, 'text', 'inputmode="numeric" maxlength="10" pattern="\\d{10}"'), 'Save NPI', true)}</li>`).join('')}</ul>` : empty('Add a practitioner first.')
-  return panel('Online payments', body + texts) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer. A practitioner whose provider number (in Staff) is their NPI has it filled in here already.</p>${npis}`)
+  return terminalSettings(s) + panel('Online payments', body + texts) + panel('Billing identifiers', `<p>Each practitioner’s 10-digit NPI and the clinic’s tax ID (in Clinic details) print on superbills patients submit to their insurer. A practitioner whose provider number (in Staff) is their NPI has it filled in here already.</p>${npis}`)
 }
 
 /** The day view's check-in: one action checks the patient in and charges their copay to the card on file. */
 export function checkInActions(s: any, a: any, back: string) {
+  return savedCardCheckIn(s, a, back) + terminalCheckIn(s, a, back)
+}
+function savedCardCheckIn(s: any, a: any, back: string) {
   const v = s.payments?.visits?.[a.id]
   if (!v || a.status !== 'booked' && !v.checkedInAt) return ''
   const block = s.payments.stripe?.block, chargeable = desk(s) && !block && v.card && v.copayCents > 0
@@ -91,6 +96,6 @@ export function billingPanels(s: any, f: any, notice: any) {
   return `${linkResult(s, notice)}` + panel('Billing and payments', `${periodSuperbillForm('/api/balm/period-superbills/' + f.client.id + '.pdf')}${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>Per visit or inclusive date range, with CPT and ICD-10 codes, practice and rendering NPIs, fees, payments and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
-    + codesPanel(s, f, path) + patientCyclePanel(s, f)
+    + codesPanel(s, f, path) + patientCyclePanel(s, f) + cardRefundsPanel(s, f)
 }
 

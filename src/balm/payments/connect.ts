@@ -5,6 +5,10 @@ import { runtimeBindings, type Bindings } from '../../auth.server'
 import { audit, commit, human, insist, need, now, one, text, type Actor, type Data } from '../domain/model'
 import { managedInstall, MANAGED_LINE, seal, STRIPE_VERSION, stripeCall, unseal } from './stripe-api'
 
+const publicStripeOrigin = (origin: string) => {
+  try { const url = new URL(origin); return url.protocol === 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) } catch { return false }
+}
+
 export const WEBHOOK_PATH = '/api/balm/stripe/webhook'
 const EVENTS = ['checkout.session.completed', 'checkout.session.expired', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed',
   'payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.processing']
@@ -30,14 +34,13 @@ export async function connectStripe(env: Bindings, db: D1Database, who: Actor, i
   need(who, 'owner'); human(who)
   insist(!managedInstall(env), MANAGED_LINE, 409)
   const key = text(input.secretKey, 'stripe_key', 300)
-  insist(/^(sk|rk)_(test|live)_/.test(key), 'Paste a Stripe secret key (sk_live_… or sk_test_…) or a restricted key (rk_…)')
-  insist(/^(sk|rk)_(test|live)_[A-Za-z0-9]{16,}$/.test(key), 'That Stripe key is incomplete or mistyped. In the Stripe Dashboard, open Developers → API keys and copy the whole key with its copy button.')
+  insist(key.length >= 16 && !/\s/.test(key), 'That Stripe key is incomplete or mistyped. In the Stripe Dashboard, open Developers → API keys and copy the whole key with its copy button.')
   const account = await stripeCall(key, 'GET', '/account')
   const existing = await stripeSettings(db), origin = runtimeBindings(env).AUTH_ORIGIN
   // A reconnect often replaces a revoked key, so the old webhook may no longer be reachable to remove.
   if (existing?.webhook_id) await stripeCall(await unseal(env, existing.key_sealed as string), 'DELETE', `/webhook_endpoints/${existing.webhook_id}`).catch(() => null)
   // Stripe calls back only to a public https address; a computer-local install reads outcomes when the patient returns.
-  const hook = origin.startsWith('https://') ? await stripeCall(key, 'POST', '/webhook_endpoints', { url: origin + WEBHOOK_PATH, description: 'Balm patient payments', api_version: STRIPE_VERSION, enabled_events: EVENTS }) : null
+  const hook = publicStripeOrigin(origin) ? await stripeCall(key, 'POST', '/webhook_endpoints', { url: origin + WEBHOOK_PATH, description: 'Balm patient payments', api_version: STRIPE_VERSION, enabled_events: EVENTS }) : null
   const name = account.settings?.dashboard?.display_name || account.business_profile?.name || account.email || account.id
   await commit(db, who, [
     db.prepare(`INSERT INTO bm_stripe(id,key_sealed,key_hint,livemode,account_id,account_name,country,webhook_id,webhook_secret_sealed,connected_by,connected_at) VALUES(1,?,?,?,?,?,?,?,?,?,?)
@@ -61,7 +64,7 @@ export async function disconnectStripe(env: Bindings, db: D1Database, who: Actor
 export async function stripeView(env: Bindings, db: D1Database) {
   const s = await stripeSettings(db)
   return {
-    managed: managedInstall(env), block: await paymentBlock(env, db), publicOrigin: runtimeBindings(env).AUTH_ORIGIN.startsWith('https://'),
+    managed: managedInstall(env), block: await paymentBlock(env, db), publicOrigin: publicStripeOrigin(runtimeBindings(env).AUTH_ORIGIN),
     connected: s ? { keyHint: s.key_hint, livemode: !!s.livemode, account: s.account_name, accountId: s.account_id, country: s.country, webhook: !!s.webhook_id, connectedBy: s.connected_by, connectedAt: s.connected_at } : null,
   }
 }

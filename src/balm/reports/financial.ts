@@ -36,6 +36,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     db.prepare("SELECT start_at FROM bm_appointments WHERE status='attended'"),
     db.prepare("SELECT id,credit_id,kind,amount_cents,reference,posted_at FROM bm_posted_account_entries WHERE kind IN ('credit','refund')"),
   ])).map(x => x.results)
+  const refunds = (await db.prepare("SELECT r.id,r.payment_id,r.amount_cents,r.confirmed_at,r.provider_refund_id,COALESCE((SELECT SUM(a.amount_cents) FROM bm_card_refund_allocations a WHERE a.refund_id=r.id),0) AS allocated_cents FROM bm_card_refunds r WHERE r.status='confirmed'").all<Data>()).results
   const retail=await db.prepare('SELECT id,client_id,kind,amount_cents,tax_cents,gift_id,reference,recorded_at FROM bm_retail_sales').all<Data>()
   for(const sale of retail.results){
     const total=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
@@ -45,6 +46,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     }
   }
   const anonymous = await anonymousFinancialFacts(db)
+  refunds.push(...anonymous[6])
   invoices.push(...anonymous[0])
   payments.push(...anonymous[1]); adjustments.push(...anonymous[2]); cards.push(...anonymous[3]); visits.push(...anonymous[4]); accountEntries.push(...anonymous[5])
   const kindOf = (p: Data) => p.account_entry_id ? 'desk' : isPayerPayment(p.reference) ? 'insurance' : p.card_payment_id ? 'card' : 'desk'
@@ -89,8 +91,12 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   for(const b of manualBatches.results)deposits.push({date:b.deposit_on,source:'Paper EOB · '+b.payer,reference:b.reference,receivedCents:b.amount_cents,postedCents:b.paid_cents-b.recouped_cents+b.interest_cents,creditCents:0,unpostedCents:0,refundedCents:0,interestCents:b.interest_cents,recoupedCents:b.recouped_cents})
   const days = (list: Data[], at: string) => { const map = new Map<string, Data[]>(); for (const x of list) if (inRange(x[at])) { const d = local(x[at]); map.set(d, [...(map.get(d) ?? []), x]) } return [...map].sort(([a], [b]) => a.localeCompare(b)) }
   for (const [date, list] of days(cards, 'succeeded_at')) {
-    const ids = new Set(list.map(c => c.id)), received = sum(list), postedCents = sum(payments, p => ids.has(p.card_payment_id) && before(p.recorded_at)), creditCents = received - postedCents
+    const ids = new Set(list.map(c => c.id)), received = sum(list), postedCents = sum(payments, p => ids.has(p.card_payment_id) && !String(p.reference).startsWith('stripe-refund:') && before(p.recorded_at)), creditCents = received - postedCents
     deposits.push({ date, source: 'Card payments (Stripe)', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: received, postedCents, creditCents, unpostedCents: received - postedCents - creditCents, refundedCents: 0 })
+  }
+  for (const refund of refunds.filter(v => inRange(v.confirmed_at))) {
+    const amount = Number(refund.amount_cents), allocated = Number(refund.allocated_cents)
+    deposits.push({ date: local(refund.confirmed_at), source: 'Stripe refund to original payment', reference: refund.provider_refund_id ?? 'Destroyed refund', receivedCents: -amount, postedCents: -allocated, creditCents: -(amount-allocated), unpostedCents: 0, refundedCents: amount })
   }
   for (const [date, list] of days(payments.filter(p => kindOf(p) === 'desk' && !p.account_entry_id), 'recorded_at')) {
     deposits.push({ date, source: 'Recorded at the desk', reference: `${list.length} payment${list.length === 1 ? '' : 's'}`, receivedCents: sum(list), postedCents: sum(list), creditCents: 0, unpostedCents: 0, refundedCents: 0 })

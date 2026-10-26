@@ -1,3 +1,5 @@
+import { cardRefundsFor, cardRefundReceipt } from '../payments/refunds'
+import { cardEntryView, portalCardEntry } from '../payments/card-entry'
 import { patientOutcomes, respondOutcome } from '../cases/outcomes-patient'
 import {chooseLanguage,patientLanguage} from './language'
 import {guardianActor,guardianChildren,selectGuardianChild} from './guardians'
@@ -23,7 +25,7 @@ import { patientActor, portalGuard, portalToken, type Patient } from './auth'
 import { exerciseProgress, patientExercises } from './programs'
 
 /** The session's client id is the only patient selector accepted by portal reads. */
-export async function portalHome(env: Bindings, patient: Patient) {
+export async function portalHome(env: Bindings, patient: Patient, setupId?: string | null) {
   const db = env.DB, at = now()
   const policy = await getVisitPolicy(db)
   const [clinic, appointments, exercises, messages, balance, block, receipts, superbills, messageRecipients] = await Promise.all([
@@ -52,7 +54,7 @@ export async function portalHome(env: Bindings, patient: Patient) {
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     paymentPlans: await patientPlans(db, patient.clientId),
-    billing: { payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
+    billing: { cardRefunds: await cardRefundsFor(db, patient.clientId), cardEntry: await cardEntryView(env, patient.clientId, 'portal', setupId), payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
   }
 }
 
@@ -98,6 +100,7 @@ export async function portalAction(env: Bindings, patient: Patient, name: string
     case 'exercise.done': return exerciseProgress(env.DB, patient, input, true)
     case 'message.send': return messageSend(env, patient, input)
     case 'intake.open': return intakeOpen(env.DB, patient, input)
+    case 'payment.card': return portalCardEntry(env, patient, input)
     case 'payment.open': return paymentOpen(env, patient, input)
   }
   insist(false, 'unknown_command', 404)
@@ -126,4 +129,11 @@ export async function portalPeriodSuperbill(db: D1Database, patient: Patient, fr
   const document = await periodSuperbillPdf(db, patient.clientId, from, to)
   await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'superbill.downloaded', patient.clientId, null, 'period')])
   return document
+}
+
+export async function portalRefundReceipt(db: D1Database, patient: Patient, key: string) {
+  insist(await one(db, "SELECT 1 FROM bm_card_refunds WHERE id=? AND client_id=? AND status='confirmed'", key, patient.clientId), 'refund_receipt_not_found', 404)
+  const doc = await cardRefundReceipt(db, key)
+  await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'refund.receipt_downloaded', patient.clientId, key)])
+  return doc
 }

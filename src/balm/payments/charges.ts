@@ -1,3 +1,4 @@
+import { syncTerminalPayment } from './terminal'
 // Money in through the clinic's Stripe account: the card on file charged off
 // session (a copay at check-in, an invoice's balance) or the patient paying a
 // balance from their link in Stripe Checkout. Every outcome is read back from
@@ -27,12 +28,13 @@ export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor
   insist(card, 'no_card_on_file', 409)
   insist(card.account_id === settings.account_id, 'the_card_was_saved_in_another_stripe_account_ask_the_patient_to_save_it_again', 409)
   insist(c.amountCents >= 50, 'stripe_charges_at_least_50_cents', 409)
+  const customer = await customerFor(db, key, settings.account_id as string, c.clientId)
   const paymentId = c.paymentId ?? id(), source = who ?? { email: 'payment scheduler', role: 'payments' }
   try { await commit(db, who, [
     ...(c.reservation ?? []),
-    ...(c.kind === 'copay' ? [guard(db, "NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE appointment_id=? AND kind='copay' AND status IN ('open','processing','succeeded'))", c.appointmentId)] : []),
-    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,invoice_id,amount_cents,status,card_brand,card_last4,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'open',?,?,?,?,?)`,
-      paymentId, c.clientId, c.kind, c.appointmentId ?? null, c.invoiceId ?? null, c.amountCents, card.brand, card.last4, source.email, now(), now()),
+    ...(c.kind === 'copay' ? [guard(db, "NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE appointment_id=? AND kind='copay' AND status IN ('open','processing','requires_action','succeeded'))", c.appointmentId)] : []),
+    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,invoice_id,amount_cents,status,card_brand,card_last4,created_by,created_at,updated_at,stripe_account_id,stripe_customer_id) VALUES(?,?,?,?,?,?,'open',?,?,?,?,?,?,?)`,
+      paymentId, c.clientId, c.kind, c.appointmentId ?? null, c.invoiceId ?? null, c.amountCents, card.brand, card.last4, source.email, now(), now(), settings.account_id, customer),
     audit(db, source, `payment.${c.kind}_started`, c.clientId, paymentId, `${c.amountCents} cents`),
   ]) } catch (error) {
     if (c.paymentId) { const known = await payment(db, c.paymentId); if (known) return known }
@@ -41,7 +43,7 @@ export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor
   let intent: Data
   try {
     intent = await stripeCall(key, 'POST', '/payment_intents', {
-      amount: c.amountCents, currency: 'usd', customer: await customerFor(db, key, settings.account_id as string, c.clientId), payment_method: card.id,
+      amount: c.amountCents, currency: 'usd', allowed_payment_method_types: ['card'], customer, payment_method: card.id,
       off_session: true, confirm: true, description: c.description, metadata: { balm_payment: paymentId, balm_client: c.clientId, balm_kind: c.kind },
     }, `balm-payment-${paymentId}`)
   } catch (error) {
@@ -61,17 +63,18 @@ export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor
 
 /** The patient pays from their link: a Stripe Checkout address for `amount`. */
 export async function startLinkPayment(env: Bindings, db: D1Database, link: Data, linkUrl: string, amountCents: number) {
-  const { key } = await stripeReady(env, db)
+  const { settings, key } = await stripeReady(env, db)
+  const customer = await customerFor(db, key, settings.account_id as string, link.client_id)
   const clinic = (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string, paymentId = id()
   const session = await stripeCall(key, 'POST', '/checkout/sessions', {
-    mode: 'payment', allowed_payment_method_types: ['card'], client_reference_id: paymentId,
+    mode: 'payment', customer, allowed_payment_method_types: ['card'], client_reference_id: paymentId,
     line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: amountCents, product_data: { name: `Payment to ${clinic}` } } }],
     metadata: { balm_payment: paymentId, balm_client: link.client_id }, payment_intent_data: { description: `Payment to ${clinic}`, metadata: { balm_payment: paymentId, balm_client: link.client_id, balm_kind: 'link' } },
     success_url: `${linkUrl}?paid={CHECKOUT_SESSION_ID}`, cancel_url: linkUrl,
   })
   await commit(db, null, [
-    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,link_id,amount_cents,status,checkout_session,created_by,created_at,updated_at) VALUES(?,?,'link',?,?,'open',?,'patient link',?,?)`,
-      paymentId, link.client_id, link.id, amountCents, session.id, now(), now()),
+    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,link_id,amount_cents,status,checkout_session,created_by,created_at,updated_at,stripe_account_id,stripe_customer_id) VALUES(?,?,'link',?,?,'open',?,'patient link',?,?,?,?)`,
+      paymentId, link.client_id, link.id, amountCents, session.id, now(), now(), settings.account_id, customer),
     audit(db, { email: 'patient link', role: 'patient' }, 'payment.link_started', link.client_id, paymentId, `${amountCents} cents`),
   ])
   return String(session.url)
@@ -96,8 +99,11 @@ export async function syncCheckout(env: Bindings, db: D1Database, sessionId: str
 /** A payment_intent.* event: read the intent back from Stripe and record it. */
 export async function syncIntent(env: Bindings, db: D1Database, intentId: string, paymentId?: string) {
   const row = await one(db, 'SELECT * FROM bm_card_payments WHERE payment_intent=? OR id=?', intentId, paymentId ?? '')
-  if (!row || DONE.includes(row.status as string)) return row
-  const { key } = await stripeReady(env, db)
+  if (!row) return row
+  if (await one(db, 'SELECT 1 FROM bm_terminal_payments WHERE payment_id=?', row.id)) return syncTerminalPayment(env, db, row.id, null, intentId)
+  if (DONE.includes(row.status as string)) return row
+  const { settings, key } = await stripeReady(env, db)
+  insist(!row.stripe_account_id || row.stripe_account_id === settings.account_id, 'original_stripe_account_must_be_connected', 409)
   const intent = await stripeCall(key, 'GET', `/payment_intents/${encodeURIComponent(intentId)}`, { expand: ['latest_charge'] })
   if (!row.payment_intent) await db.prepare('UPDATE bm_card_payments SET payment_intent=? WHERE id=? AND payment_intent IS NULL').bind(intent.id, row.id).run()
   return applyIntent(env, db, { ...row, payment_intent: intent.id }, intent)
@@ -113,9 +119,11 @@ async function applyIntent(env: Bindings, db: D1Database, row: Data, intent: Dat
 }
 
 /** Post a succeeded intent once: the payment, its receipt number and its matching to invoices in one batch. */
-async function recordSucceeded(env: Bindings, db: D1Database, row: Data, intent: Data) {
-  const card = intent.latest_charge && typeof intent.latest_charge === 'object' ? intent.latest_charge.payment_method_details?.card : null
+export async function recordSucceeded(env: Bindings, db: D1Database, row: Data, intent: Data) {
+  const card = intent.latest_charge && typeof intent.latest_charge === 'object' ? (intent.latest_charge.payment_method_details?.card ?? intent.latest_charge.payment_method_details?.card_present) : null
   const amount = Number(intent.amount_received)
+  insist(amount === Number(row.amount_cents) && intent.currency === 'usd', 'stripe_payment_amount_changed', 409)
+  if (row.stripe_customer_id) insist(row.stripe_customer_id === (typeof intent.customer === 'string' ? intent.customer : intent.customer?.id), 'stripe_payment_customer_changed', 409)
   for (let attempt = 0; ; attempt++) {
     const current = (await payment(db, row.id))!
     if (current.status === 'succeeded') return current

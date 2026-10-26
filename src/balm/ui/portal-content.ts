@@ -1,3 +1,5 @@
+import { patientCardRefunds } from './card-refunds'
+import { cardEntryPanel } from './card-entry'
 import { patientOutcomeFollowthrough } from './outcome-followthrough'
 import {pt} from './portal-language'
 import {guardianPatientPanel,patientProfilePanel} from './portal-profile'
@@ -35,14 +37,14 @@ function forms(d: any) {
 
 function statements(d: any) {
   const b = d.billing
-  return `<p class="balance">${money(b.balanceCents)} <span>${pt(d,'balance')}</span></p><p><a href="/portal/statement.pdf">${pt(d,'Download statement PDF')}</a></p>`
+  return patientCardRefunds(b.cardRefunds ?? [], '/portal/refund-receipts') + cardEntryPanel(b.cardEntry, '/portal/action', true) + `<p class="balance">${money(b.balanceCents)} <span>${pt(d,'balance')}</span></p><p><a href="/portal/statement.pdf">${pt(d,'Download statement PDF')}</a></p>`
     + (b.estimates?.length ? `<h3>Good Faith Estimates</h3><ul>${b.estimates.map((e:any)=>`<li><a href="/portal/estimates/${h(e.id)}.pdf">Estimate · ${money(e.total_cents)} · ${h(usDate(e.from_on,'UTC'))}</a>${e.disputeFlag?'<p>This practice’s billed charges are at least $400 above its estimated charges. Contact the clinic to review your bill; see the estimate for federal dispute information.</p>':''}</li>`).join('')}</ul>` : '')
     + (b.payerEstimates?.length ? `<h3>Payer estimates</h3><p>These are originals supplied by your payer. Contact the payer or clinic about the benefit details; an estimate is not a guarantee of payment.</p><ul>${b.payerEstimates.map((e:any)=>`<li><a href="/portal/aeobs/${h(e.id)}.pdf">${h(e.snapshot.payer)} · ${h(e.source_reference)} · ${h(usDate(e.source_date,'UTC'))}</a></li>`).join('')}</ul>` : '')
     + (b.issuedStatements?.length ? `<h3>Issued statements</h3><ul>${b.issuedStatements.map((i: any) => `<li><a href="/portal/statements/${h(i.id)}.pdf">Statement ${h(usDate(i.due_on, 'UTC'))} · ${money(i.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + (b.receipts.length ? `<h3>Receipts</h3><ul>${b.receipts.map((r: any) => `<li><a href="/portal/receipts/${h(r.id)}.pdf">Receipt ${h(r.receipt_number)} · ${money(r.amount_cents)}</a></li>`).join('')}</ul>` : '')
     + periodSuperbillForm('/portal/superbill.pdf')
     + (b.superbills.length ? `<h3>Superbills</h3><ul>${b.superbills.map((i: any) => `<li><a href="/portal/superbills/${h(i.id)}.pdf">Superbill for invoice ${h(i.number)}</a></li>`).join('')}</ul>` : '')
-    + (b.block ? `<p>${h(b.block)}</p>` : patientForm('payment.open', hidden('purpose', 'balance'), pt(d,'Pay balance')) + patientForm('payment.open', hidden('purpose', 'card'), pt(d,'Manage payment card')))
+    + (b.block ? `<p>${h(b.block)}</p>` : patientForm('payment.open', hidden('purpose', 'balance'), pt(d,'Pay balance')))
 }
 
 function messages(d: any) {

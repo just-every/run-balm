@@ -23,7 +23,7 @@ export async function customerFor(db: D1Database, key: string, accountId: string
 }
 
 /** From the patient's link, after they checked the consent: the Stripe Checkout address to save a card. */
-export async function startCardSetup(env: Bindings, db: D1Database, link: Data, linkUrl: string, input: Data) {
+export async function startCardSetup(env: Bindings, db: D1Database, link: Data, linkUrl: string, input: Data, authority: D1PreparedStatement[] = []) {
   insist(input.consent === 'on' || input.consent === true, 'tick_the_authorization_to_save_a_card')
   const { settings, key } = await stripeReady(env, db)
   const clinic = (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string, consent = consentText(clinic)
@@ -31,12 +31,13 @@ export async function startCardSetup(env: Bindings, db: D1Database, link: Data, 
   const session = await stripeCall(key, 'POST', '/checkout/sessions', {
     mode: 'setup', customer, allowed_payment_method_types: ['card'], currency: 'usd',
     success_url: `${linkUrl}?setup={CHECKOUT_SESSION_ID}`, cancel_url: linkUrl,
-    metadata: { balm_client: link.client_id, balm_link: link.id }, setup_intent_data: { description: `Card on file at ${clinic}`, metadata: { balm_client: link.client_id } },
+    metadata: { balm_client: link.client_id, balm_link: link.id }, setup_intent_data: { description: 'Balm card on file', metadata: { balm_client: link.client_id } },
     custom_text: { submit: { message: consent.slice(0, 1200) } },
   })
   await commit(db, null, [
-    stmt(db, "INSERT INTO bm_card_setups(id,link_id,client_id,consent_text,consented_at,status,created_at) VALUES(?,?,?,?,?,'open',?)", session.id, link.id, link.client_id, consent, now(), now()),
-    audit(db, patient, 'card.setup_started', link.client_id, session.id),
+    ...authority,
+    stmt(db, "INSERT INTO bm_card_setups(id,link_id,client_id,consent_text,consented_at,status,created_at,source,consented_by,account_id,customer_id) VALUES(?,?,?,?,?,'open',?,?,?,?,?)", session.id, link.id, link.client_id, consent, now(), now(), link.source ?? 'private link', link.actor?.email ?? patient.email, settings.account_id, customer),
+    audit(db, link.actor ?? patient, 'card.setup_started', link.client_id, session.id, link.source ?? 'private link'),
   ])
   return String(session.url)
 }
@@ -53,6 +54,8 @@ export async function syncCardSetup(env: Bindings, db: D1Database, sessionId: st
   }
   const intent = typeof session.setup_intent === 'object' ? session.setup_intent : null, method = intent && typeof intent.payment_method === 'object' ? intent.payment_method : null
   if (session.status !== 'complete' || intent?.status !== 'succeeded' || !method?.card) return row
+  insist(!row.account_id || row.account_id === settings.account_id, 'card_setup_account_changed', 409)
+  insist(!row.customer_id || row.customer_id === (typeof session.customer === 'string' ? session.customer : session.customer?.id), 'card_setup_customer_changed', 409)
   const previous = await liveCard(db, row.client_id as string)
   try {
     await commit(db, null, [
@@ -61,7 +64,7 @@ export async function syncCardSetup(env: Bindings, db: D1Database, sessionId: st
       stmt(db, `INSERT INTO bm_cards(id,client_id,account_id,customer_id,setup_intent,brand,last4,exp_month,exp_year,consent_text,consent_sha256,consented_at,saved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         method.id, row.client_id, settings.account_id, typeof session.customer === 'string' ? session.customer : session.customer?.id, intent.id,
         method.card.brand, method.card.last4, method.card.exp_month, method.card.exp_year, row.consent_text, await sha256(row.consent_text as string), row.consented_at, now()),
-      audit(db, patient, 'card.saved', row.client_id as string, method.id, `${method.card.brand} ${method.card.last4}`),
+      audit(db, { email: String(row.consented_by), role: 'patient' }, 'card.saved', row.client_id as string, method.id, `${method.card.brand} ${method.card.last4}`),
     ])
   } catch (error) {
     // The return and the webhook can both arrive; the first one keeps the card.

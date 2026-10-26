@@ -21,7 +21,7 @@ export async function portalBilling(options = {}) {
     const { service, practitioners: [priya] } = await clinic(h)
     await h.cmd('settings.save', { clinicName: 'Riverside Therapy', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '100 Main St, Austin TX 78701' })
     await h.cmd('pay.npi.save', { staffId: priya.id, npi: '1245319599' })
-    await h.cmd('pay.stripe.connect', { secretKey: 'sk_test_' + 'a'.repeat(24) })
+    await h.cmd('pay.stripe.connect', { secretKey: 'synthetic-balm-1' })
     const patient = await h.cmd('client.save', { firstName: 'Marisol', lastName: 'Diaz', dateOfBirth: '1980-03-07', email: 'marisol@patient.example' })
     const invoices = []
     const chargeVisit = async hours => {

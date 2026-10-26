@@ -17,7 +17,7 @@ export const todayStyle = `
 .today-more{margin-top:22px}
 .day-list>summary{display:flex;align-items:baseline;gap:12px;width:auto;margin:0;padding:0;color:var(--ink)}.day-list>summary h2{margin:0}.day-list[open]>summary{margin-bottom:12px}
 .visit-rows{list-style:none;margin:0;padding:0}.visit-rows li{display:grid;grid-template-columns:76px minmax(0,1fr) auto;gap:4px 16px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
-.visit-rows .when{font-weight:600;font-variant-numeric:tabular-nums;padding-top:1px}.visit-rows .what{min-width:0}.visit-rows .chips{margin:4px 0 0}.visit-rows .row-links{display:grid;justify-items:end;gap:6px;font-size:13px}.visit-rows .row-links form{display:block}
+.visit-rows .when{font-weight:600;font-variant-numeric:tabular-nums;padding-top:1px}.visit-rows .what{min-width:0}.visit-rows .chips{margin:4px 0 0}.visit-rows .row-links{display:grid;justify-items:end;gap:6px;font-size:13px}.visit-rows .row-links form{display:block;max-width:100%;min-width:0}.visit-rows .row-links{min-width:0;max-width:100%}.visit-rows .row-links .actions{max-width:100%}.visit-rows .row-links button{white-space:normal;line-height:1.35;max-width:100%;padding:10px 16px}
 @media(max-width:700px){.visit-rows li{grid-template-columns:64px minmax(0,1fr)}.visit-rows .row-links{grid-column:2;justify-items:start}}
 .panel.setup{margin:0 0 16px}
 .button.small{min-height:32px;padding:0 12px;font-size:13px;border-radius:9px}

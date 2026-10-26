@@ -15,6 +15,8 @@ In **Clinic → Billing identifiers**, enter each practitioner's 10-digit **NPI*
 
 ## A card on file
 
+Patients can choose **Card on file** directly in intake or in the signed-in portal’s **Statements and payments**. Card authorization is separate from treatment consent. Each entry retains the exact authorization, acceptance time and whether it came from intake, the portal or a private payment link. Stripe Checkout uses a SetupIntent and hosts every card field.
+
 In the patient's file, under **Card on file and copay**:
 
 - **Email a card form** sends the patient a private link, or
@@ -29,6 +31,20 @@ Set the patient's **Copay per visit** in the same panel.
 On the **Schedule**, a visit booked for today shows **Check in and charge $30.00 copay to Visa ending 4242** when the patient has a copay and a card on file. One select checks the patient in and charges the card. The visit then shows **Copay $30.00 paid** and its receipt (`R-000001`), which is also emailed to the patient. If the bank declines the card, or asks the patient to confirm the charge, the patient is still checked in, the reason is shown, and you can try again or send a pay link. **Check in without charging** checks the patient in only, and a visit can be charged once.
 
 The copay waits on the visit until its invoice is approved, and then counts toward that invoice.
+
+## Approved Stripe refunds
+
+In the patient’s file, open **Stripe refunds**, choose the original succeeded payment, enter the exact refund amount and reason, and select **Prepare refund for approval**. Preparation moves no money. The owner or an assigned biller reviews the original Stripe charge and current patient and practice account, then confirms **Approve and refund**. Balm checks the original processor facts again before sending and retains the approver and exact approved action.
+
+A refund goes only to the original payment method. Its provider refund ID, amount and original charge must match before Balm records it. The ledger and invoice allocations show the reversal, while the original payment receipt keeps its issued bytes. The portal keeps both payment and refund receipts and the updated statement and superbill.
+
+If a response is lost or Stripe reports a pending outcome, select **Read original Stripe outcome**. Repeated approval never sends another refund. A changed patient, account, amount, original allocation or provider state requires a fresh preparation. For an older payment, Balm retrieves the actual original intent and charge in the connected Stripe account and checks the original patient and payment references, amount, currency and mode. Only the exact owner or biller approval records the verified original account and customer binding; a mismatched or unavailable original is refused.
+
+## Stripe Terminal
+
+The owner configures a smart reader in **Clinic → Card terminal**, either using its registered Stripe reader ID or registering it with an existing Terminal location and the reader’s code. At check-in, reception can select **Check in and collect $30.00 on terminal**. The patient taps or inserts on the reader; Balm accepts no card fields. **Check Stripe status** reads the original intent before posting one receipt and copay. An uncertain or declined collection stays reserved until the original intent succeeds or is explicitly canceled.
+
+In test mode, **Create a Stripe test reader** and **Present test card in Stripe** use Stripe’s real simulated-reader API. This demonstrates the server-driven integration, not operation of a physical paired clinic reader. That physical-device proof remains outstanding.
 
 ## Pay links and statements
 

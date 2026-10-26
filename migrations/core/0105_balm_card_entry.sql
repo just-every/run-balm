@@ -1,0 +1,12 @@
+ALTER TABLE bm_card_payments ADD COLUMN stripe_account_id TEXT;
+ALTER TABLE bm_card_payments ADD COLUMN stripe_customer_id TEXT;
+ALTER TABLE bm_card_setups ADD COLUMN source TEXT NOT NULL DEFAULT 'private link';
+ALTER TABLE bm_card_setups ADD COLUMN consented_by TEXT NOT NULL DEFAULT 'patient link';
+ALTER TABLE bm_card_setups ADD COLUMN account_id TEXT;
+ALTER TABLE bm_card_setups ADD COLUMN customer_id TEXT;
+ALTER TABLE bm_destroyed_cards ADD COLUMN refunded_cents INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE bm_destroyed_card_refunds(id TEXT PRIMARY KEY,payment_id TEXT NOT NULL,amount_cents INTEGER NOT NULL,allocated_cents INTEGER NOT NULL,confirmed_at TEXT NOT NULL);
+CREATE TRIGGER bm_destroyed_card_refunds_fixed BEFORE UPDATE ON bm_destroyed_card_refunds BEGIN SELECT RAISE(ABORT,'anonymous_business_fact_fixed'); END;
+CREATE TRIGGER bm_destroyed_card_refunds_kept BEFORE DELETE ON bm_destroyed_card_refunds BEGIN SELECT RAISE(ABORT,'anonymous_business_fact_fixed'); END;
+ALTER TABLE bm_card_payments ADD COLUMN receipt_base64 TEXT;
+CREATE TRIGGER bm_card_payment_receipt_fixed BEFORE UPDATE OF receipt_base64 ON bm_card_payments WHEN OLD.receipt_base64 IS NOT NULL AND NEW.receipt_base64 IS NOT OLD.receipt_base64 BEGIN SELECT RAISE(ABORT,'card_receipt_fixed'); END;

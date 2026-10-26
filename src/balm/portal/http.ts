@@ -1,3 +1,4 @@
+import { portalRefundReceipt } from './data'
 import {guardianActor} from './guardians'
 import {programPdf} from './programs'
 import {consumeSmsCode,requestSmsCode} from './sms-auth'
@@ -61,6 +62,11 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       const doc = await portalPeriodSuperbill(env.DB, patient, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
       return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
     }
+    const refundPath = path.match(/^\/portal\/refund-receipts\/([\w-]+)\.pdf$/)
+    if (refundPath && request.method === 'GET') {
+      const doc = await portalRefundReceipt(env.DB, patient, refundPath[1])
+      return new Response(doc.bytes, { headers: { ...headers, 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${doc.name}"` } })
+    }
     const documentPath = path.match(/^\/portal\/(receipts|superbills|statements)\/([\w-]+)\.pdf$/)
     if (documentPath && request.method === 'GET') {
       const doc = await portalDocument(env.DB, patient, documentPath[1] === 'receipts' ? 'receipt' : documentPath[1] === 'statements' ? 'statement' : 'superbill', documentPath[2])
@@ -73,7 +79,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       if (result && 'redirect' in result) return redirect(result.redirect)
       return redirect('/portal/home?saved=1' + (input.name === 'message.send' ? '#messages' : '#program'))
     }
-    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient), notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Your updated visit is listed below.' : url.searchParams.has('scheduled') ? 'Your follow-up is booked.' : url.searchParams.has('cancelled') ? 'Your visit was cancelled.' : url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
+    if (path === '/portal/home' && request.method === 'GET') return renderPortal('home', { ...await portalHome(env, patient, url.searchParams.get('setup')), notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Your updated visit is listed below.' : url.searchParams.has('scheduled') ? 'Your follow-up is booked.' : url.searchParams.has('cancelled') ? 'Your visit was cancelled.' : url.searchParams.has('saved') ? 'Saved to your patient record.' : '' })
     return renderPortal('signin', { error: 'This page is not available.' }, 404)
   } catch (error) {
     const status = Number((error as any)?.status) || 500
@@ -81,7 +87,7 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
     const text = status < 500 ? plain(String((error as Error).message)) : 'Could not complete this change. Please try again.'
     if (path === '/portal/action') {
       const patient = await portalPatient(env.DB, request).catch(() => null)
-      if (patient) return renderPortal('home', { ...await portalHome(env, patient), error: text }, status)
+      if (patient) return renderPortal('home', { ...await portalHome(env, patient, url.searchParams.get('setup')), error: text }, status)
     }
     return renderPortal('signin', { error: text }, status)
   }

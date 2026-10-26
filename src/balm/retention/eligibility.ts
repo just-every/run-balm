@@ -42,6 +42,8 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
+  if(await one(db,"SELECT id FROM bm_card_refunds WHERE client_id=? AND status IN ('approved','attempted','uncertain')",client.id))reasons.push('stripe_refund_outcome_pending')
+  if(await one(db,"SELECT t.payment_id FROM bm_terminal_payments t JOIN bm_card_payments p ON p.id=t.payment_id WHERE p.client_id=? AND t.state NOT IN ('succeeded','canceled')",client.id))reasons.push('terminal_payment_outcome_pending')
   if(await one(db,'SELECT id FROM bm_finance_observations WHERE client_id=?',client.id))reasons.push('finance_reconciliation_review_pending')
   if(await one(db,'SELECT id FROM bm_retail_sales WHERE client_id=?',client.id))reasons.push('retail_custody_review_pending')
   if(await one(db,'SELECT 1 FROM bm_remittance_suspense WHERE resolved_claim IS NULL LIMIT 1'))reasons.push('unmatched_remittance_identity_review_required')

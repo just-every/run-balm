@@ -1,3 +1,4 @@
+import { cardPaymentsJourney } from './card-payments-journey.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { harness, run } from './harness.mjs'
@@ -12,13 +13,13 @@ const sessionOf = location => location.split('/').pop()
 const pdfText = response => response.text
 
 async function connected(options = {}) {
-  const stripe = options.stripe ?? fakeProviders(), h = await harness({ outbound: stripe.handler, ...options })
+  const stripe = options.stripe ?? fakeProviders(), h = await harness({ origin: 'https://synthetic-balm.example', outbound: stripe.handler, ...options })
   try {
     await h.finishSetup()
     const { service, practitioners: [priya] } = await clinic(h)
   await h.cmd('settings.save', { clinicName: 'Riverside Physio', timeZone: 'Australia/Brisbane', taxId: '12-3456789', practiceNpi: '1234567893', address: '1 River St' })
     const reception = await h.staff('Rosa', 'reception')
-    const view = await h.cmd('pay.stripe.connect', { secretKey: 'sk_test_' + 'a'.repeat(24) })
+    const view = await h.cmd('pay.stripe.connect', { secretKey: 'synthetic-balm-1' })
     assert.equal(view.connected.accountId, 'acct_test_clinic')
     const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', dateOfBirth: '1992-06-15', email: 'ava@client.example', phone: '(555) 010-0199' }, reception.cookie)
     return { h, stripe, service, priya, reception, client, view }
@@ -106,7 +107,7 @@ test('copay at check-in from the day view, then the balance by pay link: paid on
     assert.equal(offlinePage.status, 200)
     assert.match(offlinePage.text, /Please pay at the clinic/)
     assert.doesNotMatch(offlinePage.text, /action="[^\"]+\?do=pay"/)
-    await h.cmd('pay.stripe.connect', { secretKey: 'sk_test_' + 'a'.repeat(24) })
+    await h.cmd('pay.stripe.connect', { secretKey: 'synthetic-balm-1' })
     const pay = tokenOf(stripe.texts[0].body.Body.match(/https?:\/\/\S+/)[0])
     assert.match((await h.send(`/pay/${pay}`)).text, /Balance due \$65\.00/)
     assert.equal((await h.form(`/pay/${pay}?do=pay`, { amount: '65.01' })).status, 400)
@@ -488,3 +489,83 @@ test('statement cycles preserve mail batches, actual delivery outcomes and every
 })
 
 test('cash packages draw down at attendance and taxed gift sales reconcile with patient originals and deposits', {timeout:120000}, async()=>{const {retailJourney}=await import('./retail-journey.mjs');await run(retailJourney)})
+
+test('PAY-002: intake and portal authorize hosted card setup, approved original refunds reconcile once, and Terminal posts a copay once', {timeout:120_000}, async()=>{
+ const fixture=await connected()
+ try { await cardPaymentsJourney(fixture) } finally { await fixture.h.close() }
+})
+
+test('PAY-002: a lost refund response stays reserved until the original Stripe refund is reconciled without another send', {timeout:120_000}, async()=>{
+ const stripe=fakeProviders();let lose=true
+ const fixture=await connected({stripe,outbound:async request=>{
+  const refund=request.method==='POST'&&new URL(request.url).pathname==='/v1/refunds'
+  const response=await stripe.handler(request)
+  if(refund&&lose){lose=false;return Response.json({error:{message:'Response lost after acceptance'}},{status:503})}
+  return response
+ }})
+ const {h,reception,client,service,priya}=fixture
+ try{
+  const saved=await saveCard(h,stripe,reception,client.id);await h.send('/pay/'+saved.token+'?setup='+saved.session)
+  await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},reception.cookie)
+  const visit=await pastVisit(h,client.id,priya,service.id,reception.cookie,0)
+  await h.cmd('pay.checkin',{appointmentId:visit,charge:true},reception.cookie)
+  const payment=await h.db.prepare("SELECT * FROM bm_card_payments WHERE appointment_id=? AND status='succeeded'").bind(visit).first()
+  // A historical payment predates retained original account and customer bindings.
+  await h.db.prepare('UPDATE bm_card_payments SET stripe_account_id=NULL,stripe_customer_id=NULL WHERE id=?').bind(payment.id).run()
+  const providerOriginal=stripe.intents.get(payment.payment_intent)
+  providerOriginal.metadata.balm_client='synthetic-balm-unrelated'
+  await h.cmd('pay.refund.prepare',{paymentId:payment.id,amount:'10.00',reason:'Synthetic overcollection'},reception.cookie,409)
+  providerOriginal.metadata.balm_client=client.id
+  let prepared=await h.cmd('pay.refund.prepare',{paymentId:payment.id,amount:'10.00',reason:'Synthetic overcollection'},reception.cookie)
+  assert.equal((await h.db.prepare('SELECT stripe_account_id FROM bm_card_payments WHERE id=?').bind(payment.id).first()).stripe_account_id,null)
+  await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},reception.cookie)
+  await h.cmd('pay.refund.approve',{id:prepared.id,sha256:prepared.sha256,attest:true},h.owner,409)
+  prepared=await h.cmd('pay.refund.prepare',{paymentId:payment.id,amount:'10.00',reason:'Synthetic overcollection'},reception.cookie)
+  const biller=await h.staff('Morgan','biller')
+  const action={id:prepared.id,sha256:prepared.sha256,attest:true}
+  await h.cmd('pay.refund.approve',action,biller.cookie)
+  const held=await h.db.prepare('SELECT * FROM bm_card_refunds WHERE id=?').bind(prepared.id).first()
+  assert.equal(held.status,'uncertain');assert.equal(held.approved_by,'morgan@clinic.example')
+  assert.equal(stripe.calls.findLast(c=>c.method==='POST'&&c.path==='/refunds').body.charge,prepared.charge_id)
+  const original=await h.db.prepare('SELECT stripe_account_id,stripe_customer_id FROM bm_card_payments WHERE id=?').bind(payment.id).first()
+  assert.equal(original.stripe_account_id,'acct_test_clinic');assert.ok(original.stripe_customer_id)
+  await Promise.all([h.cmd('pay.refund.approve',action,biller.cookie),h.cmd('pay.refund.approve',action,h.owner)])
+  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/refunds').length,1)
+  const reconciled=await h.cmd('pay.refund.reconcile',{id:prepared.id},biller.cookie)
+  assert.equal(reconciled.status,'confirmed');assert.ok(reconciled.provider_refund_id)
+  await h.cmd('pay.refund.reconcile',{id:prepared.id},biller.cookie)
+  const f=(await h.send('/api/balm/clients/'+client.id,undefined,biller.cookie)).value
+  assert.equal(f.billing.ledger.creditCents,2000);assert.equal(f.billing.ledger.patientBalanceCents,-2000)
+  assert.equal(f.billing.ledger.lines.filter(x=>x.kind==='refund').length,1)
+  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/refunds').length,1)
+ }finally{await h.close()}
+})
+
+test('PAY-002: an uncertain Terminal send is reconciled on its original intent without another collection', {timeout:120_000}, async()=>{
+ const stripe=fakeProviders();let lose=true
+ const fixture=await connected({stripe,outbound:async request=>{
+  const processing=request.method==='POST'&&new URL(request.url).pathname.endsWith('/process_payment_intent')
+  const response=await stripe.handler(request)
+  if(processing&&lose){lose=false;return Response.json({error:{message:'Reader response lost after accepting action'}},{status:503})}
+  return response
+ }})
+ const {h,reception,client,service,priya}=fixture
+ try{
+  await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},reception.cookie)
+  const visit=await pastVisit(h,client.id,priya,service.id,reception.cookie,0)
+  await h.cmd('pay.terminal.configure',{locationId:'tml_syntheticbalm1',simulated:true})
+  const paymentId=crypto.randomUUID(),input={appointmentId:visit,paymentId,amount:'30.00'}
+  const uncertain=await h.cmd('pay.terminal.collect',input,reception.cookie)
+  assert.equal(uncertain.state,'unknown');assert.equal(uncertain.status,'processing')
+  const repeated=await h.cmd('pay.terminal.collect',input,reception.cookie)
+  assert.equal(repeated.payment_intent,uncertain.payment_intent)
+  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,1)
+  assert.equal(stripe.calls.filter(c=>c.path.endsWith('/process_payment_intent')).length,1)
+  const paid=await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
+  assert.equal(paid.status,'succeeded');assert.equal(paid.state,'succeeded')
+  await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
+  const f=(await h.send('/api/balm/clients/'+client.id,undefined,h.owner)).value
+  assert.equal(f.billing.ledger.creditCents,3000);assert.equal(f.billing.ledger.lines.filter(x=>x.kind==='card').length,1)
+  assert.equal(stripe.calls.filter(c=>c.path.endsWith('/present_payment_method')).length,1)
+ }finally{await h.close()}
+})

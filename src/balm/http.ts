@@ -1,3 +1,4 @@
+import { cardEntryView, intakeCardEntry } from './payments/card-entry'
 import { outcomeCommand, outcomesFor } from './cases/outcomes'
 import {exerciseLibrary} from './portal/library'
 import {guardianCommand,guardianGrants} from './portal/guardians'
@@ -410,14 +411,17 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     try {
       if (request.method === 'POST') {
         if (!sameOrigin(request, env)) fail('cross_site_request_refused', 403)
+        if (url.searchParams.get('do') === 'card') return redirect(await intakeCardEntry(env, intake[1], Object.fromEntries(new URLSearchParams(await request.text()))))
         await submitIntake(env.DB, intake[1], await parseIntakeInput(request), { ip: request.headers.get('CF-Connecting-IP') ?? '' })
         return redirect(`/intake/${intake[1]}`)
       }
-      return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), booked: url.searchParams.get('booked') === '1', mail: url.searchParams.get('mail') })
+      const view = await intakeView(env.DB, intake[1])
+      return renderPublic('intake', { ...view, cardEntry: await cardEntryView(env, view.appointment.client_id, 'intake', url.searchParams.get('setup')), booked: url.searchParams.get('booked') === '1', mail: url.searchParams.get('mail') })
     } catch (error) {
       const failure = message(error)
       if (failure.status === 404) return renderPublic('missing', {}, 404)
-      return renderPublic('intake', { ...await intakeView(env.DB, intake[1]), error: failure.text }, failure.status)
+      const view = await intakeView(env.DB, intake[1])
+      return renderPublic('intake', { ...view, cardEntry: await cardEntryView(env, view.appointment.client_id, 'intake'), error: failure.text }, failure.status)
     }
   }
   const messageAttachment = path.match(/^\/messages\/([A-Za-z0-9_-]{43})\/attachments\/([\w-]+)$/)

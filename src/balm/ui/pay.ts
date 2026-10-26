@@ -1,3 +1,4 @@
+import { patientCardRefunds } from './card-refunds'
 import { periodSuperbillForm } from './superbill-period'
 // The patient's private page: what they owe across visits, paying it, saving a
 // card for copays (after reading the clinic's authorization), and their receipts,
@@ -25,5 +26,5 @@ export function payPage(d: any) {
   const papers = panel('Receipts and superbills', (external ? `<h3>External transaction receipts</h3><ul>${external}</ul>` : '') + (issued ? `<h3>Issued statements</h3><ul>${issued}</ul>` : '') + periodSuperbillForm(base + '/superbill.pdf') + (receipts.length ? `<ul class="plain">${receipts.map((p: any) => `<li>${h(day(p.succeeded_at, zone))} · ${money(p.amount_cents)} · ${card(p.card_brand, p.card_last4)} · <a href="${base}/receipts/${h(p.id)}.pdf">Receipt R-${String(p.receipt_number).padStart(6, '0')}</a></li>`).join('')}</ul>` : '<p class="empty">No card payments yet.</p>')
     + (d.superbills.length ? `<h3>Superbills for your insurer</h3><ul class="plain">${d.superbills.map((x: any) => `<li><a href="${base}/superbills/${h(x.invoiceId)}.pdf">Superbill for your visit on ${h(x.serviceDate.split(',').slice(1, 3).join(',').trim())}</a></li>`).join('')}</ul>` : ''))
   const summary = panel(l.patientBalanceCents < 0 ? `Credit ${money(-l.patientBalanceCents)}` : `Balance due ${money(due)}`, pay + (l.insurancePendingCents ? `<p>${money(l.insurancePendingCents)} is pending insurance. It is excluded from the amount you can pay.</p>` : ''))
-  return `<h1>${h(d.client.first_name)} ${h(d.client.last_name)}</h1><p>Your account with ${h(d.clinic.clinic_name)}${d.clinic.address ? `, ${h(d.clinic.address)}` : ''}.</p>${notices}<div class="grid">${d.purpose === 'card' ? cardPanel + summary : summary + cardPanel}${statement}${papers}</div>`
+  return `<h1>${h(d.client.first_name)} ${h(d.client.last_name)}</h1><p>Your account with ${h(d.clinic.clinic_name)}${d.clinic.address ? `, ${h(d.clinic.address)}` : ''}.</p>${notices}<div class="grid">${d.purpose === 'card' ? cardPanel + summary : summary + cardPanel}${statement}${papers}${patientCardRefunds(d.cardRefunds ?? [], base + '/refund-receipts')}</div>`
 }
