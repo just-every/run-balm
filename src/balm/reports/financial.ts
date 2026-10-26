@@ -37,7 +37,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     db.prepare("SELECT id,credit_id,kind,amount_cents,reference,posted_at FROM bm_posted_account_entries WHERE kind IN ('credit','refund')"),
   ])).map(x => x.results)
   const refunds = (await db.prepare("SELECT r.id,r.payment_id,r.amount_cents,r.confirmed_at,r.provider_refund_id,COALESCE((SELECT SUM(a.amount_cents) FROM bm_card_refund_allocations a WHERE a.refund_id=r.id),0) AS allocated_cents FROM bm_card_refunds r WHERE r.status='confirmed'").all<Data>()).results
-  const retail=await db.prepare('SELECT id,client_id,kind,amount_cents,tax_cents,gift_id,reference,recorded_at FROM bm_retail_sales').all<Data>()
+  const retail=await db.prepare("SELECT id,client_id,kind,amount_cents,tax_cents,gift_id,reference,recorded_at FROM bm_retail_sales UNION ALL SELECT id,NULL,kind,amount_cents,tax_cents,gift_id,'Destroyed receipt',recorded_at FROM bm_destroyed_retail").all<Data>()
   for(const sale of retail.results){
     const total=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
     if(!gift){

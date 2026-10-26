@@ -3,6 +3,8 @@ import { stmt, type Data } from '../domain/model'
 /** Preserve dated business arithmetic without patient, clinician, clinical content or payment credentials. */
 export function preserveAccounting(db:D1Database,clientId:string,anonymousGroup:string) {
   return [
+    stmt(db,`INSERT INTO bm_destroyed_retail(id,kind,units,amount_cents,tax_cents,gift_id,recorded_at)
+      SELECT id,kind,units,amount_cents,tax_cents,gift_id,recorded_at FROM bm_retail_sales WHERE client_id=?`,clientId),
     stmt(db,`INSERT INTO bm_destroyed_invoices(id,anonymous_group,amount_cents,start_at,open_payer)
       SELECT i.id,?,i.amount_cents,a.start_at,
         (SELECT h.payer FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)

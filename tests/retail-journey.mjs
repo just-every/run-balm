@@ -77,5 +77,34 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal((await h.send('/portal/receipts/'+brace.id+'.pdf',undefined,cookie)).text,after.text)
  const review=await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
  assert.ok(review)
+ // Finite membership: pause is reversible and never consumes or forfeits a visit.
+ const membership=await h.cmd('pay.retail.sell',{...sale,kind:'membership',units:1,amountCents:5000,label:'Finite wellness membership',reference:'synthetic-balm-member-1'})
+ const memberVisit=await pastVisit(h,patient.id,priya,service.id,h.owner,8,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+ await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:membership.id,appointmentId:memberVisit})
+ const change={clientId:patient.id,saleId:membership.id,state:'paused',reason:'Patient requested a pause',consentEvidence:'Patient authorized reversible pause; all unused visits retained',confirm:true}
+ await h.cmd('pay.retail.membership',change,reception.cookie,403)
+ await h.cmd('pay.retail.membership',{...change,confirm:false},h.owner,400)
+ await h.cmd('pay.retail.membership',change)
+ await h.cmd('pay.retail.membership',change,h.owner,409)
+ await h.cmd('appointment.attend',{id:memberVisit},priya.cookie,409)
+ let membershipFile=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
+ assert.equal(membershipFile.billing.retail.find(x=>x.id===membership.id).visits_left,1)
+ assert.equal(membershipFile.billing.retail.find(x=>x.id===membership.id).membership_state,'paused')
+ await h.cmd('pay.retail.membership',{...change,state:'active'})
+ await h.cmd('appointment.attend',{id:memberVisit},priya.cookie)
+ membershipFile=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
+ assert.equal(membershipFile.billing.retail.find(x=>x.id===membership.id).visits_left,0)
+ const exhausted=await pastVisit(h,patient.id,priya,service.id,h.owner,11,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+ await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:membership.id,appointmentId:exhausted},h.owner,409)
+ const later=await h.cmd('pay.retail.sell',{...sale,kind:'membership',units:1,amountCents:5000,label:'Later independent membership',reference:'synthetic-balm-member-2'})
+ const laterVisit=exhausted
+ await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:later.id,appointmentId:laterVisit})
+ await h.cmd('appointment.attend',{id:laterVisit},priya.cookie)
+ for(const member of [membership,later]){
+  const original=await h.send('/portal/receipts/'+member.id+'.pdf',undefined,cookie)
+  assert.equal(original.status,200)
+  assert.equal((await h.send('/portal/receipts/'+member.id+'.pdf',undefined,foreign)).status,404)
+ }
+ assert.equal((await h.send('/portal/receipts/'+brace.id+'.pdf',undefined,cookie)).text,after.text)
  await proof({patient,cookie,today,from:dates[0]})
 }

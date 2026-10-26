@@ -6,6 +6,7 @@ import { pdf } from './pdf'
 const owner = (who: Actor) => { human(who); insist(who.role === 'owner', 'only_the_owner_records_retail', 403) }
 export async function retailFor(db: D1Database, clientId: string) {
   return rows(db, `SELECT s.id,s.kind,s.label,s.service_id,s.units,s.amount_cents,s.tax_cents,s.gift_id,s.recorded_at,
+    COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=s.id AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active') AS membership_state,
     s.units-(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id) AS visits_left,
     CASE WHEN s.kind='gift_card' THEN s.amount_cents-COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0) ELSE 0 END AS gift_left_cents
     FROM bm_retail_sales s WHERE s.client_id=? ORDER BY s.recorded_at,s.id`, clientId)
@@ -18,16 +19,29 @@ export async function retailReceipt(db: D1Database, key: string) {
 export async function retailCommand(db: D1Database, who: Actor, name: string, input: Data) {
   owner(who)
   const client = await clientVisible(db, who, input.clientId)
+  if(name==='pay.retail.membership') {
+    const sale=await one(db,"SELECT id FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='membership'",text(input.saleId,'membership',100),client.id)
+    insist(sale,'membership_not_found',404)
+    const current=await one(db,'SELECT e.id,e.state FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)',sale.id)
+    const state=text(input.state,'membership_state',10)
+    insist(['active','paused'].includes(state),'invalid_membership_state')
+    insist(state!==(current?.state??'active'),'membership_state_unchanged',409)
+    insist(input.confirm===true||input.confirm==='on','confirm_patient_authorized_membership_change')
+    const key=id()
+    await commit(db,who,[guard(db,"COALESCE((SELECT e.id FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'')=?",sale.id,current?.id??''),
+      stmt(db,'INSERT INTO bm_membership_events(id,sale_id,client_id,state,previous_id,reason,consent_evidence,recorded_by,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)',key,sale.id,client.id,state,current?.id??null,text(input.reason,'reason',500),text(input.consentEvidence,'patient_authorization_evidence',500),who.email,now()),audit(db,who,'retail.membership_'+state,client.id,sale.id)])
+    return {id:key,state,providerCharge:false}
+  }
   if (name === 'pay.retail.assign') {
     const sale = await one(db, "SELECT * FROM bm_retail_sales WHERE id=? AND client_id=? AND kind IN ('package','membership')", text(input.saleId,'sale',100), client.id)
     const visit = await one(db, "SELECT * FROM bm_appointments WHERE id=? AND client_id=? AND status='booked' AND coverage_choice IN ('self_pay','uninsured')", text(input.appointmentId,'visit',100), client.id)
     insist(sale && visit && visit.service_id===sale.service_id, 'cash_pay_package_and_service_must_match',409)
-    await commit(db,who,[guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND client_id=? AND service_id=? AND coverage_choice IN ('self_pay','uninsured'))",visit.id,client.id,sale.service_id),
+    await commit(db,who,[guard(db,"(SELECT units FROM bm_retail_sales WHERE id=?)>(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)+(SELECT COUNT(*) FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id,sale.id,sale.id),guard(db,"COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active')='active'",sale.id),guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND client_id=? AND service_id=? AND coverage_choice IN ('self_pay','uninsured'))",visit.id,client.id,sale.service_id),
       stmt(db,'INSERT INTO bm_package_assignments(appointment_id,sale_id,client_id,assigned_by,assigned_at) VALUES(?,?,?,?,?)',visit.id,sale.id,client.id,who.email,now()),audit(db,who,'retail.package_assigned',client.id,visit.id)])
     return {assigned:true}
   }
   insist(name==='pay.retail.sell','unknown_command',404)
-  insist(input.confirm===true,'confirm_cash_received_or_gift_redemption')
+  insist((input.confirm===true||input.confirm==='on'),'confirm_cash_received_or_gift_redemption')
   const kind=text(input.kind,'sale_kind',20)
   insist(['package','membership','product','gift_card'].includes(kind),'invalid_sale_kind')
   const amount=integer(input.amountCents,'amount',1,10_000_000),rate=integer(input.taxBasisPoints??0,'tax_rate',0,10000)
@@ -52,7 +66,7 @@ export async function packageAttendance(db: D1Database, who: Actor, visit: Data)
   const assigned=await one(db,'SELECT s.* FROM bm_package_assignments a JOIN bm_retail_sales s ON s.id=a.sale_id WHERE a.appointment_id=?',visit.id)
   if(!assigned)return {statements:[],covered:false}
   insist(['self_pay','uninsured'].includes(visit.coverage_choice)&&assigned.client_id===visit.client_id&&assigned.service_id===visit.service_id,'package_visit_changed_review_again',409)
-  return {covered:true,statements:[guard(db,'(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)<(SELECT units FROM bm_retail_sales WHERE id=?)',assigned.id,assigned.id),
+  return {covered:true,statements:[guard(db,"COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active')='active'",assigned.id),guard(db,'(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)<(SELECT units FROM bm_retail_sales WHERE id=?)',assigned.id,assigned.id),
     guard(db,"NOT EXISTS(SELECT 1 FROM bm_invoices WHERE appointment_id=? AND status='approved')",visit.id),
     stmt(db,'INSERT INTO bm_package_uses(appointment_id,sale_id,client_id,used_at) VALUES(?,?,?,?)',visit.id,assigned.id,visit.client_id,now()),audit(db,who,'retail.visit_used',visit.client_id,visit.id)]}
 }

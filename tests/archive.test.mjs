@@ -544,3 +544,47 @@ test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches,
   assert.equal(report.deposits.rows.find(d=>d.reference==='synthetic-balm-10').receivedCents,12100)
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+test('retail and finance originals, paused entitlements and preparation authority survive a public CLI archive round trip', {timeout:240000},async()=>{
+  const temporary=await mkdtemp(join(tmpdir(),'balm-retail-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+  let h
+  try {
+    await checkout(source);await checkout(restored)
+    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+    h=await harness({root:source})
+    const {service}=await clinic(h)
+    const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retail archive',dateOfBirth:'1950-01-01'})
+    const member=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:2,amountCents:5000,label:'Synthetic finite membership',reference:'synthetic-balm-archive-member',confirm:true})
+    await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state:'paused',reason:'Synthetic pause',consentEvidence:'Synthetic patient authorization',confirm:true})
+    for(const state of ['active','paused'])await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state,reason:'Synthetic patient change',consentEvidence:'Synthetic patient authorization',confirm:true})
+    const original=(await h.send(member.receiptUrl,undefined,h.owner)).text
+    const base={clientId:patient.id,amountCents:5000,occurredOn:'2026-09-01',evidence:'Owner reviewed synthetic original'}
+    await h.cmd('finance.observation.record',{...base,kind:'eft',reference:'synthetic-balm-archive-eft',sourceReference:'synthetic-balm-archive-trace'})
+    await h.cmd('finance.source.record',{...base,kind:'charge',reference:'synthetic-balm-archive-charge',sourceReference:'synthetic-balm-archive-original',confirm:true})
+    const review=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).findings[0]
+    await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
+    const key=await h.cmd('agent.create',{label:'Synthetic excluded finance grant',scopes:['finance.reconcile.prepare']})
+    const identity={auth:h.auth,owner:h.owner}
+    await h.close();h=null
+    const archive=join(temporary,'retail.rer')
+    await command(source,['export','--output',archive,'--no-queue'])
+    const bytes=await readFile(archive,'utf8')
+    assert.ok(!bytes.includes(key.token)&&!bytes.includes('Synthetic excluded finance grant'))
+    await command(restored,['import','--input',archive,'--yes','--no-queue'])
+    h=await harness({root:restored,...identity})
+    const owner=await h.signIn(h.auth.OWNER_EMAIL)
+    assert.equal((await h.send(member.receiptUrl,undefined,owner)).text,original)
+    const file=(await h.send('/api/balm/clients/'+patient.id,undefined,owner)).value
+    assert.equal(file.billing.retail.find(x=>x.id===member.id).membership_state,'paused')
+    assert.equal(file.billing.retail.find(x=>x.id===member.id).visits_left,2)
+    const finance=await h.cmd('finance.reconcile.prepare',{month:'2026-09'},owner)
+    assert.equal(finance.matching.length,2)
+    assert.ok(finance.matching.find(x=>x.reference==='synthetic-balm-archive-charge').explanations.some(x=>x.includes('No recorded card settlement')))
+    assert.equal(finance.findings[0].sha256,review.sha256)
+    assert.ok(finance.findings[0].approved_by)
+    await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true},owner,409)
+    assert.equal((await h.send('/api/balm/agent/command',{name:'finance.reconcile.prepare',input:{month:'2026-09'}},'',{authorization:'Bearer '+key.token})).status,401)
+    assert.equal(file.billing.payments.length,0,'historical preparation approval creates no payment')
+    assert.equal(h.outboundRequests.filter(x=>x.origin.includes('stripe')||x.origin.includes('payer')).length,0)
+  } finally {await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})

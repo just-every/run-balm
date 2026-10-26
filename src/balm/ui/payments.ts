@@ -1,3 +1,4 @@
+import { retailPanel } from './retail'
 import { terminalSettings, terminalCheckIn } from './card-terminal'
 import { cardRefundsPanel } from './card-refunds'
 import { patientCyclePanel } from './statement-cycles'
@@ -96,6 +97,6 @@ export function billingPanels(s: any, f: any, notice: any) {
   return `${linkResult(s, notice)}` + panel('Billing and payments', `${periodSuperbillForm('/api/balm/period-superbills/' + f.client.id + '.pdf')}${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>Per visit or inclusive date range, with CPT and ICD-10 codes, practice and rendering NPIs, fees, payments and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
-    + codesPanel(s, f, path) + patientCyclePanel(s, f) + cardRefundsPanel(s, f)
+    + retailPanel(s, f) + codesPanel(s, f, path) + patientCyclePanel(s, f) + cardRefundsPanel(s, f)
 }
 

@@ -90,7 +90,7 @@ test('HIPAA-002: only the owner approves an unchanged eligible inventory; holds,
   await h.cmd('client.erase',{id:unused.id},h.owner,409)
 }))
 
-test('HIPAA-002: approved destruction removes clinical bytes and private tokens, retains anonymous accounts and immutable audit/receipt, and cannot be replayed',()=>run(async h=>{
+test('HIPAA-002: approved destruction removes clinical bytes and private tokens, retains anonymous accounts and immutable audit and receipt, and cannot be replayed',()=>run(async h=>{
   await h.finishSetup()
   const {service,practitioners:[priya]}=await clinic(h)
   const patient=await h.cmd('client.save',{firstName:'Destroy',lastName:'Private',dateOfBirth:'1950-01-01',email:'private@patient.example'})
@@ -146,6 +146,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
       const result=await h.send(`/api/balm/reports/financial?from=${year}-01-01&to=${year}-12-31`,undefined,h.owner)
       assert.equal(result.status,200)
       const r=result.value
+      for(const row of r.deposits.rows)if(['Cash sale','Gift value purchased'].includes(row.source))row.reference='Retail receipt'
       financial.push({summary:r.summary,agingByPayer:r.agingByPayer,patientTotal:r.agingByPatient.total,deposits:r.deposits})
     }
     return {operational:operational.value,financial}
@@ -155,12 +156,24 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const released=await h.cmd('note_release.prepare',{clientId:patient.id,payerId:releasePayer.id,purpose:'appeal',reference:'synthetic-balm-2',appointmentIds:[visit]})
   await h.send('/api/balm/note-releases/'+released.id+'.pdf',undefined,h.owner)
   await h.cmd('note_release.approve',{id:released.id,sha256:released.sha256,attest:true})
+  // Historical retail originals, including a partially redeemed gift and used package.
+  const giftId=crypto.randomUUID(),productId=crypto.randomUUID(),packageId=crypto.randomUUID()
+  const retailOriginal=btoa('%PDF-1.4 Synthetic historical retail original')
+  for(const [id,kind,amount,tax,gift,units] of [[giftId,'gift_card',10000,0,null,0],[productId,'product',5000,413,giftId,0],[packageId,'membership',40000,0,null,5]]) {
+    await h.db.prepare(`INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'1990-01-02T03:00:00.000Z',?,?)`).bind(id,patient.id,kind,'Private historical item',kind==='membership'?service.id:null,units,amount,tax,kind==='product'?825:0,kind==='product'?'TX':'','Private tax evidence',gift,'Private retail '+id,h.auth.OWNER_EMAIL,retailOriginal).run()
+  }
+  await h.db.prepare("INSERT INTO bm_membership_events(id,sale_id,client_id,state,reason,consent_evidence,recorded_by,recorded_at) VALUES(?,?,?,'active','Private reason','Private consent',?,'1990-01-02T03:00:00.000Z')").bind(crypto.randomUUID(),packageId,patient.id,h.auth.OWNER_EMAIL).run()
+  await h.db.prepare('INSERT INTO bm_package_assignments VALUES(?,?,?,?,?)').bind(visit,packageId,patient.id,h.auth.OWNER_EMAIL,'1990-01-02T03:00:00.000Z').run()
+  await h.db.prepare('INSERT INTO bm_package_uses VALUES(?,?,?,?)').bind(visit,packageId,patient.id,'1990-01-02T03:00:00.000Z').run()
+  assert.equal((await h.send('/api/balm/receipts/'+giftId+'.pdf',undefined,h.owner)).status,200)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_retail_sales WHERE id=?').bind(productId).run(),/retail_original_kept/)
   const reportBefore=await reports()
   assert.equal(reportBefore.operational.evaluations.total.pt,1)
   assert.equal(reportBefore.operational.plans.total.completed,1)
   assert.equal(reportBefore.operational.payroll.total.attendedVisits,1)
   assert.ok(reportBefore.operational.utilization.total.attendedMinutes>0)
-  assert.equal(reportBefore.financial[0].summary.chargesCents,9500)
+  assert.equal(reportBefore.financial[0].summary.chargesCents,54913)
   assert.equal(reportBefore.financial[1].deposits.total.receivedCents,9500)
   await h.cmd('retention.save',policy)
   const locationBefore=await h.send('/api/balm/reports?from=1990-01-01&to=1990-01-31&locationId='+location.id,undefined,h.owner)
@@ -171,6 +184,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   assert.equal(preview.records.bm_note_checks,1,'AGENT-003 questions containing clinical excerpts join destruction scope')
   assert.ok(preview.records.bm_portal_links>0)
   assert.equal(preview.records.bm_measures,1)
+  assert.equal(preview.records.bm_membership_events,1)
   assert.equal(preview.records.bm_assistant_signed_notes,1);assert.equal(preview.records.bm_assistant_supervision,1)
   assert.equal(preview.records.bm_note_submissions,1);assert.equal(preview.records.bm_note_reviews,1)
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
@@ -195,6 +209,13 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const ledger=await h.db.prepare('SELECT (SELECT SUM(amount_cents) FROM bm_destroyed_invoices) invoiced,(SELECT SUM(amount_cents) FROM bm_destroyed_payments) paid').first()
   assert.equal(ledger.invoiced,9500)
   assert.equal(ledger.paid,9500)
+  for(const id of [giftId,productId,packageId])assert.equal((await h.send('/api/balm/receipts/'+id+'.pdf',undefined,h.owner)).status,404)
+  const retailFacts=await h.db.prepare('SELECT * FROM bm_destroyed_retail').all()
+  assert.equal(retailFacts.results.length,3)
+  assert.ok(!JSON.stringify(retailFacts.results).includes(patient.id))
+  assert.ok(!JSON.stringify(retailFacts.results).includes('Private'))
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_package_uses WHERE client_id=?').bind(patient.id).first()).n,0)
+
   const receipt=(await h.state()).retention.destructions.find(r=>r.id===destroyed.receiptId)
   assert.ok(receipt)
   assert.ok(!JSON.stringify(receipt).includes(patient.id)&&!JSON.stringify(receipt).includes('Sensitive historical'))

@@ -39,13 +39,14 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(created_at) FROM bm_outcome_requests WHERE client_id=?),''),
     COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
   ) AS at`,...Array(13).fill(client.id))
+  const retailDate = await one(db,'SELECT MAX(recorded_at) AS at FROM (SELECT recorded_at FROM bm_retail_sales WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_events WHERE client_id=?)',client.id,client.id)
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
   if(await one(db,"SELECT id FROM bm_card_refunds WHERE client_id=? AND status IN ('approved','attempted','uncertain')",client.id))reasons.push('stripe_refund_outcome_pending')
   if(await one(db,"SELECT t.payment_id FROM bm_terminal_payments t JOIN bm_card_payments p ON p.id=t.payment_id WHERE p.client_id=? AND t.state NOT IN ('succeeded','canceled')",client.id))reasons.push('terminal_payment_outcome_pending')
+  if(await one(db,'SELECT id FROM bm_finance_sources WHERE client_id=?',client.id))reasons.push('finance_reconciliation_review_pending')
   if(await one(db,'SELECT id FROM bm_finance_observations WHERE client_id=?',client.id))reasons.push('finance_reconciliation_review_pending')
-  if(await one(db,'SELECT id FROM bm_retail_sales WHERE client_id=?',client.id))reasons.push('retail_custody_review_pending')
   if(await one(db,'SELECT 1 FROM bm_remittance_suspense WHERE resolved_claim IS NULL LIMIT 1'))reasons.push('unmatched_remittance_identity_review_required')
   if (!applied?.resolved) reasons.push('state_rule_requires_review')
   if (!client.date_of_birth) reasons.push('date_of_birth_required')
@@ -58,7 +59,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   if (applied && client.date_of_birth && lastTreatment && firstTreatment) {
     const majority = anniversary(client.date_of_birth,applied.majority)
     minor = firstTreatment < majority
-    const base = [lastTreatment,later?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
+    const base = [lastTreatment,later?.at?.slice(0,10) ?? lastTreatment,retailDate?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
     eligibleAfter = [anniversary(base,applied.adult), anniversary(client.date_of_birth,applied.rule.minimumAge ?? 0), ...(minor ? [anniversary(majority,applied.minor)] : [])].sort().at(-1)!
     const clock = (await one(db,"SELECT date('now') AS today"))!.today
     if (eligibleAfter >= clock) reasons.push('retention_period_not_complete')

@@ -2,6 +2,8 @@
 export const custody = [
   {"table":"bm_clients","client":true,"links":[]},
   {"table":"bm_retail_sales","client":true,"links":[]},
+  {"table":"bm_membership_events","client":true,"links":[]},
+  {"table":"bm_finance_sources","client":true,"links":[]},
   {"table":"bm_finance_observations","client":true,"links":[]},
   {"table":"bm_finance_reviews","client":true,"links":[]},
   {"table":"bm_statement_preferences","client":true,"links":[["client_id","bm_clients","id"]]},
