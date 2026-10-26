@@ -5258,7 +5258,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "f0bf3e020b06921051b2cd269a493f2b9b107bd97414cad84eb06b7f0a462966",
+      "sha256": "b185708d9e4d5a6651e444c5f3ee437f81d41d604b5a3b1ca43be31455820b1c",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {

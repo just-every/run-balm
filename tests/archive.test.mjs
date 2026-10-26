@@ -37,16 +37,28 @@ async function checkout(root) {
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
 }
-async function archiveFixture({ signedTie = false } = {}){
+async function historicalErasurePatient(h,priya,service) {
+  const patient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
+  const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,12)
+  await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',visit).run()
+  return patient
+}
+async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
-    for (const path of [source,restored,erased,refused]) await checkout(path)
+    for (const path of (erasureOnly ? [source,erased,refused] : [source,restored,erased,refused])) await checkout(path)
     await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:4e6 })
     const webhookKey='whsec_'+Buffer.from('synthetic-balm-1').toString('base64')
     h=await harness({root:source,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
+    if (erasureOnly) {
+      const retentionPatient=await historicalErasurePatient(h,priya,service)
+      const identity={auth:h.auth,owner:h.owner}
+      await h.close();h=null
+      return {temporary,source,erased,refused,p,retentionPatient,identity}
+    }
     await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
     const payer=await h.cmd('insurance.payer.save',{name:'Archive Health',payerId:'ARCHIVE',receiverId:'ARCHIVE',unitMethod:'fixed',fixedUnitMinutes:15})
     await h.cmd('insurance.schedule.save',{payerId:payer.id,planName:'synthetic-balm-113',effectiveOn:'2090-01-01',kind:'contracted',unitMethod:'ama',fees:[{code:'97110',cents:3000}],source:'synthetic-balm-114 future contract'})
@@ -99,9 +111,7 @@ async function archiveFixture({ signedTie = false } = {}){
     await h.cmd('agent.create',{label:'Excluded secret'})
     const feed=await h.cmd('calendar.feed.create',{},priya.cookie)
     const feedToken=feed.calendarFeedPath.split('/')[2].split('.')[0]
-    const retentionPatient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
-    const retentionVisit=await pastVisit(h,retentionPatient.id,priya,service.id,h.owner,12)
-    await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',retentionVisit).run()
+    const retentionPatient=await historicalErasurePatient(h,priya,service)
     const patientCookie=await portalLogin(h,'maya@client.example')
     await h.form('/portal/action',{name:'record.request'},patientCookie)
     const recordRequest=(await h.state()).recordRequests.find(r=>r.client_id===maya.id)
@@ -200,7 +210,7 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
 })
 
 test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary erasure and later destruction resurrection', {timeout:240_000},async()=>{
-  const {temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity}=await archiveFixture()
+  const {temporary,source,erased,refused,p,retentionPatient,identity}=await archiveFixture({erasureOnly:true})
   let h
   try{
     const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')
