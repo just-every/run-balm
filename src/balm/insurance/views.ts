@@ -68,7 +68,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   }
   const schedules=who.role==='owner'?await rows(db,'SELECT * FROM bm_billing_schedules ORDER BY effective_on DESC'):[]
   const licenses=who.role==='owner'?await rows(db,'SELECT * FROM bm_provider_licenses ORDER BY ends_on DESC'):[]
-  return {injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:await adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)

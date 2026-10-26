@@ -32,7 +32,7 @@ async function notePdf(db: D1Database, f: CaseFacts, note: Data) {
 /** A ready claim goes into its own batch, and through the clearinghouse when one is connected. */
 async function sendClaim(env: Bindings, who: Actor, claim: Data) {
   if (claim.status !== 'ready') return { claimId: claim.id, claimStatus: claim.status, held: (claim.errors ?? []).map((e: Data) => e.message) }
-  const batch = await prepareBatch(env.DB, who, { claimIds: [claim.id] }), adapter = adapterStatus(env)
+  const batch = await prepareBatch(env.DB, who, { claimIds: [claim.id] }), adapter = await adapterStatus(env)
   if (!adapter.available) return { claimId: claim.id, batchId: batch.id, claimStatus: 'batched', line: adapter.reason }
   const sent: Data = await submitBatch(env, who, { id: batch.id })
   return { claimId: claim.id, batchId: batch.id, claimStatus: sent.status === 'submitted' ? 'submitted' : 'batched', ...(sent.status === 'submitted' ? { reference: sent.reference } : { line: sent.reason }) }
@@ -44,7 +44,7 @@ export async function perform(env: Bindings, who: Actor, f: CaseFacts, step: Ste
     case 'eligibility.check': {
       const next = f.visits.find(v => v.status === 'booked' && Date.parse(v.start_at) >= Date.now())
       const inquiry = await prepareEligibility(db, who, { policyId: f.policy!.id, serviceDate: next ? hostDateAt(new Date(next.start_at), f.zone) : f.today })
-      const adapter = adapterStatus(env)
+      const adapter = await adapterStatus(env)
       if (!adapter.available) return { ok: true, result: { eligibilityId: inquiry.id, status: 'prepared', line: adapter.reason } }
       const sent = await submitEligibility(env, who, { id: inquiry.id })
       return { ok: true, result: { eligibilityId: inquiry.id, status: sent.status } }

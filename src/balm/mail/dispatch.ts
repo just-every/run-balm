@@ -1,3 +1,4 @@
+import { baaBlock } from '../domain/readiness'
 import type { Bindings } from '../../auth.server'
 import { operatorMail } from '../../mail.server.mjs'
 
@@ -19,6 +20,7 @@ export async function dispatchPatientMail(env: Bindings, to: string | null | und
   let state = 'failed', providerMessageId: string | null = null
   if (!to) state = 'no_email'
   else if (env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1') state = 'suppressed'
+  else if (await baaBlock(env.DB, 'mail')) state = 'unavailable'
   else {
     const sender = operatorMail(env)
     if (!sender || !env.MAIL_FROM) state = 'unavailable'

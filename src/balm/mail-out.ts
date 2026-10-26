@@ -1,3 +1,4 @@
+import { baaBlock } from './domain/readiness'
 // Mail Balm sends to clients through the clinic's own mail provider: the
 // intake link, waitlist offers, "that time is taken" notices, the
 // confirmation of an accepted offer, pay links and receipts (payments/notify.ts),
@@ -16,6 +17,7 @@ const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;'
 export async function send(env: Bindings, to: string | null | undefined, subject: string, text: string, attachments?: { filename: string; contentType: string; content: Uint8Array }[]): Promise<Delivery> {
   if (!to) return 'no_email'
   if (env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1') return 'suppressed'
+  if (await baaBlock(env.DB, 'mail')) return 'mail_unavailable'
   const sender = operatorMail(env)
   if (!sender || !env.MAIL_FROM) return 'mail_unavailable'
   const html = text.split('\n\n').map(part => `<p>${escape(part).replace(/\n/g, '<br>')}</p>`).join('')

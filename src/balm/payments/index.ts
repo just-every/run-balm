@@ -110,7 +110,7 @@ export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
     WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
   const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
-  return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: smsBlock(env), visits, npis, ...(desk ? { cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
+  return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: (await smsBlock(env)), visits, npis, ...(desk ? { cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
 }
 
 /** The billing part of a client file: codes for the visits this actor sees, and for the desk the ledger and card. */
@@ -129,6 +129,6 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
     statements: await statementsFor(db, clientId),
     payments: await rows(db, 'SELECT id,kind,amount_cents,applied_cents,refunded_cents,stripe_account_id,stripe_customer_id,payment_intent,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
     links: await rows(db, 'SELECT id,purpose,created_by,created_at,expires_at,delivery,delivery_result,opened_at FROM bm_pay_links WHERE client_id=? ORDER BY created_at DESC LIMIT 10', clientId),
-    stripe: await stripeView(env, db), smsBlock: smsBlock(env),
+    stripe: await stripeView(env, db), smsBlock: (await smsBlock(env)),
   }
 }

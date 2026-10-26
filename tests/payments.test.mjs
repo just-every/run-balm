@@ -7,7 +7,7 @@ import { fakeProviders } from './fakes/stripe.mjs'
 import { portalBilling, portalLogin } from './portal-billing.mjs'
 import { installmentTick, paymentPlanEdge, recordedAuthorization } from './payment-plan-fixtures.mjs'
 
-const sms = { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', TWILIO_AUTH_TOKEN: 'test-token', TWILIO_FROM: '+15005550006' }
+const sms = { SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'synthetic-balm-sms-account', TWILIO_AUTH_TOKEN: 'synthetic-balm-sms-token', TWILIO_FROM: '+15005550006' }
 const tokenOf = url => new URL(url).pathname.split('/')[2]
 const sessionOf = location => location.split('/').pop()
 const pdfText = response => response.text

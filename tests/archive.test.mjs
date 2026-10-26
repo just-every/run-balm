@@ -15,6 +15,8 @@ import { modelEdge } from './defensibility-clinic.mjs'
 import { clinic, pastVisit, slots, bookOnline } from './clinic.mjs'
 import { fakeBucket } from './fakes/s3.mjs'
 import { generateBackupKeys } from '../src/balm/backup/envelope.mjs'
+// Match the local lifecycle: archive fixtures never need external Request.cf metadata.
+process.env.CLOUDFLARE_CF_FETCH_ENABLED = 'false'
 const exec = promisify(execFile)
 const cli = resolve('node_modules/@runeditrun/rer/global/rer.mjs')
 const command = async (cwd, args, expected = 0) => {
@@ -379,6 +381,13 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
     assert.ok(!bucket.log.some(r => r.refused === 'OverwriteRefused'), 'no object is rewritten')
     const writes = bucket.log.filter(r => !r.refused && ((r.method === 'PUT' && !r.query.partNumber) || (r.method === 'POST' && r.query.uploadId)))
     assert.equal(new Set(writes.map(r => r.path)).size, writes.length, 'every completed object has a new key')
+    const baa=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.baas.find(b=>b.processor==='backups')
+    await h.cmd('readiness.baa.revoke',{id:baa.id})
+    const countBeforeRevoke=bucket.log.length
+    await h.cmd('backup.run',{},h.owner,409)
+    await h.cmd('backup.resume',{},h.owner,409)
+    await tick(Date.now()+86400_000)
+    assert.equal(bucket.log.length,countBeforeRevoke,'revoked storage BAA fences manual and scheduled backup attempts')
     const identity = { auth: h.auth, owner: h.owner }
     await h.close(); h = null
     mark('outage and retry checked')
@@ -631,4 +640,32 @@ test('prior authorization signed packets and recorded payer decisions survive a 
   assert.ok(file.audit.some(a=>a.action==='insurance.authorization_decision_recorded'))
   await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},owner,409)
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
+
+
+test('HIPAA-001: public CLI archive restores the readiness review and complete BAA history', {timeout:600000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-readiness-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  h=await harness({root:source,migrate:true,codeSets:false})
+  const before=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
+  assert.equal(before.ready,true)
+  assert.equal(before.record.privacy_officer,'Synthetic Privacy Officer')
+  assert.equal(before.record.risk_reviewed_on,'2026-10-01')
+  assert.deepEqual(before.baas.map(b=>b.processor).sort(),['backups','clearinghouse','mail','scribe','sms'])
+  await h.cmd('readiness.baa.revoke',{id:before.baas.find(b=>b.processor==='sms').id})
+  const original=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'readiness.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity,codeSets:false})
+  const cookie=await h.signIn(h.auth.OWNER_EMAIL)
+  const after=(await h.send('/api/balm/readiness.json',undefined,cookie)).value
+  assert.deepEqual(after,original,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
+  const audits=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'readiness.%'").all()).results.map(r=>r.action)
+  assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
+ }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })

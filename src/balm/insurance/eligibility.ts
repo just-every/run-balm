@@ -37,7 +37,7 @@ export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
 export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
   const db=env.DB,row=await one(db,'SELECT * FROM bm_eligibility WHERE id=?',text(input.id,'eligibility',100))
   insist(row,'eligibility_not_found',404);const policy=await policyFor(db,who,row.policy_id)
-  const status=adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}
+  const status=await adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}
   insist(['prepared','exported'].includes(row.status),'eligibility_already_submitted',409)
   await commit(db,who,[stmt(db,"UPDATE bm_eligibility SET status='sending',version=version+1 WHERE id=? AND version=?",row.id,row.version),guard(db,'changes()=1'),audit(db,who,'insurance.eligibility_submission_started',policy.client_id,row.id)])
   let result

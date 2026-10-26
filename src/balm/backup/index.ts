@@ -1,3 +1,4 @@
+import { baaBlock, requireBaa } from '../domain/readiness'
 // HIPAA-004: the owner points Balm at an S3-compatible bucket they control and pastes the public half of a
 // key pair they keep; on a schedule Balm writes the whole clinic there as one encrypted `.rer` archive
 // (the same archive `rer export` makes, so `rer import` and its erasure fence restore it). The Clinic page
@@ -31,6 +32,7 @@ export async function backupState(env: Bindings, who: Actor) {
 async function save(env: Bindings, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   insist(!managed(env), 'backups_not_available_on_managed_hosting', 409)
+  await requireBaa(env.DB, 'backups')
   insist(env.RER_DEMO !== '1', 'backups_are_not_available_in_the_demo', 409)
   const current = await one(env.DB, 'SELECT secret_sealed,secret_hint,public_key,key_fingerprint,consent_by,consent_at FROM bm_backup_settings WHERE id=1')
   const consent = input.consent === true || input.consent === 'on'
@@ -68,6 +70,7 @@ async function save(env: Bindings, who: Actor, input: Data) {
 
 async function setEnabled(env: Bindings, who: Actor, enabled: boolean) {
   need(who, 'owner'); human(who)
+  if (enabled) await requireBaa(env.DB, 'backups')
   insist(await one(env.DB, 'SELECT 1 FROM bm_backup_settings WHERE id=1'), 'backups_are_not_set_up', 409)
   await commit(env.DB, who, [stmt(env.DB, 'UPDATE bm_backup_settings SET enabled=?,updated_by=?,updated_at=? WHERE id=1', enabled ? 1 : 0, who.email, now()), audit(env.DB, who, enabled ? 'backup.resumed' : 'backup.paused', null)])
   return { enabled }
@@ -105,6 +108,7 @@ async function* bytesOf(stream: ReadableStream<Uint8Array>, onManifest: (manifes
 export async function runBackup(env: Bindings, trigger: 'schedule' | 'manual', at = Date.now(), who?: Actor) {
   const row = await one(env.DB, 'SELECT * FROM bm_backup_settings WHERE id=1')
   insist(row && env.RER_DEMO !== '1', 'backups_are_not_set_up', 409)
+  await requireBaa(env.DB, 'backups')
   const runId = id(), started = new Date(at).toISOString()
   await stmt(env.DB, "UPDATE bm_backup_runs SET state='failed',finished_at=?,error='Interrupted before it finished' WHERE state='running' AND started_at<?", started, new Date(at - STALE_MINUTES * 60_000).toISOString()).run()
   await stmt(env.DB, "DELETE FROM bm_backup_runs WHERE state='failed' AND started_at<?", new Date(at - 30 * 86_400_000).toISOString()).run()
@@ -142,7 +146,7 @@ export async function runBackup(env: Bindings, trigger: 'schedule' | 'manual', a
 
 /** Called each minute by the scheduler: backs up when the owner's interval has passed, and tries a failure again after a pause. */
 export async function runDueBackup(env: Bindings, scheduledTime = Date.now()) {
-  if (env.RER_DEMO === '1') return null
+  if (env.RER_DEMO === '1' || await baaBlock(env.DB, 'backups')) return null
   const settings = await one<{ enabled: number; interval_hours: number }>(env.DB, 'SELECT enabled,interval_hours FROM bm_backup_settings WHERE id=1')
   if (!settings?.enabled) return null
   const lastOk = await one<{ started_at: string }>(env.DB, "SELECT started_at FROM bm_backup_runs WHERE state='ok' ORDER BY started_at DESC LIMIT 1")

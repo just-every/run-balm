@@ -93,9 +93,15 @@ test('signed care becomes a scrubbed 837P, a payer acknowledgment and an ERA wit
     const receptionist = await h.staff('Robin', 'reception')
     await h.cmd('insurance.claim.necessity', { id: claim.id, medicalNecessity: 'Not allowed' }, receptionist.cookie, 403)
     assert.equal((await h.send(`/api/balm/insurance/837P/${batch.id}`)).status, 401)
-  }, { auth: { BALM_INSURANCE_ADAPTER_URL: 'https://clearinghouse.clinic.example/x12', BALM_INSURANCE_ADAPTER_TOKEN: 'test-edge-token' }, outbound: async request => {
+    const baa=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.baas.find(b=>b.processor==='clearinghouse')
+    await h.cmd('readiness.baa.revoke',{id:baa.id})
+    const fresh=await h.cmd('insurance.eligibility.prepare',{policyId:c.policy.id,serviceDate:c.serviceDate})
+    const before=submissions.length
+    assert.equal((await h.cmd('insurance.eligibility.submit',{id:fresh.id})).status,'unavailable')
+    assert.equal(submissions.length,before,'revoked clearinghouse BAA blocks X12 before the gateway edge')
+  }, { auth: { BALM_INSURANCE_ADAPTER_URL: 'https://clearinghouse.clinic.example/x12', BALM_INSURANCE_ADAPTER_TOKEN: 'synthetic-balm-insurance-edge' }, outbound: async request => {
     assert.equal(request.url, 'https://clearinghouse.clinic.example/x12')
-    assert.equal(request.headers.get('authorization'), 'Bearer test-edge-token')
+    assert.equal(request.headers.get('authorization'), 'Bearer synthetic-balm-insurance-edge')
     const input = await request.json(); assert.equal(request.headers.get('idempotency-key'), input.id); submissions.push(input)
     return Response.json(JSON.parse(await fixture('submitted.json')))
   } })

@@ -1,3 +1,4 @@
+import { baaBlock, requireBaa } from '../domain/readiness'
 // Text messages to patients go through one adapter. Twilio is the first
 // provider; nothing is sent until the clinic's US A2P 10DLC registration is
 // approved and the deploy names the provider and its credentials.
@@ -13,15 +14,18 @@ export interface SmsSender { send(message: SmsMessage): Promise<{ id: string; st
 export const smsNotSetUp = 'Text reminders and pay links connect once US carriers approve your clinic to text patients (a one-time business registration, called A2P 10DLC, made through a text provider such as Twilio) and that provider’s SMS_PROVIDER and TWILIO_ settings are added to your deployment (run-balm.com/docs/deploy, The settings), then you run rer deploy again. Send them by email for now.'
 
 /** Why texts cannot be sent from this install, or null when they can. */
-export function smsBlock(env: SmsEnv) {
+export async function smsBlock(env: SmsEnv) {
+  const baa = await baaBlock(env.DB, 'sms')
+  if (baa) return baa
   if (managedInstall(env)) return 'Texts are not available yet on RER Managed hosting: it cannot reach a text provider until RER adds a provider relay.'
   if (env.SMS_PROVIDER !== 'twilio' || !env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM) return smsNotSetUp
   return null
 }
 
-export function smsSender(env: SmsEnv): SmsSender | null {
-  if (smsBlock(env)) return null
-  return twilioSender({ accountSid: env.TWILIO_ACCOUNT_SID!, authToken: env.TWILIO_AUTH_TOKEN!, from: env.TWILIO_FROM! })
+export async function smsSender(env: SmsEnv): Promise<SmsSender | null> {
+  if (await smsBlock(env)) return null
+  const sender=twilioSender({ accountSid: env.TWILIO_ACCOUNT_SID!, authToken: env.TWILIO_AUTH_TOKEN!, from: env.TWILIO_FROM! })
+  return {async send(message) { await requireBaa(env.DB, 'sms'); return sender.send(message) }}
 }
 
 /** A US mobile number in E.164 (+1XXXXXXXXXX), or null when it is not one. */

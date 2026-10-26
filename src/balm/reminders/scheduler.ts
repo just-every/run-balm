@@ -56,7 +56,7 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
           : state === 'sent' ? 'Accepted by mail provider; delivery not yet reported' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
         receipt = result.providerMessageId
       } else {
-        const sender = smsSender(env), to = usMobile(visit.phone)
+        const sender = (await smsSender(env)), to = usMobile(visit.phone)
         outcome = 'Text provider unavailable or patient has no consent or mobile number'
         if (sender && to && visit.sms_reminder_consent) { const result = await sender.send({ to, body: text }); state = 'sent'; outcome = `Text provider ${result.status}`; receipt = result.id }
       }

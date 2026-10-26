@@ -1,3 +1,4 @@
+import { readinessFixture } from './readiness-fixture.mjs'
 import { codeSetEdge, installCodeSetFixtures } from './code-sets-journey.mjs'
 import {authorizeTestSession} from './staff-second-step.mjs'
 import assert from 'node:assert/strict'
@@ -37,7 +38,15 @@ export async function harness(options = {}) {
   const mf = new Miniflare({ ...convertV4MiniflareOptions({ host: '127.0.0.1', port, ...(options.origin ? {upstream:options.origin} : {}), https: !!options.browserHttps, modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-09-08', compatibilityFlags: ['nodejs_compat'], d1Databases: { DB: 'local-foundation-only' }, bindings: auth, outboundService: outbound, ...(options.direct ? { unsafeDirectSockets: [{ entrypoint: 'default', proxy: true, host: '127.0.0.1' }] } : {}) }), resourcePersistencePath: dir })
   try {
     const db = await mf.getD1Database('DB')
-    if (!options.root) for (const file of (await readdir('migrations/core')).filter(f => f.endsWith('.sql')).sort()) await db.batch(unstable_splitSqlQuery(await readFile('migrations/core/' + file, 'utf8')).map(sql => db.prepare(sql)))
+    if (!options.root || options.migrate) {
+      // Persistent CLI fixtures apply the same SQL and record each completed
+      // migration in Wrangler's ledger within its transaction.
+      if (options.migrate) await db.prepare('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)').run()
+      for (const file of (await readdir('migrations/core')).filter(f => f.endsWith('.sql')).sort()) await db.batch([
+        ...unstable_splitSqlQuery(await readFile('migrations/core/' + file, 'utf8')).map(sql => db.prepare(sql)),
+        ...(options.migrate ? [db.prepare('INSERT INTO d1_migrations(name) VALUES(?)').bind(file)] : []),
+      ])
+    }
     const send = async (path, body, cookie = '', headers = {}) => {
       const response = await mf.dispatchFetch(origin + path, { method: body === undefined ? 'GET' : 'POST', headers: { host: new URL(origin).host, origin, 'content-type': 'application/json', cookie, ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'manual' })
       const text = await response.text(); let value
@@ -78,6 +87,7 @@ export async function harness(options = {}) {
     }
     const signIn = async email => { const response = await send('/auth/magic-link', {email}); assert.equal(response.status,202,response.text); return confirmMail(email) }
     const h = { db, mf, origin, owner, auth, mail, outboundRequests, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, codeSets, codeSetsInstalled: false, provisioningRequests: [], close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    if (bootstrap && options.autoMfa !== false && options.readiness !== false) await readinessFixture(h)
     if (bootstrap && options.autoMfa !== false && options.codeSets !== false) {
       await installCodeSetFixtures(h, codeSets)
       h.codeSetsInstalled = true

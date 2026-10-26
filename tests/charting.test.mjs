@@ -164,15 +164,15 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     const missing = await h.send('/api/balm/command', { name: 'note.scribe', input: ask }, priya.cookie)
     assert.deepEqual([missing.status, missing.value.code], [409, 'add_a_key_to_use_the_scribe'])
     assert.equal(seen.length, 0)
-    await h.cmd('scribe.save', { provider: 'anthropic', key: 'sk-ant-test-key-4242' }, priya.cookie, 403)
-    await h.cmd('scribe.save', { provider: 'anthropic', key: 'sk-ant-test-key-4242' })
+    await h.cmd('scribe.save', { provider: 'anthropic', key: 'synthetic-balm-key-4242' }, priya.cookie, 403)
+    await h.cmd('scribe.save', { provider: 'anthropic', key: 'synthetic-balm-key-4242' })
     const status = await h.state()
-    assert.equal(status.scribe.ready, true); assert.equal(status.scribe.saved.key_hint, '…4242'); assert.ok(!JSON.stringify(status).includes('sk-ant-test-key-4242'))
+    assert.equal(status.scribe.ready, true); assert.equal(status.scribe.saved.key_hint, '…4242'); assert.ok(!JSON.stringify(status).includes('synthetic-balm-key-4242'))
 
     // Saving ran the test on made-up dictation; Ready follows that test.
     assert.equal(seen.length, 1); assert.ok(!JSON.stringify(seen[0].body).includes('Ava'))
     const drafted = await h.cmd('note.scribe', ask, priya.cookie)
-    assert.equal(seen[1].key, 'sk-ant-test-key-4242')
+    assert.equal(seen[1].key, 'synthetic-balm-key-4242')
     assert.equal(seen[1].body.output_config.format.type, 'json_schema')
     const sent = JSON.stringify(seen[1].body)
     assert.ok(sent.includes('Ther ex 23 min')); assert.ok(!sent.includes('Ava') && !sent.includes('1992-06-15'))
@@ -194,6 +194,12 @@ test('billed CPT units follow the 8-minute rule onto the invoice, and the scribe
     assert.match(bytes, /97110[\s\S]*97140[\s\S]*8-minute rule/)
     const page = (await h.send('/app/clients/' + client.id, undefined, priya.cookie)).text
     assert.match(page, /8-minute rule · 33 timed min · 2 units/)
+    const baa=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.baas.find(b=>b.processor==='scribe')
+    await h.cmd('readiness.baa.revoke',{id:baa.id})
+    const before=seen.length
+    assert.equal((await h.state()).scribe.ready,false)
+    await h.cmd('note.scribe',ask,priya.cookie,409)
+    assert.equal(seen.length,before,'revoked model BAA blocks clinical dictation at the network edge')
   }, { outbound: model })
 })
 
@@ -624,7 +630,7 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     const check=(cookie=c.priya.cookie,status=200)=>h.cmd('note.check',input,cookie,status)
     await check(c.priya.cookie,409)
     assert.equal(edge.seen.length,0,'no model request without a configured key')
-    await h.cmd('scribe.save',{provider:'anthropic',key:'sk-ant-test-only'})
+    await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-model-only'})
     for(const [cookie,status] of [[c.reception.cookie,403],[c.sam.cookie,404]]) await check(cookie,status)
     const agent=await h.cmd('agent.create',{label:'Desk agent'})
     assert.equal((await h.send('/api/balm/agent/command',{name:'note.check',input},'',{authorization:'Bearer '+agent.token})).status,403)
@@ -684,7 +690,7 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
     const audit=(await c.file(h.owner)).audit
     for(const action of ['note.read','plan.read','note.defensibility_checked']) assert.ok(audit.some(a=>a.action===action&&a.actor_email===c.priya.email))
     assert.ok(!JSON.stringify(audit).includes(weakNote.objective),'clinical text stays out of audit detail')
-    await h.cmd('scribe.save',{provider:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'test-configured-model',key:'sk-test-only'})
+    await h.cmd('scribe.save',{provider:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'test-configured-model',key:'synthetic-balm-openai-only'})
     assert.deepEqual((await check()).findings,[],'the configured OpenAI-compatible provider uses the same grounded result schema')
     await h.cmd('note.sign',{id:c.note.id,revision:2,signature:'Priya',attest:true},c.priya.cookie)
     await check(c.priya.cookie,409)

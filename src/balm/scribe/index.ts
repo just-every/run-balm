@@ -1,3 +1,4 @@
+import { baaBlock, requireBaa } from '../domain/readiness'
 import { noteChargeCatalog, resolveChargeCatalog } from '../codesets/charge-catalog'
 import { resolveTemplate } from '../charting/template-catalog'
 // The scribe: the owner enters the install's own model key on the Clinic page
@@ -28,6 +29,8 @@ type State = { config: ScribeConfig; checked: boolean } | { line: string }
 
 async function scribeState(env: Bindings): Promise<State> {
   if (managed(env)) return { line: MANAGED_LINE }
+  const baa = await baaBlock(env.DB, 'scribe')
+  if (baa) return { line: baa }
   const row = await one(env.DB, 'SELECT * FROM bm_scribe WHERE id=1')
   if (!row) return { line: MISSING_LINE }
   const key = await unseal(env.SESSION_SECRET, PURPOSE, row.key_sealed as string)
@@ -52,6 +55,7 @@ export async function scribeStatus(env: Bindings, who: Actor) {
 async function save(env: Bindings, who: Actor, input: Data) {
   need(who, 'owner'); human(who)
   insist(!managed(env), 'scribe_not_available_on_managed_hosting', 409)
+  await requireBaa(env.DB, 'scribe')
   const provider = input.provider
   insist(provider === 'anthropic' || provider === 'openai', 'choose_anthropic_or_an_openai_compatible_provider')
   const endpoint = optional(input.endpoint, 'endpoint', 300) ?? DEFAULTS[provider as Provider].endpoint

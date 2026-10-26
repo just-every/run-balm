@@ -1,3 +1,4 @@
+import { readinessCommand, readinessState } from './domain/readiness'
 import { accountingCommand, accountingView } from './payments/accounting'
 import { cardEntryView, intakeCardEntry } from './payments/card-entry'
 import { outcomeCommand, outcomesFor } from './cases/outcomes'
@@ -98,7 +99,7 @@ async function state(env: Bindings, who: Actor) {
   if (manager(who)) return locationState(env.DB,who)
   const jobs = who.role === 'owner' ? (await env.DB.prepare("SELECT id,state,checkpoint,total,fingerprint,error FROM ik_jobs WHERE destination='balm:clients' AND principal_id=? ORDER BY rowid DESC LIMIT 30").bind(who.id).all()).results : []
   const importJobs = await Promise.all(jobs.map(async (j: any) => j.state === 'undone' ? { ...j, undo: await undoCounts(env.DB, who, j.id) } : j))
-  return { accounting:await accountingView(env,who), integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
+  return { readiness:who.role==='owner'?await readinessState(env,who):null, accounting:await accountingView(env,who), integrations:await integrationState(env.DB,who), recordRequests: await recordRequests(env.DB,who), codeSets: who.role==='owner' ? await codeSetStatus(env.DB) : undefined, billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB) : [], pendingEstimates: await pendingEstimates(env.DB,who), retention: who.role === 'owner' ? await retentionState(env.DB, who) : null, visitFees: await visitFees(env.DB, who), followups: await followupSettings(env.DB, who), calendarFeed: await feedState(env.DB, who), ...await snapshot(env.DB, who), ...await paymentsState(env, env.DB, who), agentKeys: await agentKeys(env, who), origin: env.AUTH_ORIGIN, importJobs, moveinJobs: who.role === 'owner' ? await bundleJobs(env.DB) : [], local: env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1', scribe: await scribeStatus(env, who), backups: await backupState(env, who), reminders: await reminderSettings(env, who), me: await ownerProfile(env.DB, who), insurance: who.role === 'agent' ? undefined : await insuranceState(env, who) }
 }
 
 /** A client file as the pages show it: the audited file plus its billing. */
@@ -219,6 +220,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
+  if (name.startsWith('readiness.')) return readinessCommand(env.DB,who,name,input)
   if (name === 'owner.name') return saveOwnerName(request, env, who, input)
   if (name.startsWith('accounting.')) return accountingCommand(env,who,name,input)
   if (name.startsWith('finance.')) return reconciliationCommand(env.DB,who,name,input)
@@ -539,6 +541,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if(path.endsWith('.csv')){const columns=['at','actor_email','actor_role','action','detail'];const cell=csvCell;return new Response([columns.map(cell).join(','),...found.map(row=>columns.map(k=>cell(row[k])).join(','))].join('\r\n')+'\r\n',{headers:{...headers,'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="balm-access-refusals.csv"'}})}
         return json(found)
       }
+      if (path === '/api/balm/readiness.json') { const result=await readinessState(env,who); await commit(env.DB,who,[audit(env.DB,who,'readiness.exported',null)]); return new Response(JSON.stringify(result,null,2),{headers:{...headers,'content-type':'application/json','content-disposition':'attachment; filename=balm-readiness.json'}}) }
       if (path === '/api/balm/state' || path === '/api/balm/agent/context') return json(await state(env, who))
       if (path === '/api/balm/cases') return json(await caseList(env, who))
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })

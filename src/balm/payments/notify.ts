@@ -27,7 +27,7 @@ export async function deliverLink(env: SmsEnv, db: D1Database, clientId: string,
   const ask = purpose === 'card' ? `save a card for your copays with ${row!.clinic_name}` : `view your statement from ${row!.clinic_name}${online && balanceCents > 0 ? ` and pay your balance of ${dollars(balanceCents)}` : ''}`
   const instructions = purpose === 'balance' && !online ? `${balanceCents > 0 ? `Your balance is ${dollars(balanceCents)}. ` : ''}Please pay at the clinic or contact the clinic for payment instructions.` : "Card details go to Stripe, the clinic's payment processor, and never to the clinic."
   if (channel === 'text') {
-    const to = usMobile(row?.phone), sender = smsSender(env)
+    const to = usMobile(row?.phone), sender = (await smsSender(env))
     if (!to) return 'no_mobile_number'
     if (!sender) return 'texts_unavailable'
     await sender.send({ to, body: `${row!.clinic_name}: ${ask.replace(/^./, c => c.toUpperCase())}: ${url}${purpose === 'balance' && !online ? `\n${instructions}` : ''}` })

@@ -52,7 +52,7 @@ async function runCycle(env: Bindings, db: D1Database, who: Actor | null, cycleO
       continue
     }
     if (c.channel === 'text') {
-      const sender = env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1' ? null : smsSender(env)
+      const sender = env.AUTH_LOCAL === 'true' || env.RER_DEMO === '1' ? null : (await smsSender(env))
       let outcome = sender ? 'uncertain' : 'unavailable'
       let reference: string = batchId
       if (sender) try {

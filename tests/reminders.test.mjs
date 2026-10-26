@@ -18,7 +18,7 @@ const privateVisit = message => new URL(message.text.match(/https?:\/\/[^\s]+\/v
 test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, moved and canceled safely; private messages stay in Balm', { timeout: 120_000 }, async () => {
   const providers = fakeProviders(), h = await harness({ outbound: providers.handler, auth: {
     BALM_RESEND_WEBHOOK_KEY: resendKey, BALM_RESEND_EVENT_NAMESPACE: 'clinic-account',
-    SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', TWILIO_AUTH_TOKEN: 'test-token', TWILIO_FROM: '+15005550006',
+    SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'synthetic-balm-sms-account', TWILIO_AUTH_TOKEN: 'synthetic-balm-sms-token', TWILIO_FROM: '+15005550006',
   } })
   try {
     await h.finishSetup()
@@ -178,6 +178,15 @@ test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, mo
     assert.ok(!ownHistoryIds.has(samFile.mailHistory[0].id))
     assert.ok(!(await h.send('/api/balm/clients/' + client.id, undefined, priya.cookie)).value.mailHistory.some(m => m.id === samFile.mailHistory[0].id))
     assert.ok((await h.send('/api/balm/clients/' + client.id, undefined, reception.cookie)).value.mailHistory.length > 1, 'COMM-001 reception can read delivery states without clinical message content')
+    const baas=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.baas
+    for(const processor of ['mail','sms'])await h.cmd('readiness.baa.revoke',{id:baas.find(b=>b.processor===processor).id})
+    const beforeMail=h.mail.length,beforeTexts=providers.texts.length
+    const gated=await h.cmd('appointment.book',{clientId:client.id,practitionerId:priya.id,serviceId:service.id,date:'2099-06-08',time:'10:00'})
+    await h.form('/portal',{email:'ava@client.example'})
+    await h.cmd('reminders.settings',{leadMinutes:'1440',sms:true},h.owner,409)
+    await tick(Date.parse(gated.startAt)-86400_000)
+    assert.equal(h.mail.length,beforeMail,'revoked mail BAA fences both clinical dispatch and the portal mail edge')
+    assert.equal(providers.texts.length,beforeTexts,'revoked SMS BAA fences scheduled sends')
   } finally { await h.close() }
 
   // Local mail suppression must remain visible through the same scheduling and approval doors.
