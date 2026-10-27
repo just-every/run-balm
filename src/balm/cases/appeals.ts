@@ -41,7 +41,9 @@ export async function appealCommand(env:Bindings,who:Actor,name:string,input:Dat
  insist(name==='case.appeal.approve','unknown_command',404)
  insist(input.digest===packet.digest,'review_the_exact_appeal_digest',409)
  insist(packet.status==='sending','appeal_already_approved',409)
- const result=JSON.parse(packet.result),claim=await claimFor(db,who,result.claimId)
+ const result=JSON.parse(packet.result)
+ insist(await sha256(JSON.stringify({wording:packet.wording,citations:JSON.parse(packet.citations),result}))===packet.digest,'appeal_packet_integrity_mismatch',409)
+ const claim=await claimFor(db,who,result.claimId)
  insist(['denied','partial'].includes(claim.status),'appeal_requires_posted_denial',409)
  const condition=`EXISTS(SELECT 1 FROM bm_note_release_approvals a WHERE a.release_id=? AND a.sha256=? AND a.expires_at>?) AND NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?) AND EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action=?)`
  const values=[result.releaseId,result.releaseDigest,now(),result.releaseId,result.releaseId,who.email,who.role==='owner'?'note_release.reviewed':'note_release.downloaded']
