@@ -51,7 +51,7 @@ try {
     await page.getByRole('button', { name: 'Preview move-in', exact: true }).click()
     await page.getByRole('heading', { name: 'Proposed field mapping', exact: true }).waitFor()
   }
-  await viewportProof(h, [{ name: 'migration-carried-claims-preview', path: '/app/import', cookie: h.owner, selector: 'section:has(> h2:text-is("Cliniko preview"))', interact: async ({ page, width }) => {
+  await viewportProof(h, [{ name: 'migration-carried-claims-preview', path: '/app/import', cookie: h.owner, selector: 'tr:has(> td:text-is("Open claim carried"))', interact: async ({ page, width }) => {
     await uploadClaims(page)
     if (width === 1440) {
       assert.equal(await page.locator('input[name=expectedClaims]').inputValue(), '2')

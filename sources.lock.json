@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "1dc7555d0791d6323960a682f402599b4033a34673cfc8476e306e73754c8bef",
+      "sha256": "0278f6a50779319a5095e0cf6ee25217452bcefe565874970f419975013c8be8",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "a0c1e46d90e7d4efb08bb3b752694374bd4bbc3bb4b5a831a81c48d282cdd163",
+      "sha256": "be082b05904eaba99c5f7ff40c753e2c781b734cc5fc110c0226314ab8e71939",
       "executable": false
     },
     "DEMO.md": {
@@ -3014,7 +3014,7 @@
       "executable": false
     },
     "src/balm/ui/movein-bundle.ts": {
-      "sha256": "0d386384eaf23e5d19da1cabb69164f03502577f89aeb1da73c019cec5008132",
+      "sha256": "d6f2896e12cd4532a939147d72d198ba915e444217660c1eac629939e17d134a",
       "executable": false
     },
     "src/balm/ui/movein-guide.ts": {
@@ -5286,7 +5286,7 @@
       "executable": false
     },
     "tests/agent-migration-browser.mjs": {
-      "sha256": "5b9febeaff3c2fe1883dc535126904587ad84575ace7c7c2c7fec7f1fcb34b90",
+      "sha256": "bbdd268eda4b6d0e42de764ce7573fd80322e0f21d8f788b41063d809c2710bd",
       "executable": false
     },
     "tests/alerts.test.mjs": {
@@ -5294,7 +5294,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "e216c7a82e53df16dbb0bffca84cffdc250d3d018bec7a3dedb4abeb48c6222d",
+      "sha256": "4839ec4fed964af7e0008f08e482abed87a307a6b01177747faddf49aaa39fed",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
