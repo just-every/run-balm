@@ -23,8 +23,11 @@ export const layouts: Record<FileKind, Column[]> = {
 }
 export const headerKey = (text: string) => text.trim().toLowerCase().replace(/[_\s]+/g, ' ')
 
+export const claimColumns: Column[] = [source, patient, field('payerId', ['Payer ID'], true), field('patientControl', ['Patient control'], true), field('payerControl', ['Payer control']), field('serviceDate', ['Service date'], true), field('billed', ['Billed'], true), field('balance', ['Balance'], true), field('status', ['Status'], true)]
+
 /** The proposal and the importer share the same header decisions. */
 export function columnsFor(provider: Provider, kind: FileKind, headers: string[]) {
+  if (kind === 'claims' && headers.some(h => headerKey(h) === 'billed')) return claimColumns
   return layouts[kind].map(c => provider === 'webpt' && kind === 'patients' && c.key === 'phone' && headers.some(h => ['Cell Phone', 'Home Phone', 'Phone'].includes(h))
     ? { ...c, names: [headers.includes('Cell Phone') ? 'Cell Phone' : headers.includes('Home Phone') ? 'Home Phone' : 'Phone'] } : c)
 }

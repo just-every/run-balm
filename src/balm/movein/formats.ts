@@ -17,6 +17,7 @@ export type Bundle = {
   notes: (Location & { sourceId: string; patientId: string; title: string; body: string; date: string })[]
   balances: (Location & { patientId: string; cents: number })[]
   insurance: (Location & { sourceId: string; patientId: string; payer: string; memberId: string; groupNumber: string })[]
+  carriedClaims: (Location & { sourceId: string; patientId: string; payerId: string; patientControl: string; payerControl: string; serviceDate: string; billedCents: number; balanceCents: number; status: 'open' | 'denied' | 'rejected' })[]
   inventory: (Location & { kind: 'invoices' | 'authorizations' | 'claims'; sourceId: string; patientId: string; reference: string })[]
   diagnostics: BundleDiagnostic[]
   unmappedColumns: { file: string; column: string }[]
@@ -26,7 +27,7 @@ export type Bundle = {
 /** Pure preview normalization. It neither writes records nor infers patient identity. */
 export function normalizeBundle(value: unknown, timeZone = ''): Bundle {
   const input = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>
-  const bundle: Bundle = { provider: String(input.provider ?? '') as Provider, files: [], patients: [], appointments: [], notes: [], balances: [], insurance: [], inventory: [], diagnostics: [], unmappedColumns: [], unmappedRows: [] }
+  const bundle: Bundle = { provider: String(input.provider ?? '') as Provider, files: [], patients: [], appointments: [], notes: [], balances: [], insurance: [], carriedClaims: [], inventory: [], diagnostics: [], unmappedColumns: [], unmappedRows: [] }
   const issue = (code: string, message: string, file = '') => bundle.diagnostics.push({ severity: 'error', code, message, file })
   if (!['cliniko', 'webpt', 'simplepractice', 'jane'].includes(bundle.provider)) issue('unsupported_provider', 'Choose Cliniko, WebPT, SimplePractice or Jane.')
   if (input.dateFormat !== undefined && !['MDY', 'DMY', 'YMD'].includes(String(input.dateFormat))) issue('invalid_date_format', 'Date format must be MDY, DMY or YMD.')
@@ -48,7 +49,7 @@ export function normalizeBundle(value: unknown, timeZone = ''): Bundle {
     catch (error) { issue('invalid_csv', error instanceof Error ? error.message : 'The CSV could not be read.', file.name) }
   }
   const patients = new Set(bundle.patients.map(p => p.sourceId))
-  for (const kind of ['appointments', 'notes', 'balances', 'insurance'] as const) {
+  for (const kind of ['appointments', 'notes', 'balances', 'insurance', 'carriedClaims'] as const) {
     for (const record of bundle[kind]) if (!patients.has(record.patientId)) {
       bundle.diagnostics.push({ severity: 'error', code: 'missing_patient_reference', message: `The ${kind} row references a patient ID absent from this bundle.`, file: record.file, row: record.row, column: 'Patient ID' })
       bundle.unmappedRows.push({ file: record.file, row: record.row, reason: 'missing_patient_reference' })
@@ -61,9 +62,9 @@ export function normalizeBundle(value: unknown, timeZone = ''): Bundle {
     }
     bundle.diagnostics.push({ severity: 'warning', code: 'inventory_not_carried', message: `${record.kind} record ${record.sourceId} (${record.reference}) is retained for reconciliation only; it creates no Balm invoice, claim or usable authorization. Complete its carry before relying on cutover.`, file: record.file, row: record.row })
   }
-  if (bundle.inventory.length + bundle.patients.length + bundle.appointments.length + bundle.notes.length + bundle.balances.length + bundle.insurance.length > 50_000) issue('too_many_records', 'Upload up to 50,000 records at a time, including insurance policies.')
+  if (bundle.carriedClaims.length + bundle.inventory.length + bundle.patients.length + bundle.appointments.length + bundle.notes.length + bundle.balances.length + bundle.insurance.length > 50_000) issue('too_many_records', 'Upload up to 50,000 records at a time, including insurance policies.')
   if (!bundle.files.some(f => f.kind === 'notes')) bundle.diagnostics.push({ severity: 'warning', code: 'notes_not_supplied', message: 'No historical notes were uploaded. Keep the original charts; this import does not move them.', file: '' })
   if (bundle.provider === 'simplepractice') bundle.diagnostics.push({ severity: 'warning', code: 'separated_data_unverified', message: 'This report does not include restricted clients’ clinical and billing records. Keep the full SimplePractice export, including separated data, before closing your account.', file: '' })
-  bundle.diagnostics.push({ severity: 'warning', code: 'document_import_not_supported', message: 'PDF charts, intake forms, attachments, ZIP archives, authorizations and claims are not imported. Keep those original records separately.', file: '' })
+  bundle.diagnostics.push({ severity: 'warning', code: 'document_import_not_supported', message: bundle.carriedClaims.length ? 'PDF charts, intake forms, attachments, ZIP archives and usable authorizations are not imported. Open claims use the reviewed run-out ledger; carried receivables prevent undo.' : 'PDF charts, intake forms, attachments, ZIP archives, authorizations and claims are not imported. Keep those original records separately.', file: '' })
   return bundle
 }

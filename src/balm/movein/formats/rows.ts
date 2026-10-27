@@ -29,8 +29,9 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
   }
   const reportPatients = ['simplepractice', 'jane', 'webpt'].includes(bundle.provider) && file.kind === 'patients' && ((at.get('fullName') ?? -1) >= 0 || (bundle.provider === 'webpt' && keys.includes('name (first)')))
   if (reportPatients) diagnostic('warning', 'report_identity_review', 'Check the first and last names in the preview. If the report has no patient number, Balm uses the name and email or birth date to recognize an unchanged upload. Other report columns are listed below.')
-  const inventoryKind = file.kind === 'invoices' || file.kind === 'authorizations' || file.kind === 'claims' ? file.kind : null
-  const seen = new Set<string>(inventoryKind ? bundle.inventory.filter(r => r.kind === inventoryKind).map(r => r.sourceId) : file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind as 'appointments' | 'notes' | 'insurance'].map(p => p.sourceId))
+  const carryClaims = file.kind === 'claims' && keys.includes('billed')
+  const inventoryKind = !carryClaims && (file.kind === 'invoices' || file.kind === 'authorizations' || file.kind === 'claims') ? file.kind as 'invoices' | 'authorizations' | 'claims' : null
+  const seen = new Set<string>(file.kind === 'claims' ? [...bundle.carriedClaims.map(r => r.sourceId), ...bundle.inventory.filter(r => r.kind === 'claims').map(r => r.sourceId)] : inventoryKind ? bundle.inventory.filter(r => r.kind === inventoryKind).map(r => r.sourceId) : file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind as 'appointments' | 'notes' | 'insurance'].map(p => p.sourceId))
   let nonempty = 0
   for (const { cells, row } of rows.slice(1)) {
     if (!cells.some(c => c.trim())) continue
@@ -78,6 +79,16 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
         seen.add(sourceId)
         if (inventoryKind) {
           bundle.inventory.push({ ...location, kind: inventoryKind, sourceId, patientId, reference: required('reference', 240) })
+        } else if (carryClaims) {
+          if (sourceId.length > 100) throw new Error('Source claim ID must have at most 100 characters.')
+          const payerId = required('payerId', 100), patientControl = required('patientControl', 100), payerControl = get('payerControl')
+          if (payerControl.length > 100 || /[\u0000-\u001f\u007f]/.test(payerControl)) throw new Error('Payer control is malformed.')
+          column = 'Billed'; const billedCents = usdCents(required('billed'))
+          column = 'Balance'; const balanceCents = usdCents(required('balance'))
+          if (billedCents <= 0 || balanceCents <= 0 || balanceCents > billedCents) throw new Error('An open claim needs a positive balance no greater than its billed amount.')
+          const status = required('status')
+          if (!['open', 'denied', 'rejected'].includes(status)) throw new Error('Claim status must be open, denied or rejected.')
+          bundle.carriedClaims.push({ ...location, sourceId, patientId, payerId, patientControl, payerControl, serviceDate: date('serviceDate'), billedCents, balanceCents, status: status as 'open' | 'denied' | 'rejected' })
         } else if (file.kind === 'appointments') {
           column = 'Start At'; const startAt = timestamp(required('startAt'))
           column = 'End At'; const endAt = timestamp(required('endAt'))

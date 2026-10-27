@@ -15,6 +15,8 @@ function upload(s: any) {
     + select('serviceId', 'Service for these visits', [['', 'Choose a service'], ...services(s).map(p => [p.id, p.name] as [string, string])], '', '')
     + '<p class="help">Each upload assigns its visits to one practitioner and service. Export one therapist and appointment type at a time in WebPT. Times are read in your clinic’s time zone.</p></details>'
     + '<details><summary>Reconcile records still to carry</summary><p>Optional reviewed inventories name invoices, authorizations and open claims that still need to be carried. These files are retained with the reconciliation; they create no invoice, usable authorization or claim. Use the documented inventory format.</p>'
+    + '<p>Open claims can instead use the reviewed claim carry format in the guide, with a configured Balm payer identifier and the original aging balances. Carried receivables prevent undo, even before payment, to preserve their custody.</p>'
+    + '<label>Source aging balances for carried claims (.csv)<input type="file" name="balances" accept=".csv,text/csv"></label>'
     + ['invoices', 'authorizations', 'claims'].map(kind => `<label>${h(kind[0].toUpperCase() + kind.slice(1))} inventory (.csv)<input type="file" name="${kind}" accept=".csv,text/csv"></label>`).join('') + '</details>'
     + select('dateFormat', 'Dates in the files', dateFormats, 'MDY')
     + field('expectedPatients', 'Patient count reported by your old system (optional)', '', 'number', 'min="0" step="1"')
@@ -64,6 +66,7 @@ function preview(s: any, notice: any) {
     ...data.appointments.map((a: any) => ['Appointment', h(names.get(a.patientId) ?? a.patientId), h(`${a.file}, row ${a.row}`), `${when(s, a.startAt)} · ${h(a.status)}`]),
     ...data.notes.map((n: any) => ['Read-only document', h(names.get(n.patientId) ?? n.patientId), h(`${n.file}, row ${n.row}`), h(n.title)]),
     ...(data.inventory ?? []).map((r: any) => [h(r.kind + ' inventory — not carried'), h(names.get(r.patientId) ?? r.patientId), h(`${r.file}, row ${r.row}`), h(`${r.sourceId} · ${r.reference}`)]),
+    ...(data.carriedClaims ?? []).map((r: any) => ['Open claim carried', h(names.get(r.patientId) ?? r.patientId), h(`${r.file}, row ${r.row}`), h(`${r.sourceId} · ${r.patientControl} · ${money(r.balanceCents)} remaining`)]),
     ...data.insurance.map((p: any) => ['Insurance', h(names.get(p.patientId) ?? p.patientId), h(`${p.file}, row ${p.row}`), h(`${p.payer} · ${p.memberId}`)]),
   ], 'movein-records')
   const carry = hidden('bundleBase64', fileField(JSON.stringify(input))) + hidden('fingerprint', data.fingerprint)
@@ -96,5 +99,5 @@ function savedReport(data: any) {
 }
 
 export function bundleMovein(s: any, notice: any) {
-  return `<h1>Move in</h1><p>Bring your patient list across from a supported export, check the preview, then import it. WebPT’s Scheduled Visits report can also bring visits onto the calendar. Keep your original charts and billing records. PDF and ZIP chart packages, claims, authorizations and payment history are not imported here.</p>${preview(s, notice)}${savedReport(result(notice))}<div class="grid">${upload(s)}${jobs(s, notice)}</div>`
+  return `<h1>Move in</h1><p>Bring your patient list across from a supported export, check the preview, then import it. WebPT’s Scheduled Visits report can also bring visits onto the calendar. Keep your original charts and billing records. PDF and ZIP chart packages, usable authorizations and payment history are not imported here. Reviewed open claims can be carried into the existing receivables run-out.</p>${preview(s, notice)}${savedReport(result(notice))}<div class="grid">${upload(s)}${jobs(s, notice)}</div>`
 }

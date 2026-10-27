@@ -1,4 +1,4 @@
-import { cutoverInventory } from './movein-reconciliation-journey.mjs'
+import { cutoverInventory, cutoverClaims } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
 import { createHmac, randomBytes } from 'node:crypto'
@@ -105,6 +105,9 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     await h.cmd('import.apply',{csv,fingerprint:preview.fingerprint})
     const inventoryInput=cutoverInventory(),inventoryPreview=await h.cmd('movein.prepare',inventoryInput)
     const moveinInventory=await h.cmd('movein.cutover',{...inventoryInput,fingerprint:inventoryPreview.fingerprint,mappingApproval:inventoryPreview.mappingDigest,cutoverApproval:inventoryPreview.fingerprint,acceptanceReason:'Archive the source inventories and explicit omissions; no invoice, authorization or claim is carried by this inventory.'})
+    const claimCarryInput=cutoverClaims(payer.id),claimCarryPreview=await h.cmd('movein.prepare',claimCarryInput)
+    const moveinClaims=await h.cmd('movein.cutover',{...claimCarryInput,fingerprint:claimCarryPreview.fingerprint,mappingApproval:claimCarryPreview.mappingDigest,cutoverApproval:claimCarryPreview.fingerprint,acceptanceReason:'Original aging exactly matches carried receivables; retain the source records.'})
+    const carriedBeforeRestore=(await h.cmd('insurance.runout.read',{})).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
     await h.cmd('disclosure.record',{clientId:maya.id,recipient:'Attorney Archive, records@example.test',purpose:'Patient-directed release',basis:'Written authorization',records:'Signed treatment note and intake',releasedAt:'2001-01-02T12:00:00Z'})
     await h.cmd('client.alert.save',{clientId:maya.id,kind:'precaution',text:'Archive weight-bearing restriction'})
     await h.cmd('holiday.save',{date:'2099-11-26',name:'Thanksgiving clinic closure'})
@@ -133,12 +136,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {moveinClaims,carriedBeforeRestore,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {moveinClaims,carriedBeforeRestore,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -169,6 +172,10 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       assert.deepEqual(inventoryJournal.job.report,moveinInventory.job.report,'reviewed inventory counts, omissions, identifiers and references survive CLI restore')
       const restoredSource=await restoredClinic.db.prepare('SELECT source_json FROM bm_movein_jobs WHERE id=?').bind(moveinInventory.job.id).first()
       assert.deepEqual(JSON.parse(restoredSource.source_json).bundle.files,cutoverInventory().files,'original inventory bytes survive CLI restore')
+      assert.deepEqual((await restoredClinic.cmd('movein.journal',{jobId:moveinClaims.job.id},cookie)).job.report,moveinClaims.job.report,'carried claim reconciliation survives restore')
+      const carriedAfterRestore=(await restoredClinic.cmd('insurance.runout.read',{},cookie)).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
+      assert.deepEqual(carriedAfterRestore.map(({age_days,...facts})=>facts),carriedBeforeRestore.map(({age_days,...facts})=>facts),'all original carried claim facts and balances survive restore')
+      await restoredClinic.cmd('movein.undo',{jobId:moveinClaims.job.id},cookie,409)
       assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
       assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))
       assert.equal((await restoredClinic.state(cookie)).integrations.hooks.length,0,'hook credentials and consent are not transplanted into a restored installation')
