@@ -1,4 +1,4 @@
-The case agent follows each referral from authorization to paid claim. Open **Cases** (owner and reception) to see every case in one list, where each one stands, and the next step Balm has lined up for a person to approve.
+The case agent follows each referral from authorization to paid claim. Open **Cases** (owner, reception and biller) to see every case in one list, where each one stands, and the next step Balm has lined up for a person to approve.
 
 ## Open a case
 
@@ -41,3 +41,10 @@ Nothing is sent until a person at the desk ticks **I reviewed this step and the 
 ## Wording with your AI key
 
 The rules above are plain code: the agent lists cases and next steps with no AI key. The owner’s AI key from **Clinic → Scribe** is used only to word the request paragraph of an authorization letter, from the case’s facts and signed note without the patient’s name, birth date or member ID. Without a key the page says so and Balm uses its standard paragraph. Every paragraph can be edited before it is approved. On RER Managed hosting, which has no outbound connection to AI providers yet, drafted wording is not available.
+
+
+## Prepare a denial appeal
+
+After importing a denial and recording the covering payer authorization, open the case and select **Prepare denial appeal**. Balm freezes the letter, claim and original adjudication references, authorization record and signed-note release. In the patient file the owner reviews and approves the exact note-release digest. The biller then downloads **appeal evidence** and approves the exact appeal preparation. The release lasts seven days; expiry or owner revocation prevents approval, even after an earlier download.
+
+Approval records the biller and sends nothing. Staff perform external submission through the payer or clearinghouse. The case continues to show **awaiting payment** until a later payer payment posts. Reimporting the same remittance cannot pay twice. Export and restore retain the immutable packet, original adjudications and revoked access. The biller's case view includes billing facts and released evidence, without unrelated clinical letter drafts.

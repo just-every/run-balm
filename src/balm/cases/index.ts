@@ -1,3 +1,5 @@
+import {appealCommand,appealsFor} from './appeals'
+import {biller} from '../domain/role-access'
 import {authorizationRequestsFor} from '../insurance/authorization-requests'
 // The case agent: one case per referral, followed from referral and intake
 // through eligibility, authorization, visits, signed notes, claims and the ERA
@@ -19,12 +21,12 @@ import { stages, standing } from './stages'
 import { steps, supportingNote } from './steps'
 import { draftWording, wordingStatus } from './wording'
 
-const deskOnly = (who: Actor) => { human(who); need(who, 'owner', 'reception') }
+const deskOnly = (who: Actor) => { human(who); insist(who.role==='owner'||who.staffRole==='reception'||biller(who),'case_access_refused',403) }
 
-async function view(env: Bindings, referral: Data) {
+async function view(env: Bindings, referral: Data, who?: Actor) {
   const f = await caseFacts(env.DB, referral), list = stages(f)
-  return { referral, client: { id: f.client.id, name: `${f.client.first_name} ${f.client.last_name}` }, payer: f.policy?.payer_name ?? null, stages: list, standing: standing(list), steps: await steps(f),
-    history: f.done.map(d => ({ ...d, citations: JSON.parse(d.citations), result: JSON.parse(d.result) })), facts: f }
+  return { referral, client: { id: f.client.id, name: `${f.client.first_name} ${f.client.last_name}` }, payer: f.policy?.payer_name ?? null, stages: list, standing: standing(list), steps: (await steps(f)).filter(s=>!who||!biller(who)||s.kind==='denial.fix'),
+    appeals: who ? await appealsFor(env.DB,who,referral) : [], history: f.done.filter(d=>d.kind!=='denial.appeal'&&(!who||!biller(who)||d.kind==='denial.fix')).map(d => ({ ...d, citations: JSON.parse(d.citations), result: JSON.parse(d.result) })), facts: f }
 }
 
 /** Every case in one list, the ones with a step to approve first; each read is in the patient's access audit. */
@@ -33,7 +35,7 @@ export async function caseList(env: Bindings, who: Actor) {
   const referrals = await rows(env.DB, 'SELECT r.* FROM bm_referrals r JOIN bm_clients c ON c.id=r.client_id WHERE c.erased_at IS NULL ORDER BY r.received_on DESC,r.created_at DESC')
   const zone = (await one(env.DB, 'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone as string, stages = await referralStages(env.DB, referrals, zone)
   const providers = new Map((await rows(env.DB, 'SELECT * FROM bm_referring_providers')).map(p => [p.npi as string, p]))
-  const cases = (await Promise.all(referrals.map(r => view(env, r)))).map(({ facts, ...c }) => ({ ...c, referralStage: stages.get(c.referral.id as string)!, provider: c.referral.npi_source === 'nppes' ? providers.get(c.referral.referring_npi as string) ?? null : null }))
+  const cases = (await Promise.all(referrals.map(r => view(env, r, who)))).map(({ facts, ...c }) => ({ ...c, referralStage: stages.get(c.referral.id as string)!, provider: c.referral.npi_source === 'nppes' ? providers.get(c.referral.referring_npi as string) ?? null : null }))
   await commit(env.DB, who, [...new Set(referrals.map(r => r.client_id as string))].map(clientId => audit(env.DB, who, 'case.list_read', clientId)))
   const rank = (c: typeof cases[number]) => c.steps.some(s => !s.blocked) ? 0 : c.standing.state === 'stalled' ? 1 : c.standing.state === 'waiting' ? 2 : 3
   const choices = await rows(env.DB, `SELECT c.id,c.first_name,c.last_name,p.id AS policy_id,y.name AS payer_name,p.member_id FROM bm_clients c LEFT JOIN bm_policies p ON p.client_id=c.id LEFT JOIN bm_payers y ON y.id=p.payer_id
@@ -47,7 +49,7 @@ export async function caseForClient(env: Bindings, who: Actor, clientId: string)
   deskOnly(who)
   const referral = await one(env.DB, 'SELECT r.* FROM bm_referrals r JOIN bm_clients c ON c.id=r.client_id WHERE r.client_id=? AND c.erased_at IS NULL ORDER BY r.received_on DESC,r.created_at DESC LIMIT 1', clientId)
   if (!referral) return null
-  const { facts, ...c } = await view(env, referral)
+  const { facts, ...c } = await view(env, referral, who)
   await commit(env.DB, who, [audit(env.DB, who, 'case.read', clientId)])
   return c
 }
@@ -102,6 +104,7 @@ async function draft(env: Bindings, who: Actor, input: Data) {
 /** A person approves the exact step they reviewed; Balm then does it and keeps the record. */
 async function approve(env: Bindings, who: Actor, input: Data) {
   const { c, step } = await caseStep(env, input), db = env.DB
+  insist(!biller(who)||step.kind==='denial.fix','biller_case_action_refused',403)
   // A signed note leaves the clinic only on the owner's approval, to the recipient they reviewed.
   insist(who.role === 'owner' || !step.sends?.attachment, 'only_the_owner_sends_a_signed_note', 403)
   insist(input.digest === step.digest, 'The case changed after this page was opened. Review the step again before approving.', 409)
@@ -119,6 +122,7 @@ async function approve(env: Bindings, who: Actor, input: Data) {
 }
 
 export async function caseCommand(env: Bindings, who: Actor, name: string, input: Data) {
+  if(name.startsWith('case.appeal.'))return appealCommand(env,who,name,input)
   deskOnly(who)
   if (name === 'case.open') return saveReferral(env.DB, who, input)
   if (name === 'case.draft') return draft(env, who, input)

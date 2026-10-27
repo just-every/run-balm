@@ -28,6 +28,7 @@
         "node tests/readiness-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-denial\" node tests/denial-resolver-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs"
       ]
     },
@@ -76,7 +77,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"prior authorization signed packets\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"prior authorization signed packets|denial appeal originals\" tests/archive.test.mjs"
       ]
     },
     {

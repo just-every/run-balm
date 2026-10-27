@@ -148,14 +148,14 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
     const corrupt=join(temporary,'corrupt.rer');await writeFile(corrupt,bytes.replace('Restored treatment note','Changed treatment note'),{mode:0o600})
     // Each pair owns independent stores. Keep all CLI cases with at most two children.
     // Checksum damage is a transfer failure (1); restore policy conflicts remain 4.
-    await Promise.all([
-      command(restored,['import','--input',old,'--yes','--no-queue']),
-      (async()=>{
-        await command(erased,['import','--input',corrupt,'--yes','--no-queue'],1)
-        await command(source,['import','--input',old,'--yes','--no-queue'],4)
-      })(),
-    ])
-    await command(restored,['export','--output',again,'--no-queue'])
+    const refusals = (async()=>{
+      await command(erased,['import','--input',corrupt,'--yes','--no-queue'],1)
+      await command(source,['import','--input',old,'--yes','--no-queue'],4)
+    })()
+    // The source refusal is independent of the restored export. Join both
+    // before checking either store, retaining at most two CLI children.
+    await command(restored,['import','--input',old,'--yes','--no-queue'])
+    await Promise.all([command(restored,['export','--output',again,'--no-queue']), refusals])
     assert.deepEqual(archiveRows(await readFile(again,'utf8')),archiveRows(bytes))
     const restoredClinic=await harness({root:restored,...identity})
     try {
@@ -750,5 +750,36 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
   assert.deepEqual(after,original,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
   const audits=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'readiness.%'").all()).results.map(r=>r.action)
   assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
+ }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
+
+test('denial appeal originals and complete adjudications survive public CLI archive round trip', {timeout:240000},async()=>{
+ const {denialJourney}=await import('./denial-resolver-journey.mjs')
+ const temporary=await mkdtemp(join(tmpdir(),'balm-denial-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  h=await harness({root:source,migrate:true})
+  const c=await denialJourney(h)
+  await h.cmd('note_release.revoke',{id:c.packet.releaseId})
+  const before=(await c.view()).appeals.find(a=>a.id===c.packet.id)
+  const pdf=(await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,h.owner)).text
+  const adjudications=(await h.db.prepare('SELECT * FROM bm_cob_adjudications WHERE claim_id=? ORDER BY recorded_at,id').bind(c.claim.id).all()).results
+  assert.equal(adjudications.length,2)
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'denial.rer.gz')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  const after=(await h.send('/api/balm/cases',undefined,owner)).value.cases.find(a=>a.referral.id===c.referral.id).appeals.find(a=>a.id===c.packet.id)
+  assert.deepEqual(after,before,'approved packet, all citations, authorization snapshot, digest and payment resolution survive restore')
+  const originals=(await h.db.prepare("SELECT detail FROM bm_claim_events WHERE claim_id=? AND kind='835' ORDER BY created_at,id").bind(c.claim.id).all()).results.map(r=>JSON.parse(r.detail))
+  assert.deepEqual(originals,c.originals,'every original adjudication field survives CLI restore')
+  assert.deepEqual((await h.db.prepare('SELECT * FROM bm_cob_adjudications WHERE claim_id=? ORDER BY recorded_at,id').bind(c.claim.id).all()).results,adjudications,'all immutable coordination adjudication payloads survive CLI restore')
+  assert.equal((await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,owner)).text,pdf)
+  const biller=await h.signIn('appealbiller@clinic.example')
+  assert.equal((await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,biller)).status,403,'revocation survives restore')
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
