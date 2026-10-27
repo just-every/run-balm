@@ -17,7 +17,7 @@ export function prepareInstruments(input:unknown){
   // the standard instrument. This code supplies scoring, not a licensed text copy.
   insist(Array.isArray(item.items)&&item.items.every((label:unknown)=>typeof label==='string'),'enter_authorized_questionnaire_items')
   insist(kind==='psfs'?item.items.length>=1&&item.items.length<=5:item.items.length===spec.count,'outcome_item_count_does_not_match_standard')
-  return {kind,name:spec.name,scoringVersion:'1',items:item.items.map((label:unknown)=>text(label,'outcome_item',500)),min:spec.min,max:spec.max,minimum:kind==='psfs'?item.items.length:spec.minimum,unit:spec.unit,direction:spec.direction,source:spec.source}
+  return {kind,name:spec.name,instrumentVersion:'',scoringVersion:'1',items:item.items.map((label:unknown)=>text(label,'outcome_item',500)),min:spec.min,max:spec.max,minimum:kind==='psfs'?item.items.length:spec.minimum,unit:spec.unit,direction:spec.direction,source:spec.source}
  })
 }
 export function outcomeQuestions(list:ReturnType<typeof prepareInstruments>){
@@ -29,8 +29,13 @@ export function outcomeScores(list:ReturnType<typeof prepareInstruments>,answers
   insist(values.length>=item.minimum,'complete_the_'+item.kind+'_questionnaire')
   const total=values.reduce((sum,v)=>sum+v,0),mean=total/values.length
   const score=item.kind==='lefs'?total:item.kind==='quickdash'?(mean-1)*25:item.kind==='psfs'?mean:total/(values.length*5)*100
-  return {kind:item.kind,name:item.name,scoringVersion:item.scoringVersion,score:Math.round(score*100)/100,answered:values.length,items:item.items.length,rawTotal:total,unit:item.unit,direction:item.direction}
+  return {kind:item.kind,name:item.name,instrumentVersion:item.instrumentVersion,scoringVersion:item.scoringVersion,score:Math.round(score*100)/100,answered:values.length,items:item.items.length,rawTotal:total,unit:item.unit,direction:item.direction}
  })
+}
+/** Older responses remain separate by their immutable form; no guessed version. */
+export function comparableOutcome(score:Data,formId:string){
+ if(!score.kind||!score.scoringVersion||!score.unit)return null
+ return {source:'Intake',instrument:score.name??score.kind,instrumentVersion:score.instrumentVersion||'Legacy form '+formId,scoringVersion:score.scoringVersion,side:'none',unit:score.unit,direction:score.direction??''}
 }
 /** Trusted SQL expression: serviceExpression is an internal column or a placeholder. */
 export function chosenFormSql(serviceExpression:string){return `(SELECT f.id FROM bm_intake_forms f JOIN bm_services svc ON svc.id=${serviceExpression}

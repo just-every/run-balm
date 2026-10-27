@@ -42,6 +42,7 @@ import { insuredCharge } from './insurance/invoice-price'
 import { acknowledgeBreakGlass, breakGlass, careTeamFor, endBreakGlass, grantCareTeam, revokeCareTeam } from './domain/care-team'
 import { financialCsv, financialKinds, financialReports, type FinancialKind } from './reports/financial'
 import { operationalCsv, operationalReports, reportKinds, type ReportKind } from './reports/operational'
+import { outcomeCsv, outcomeReport } from './reports/outcomes'
 // Every handler below resolves the actor and enforces its role server-side;
 // pages and JSON share the same domain commands. Adapted from Strap's HTTP layer.
 import { operatorAuth, runtimeBindings, type Bindings } from '../auth.server'
@@ -132,6 +133,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
   if (path === '/app/reports' && (who.role === 'owner' || biller(who))) s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})
+  if (path === '/app/reports' && who.role === 'owner') s.outcomes = await outcomeReport(env.DB,who,{...Object.fromEntries(new URLSearchParams(query)),from:s.reports.from,to:s.reports.to})
   const file = path.match(/^\/app\/clients\/([\w-]+)$/)
   const opened = file ? await fileFor(env, who, file[1], notice.ask?.auditBefore, notice.ask).catch(error => {
     // A practitioner outside this chart may open it in an emergency by giving a reason (CHART-013).
@@ -547,6 +549,11 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if (path === '/api/balm/commands') return json({ preparations, approvals, rule: 'Agent keys prepare; a signed-in person approves. Approvals keep the digest of the exact approved bytes.' })
       if (path === '/api/balm/reports') return json(await operationalReports(env.DB, who, Object.fromEntries(url.searchParams)))
       if (path === '/api/balm/reports/financial') return json(await financialReports(env.DB, who, Object.fromEntries(url.searchParams)))
+      if (path === '/api/balm/reports/outcomes' || path === '/api/balm/reports/outcomes.csv') {
+        const report = await outcomeReport(env.DB,who,Object.fromEntries(url.searchParams))
+        if (!path.endsWith('.csv')) return json(report)
+        return new Response(outcomeCsv(report),{headers:{...headers,'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="balm-outcomes.csv"','content-security-policy':"default-src 'none'"}})
+      }
       const financial = path.match(/^\/api\/balm\/reports\/financial\/([a-z-]+)\.csv$/)
       if (financial && (financialKinds as readonly string[]).includes(financial[1])) {
         const report = await financialReports(env.DB, who, Object.fromEntries(url.searchParams))

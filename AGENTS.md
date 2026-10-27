@@ -98,6 +98,11 @@ flags, private state, deployment inputs and remote limitations.
 
 ## Work on Balm
 
+Lander-Regenerate for the native outcome reporting slice:
+`node scripts/contract-docs.mjs write REPORT-003`, then
+`node scripts/contract-docs.mjs check REPORT-003`. CONTRACT.md supplies acceptance,
+status, evidence and remaining work; the command refreshes the projections and counts.
+
 Read README.md, ACCEPTANCE.md and CONTRACT.md first. Product HTTP doors are in
 `src/balm/http.ts`; domain commands in `src/balm/domain` (one module per job);
 server-rendered screens on Base's theme in `src/balm/ui`; the availability

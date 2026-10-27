@@ -1,6 +1,6 @@
 // The owner's operational reports: one filter form, a table per report with its
 // all-practitioner total, and a CSV download that carries the same filters.
-import { empty, field, h, panel } from './shared'
+import { empty, field, h, panel, select } from './shared'
 import { financialSections } from './financial-reports'
 
 const table = (heads: string[], body: unknown[][]) => `<div class="table"><table><thead><tr>${heads.map(x => `<th scope="col">${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map((r, i) => `<tr${i === body.length - 1 ? ' class="total"' : ''}>${r.map(c => `<td>${h(c ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
@@ -36,6 +36,21 @@ export function reportsPage(s: any) {
       + (r.referrals.rows.length ? table(['Source or referring provider', 'Received', 'Scheduled', 'Evaluated', 'Discharged', 'Lost', 'Not yet scheduled', 'Scheduled share'],
         [...r.referrals.rows, { ...r.referrals.total, group: 'total', name: 'All referrals' }].map((x: any) => [x.group === 'source' ? `Source: ${x.name}` : x.group === 'provider' ? `Provider: ${x.name}` : x.name, x.received, x.scheduled, x.evaluated, x.discharged, x.lost, x.open, pct(x.conversion)]))
         : empty('No referrals received in this range.')) + download('referrals', 'referral conversion'), 'full', 'report-referrals')
+    + outcomeSection(s.outcomes)
     + financialSections(s)
     + '</div>'
+}
+
+function outcomeSection(r: any) {
+  if (!r) return ''
+  const query = new URLSearchParams({from:r.from,to:r.to,outcomePractitionerId:r.practitionerId,diagnosis:r.diagnosis,payerId:r.payerId})
+  const form = `<form method="get" action="/app/reports#report-outcomes" class="report-filter"><div class="pair">${field('from','Outcome cohort from',r.from,'date','required')}${field('to','Outcome cohort through',r.to,'date','required')}</div>`
+    + select('outcomePractitionerId','Outcome practitioner',[['','All practitioners'],...r.practitioners.map((p:any)=>[p.id,p.name])],r.practitionerId,'')
+    + select('diagnosis','Diagnosis',[['','All diagnoses'],...r.diagnoses.map((code:string)=>[code,code])],r.diagnosis,'')
+    + select('payerId','Payer',[['','All payers'],['unrecorded','No recorded coverage'],...r.payers.map((p:any)=>[p.id,p.name])],r.payerId,'')
+    + '<button type="submit">Run outcome report</button></form>'
+  const heads = ['Practitioner','Instrument and version','Scoring version','Unit','Episodes','Paired','Missing baseline','Missing follow-up','Missing both','Baseline mean','Follow-up mean','Mean change']
+  const body = r.rows.map((x:any)=>[x.practitioner,`${x.instrument} · ${x.source} · ${x.instrumentVersion} · ${x.side}`,x.scoringVersion,x.unit,x.episodes,x.paired,x.missingBaseline,x.missingFollowUp,x.missingBoth,x.baselineMean,x.followUpMean,x.meanChange])
+  const result = body.length ? `<div class="table"><table><thead><tr>${heads.map(x=>`<th scope="col">${h(x)}</th>`).join('')}</tr></thead><tbody>${body.map((row:any[])=>`<tr>${row.map(value=>`<td>${h(value??'—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : empty('No outcome scores match this cohort. Missing scores are never treated as zero.')
+  return panel('Outcome changes',form+`<p>${h(r.episodes)} episodes in this cohort.</p><p class="help">Episodes count once under the practitioner of their first filed visit. Dates select that first visit; follow-up includes later visits through the end date. Diagnosis means a recorded visit code anywhere in the episode; payer means recorded coverage for an episode visit. Neither filter duplicates an episode. Baseline is the score at the first visit; follow-up is the latest later score of the same instrument, version, side and unit. Means use complete pairs only. Missing both is included in both missing counts. Duplicate observations on a visit are missing. Chart scores are clinician-entered and unversioned; intake item sets and scoring versions stay separate. Change is follow-up minus baseline; higher may be better or worse depending on the instrument. This report is not a MIPS submission.</p>`+result+`<p><a class="button secondary" href="${h('/api/balm/reports/outcomes.csv?'+query)}" download>Download outcomes CSV</a></p>`,'full','report-outcomes')
 }

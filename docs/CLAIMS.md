@@ -82,3 +82,13 @@ CHART-002 completion: versioned PT/OT/SLP evaluation, daily, progress, re-evalua
 PAY-009 completion: monthly clinic statement cycles preserve each original in the portal, export native double-window mail batches and vendor CSVs carrying those exact PDFs, and record actual dated mailing or return separately from preparation. Generic email and text notices use existing provider edges. The payment journey proves unchanged report totals, exclusion filters, repeat safety, later-cycle originals and dunning; the archive journey restores the same originals and delivery facts.
 
 ACCT-001 completion: a native owner reviews control accounts and the exact mixed-day journal before sending financial categories to QuickBooks. `tests/payments.test.mjs` covers the complete handoff and repeat; `tests/accounting-browser.mjs` covers the real forms at 1440 and 390. `docs/evidence/ACCT-001-sandbox.json` captures actual journal 259, matching account cents and one journal after replay. No homepage claim or claim count changes.
+
+<!-- contract-generated:start -->
+## Generated clause status
+
+Product status derived from CONTRACT.md; homepage claims above retain their own scope.
+
+| Clause | Title | Kind | Status | Evidence | Gap |
+| --- | --- | --- | --- | --- | --- |
+| `REPORT-003` | Outcomes and MIPS quality reporting | target | partial | `tests/report.test.mjs` (REPORT-003: twenty episode outcomes match independent counts, filters and CSV without incompatible pairs or unauthorized reads), via `tests/outcome-report-journey.mjs`; `tests/outcome-report-browser.mjs` (native outcome filters, results and CSV at 1440 and 390, invoked by push Verify) | Native owner-only audited outcome cohorts and comparable baseline-to-follow-up means are proved across 20 episodes, with practitioner grouping, recorded diagnosis and coverage filters, missing-data counts and separate instrument item sets and scoring versions. Unproved and retained: dated MIPS measure selections per performance year; signed denominator, numerator and exclusion snapshots; clinician MIPS performance rates; quality-data-code claim lines and scrubber and submission proof; yearly measurement-set JSON; upload or QCDR handoff; and QPP Submissions API sandbox acceptance with hand-counted performance rates. The CMS QPP sandbox account is not held. No MIPS or live provider qualification is claimed. |
+<!-- contract-generated:end -->

@@ -3,6 +3,16 @@
 import { changesAt, measureSeries } from '../charting/measures'
 import { NOT_ASSIGNED } from './index'
 
+/** One observation per visit: ambiguous duplicates are missing, never averaged.
+ * Baseline belongs to the first filed visit; follow-up is the latest later visit
+ * carrying the same instrument identity. The caller orders visits chronologically. */
+export function outcomePair(visits: any[]) {
+  const value = (visit:any) => visit?.points.length === 1 ? Number(visit.points[0].value) : null
+  const baseline = value(visits[0])
+  const later = visits.slice(1).filter(v => v.start_at > visits[0].start_at && v.points.length)
+  return {baseline,followUp:value(later.at(-1))}
+}
+
 /** CHART-005 series, evaluation baselines and graphs split by episode. Series outside an
  * episode keep their CHART-005 key; an episode's series key starts with its episode id. */
 export function seriesByEpisode(notes: any[]) {

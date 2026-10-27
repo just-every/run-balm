@@ -89,7 +89,7 @@ export async function prepareForm(db: D1Database, who: Actor, input: Data) {
   const serviceId=input.serviceId?text(input.serviceId,'packet_service',100):null,discipline=input.discipline?text(input.discipline,'packet_discipline',20):''
   insist(['','pt','ot','slp','pediatric'].includes(discipline),'invalid_packet_discipline')
   if(serviceId)insist(await one(db,'SELECT 1 FROM bm_services WHERE id=? AND active=1',serviceId),'service_not_found',404)
-  const instruments=prepareInstruments(input.instruments)
+  const instruments=await Promise.all(prepareInstruments(input.instruments).map(async item=>({...item,instrumentVersion:await sha256(JSON.stringify([item.kind,item.items]))})))
   const payload = { title: text(input.title, 'title', 120),serviceId,discipline,instruments, questions: [...questions(input.questions),...outcomeQuestions(instruments)] }
   insist(new Set(payload.questions.map(q=>q.id)).size===payload.questions.length,'duplicate_question_id')
   const draftId = id()

@@ -6,6 +6,12 @@ import {readFile} from 'node:fs/promises'
 import {clinic,pastVisit,slots} from './clinic.mjs'
 import {fakeProviders} from './fakes/stripe.mjs'
 import {individual,nppesRegistry} from './fakes/nppes.mjs'
+import {outcomeReportFixture,assertOutcomeReport} from './outcome-report-journey.mjs'
+
+test('REPORT-003: twenty episode outcomes match independent counts, filters and CSV without incompatible pairs or unauthorized reads',()=>run(async h=>{
+ const fixture=await outcomeReportFixture(h)
+ await assertOutcomeReport(h,fixture)
+}))
 
 // Last month in Brisbane (UTC+10, no daylight saving), so the whole month is history.
 const now=new Date(Date.now()+10*3600_000),first=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1))
