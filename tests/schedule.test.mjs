@@ -651,7 +651,7 @@ test('booking never opens a patient outside the booker’s care or location, thr
 
 test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation until provider resolution and paid conflicts need human review', {timeout:120000},async()=>{
  const stripe=fakeProviders();let lose=false
- const h=await harness({outbound:async request=>{
+ const h=await harness({origin:'https://synthetic-balm.example',outbound:async request=>{
   const response=await stripe.handler(request)
   if(lose&&request.method==='POST'&&new URL(request.url).pathname==='/v1/checkout/sessions'){lose=false;return new Response('synthetic-balm-transport',{status:503})}
   return response
@@ -690,7 +690,9 @@ test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation 
   const checkout=await h.form(replacement.location,{})
   // Current authority can close booking while the patient's provider-hosted page is open.
   await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane',bookingOpen:false})
-  stripe.complete(checkout.location.split('/').at(-1))
+  const completed=stripe.complete(checkout.location.split('/').at(-1))
+  const event=stripe.event('checkout.session.completed',completed)
+  for(let i=0;i<2;i++){const webhook=await h.mf.dispatchFetch(h.origin+'/api/balm/stripe/webhook',{method:'POST',body:event.body,headers:{'stripe-signature':event.signature}});assert.equal(webhook.status,200,await webhook.text())}
   const reviewed=await h.send(replacement.location)
   assert.match(reviewed.text,/payment needs clinic review/)
   const review=await h.db.prepare("SELECT * FROM bm_booking_payments WHERE state='review'").first()

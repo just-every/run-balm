@@ -1,3 +1,4 @@
+import { fontHead } from '../../base/font-head'
 import { recordQueue } from './portal-records'
 import { codeSetPickerScript } from './code-sets'
 import { locationPage } from './location'
@@ -35,7 +36,7 @@ const digest = async (text: string) => btoa(String.fromCharCode(...new Uint8Arra
 /** `script` is one inline script the page runs, allowed by its hash alone. /fonts/fonts.css and the theme carry the tokens and fonts; the style is allowed by its hash. */
 async function documentFor(title: string, body: string, status: number, script = '', formTargets = '', bodyClass = '', allowDraftRequests = false, frameOrigins: string[] = []) {
   const policy = `style-src 'self' 'sha256-${await digest(style)}'; font-src 'self'; img-src 'self' data:` + (script ? `; script-src 'sha256-${await digest(script)}'` : '') + (allowDraftRequests ? "; connect-src 'self'" : '')
-  const html = `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title><link rel="preload" href="/fonts/inter/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="stylesheet" href="/fonts/fonts.css"><link rel="stylesheet" href="/rer-theme.css"><style>${style}</style></head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}${script ? `<script>${script}</script>` : ''}</body></html>`
+  const html = `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)}</title>${fontHead}<link rel="stylesheet" href="/rer-theme.css"><style>${style}</style></head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}${script ? `<script>${script}</script>` : ''}</body></html>`
   return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `default-src 'none'; ${policy}; base-uri 'none'; form-action 'self'${formTargets}; frame-ancestors ${frameOrigins.length ? frameOrigins.join(' ') : "'none'"}`, 'referrer-policy': 'same-origin', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' } })
 }
 

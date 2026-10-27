@@ -629,5 +629,5 @@ test('reviewed QuickBooks journals reconcile a mixed payment day and resume lost
 
 test('PAY-003: deposit and full booking payments reserve slots, confirm exact cents once and expose isolated fixed portal receipts', {timeout:120000},async()=>{
  const stripe=fakeProviders(),h=await harness({outbound:stripe.handler,browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
- try{const {bookingPrepaymentJourney}=await import('./booking-prepayment-journey.mjs');const {viewportProof}=await import('./viewport-proof.mjs');await bookingPrepaymentJourney(h,stripe,{screen:async(name,path,selector,cookie)=>viewportProof(h,[{name,path,selector,cookie}])})}finally{await h.close()}
+ try{const {bookingPrepaymentJourney}=await import('./booking-prepayment-journey.mjs');const {viewportProof}=await import('./viewport-proof.mjs');await bookingPrepaymentJourney(h,stripe,{screen:async(name,path,selector,cookie)=>viewportProof(h,[{name,path,selector,cookie,openSelector:name==='booking-settings'?'details:has([name=prepayMode]) > summary:text-is("Edit service")':undefined,interact:async({page,width})=>{if(width===1440&&name==='booking-amount')assert.equal(await page.locator('[name=confirmedAmountCents]').inputValue(),'3000')}}])})}finally{await h.close()}
 })

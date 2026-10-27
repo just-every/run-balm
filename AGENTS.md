@@ -152,3 +152,7 @@ CONTRACT.md supplies acceptance, status,
 evidence and gaps. The generator incrementally adopts marked clauses while
 preserving legacy acceptance narratives and homepage claim rows. Regenerate
 `sources.lock.json` last with `node scripts/edition-authoring/cli.mjs lock`.
+
+## Lander-Regenerate
+
+COMM-003 evidence and Gap registers are generated from CONTRACT.md without changing acceptance text or homepage copy. Run `node scripts/contract-docs.mjs write COMM-003`, then `node scripts/contract-docs.mjs check`. Regenerate the edition source lock last with `node scripts/edition-authoring/cli.mjs lock`, then run its `check`.

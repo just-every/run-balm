@@ -10,6 +10,7 @@ export async function bookingPrepaymentJourney(h,stripe,hooks={}){
  await h.cmd('service.save',{id:service.id,prepayMode:'deposit',depositCents:3000},reception.cookie,403)
  await h.cmd('service.save',{id:service.id,prepayMode:'deposit',depositCents:10000},h.owner,400)
  await h.cmd('service.save',{id:service.id,prepayMode:'deposit',depositCents:3000})
+ await hooks.screen?.('booking-settings','/app/clinic','form:has([name=prepayMode])',h.owner)
  const starts=await slots(h,service.id,priya.id)
  const selected=async()=> (await h.state()).services.find(s=>s.id===service.id)
  const fields=async(start,extra={})=>({serviceId:service.id,practitionerId:priya.id,start,firstName:'Ava',lastName:'Ng',dateOfBirth:'1992-06-15',email:'ava@client.example',privacy:'on',coverageChoice:'self_pay',deliveryMethod:'portal',confirmPayment:'on',confirmedAmountCents:3000,serviceVersion:(await selected()).version,...extra})
@@ -59,6 +60,9 @@ export async function bookingPrepaymentJourney(h,stripe,hooks={}){
  await h.cmd('settings.save',{clinicName:'Changed clinic',timeZone:'Australia/Brisbane'})
  assert.equal((await h.send('/portal/receipts/'+paid.id+'.pdf',undefined,cookie)).text,receipt.text)
  const file=(await h.send('/api/balm/clients/'+client.id,undefined,h.owner)).value
+ assert.equal(file.billing.payments.find(p=>p.id===paid.id).appointment_id,visit.id)
+ assert.match((await h.send('/app/clients/'+client.id,undefined,h.owner)).text,/Booking deposit \$30\.00 paid/)
+ await hooks.screen?.('booking-visit','/app/clients/'+client.id,'#codes-'+visit.id,h.owner)
  assert.equal(file.billing.ledger.paymentsCents,3000);assert.equal(file.billing.ledger.creditCents,3000)
  const careTime=new Date(Date.now()-3600000+10*3600000).toISOString()
  await h.cmd('appointment.move',{id:visit.id,date:careTime.slice(0,10),time:careTime.slice(11,16)})

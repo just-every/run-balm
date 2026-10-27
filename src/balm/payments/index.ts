@@ -127,7 +127,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
     ...await clientPlans(db, clientId),
     account: await accountEntriesFor(db, clientId),
     statements: await statementsFor(db, clientId),
-    payments: await rows(db, 'SELECT id,kind,amount_cents,applied_cents,refunded_cents,stripe_account_id,stripe_customer_id,payment_intent,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
+    payments: await rows(db, 'SELECT id,appointment_id,(SELECT mode FROM bm_booking_payments b WHERE b.payment_id=bm_card_payments.id) AS booking_mode,kind,amount_cents,applied_cents,refunded_cents,stripe_account_id,stripe_customer_id,payment_intent,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
     links: await rows(db, 'SELECT id,purpose,created_by,created_at,expires_at,delivery,delivery_result,opened_at FROM bm_pay_links WHERE client_id=? ORDER BY created_at DESC LIMIT 10', clientId),
     stripe: await stripeView(env, db), smsBlock: (await smsBlock(env)),
   }

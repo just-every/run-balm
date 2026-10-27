@@ -88,7 +88,7 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
       ...(booking ? [['Visit',String(booking.start_at)],['Service price',dollars(Number(booking.price_cents))]] as [string,string][] : []),
       ['For', booking ? (booking.mode==='full'?'Online booking prepayment':'Online booking deposit') : p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
     { kind: 'table', columns: [{ label: 'Applied to', width: 4 }, { label: 'Amount', width: 1, right: true }],
-      rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[booking ? 'Reserved for this booked visit; contact the clinic about any change' : p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
+      rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[booking ? 'Booking payment; contact the clinic about fulfillment' : p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
     { kind: 'notes', lines: [`Stripe payment ${p.payment_intent}. Keep this receipt for your records.`] },
   ]
   const original = base64Bytes(pdf({ header: receiptClinic.clinic_name as string, title: `Receipt ${number}`, blocks }))

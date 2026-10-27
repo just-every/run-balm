@@ -151,9 +151,9 @@ export async function eraseClient(db: D1Database, who: Actor, input: Data) {
     AND NOT EXISTS(SELECT 1 FROM bm_intake_responses WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_invoices WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_import_client_revisions WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_waitlist WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM ik_provenance WHERE destination='balm:clients' AND target_id=?)
-    AND NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_cards WHERE client_id=? AND removed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM bm_messages WHERE client_id=?)
+    AND NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_cards WHERE client_id=? AND removed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM bm_messages WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_calls WHERE client_id=?)
     AND NOT EXISTS(SELECT 1 FROM bm_movein_records WHERE target_table='bm_clients' AND target_id=?) AND NOT EXISTS(SELECT 1 FROM bm_home_exercises WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_disclosures WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_client_alerts WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_chart_documents WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_followups WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_payment_plans WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_balance_reminders WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_retention_holds WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_episodes WHERE client_id=?)`
-  const args = Array(22).fill(client.id)
+  const args = Array(23).fill(client.id)
   insist((await one<{ ok: number }>(db, `SELECT CASE WHEN (${unused}) THEN 1 ELSE 0 END AS ok`, ...args))?.ok === 1, 'clients_with_health_records_are_retained', 409)
   const portability = await createPortability({ db, policy: archivePolicy })
   const at = Date.now()
