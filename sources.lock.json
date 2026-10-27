@@ -2906,7 +2906,7 @@
       "executable": false
     },
     "src/balm/ui/communications.ts": {
-      "sha256": "97cb8a9073a403e41e3ff3ab301c43e5b4df1a06b170450460a377bdca9c47c2",
+      "sha256": "1d601d027ff754ff3dbbd338e0934e9f5a8b85599fcc2588bcb4537a5e5c912f",
       "executable": false
     },
     "src/balm/ui/consents.ts": {
@@ -5430,7 +5430,7 @@
       "executable": false
     },
     "tests/communication-browser.mjs": {
-      "sha256": "42c139b359221bf348defee807aad7626925c44f334677fe777ddc9c94c034df",
+      "sha256": "2d025d661c23cb05fe7d6b654348d4c77ee8ede43ddcd8323d9d8c8be08a71c1",
       "executable": false
     },
     "tests/communication-journey.mjs": {
