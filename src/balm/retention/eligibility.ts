@@ -40,12 +40,12 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
   ) AS at`,...Array(13).fill(client.id))
   const authorizationDate = await one(db,`SELECT MAX(at) AS at FROM (SELECT prepared_at AS at FROM bm_authorization_requests WHERE client_id=? UNION ALL SELECT s.recorded_at FROM bm_authorization_submissions s JOIN bm_authorization_requests r ON r.id=s.request_id WHERE r.client_id=? UNION ALL SELECT d.recorded_at FROM bm_authorization_decisions d JOIN bm_authorization_requests r ON r.id=d.request_id WHERE r.client_id=?)`,client.id,client.id,client.id)
-  const retailDate = await one(db,'SELECT MAX(recorded_at) AS at FROM (SELECT recorded_at FROM bm_retail_sales WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_events WHERE client_id=? UNION ALL SELECT used_at FROM bm_package_uses WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_cancellations WHERE client_id=?)',client.id,client.id,client.id,client.id)
+  const retailDate = await one(db,'SELECT MAX(recorded_at) AS at FROM (SELECT recorded_at FROM bm_retail_sales WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_events WHERE client_id=? UNION ALL SELECT used_at FROM bm_package_uses WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_cancellations WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_settlements WHERE client_id=?)',client.id,client.id,client.id,client.id,client.id)
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
   if(await one(db,`SELECT s.id FROM bm_retail_sales s WHERE s.client_id=? AND (
-    (s.kind IN ('package','membership') AND s.units>(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)) OR
+    (s.kind IN ('package','membership') AND s.units>(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)+COALESCE((SELECT units FROM bm_membership_settlements z WHERE z.sale_id=s.id),0)) OR
     (s.kind='gift_card' AND s.amount_cents>COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0))) LIMIT 1`,client.id))reasons.push('unresolved_retail_entitlement')
   if(await one(db,"SELECT id FROM bm_card_refunds WHERE client_id=? AND status IN ('approved','attempted','uncertain')",client.id))reasons.push('stripe_refund_outcome_pending')
   if(await one(db,"SELECT t.payment_id FROM bm_terminal_payments t JOIN bm_card_payments p ON p.id=t.payment_id WHERE p.client_id=? AND t.state NOT IN ('succeeded','canceled')",client.id))reasons.push('terminal_payment_outcome_pending')

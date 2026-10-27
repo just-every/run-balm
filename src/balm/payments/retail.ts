@@ -20,7 +20,8 @@ const owner = (who: Actor) => { human(who); insist(who.role === 'owner', 'only_t
 export async function retailFor(db: D1Database, clientId: string) {
   return rows(db, `SELECT s.id,s.kind,s.label,s.service_id,s.units,s.amount_cents,s.tax_cents,s.gift_id,s.recorded_at,s.renewal_of,
     CASE WHEN EXISTS(SELECT 1 FROM bm_membership_cancellations c WHERE c.sale_id=s.id) THEN 'cancelled' ELSE COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=s.id AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active') END AS membership_state,
-    s.units-(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id) AS visits_left,
+    s.units-(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)-COALESCE((SELECT units FROM bm_membership_settlements z WHERE z.sale_id=s.id),0) AS visits_left,
+    COALESCE((SELECT amount_cents FROM bm_membership_settlements z WHERE z.sale_id=s.id),0) AS settled_cents,
     CASE WHEN s.kind='gift_card' THEN s.amount_cents-COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0) ELSE 0 END AS gift_left_cents
     FROM bm_retail_sales s WHERE s.client_id=? ORDER BY s.recorded_at,s.id`, clientId)
 }
@@ -32,15 +33,31 @@ export async function retailReceipt(db: D1Database, key: string) {
 export async function retailCommand(db: D1Database, who: Actor, name: string, input: Data) {
   owner(who)
   const client = await clientVisible(db, who, input.clientId)
-  if(name==='pay.retail.membership'||name==='pay.retail.cancel') {
-    const sale=await one(db,"SELECT id,recorded_at FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='membership'",text(input.saleId,'membership',100),client.id)
+  if(name==='pay.retail.membership'||name==='pay.retail.cancel'||name==='pay.retail.settle') {
+    const sale=await one(db,"SELECT id,recorded_at,units,amount_cents,gift_id FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='membership'",text(input.saleId,'membership',100),client.id)
     insist(sale,'membership_not_found',404)
     const auth=authorization(input)
     const latest=await one(db,"SELECT MAX(at) AS at FROM (SELECT COALESCE(effective_at,recorded_at) AS at FROM bm_membership_events WHERE sale_id=? UNION ALL SELECT used_at FROM bm_package_uses WHERE sale_id=?)",sale.id,sale.id)
     insist(auth.effectiveAt>=(latest?.at??sale.recorded_at),'membership_effective_time_precedes_latest_event',409)
     const left=(await one(db,'SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) AS n FROM bm_retail_sales s WHERE id=?',sale.id))!.n
     const notCancelled=()=>guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)',sale.id)
-    if(name==='pay.retail.cancel') {
+    if(name==='pay.retail.cancel'||name==='pay.retail.settle') {
+      const settling=name==='pay.retail.settle'
+      if(settling) {
+        insist(left>0,'membership_has_no_unused_visits',409)
+        insist(!sale.gift_id,'gift_funded_settlement_requires_review',409)
+        insist(!input.authorizerKind||input.authorizerKind==='patient','representative_authority_not_established',403)
+        insist(input.cashReturned===true||input.cashReturned==='on','confirm_cash_refund_already_completed')
+        const amount=integer(input.settlementAmountCents,'settlement_amount',1)
+        insist(amount===Math.round(Number(sale.amount_cents)*left / Number(sale.units)),'refund_must_match_unused_purchase_value',409)
+        const reference=text(input.settlementReference,'settlement_reference',120),evidence=text(input.settlementEvidence,'settlement_evidence',500)
+        await commit(db,who,[notCancelled(),guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_settlements WHERE sale_id=?)',sale.id),
+          guard(db,'(SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) FROM bm_retail_sales s WHERE id=?)=?',sale.id,left),
+          guard(db,"NOT EXISTS(SELECT 1 FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id),
+          stmt(db,'INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by) VALUES(?,?,?,?,?,?,?,?)',sale.id,client.id,left,amount,reference,evidence,now(),who.email),
+          stmt(db,'INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,?,?,?,?,?,?,?,0)',sale.id,client.id,auth.effectiveAt,auth.authorizedAt,auth.method,auth.evidence,text(input.reason,'reason',500),who.email,now()),audit(db,who,'retail.unused_visits_settled',client.id,sale.id)])
+        return {state:'cancelled',visitsLeft:0,settledVisits:left,refundedCents:amount,providerRefund:false}
+      }
       insist(left===0,'resolve_unused_visits_before_cancellation',409)
       await commit(db,who,[notCancelled(),guard(db,'(SELECT units FROM bm_retail_sales WHERE id=?)=(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)',sale.id,sale.id),
         stmt(db,'INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,?,?,?,?,?,?,?,0)',sale.id,client.id,auth.effectiveAt,auth.authorizedAt,auth.method,auth.evidence,text(input.reason,'reason',500),who.email,now()),audit(db,who,'retail.membership_cancelled',client.id,sale.id)])
@@ -111,6 +128,6 @@ export async function retailNotices(db:D1Database,clientId:string) {
   const sales=await retailFor(db,clientId)
   const events=await rows(db,`SELECT sale_id,state,COALESCE(effective_at,recorded_at) AS effective_at,visits_left FROM bm_membership_events WHERE client_id=?
     UNION ALL SELECT sale_id,'cancelled',effective_at,visits_left FROM bm_membership_cancellations WHERE client_id=? ORDER BY effective_at`,clientId,clientId)
-  return sales.filter(s=>['package','membership','gift_card'].includes(s.kind)).map(s=>({id:s.id,label:s.label,kind:s.kind,units:s.units,visitsLeft:s.visits_left,giftLeftCents:s.gift_left_cents,state:s.membership_state,renewalOf:s.renewal_of,
+  return sales.filter(s=>['package','membership','gift_card'].includes(s.kind)).map(s=>({id:s.id,label:s.label,kind:s.kind,units:s.units,visitsLeft:s.visits_left,giftLeftCents:s.gift_left_cents,settledCents:s.settled_cents,state:s.membership_state,renewalOf:s.renewal_of,
     history:[{state:s.renewal_of?'renewed purchase':'purchased',effective_at:s.recorded_at,visits_left:s.units},...events.filter(e=>e.sale_id===s.id).map(({state,effective_at,visits_left})=>({state,effective_at,visits_left}))]}))
 }

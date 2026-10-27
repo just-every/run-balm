@@ -10,6 +10,7 @@ export async function retailJourney(h,proof=async()=>{}){
  const other=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Other',email:'other@patient.example',dateOfBirth:'1980-01-01'})
  const sale={clientId:patient.id,confirm:true,kind:'package',label:'Five cash visits',serviceId:service.id,units:5,amountCents:40000,reference:'synthetic-balm-package'}
  const reception=await h.staff('RetailDesk','reception')
+ const billingStaff=await h.staff('RetailBiller','biller')
  await h.cmd('pay.retail.sell',sale,reception.cookie,403)
  await h.cmd('pay.retail.sell',{...sale,confirm:false},h.owner,400)
  const packageSale=await h.cmd('pay.retail.sell',sale)
@@ -63,7 +64,7 @@ export async function retailJourney(h,proof=async()=>{}){
  const statement=await h.send('/portal/statement.pdf',undefined,cookie)
  assert.equal(statement.status,200);assert.ok(statement.text.includes('Brace'));assert.ok(statement.text.includes('Five cash visits'))
  const dates=file.billing.retail.map(s=>new Date(Date.parse(s.recorded_at)+10*3600000).toISOString().slice(0,10)).sort()
- const today=dates.at(-1)
+ let today=dates.at(-1)
  const report=(await h.send('/api/balm/reports/financial?from='+dates[0]+'&to='+today,undefined,h.owner)).value
  assert.equal(report.summary.chargesCents,45413)
  assert.equal(report.summary.paymentsCents,45413)
@@ -132,7 +133,7 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal(final.find(x=>x.id===later.id).visits_left,0)
  // An explicit renewal buys new entitlements once; the exhausted original stays fixed.
  const renewalTerms={...resume,saleId:later.id,kind:'membership',label:'Authorized renewed membership',serviceId:service.id,units:2,amountCents:7001,reference:'synthetic-balm-renewal',cashConfirm:true,effectiveAt:new Date().toISOString()}
- await h.cmd('pay.retail.renew',renewalTerms,reception.cookie,403)
+ for(const session of [reception.cookie,billingStaff.cookie,priya.cookie])await h.cmd('pay.retail.renew',renewalTerms,session,403)
  await h.cmd('pay.retail.renew',{...renewalTerms,clientId:other.id},h.owner,404)
  await h.cmd('pay.retail.renew',{...renewalTerms,saleId:membership.id},h.owner,409)
  await h.cmd('pay.retail.renew',{...renewalTerms,saleId:packageSale.id},h.owner,404)
@@ -152,6 +153,7 @@ export async function retailJourney(h,proof=async()=>{}){
  const renewalOriginal=await h.send('/portal/receipts/'+renewed.id+'.pdf',undefined,cookie)
  assert.equal(renewalOriginal.status,200);assert.ok(renewalOriginal.text.includes('$70.01'));assert.ok(renewalOriginal.text.includes(later.id))
  assert.equal((await h.send('/portal/receipts/'+renewed.id+'.pdf',undefined,foreign)).status,404)
+ today=renewedFile.billing.retail.map(x=>new Date(Date.parse(x.recorded_at)+10*3600000).toISOString().slice(0,10)).sort().at(-1)
  const noticed=await h.send('/portal/home',undefined,cookie)
  assert.ok(noticed.text.includes('Authorized renewed membership'))
  assert.ok(noticed.text.includes('2 of 2 visits left'))
@@ -171,11 +173,46 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal(obligations.summary.paymentsCents,62414)
  assert.equal(obligations.deposits.total.receivedCents,67001)
  const csv=await h.send('/api/balm/reports/financial/retail.csv?from='+dates[0]+'&to='+today,undefined,h.owner)
- assert.equal(csv.status,200);assert.ok(csv.text.includes('"membership","active","1","2","0","2","70.01","1"'));assert.ok(csv.text.includes('"gift_card","held","","","","","45.87",""'))
+ assert.equal(csv.status,200);assert.ok(csv.text.includes('"membership","active","1","2","0","0","2","70.01","1"'));assert.ok(csv.text.includes('"gift_card","held","","","","","","45.87",""'))
  assert.equal((await h.send('/api/balm/reports/financial?from='+today+'&to='+today,undefined,reception.cookie)).status,403)
  const renewalFacts=await h.db.prepare('SELECT renewal_authorization FROM bm_retail_sales WHERE id=?').bind(renewed.id).first()
  assert.equal(JSON.parse(renewalFacts.renewal_authorization).authorizedAt,renewalTerms.authorizedAt)
  assert.equal(JSON.parse(renewalFacts.renewal_authorization).evidence,renewalTerms.consentEvidence)
+ // Unused visits settle only against an explicitly authorized completed cash refund.
+ const settling=await h.cmd('pay.retail.sell',{...sale,kind:'membership',units:2,amountCents:6001,label:'Membership settled for cash',reference:'synthetic-balm-settling'})
+ const settlementVisit=await pastVisit(h,patient.id,priya,service.id,h.owner,20,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+ await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:settling.id,appointmentId:settlementVisit})
+ let settlementTerms={...resume,saleId:settling.id,effectiveAt:new Date().toISOString(),settlementAmountCents:6001,settlementReference:'synthetic-balm-refund-cash',settlementEvidence:'Owner inspected completed external cash refund',cashReturned:true}
+ await h.cmd('pay.retail.settle',settlementTerms,h.owner,409)
+ await h.cmd('appointment.attend',{id:settlementVisit},priya.cookie)
+ settlementTerms={...settlementTerms,effectiveAt:new Date().toISOString(),settlementAmountCents:3001}
+ for(const session of [reception.cookie,billingStaff.cookie,priya.cookie])await h.cmd('pay.retail.settle',settlementTerms,session,403)
+ await h.cmd('pay.retail.settle',{...settlementTerms,clientId:other.id},h.owner,404)
+ await h.cmd('pay.retail.settle',{...settlementTerms,cashReturned:false},h.owner,400)
+ await h.cmd('pay.retail.settle',{...settlementTerms,settlementAmountCents:3000},h.owner,409)
+ await h.cmd('pay.retail.settle',{...settlementTerms,authorizerKind:'guardian'},h.owner,403)
+ for(const missing of ['consentEvidence','authorizedAt','settlementEvidence','settlementReference'])await h.cmd('pay.retail.settle',{...settlementTerms,[missing]:undefined},h.owner,400)
+ const originalBeforeSettlement=(await h.send('/portal/receipts/'+settling.id+'.pdf',undefined,cookie)).text
+ const settlements=await Promise.all([settlementTerms,{...settlementTerms,settlementReference:'synthetic-balm-racing-refund'}].map(input=>h.send('/api/balm/command',{name:'pay.retail.settle',input},h.owner)))
+ assert.deepEqual(settlements.map(r=>r.status).sort(),[200,409])
+ assert.deepEqual(settlements.find(r=>r.status===200).value.result,{state:'cancelled',visitsLeft:0,settledVisits:1,refundedCents:3001,providerRefund:false})
+ const settledFile=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
+ assert.equal(settledFile.billing.retail.find(x=>x.id===settling.id).visits_left,0)
+ assert.equal(settledFile.billing.retail.find(x=>x.id===settling.id).membership_state,'cancelled')
+ assert.equal(settledFile.billing.ledger.balanceCents,0)
+ assert.equal(settledFile.billing.ledger.adjustmentsCents,3001)
+ assert.equal(settledFile.billing.ledger.paymentsCents,65414)
+ assert.equal((await h.send('/portal/receipts/'+settling.id+'.pdf',undefined,cookie)).text,originalBeforeSettlement)
+ assert.ok((await h.send('/portal/home',undefined,cookie)).text.includes('Cash refund recorded by your clinic: $30.01'))
+ today=settledFile.billing.retail.map(x=>new Date(Date.parse(x.recorded_at)+10*3600000).toISOString().slice(0,10)).sort().at(-1)
+ const settledReport=(await h.send('/api/balm/reports/financial?from='+dates[0]+'&to='+today,undefined,h.owner)).value
+ assert.equal(settledReport.summary.chargesCents,68415);assert.equal(settledReport.summary.paymentsCents,65414);assert.equal(settledReport.summary.adjustmentsCents,3001);assert.equal(settledReport.summary.arCents,0)
+ assert.equal(settledReport.deposits.total.receivedCents,70001);assert.equal(settledReport.deposits.total.refundedCents,3001);assert.equal(settledReport.deposits.total.postedCents,65414)
+ assert.equal(settledReport.retail.rows.find(r=>r.kind==='membership'&&r.state==='cancelled').visitsSettled,1)
+ await h.cmd('pay.retail.membership',{...settlementTerms,state:'active',effectiveAt:new Date().toISOString()},h.owner,409)
+ await h.cmd('pay.retail.renew',{...renewalTerms,saleId:settling.id,reference:'synthetic-balm-settled-renewal'},h.owner,409)
+ await assert.rejects(h.db.prepare('DELETE FROM bm_membership_settlements WHERE sale_id=?').bind(settling.id).run(),/membership_original_kept/)
+ await assert.rejects(h.db.prepare("UPDATE bm_membership_settlements SET evidence='changed' WHERE sale_id=?").bind(settling.id).run(),/original_record_is_immutable/)
  // A retained anonymous receipt from an older release must not invent visit dates.
  await h.db.prepare("INSERT INTO bm_destroyed_retail(id,kind,units,amount_cents,tax_cents,recorded_at) VALUES(?,'membership',4,1234,0,'1990-01-02T03:00:00.000Z')").bind(crypto.randomUUID()).run()
  const incomplete=(await h.send('/api/balm/reports/financial?from='+today+'&to='+today,undefined,h.owner)).value.retail

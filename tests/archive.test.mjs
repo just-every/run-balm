@@ -598,6 +598,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const renewalTerms={clientId:patient.id,saleId:exhausted.id,kind:'membership',serviceId:service.id,units:3,amountCents:3000,label:'Synthetic renewed membership',reference:'synthetic-balm-archive-renewal',reason:'Patient requested three new cash visits',consentEvidence:'Specific patient authorization',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Patient in person',confirm:true,cashConfirm:true}
     const renewed=await h.cmd('pay.retail.renew',renewalTerms)
     const renewalBefore=await h.db.prepare('SELECT * FROM bm_retail_sales WHERE id=?').bind(renewed.id).first()
+    const settlementTerms={...renewalTerms,saleId:renewed.id,effectiveAt:new Date().toISOString(),settlementAmountCents:3000,settlementReference:'synthetic-balm-archive-cash-refund',settlementEvidence:'Completed external cash refund original',cashReturned:true}
+    await h.cmd('pay.retail.settle',settlementTerms)
+    const settlementBefore=await h.db.prepare('SELECT * FROM bm_membership_settlements WHERE sale_id=?').bind(renewed.id).first()
+
     const cancellationTerms={clientId:patient.id,saleId:exhausted.id,reason:'Patient requested cancellation after consumption',consentEvidence:'Patient authorized cancelling this exhausted membership',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Specific patient request in person',confirm:true}
     await h.cmd('pay.retail.cancel',cancellationTerms)
     const cancellationBefore=await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first()
@@ -612,6 +616,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
     await h.cmd('accounting.connect',{realmId:'123',clientId:'synthetic-balm-8',clientSecret:'synthetic-balm-9',refreshToken:'synthetic-balm-10',environment:'sandbox',confirm:true})
     await h.cmd('accounting.mapping',{mappings:accountingMappings,confirm:true})
+    const settlementDay=new Date(Date.parse(settlementBefore.recorded_at)+10*3600000).toISOString().slice(0,10)
+    const accounting=await h.cmd('accounting.prepare',{day:settlementDay})
+    const accountingSources=JSON.parse((await h.db.prepare('SELECT sources FROM bm_accounting_batches WHERE id=?').bind(accounting.id).first()).sources)
+    assert.deepEqual(accountingSources.find(s=>s.id==='membership-settlement:'+renewed.id),{id:'membership-settlement:'+renewed.id,kind:'refund',method:'cash',cents:3000,debit:'income',credit:'cash'})
     const key=await h.cmd('agent.create',{label:'Synthetic excluded finance grant',scopes:['finance.reconcile.prepare']})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
@@ -631,7 +639,11 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.equal(file.billing.retail.find(x=>x.id===exhausted.id).visits_left,0)
     assert.deepEqual(await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first(),cancellationBefore)
     assert.deepEqual(await h.db.prepare('SELECT * FROM bm_retail_sales WHERE id=?').bind(renewed.id).first(),renewalBefore)
-    assert.equal(file.billing.retail.find(x=>x.id===renewed.id).visits_left,3)
+    assert.equal(file.billing.retail.find(x=>x.id===renewed.id).visits_left,0)
+    assert.equal(file.billing.retail.find(x=>x.id===renewed.id).membership_state,'cancelled')
+    assert.deepEqual(await h.db.prepare('SELECT * FROM bm_membership_settlements WHERE sale_id=?').bind(renewed.id).first(),settlementBefore)
+    await h.cmd('pay.retail.settle',settlementTerms,owner,409)
+    await h.cmd('pay.retail.settle',settlementTerms,inactive.cookie,401)
     await h.cmd('pay.retail.renew',renewalTerms,owner,409)
     await h.cmd('pay.retail.renew',renewalTerms,inactive.cookie,401)
     await h.cmd('pay.retail.cancel',cancellationTerms,owner,409)

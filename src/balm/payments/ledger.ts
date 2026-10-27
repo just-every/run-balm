@@ -41,7 +41,9 @@ export async function ledger(db: D1Database, clientId: string) {
     FROM bm_invoices i WHERE i.client_id=? AND i.status='approved' AND EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)`, clientId)
   const insurancePendingCents = pending.reduce((sum, i) => sum + Number(i.cents), 0)
   const retail=await rows(db,'SELECT * FROM bm_retail_sales WHERE client_id=?',clientId)
+  const retailSettlements=await rows(db,'SELECT * FROM bm_membership_settlements WHERE client_id=?',clientId)
   const entries: Omit<Line, 'balanceCents'>[] = [
+    ...retailSettlements.flatMap(z=>[{at:z.recorded_at,kind:'adjustment' as const,description:'Unused membership visits settled',chargeCents:0,paymentCents:Number(z.amount_cents),ref:z.sale_id},{at:z.recorded_at,kind:'refund' as const,description:'Membership cash refund recorded outside Balm',chargeCents:0,paymentCents:-Number(z.amount_cents),ref:z.sale_id}]),
     ...retail.flatMap(s=>{const amount=Number(s.amount_cents)+Number(s.tax_cents),gift=s.kind==='gift_card';return [{at:s.recorded_at,kind:'charge' as const,description:s.label+(gift?' · restricted gift value':' · cash sale including tax'),chargeCents:gift?0:amount,paymentCents:0,ref:s.id},{at:s.recorded_at,kind:'payment' as const,description:s.gift_id?'Gift value redeemed':gift?'Gift value purchased (held separately)':'Cash sale paid',chargeCents:0,paymentCents:gift?0:amount,ref:s.id}]}),
     ...invoices.map(i => { const v = JSON.parse(i.snapshot as string); return { at: i.approved_at as string, kind: 'charge' as const, description: `${v.serviceDate.split(',').slice(0, 3).join(',')} · ${v.service.name} · ${invoiceNumber(i.number as number)}`, chargeCents: i.amount_cents as number, paymentCents: 0, ref: i.id as string } }),
     ...manual.map(p => ({ at: p.recorded_at as string, kind: 'payment' as const, description: `${isPayerPayment(p.reference) ? (Number(p.amount_cents)<0?'Insurance recoupment':'Insurance payment') : 'Payment received'} · ${invoiceNumber(p.number as number)} · ${payerReference(String(p.reference))}`, chargeCents: 0, paymentCents: p.amount_cents as number, ref: String(p.reference) })),
@@ -52,7 +54,8 @@ export async function ledger(db: D1Database, clientId: string) {
   ].sort((a, b) => a.at.localeCompare(b.at))
   let balance = 0
   const lines: Line[] = entries.map(e => ({ ...e, balanceCents: balance += e.chargeCents - e.paymentCents }))
-  const charges = lines.reduce((t, l) => t + l.chargeCents, 0), payments = lines.filter(l => l.kind !== 'adjustment').reduce((t, l) => t + l.paymentCents, 0), adjusted = adjustments.reduce((t, x) => t + Number(x.amount_cents), 0)
+  const retailAdjusted=retailSettlements.reduce((t,z)=>t+Number(z.amount_cents),0)
+  const charges = lines.reduce((t, l) => t + l.chargeCents, 0), payments = lines.filter(l => l.kind !== 'adjustment').reduce((t, l) => t + l.paymentCents, 0), adjusted = retailAdjusted+adjustments.reduce((t, x) => t + Number(x.amount_cents), 0)
   const credit = held.reduce((sum, e) => sum + Number(e.remaining_cents), 0) + cards.reduce((t, c) => t + (c.amount_cents as number) - Number(c.refunded_cents ?? 0) - (c.applied_cents as number), 0)
   return { lines, chargesCents: charges, paymentsCents: payments, adjustmentsCents: adjusted, insurancePendingCents, patientBalanceCents: charges - payments - adjusted - insurancePendingCents, balanceCents: charges - payments - adjusted, creditCents: credit }
 }

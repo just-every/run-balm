@@ -46,6 +46,12 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
       payments.push({invoice_id:sale.id,amount_cents:total,reference:'retail:'+sale.id,recorded_at:sale.recorded_at,account_entry_id:sale.id,retail:true})
     }
   }
+  const retailSettlements=await db.prepare(`SELECT sale_id,amount_cents,recorded_at,reference FROM bm_membership_settlements
+    UNION ALL SELECT id,json_extract(settlement,'$.amount_cents'),json_extract(settlement,'$.recorded_at'),'Destroyed cash refund' FROM bm_destroyed_retail WHERE settlement IS NOT NULL`).all<Data>()
+  for(const z of retailSettlements.results) {
+    payments.push({invoice_id:z.sale_id,amount_cents:-Number(z.amount_cents),recorded_at:z.recorded_at,account_entry_id:z.sale_id,retail:true,reference:z.reference})
+    adjustments.push({invoice_id:z.sale_id,amount_cents:Number(z.amount_cents),recorded_at:z.recorded_at,reason:'Unused membership settlement'})
+  }
   const anonymous = await anonymousFinancialFacts(db)
   refunds.push(...anonymous[6])
   invoices.push(...anonymous[0])
@@ -122,6 +128,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
     const redeemed=retail.results.filter(s=>s.gift_id===sale.id&&before(s.recorded_at)).reduce((t,s)=>t+Number(s.amount_cents)+Number(s.tax_cents),0)
     deposits.push({date:local(sale.recorded_at),source:gift?'Gift value purchased':'Cash sale',reference:sale.reference,receivedCents:amount,postedCents:gift?redeemed:amount,creditCents:gift?amount-redeemed:0,unpostedCents:0,refundedCents:0})
   }
+  for(const z of retailSettlements.results.filter(z=>inRange(z.recorded_at)))deposits.push({date:local(z.recorded_at),source:'Membership cash refund recorded outside Balm',reference:z.sale_id,receivedCents:-Number(z.amount_cents),postedCents:-Number(z.amount_cents),creditCents:0,unpostedCents:0,refundedCents:Number(z.amount_cents)})
   deposits.sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source))
 
   if (named.size) await commit(db, who, [...named].map(clientId => audit(db, who, 'report.financial_read', clientId)))
@@ -164,10 +171,10 @@ export function financialCsv(report: FinancialReports, kind: FinancialKind) {
     table.push(['', 'All', '', dollars(t.receivedCents), dollars(t.postedCents), dollars(t.creditCents), dollars(t.unpostedCents), dollars(t.refundedCents), dollars(t.interestCents), dollars(t.recoupedCents)])
   }
   if(kind==='retail') {
-    table.push(['kind','state','purchases','visits_sold','visits_used','visits_left','unearned_usd','renewals'])
-    for(const row of report.retail.rows)table.push([row.kind,row.state,row.purchases,row.visitsSold,row.visitsUsed,row.visitsLeft,dollars(row.unearnedCents),row.renewals])
-    table.push(['incomplete_historical_purchases',report.retail.incompleteHistory,'','','','','',''])
-    table.push(['gift_card','held','','','','',dollars(report.retail.giftLiabilityCents),''])
+    table.push(['kind','state','purchases','visits_sold','visits_used','visits_settled','visits_left','unearned_usd','renewals'])
+    for(const row of report.retail.rows)table.push([row.kind,row.state,row.purchases,row.visitsSold,row.visitsUsed,row.visitsSettled,row.visitsLeft,dollars(row.unearnedCents),row.renewals])
+    table.push(['incomplete_historical_purchases',report.retail.incompleteHistory,'','','','','','',''])
+    table.push(['gift_card','held','','','','','',dollars(report.retail.giftLiabilityCents),''])
   }
   return table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }

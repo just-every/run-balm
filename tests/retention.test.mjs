@@ -216,13 +216,14 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   // Historical retail originals, including a partially redeemed gift and used package.
   const giftId=crypto.randomUUID(),productId=crypto.randomUUID(),packageId=crypto.randomUUID()
   const retailOriginal=btoa('%PDF-1.4 Synthetic historical retail original')
-  for(const [id,kind,amount,tax,gift,units] of [[giftId,'gift_card',10000,0,null,0],[productId,'product',5000,413,giftId,0],[packageId,'membership',40000,0,null,1]]) {
+  for(const [id,kind,amount,tax,gift,units] of [[giftId,'gift_card',10000,0,null,0],[productId,'product',5000,413,giftId,0],[packageId,'membership',40000,0,null,2]]) {
     await h.db.prepare(`INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'1990-01-02T03:00:00.000Z',?,?)`).bind(id,patient.id,kind,'Private historical item',kind==='membership'?service.id:null,units,amount,tax,kind==='product'?825:0,kind==='product'?'TX':'','Private tax evidence',gift,'Private retail '+id,h.auth.OWNER_EMAIL,retailOriginal).run()
   }
   await h.db.prepare("INSERT INTO bm_membership_events(id,sale_id,client_id,state,reason,consent_evidence,recorded_by,recorded_at) VALUES(?,?,?,'active','Private reason','Private consent',?,'1990-01-02T03:00:00.000Z')").bind(crypto.randomUUID(),packageId,patient.id,h.auth.OWNER_EMAIL).run()
   await h.db.prepare('INSERT INTO bm_package_assignments VALUES(?,?,?,?,?)').bind(visit,packageId,patient.id,h.auth.OWNER_EMAIL,'1990-01-02T03:00:00.000Z').run()
   await h.db.prepare('INSERT INTO bm_package_uses VALUES(?,?,?,?)').bind(visit,packageId,patient.id,'1990-01-02T03:00:00.000Z').run()
+  await h.db.prepare("INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by) VALUES(?,?,1,20000,'synthetic-balm-historical-refund','Private completed cash refund','1990-01-02T04:00:00.000Z',?)").bind(packageId,patient.id,h.auth.OWNER_EMAIL).run()
   await h.db.prepare("INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,'1990-01-02T04:00:00.000Z','1990-01-02T03:00:00.000Z','Private authorization method','Private cancellation authorization','Private cancellation reason',?,'1990-01-02T04:00:00.000Z',0)").bind(packageId,patient.id,h.auth.OWNER_EMAIL).run()
   assert.equal((await h.send('/api/balm/receipts/'+giftId+'.pdf',undefined,h.owner)).status,200)
   await assert.rejects(h.db.prepare('DELETE FROM bm_retail_sales WHERE id=?').bind(productId).run(),/retail_original_kept/)
@@ -251,7 +252,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   for(const table of ['bm_authorization_requests','bm_authorization_submissions','bm_authorization_decisions'])assert.equal(preview.records[table],1)
   assert.equal(preview.records.bm_measures,1)
   assert.equal(preview.records.bm_membership_events,1)
-  assert.equal(preview.records.bm_membership_cancellations,1)
+  assert.equal(preview.records.bm_membership_cancellations,1);assert.equal(preview.records.bm_membership_settlements,1)
   assert.equal(preview.records.bm_assistant_signed_notes,1);assert.equal(preview.records.bm_assistant_supervision,1)
   assert.equal(preview.records.bm_note_submissions,1);assert.equal(preview.records.bm_note_reviews,1)
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()

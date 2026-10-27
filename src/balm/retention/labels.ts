@@ -8,7 +8,7 @@ const groups: Record<string,string[]> = {
   'Chart documents and clinical alerts':['chart_documents','client_alerts'],
   'Messages, attachments and private conversation links':['messages','message_attachments','message_links'],
   'Invoices, payments, fees and billing codes':['invoices','payments','card_payments','visit_codes','visit_fees','movein_balances','account_entries','account_postings','patient_statements','statement_preferences','cycle_statements','statement_deliveries','aeob_sources','aeob_issues','estimate_requests','estimate_drafts','estimates','estimate_deliveries'],
-  'Retail receipts and visit entitlements':['retail_sales','membership_events','membership_cancellations','package_assignments','package_uses'],
+  'Retail receipts and visit entitlements':['retail_sales','membership_events','membership_cancellations','membership_settlements','package_assignments','package_uses'],
   'Saved payment credentials and private payment links':['card_setups','cards','stripe_customers','pay_links'],
   'Payment plans and balance reminders':['payment_plans','plan_installments','balance_reminders','balance_notices','balance_review_queue'],
   'Insurance coverage, claims and remittance detail':['policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','payer_payment_lines','cob_stages','cob_adjudications','cob_patient_decisions','cob_paper_packets','cob_manual_reductions','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],
