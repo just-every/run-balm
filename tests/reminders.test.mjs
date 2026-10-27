@@ -422,3 +422,28 @@ test('COMM-004: configured consented sequences follow chart goals, share contact
     assert.match((await unknown.send('/app/clients/' + patient.id, undefined, unknown.owner)).text, /Outcome unknown; never automatically resent/)
   } finally { await unknown.close() }
 })
+
+test('COMM-003: manual calls and communication search preserve patient and conversation authority, original facts and audit', {timeout:120000}, async()=>{
+ const h=await harness()
+ try { const {communicationJourney}=await import('./communication-journey.mjs');await communicationJourney(h) }
+ finally {await h.close()}
+})
+
+test('COMM-003: live authority changes refuse call writes and search reads before any result escapes', {timeout:120000}, async()=>{
+ const h=await harness({entry:'tests/communication-worker.ts'})
+ try {
+  const {communicationFixture}=await import('./communication-journey.mjs')
+  const c=await communicationFixture(h)
+  const recorded=await h.cmd('call.log',c.call,c.priya.cookie)
+  const count=await h.db.prepare('SELECT COUNT(*) n FROM bm_calls').first()
+  await h.cmd('call.log',c.call,c.priya.cookie,409,{'x-synthetic-revoke':c.priya.email})
+  assert.deepEqual(await h.db.prepare('SELECT COUNT(*) n FROM bm_calls').first(),count,'refused call saves no original')
+  assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action='call.logged'").first()).n,1)
+  const cookie=await h.signIn(c.priya.email)
+  const before=(await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action LIKE 'communication.%'").first()).n
+  const refused=await h.send('/api/balm/clients/'+c.patient.id+'/communications?communicationQuery=Shoulder',undefined,cookie,{'x-synthetic-revoke':c.priya.email})
+  assert.equal(refused.status,409)
+  assert.ok(!refused.text.includes(c.call.disposition)&&!refused.text.includes(recorded.id),'refused read exposes neither record nor snippet')
+  assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action LIKE 'communication.%'").first()).n,before,'failed read releases no results')
+ } finally {await h.close()}
+})

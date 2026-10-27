@@ -31,7 +31,8 @@
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-denial\" node tests/denial-resolver-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs",
-        "node tests/outcome-report-browser.mjs"
+        "node tests/outcome-report-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-communications\" node tests/communication-browser.mjs"
       ]
     },
     {

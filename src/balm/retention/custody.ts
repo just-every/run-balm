@@ -99,6 +99,7 @@ export const custody = [
   {"table":"bm_medicare_abns","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_medicare_expenses","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_medicare_years","client":true,"links":[["client_id","bm_clients","id"]]},
+  {"table":"bm_calls","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_messages","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_message_attachments","client":false,"links":[["message_id","bm_messages","id"]]},
   {"table":"bm_message_links","client":true,"links":[["client_id","bm_clients","id"]]},
