@@ -166,7 +166,8 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  await h.cmd('pay.checkin.collect',declinedInput,reception.cookie)
  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,declinedWrites)
  const replacement=await h.form(path+'?do=card',{consent:'on'});stripe.complete(replacement.location.split('/').at(-1));await h.send(path+'?setup='+replacement.location.split('/').at(-1))
- const beforeReport=(await h.send('/api/balm/reports/financial?from='+day+'&to='+day,undefined,h.owner)).value
+ const reportRange='from='+new Date(Date.now()-86400000+10*3600000).toISOString().slice(0,10)+'&to='+new Date(Date.now()+86400000+10*3600000).toISOString().slice(0,10)
+ const beforeReport=(await h.send('/api/balm/reports/financial?'+reportRange,undefined,h.owner)).value
  const cardTotal=report=>report.deposits.rows.filter(r=>r.source==='Card payments (Stripe)').reduce((n,r)=>n+r.receivedCents,0)
  const first={...input,amount:'16.00'},other={...first,paymentId:randomUUID()}
  const writesBefore=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
@@ -210,7 +211,7 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  const file=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
  assert.equal(file.billing.ledger.patientBalanceCents,0);assert.equal(file.invoices.find(i=>i.id===invoice.id).paid_cents,9500)
  assert.equal(file.billing.ledger.lines.filter(l=>l.kind==='card').reduce((n,l)=>n+l.paymentCents,0),2600)
- const report=(await h.send('/api/balm/reports/financial?from='+day+'&to='+day,undefined,h.owner)).value
+ const report=(await h.send('/api/balm/reports/financial?'+reportRange,undefined,h.owner)).value
  assert.equal(cardTotal(report)-cardTotal(beforeReport),2600)
  await hooks.screen?.('responsibility-paid','/app?date='+day,'a[href="/api/balm/receipts/'+terminal.id+'.pdf"]',reception.cookie)
  await hooks.screen?.('responsibility-portal','/portal/home','#statements',cookie)
