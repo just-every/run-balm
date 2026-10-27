@@ -2770,7 +2770,7 @@
       "executable": false
     },
     "src/balm/ui/authorization-requests.ts": {
-      "sha256": "af68ec96e26693fa2feb4bfd352b7be991aff4ec27a1e825701d5e5f7526b3a0",
+      "sha256": "b4d0aa07a4daa64c97672ca7d1fdc84442491948ddadf68d3304738e14f170f5",
       "executable": false
     },
     "src/balm/ui/backups.ts": {
