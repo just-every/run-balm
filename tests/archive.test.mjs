@@ -14,6 +14,8 @@ import { harness } from './harness.mjs'
 import { mriUpload, mriReport } from './chart-document-fixtures.mjs'
 import { modelEdge } from './defensibility-clinic.mjs'
 import { clinic, pastVisit, slots, bookOnline } from './clinic.mjs'
+import { fakeProviders } from './fakes/stripe.mjs'
+import { checkInResponsibilityJourney } from './card-payments-journey.mjs'
 import { fakeBucket } from './fakes/s3.mjs'
 import { generateBackupKeys } from '../src/balm/backup/envelope.mjs'
 // Match the local lifecycle: archive fixtures never need external Request.cf metadata.
@@ -596,8 +598,8 @@ test('retail and finance originals, paused entitlements and preparation authorit
   try {
     await checkout(source);await checkout(restored)
     await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
-    const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge()
-    h=await harness({root:source,outbound:qbo.outbound})
+    const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge(),stripe=fakeProviders()
+    h=await harness({root:source,outbound:r=>new URL(r.url).hostname==='api.stripe.com'?stripe.handler(r):qbo.outbound(r)})
     const {service,practitioners:[priya]}=await clinic(h)
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retail archive',dateOfBirth:'1950-01-01'})
     const member=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:2,amountCents:5000,label:'Synthetic finite membership',reference:'synthetic-balm-archive-member',confirm:true})
@@ -641,6 +643,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const authorizationClient=authorizationPreview.patients[1].id
     const authorizationBefore=(await h.send('/api/balm/clients/'+authorizationClient,undefined,h.owner)).value.insurance
     const carriedBeforeRestore=(await h.cmd('insurance.runout.read',{})).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
+    await h.cmd('pay.stripe.connect',{secretKey:'synthetic-balm-1'})
+    const reception=await h.staff('Rosa','reception')
+    const responsibility=await checkInResponsibilityJourney({h,stripe,service,priya,reception})
+    const moneyBefore=(await h.db.prepare('SELECT id,invoice_id,appointment_id,collection_purpose,amount_cents,payment_intent,stripe_account_id,stripe_customer_id,status FROM bm_card_payments WHERE client_id=? ORDER BY id').bind(responsibility.patient.id).all()).results
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
     const archive=join(temporary,'retail.rer')
@@ -650,6 +656,12 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await command(restored,['import','--input',archive,'--yes','--no-queue'])
     h=await harness({root:restored,...identity})
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
+    const moneyAfter=(await h.db.prepare('SELECT id,invoice_id,appointment_id,collection_purpose,amount_cents,payment_intent,stripe_account_id,stripe_customer_id,status FROM bm_card_payments WHERE client_id=? ORDER BY id').bind(responsibility.patient.id).all()).results
+    assert.deepEqual(moneyAfter,moneyBefore)
+    const patientSession=await portalLogin(h,'responsibility@patient.example')
+    assert.equal((await h.send('/portal/receipts/'+responsibility.saved.id+'.pdf',undefined,patientSession)).text,responsibility.original)
+    assert.equal((await h.send('/portal/receipts/'+responsibility.terminal.id+'.pdf',undefined,patientSession)).text,responsibility.receipt)
+    assert.equal((await h.send('/api/balm/clients/'+responsibility.patient.id,undefined,owner)).value.billing.ledger.patientBalanceCents,0)
       assert.deepEqual((await h.cmd('movein.journal',{jobId:moveinClaims.job.id},owner)).job.report,moveinClaims.job.report,'carried claim reconciliation survives restore')
       const carriedAfterRestore=(await h.cmd('insurance.runout.read',{},owner)).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
       assert.deepEqual(carriedAfterRestore.map(({age_days,...facts})=>facts),carriedBeforeRestore.map(({age_days,...facts})=>facts),'all original carried claim facts and balances survive restore')

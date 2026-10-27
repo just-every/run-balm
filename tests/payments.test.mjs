@@ -542,11 +542,15 @@ test('PAY-002: a lost refund response stays reserved until the original Stripe r
 })
 
 test('PAY-002: an uncertain Terminal send is reconciled on its original intent without another collection', {timeout:120_000}, async()=>{
- const stripe=fakeProviders();let lose=true
+ const stripe=fakeProviders();let lose=true,loseCard=true,revokeDuringRead=false
  const fixture=await connected({stripe,outbound:async request=>{
+  const body=request.method==='POST'?await request.clone().text():''
+  const saved=request.method==='POST'&&new URL(request.url).pathname==='/v1/payment_intents'&&body.includes('off_session=true')
   const processing=request.method==='POST'&&new URL(request.url).pathname.endsWith('/process_payment_intent')
   const response=await stripe.handler(request)
+  if(revokeDuringRead&&request.method==='GET'&&new URL(request.url).pathname.startsWith('/v1/terminal/readers/')){revokeDuringRead=false;await fixture.h.cmd('staff.save',{id:fixture.reception.id,name:'Rosa',email:'rosa@clinic.example',role:'reception',active:false})}
   if(processing&&lose){lose=false;return Response.json({error:{message:'Reader response lost after accepting action'}},{status:503})}
+  if(saved&&loseCard){loseCard=false;return Response.json({error:{message:'Card response lost after acceptance'}},{status:503})}
   return response
  }})
  const {h,reception,client,service,priya}=fixture
@@ -554,7 +558,10 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
   await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},reception.cookie)
   const visit=await pastVisit(h,client.id,priya,service.id,reception.cookie,0)
   await h.cmd('pay.terminal.configure',{locationId:'tml_syntheticbalm1',simulated:true})
-  const paymentId=crypto.randomUUID(),input={appointmentId:visit,paymentId,amount:'30.00'}
+  const oldVisit=await pastVisit(h,client.id,priya,service.id,h.owner,4)
+  await h.cmd('appointment.attend',{id:oldVisit})
+  const invoice=await h.cmd('invoice.prepare',{appointmentId:oldVisit});await h.cmd('invoice.approve',{id:invoice.id})
+  const paymentId=crypto.randomUUID(),input={appointmentId:visit,paymentId,amount:'30.00',invoiceId:invoice.id,purpose:'balance',confirm:true}
   const uncertain=await h.cmd('pay.terminal.collect',input,reception.cookie)
   assert.equal(uncertain.state,'unknown');assert.equal(uncertain.status,'processing')
   const repeated=await h.cmd('pay.terminal.collect',input,reception.cookie)
@@ -565,8 +572,28 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
   assert.equal(paid.status,'succeeded');assert.equal(paid.state,'succeeded')
   await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
   const f=(await h.send('/api/balm/clients/'+client.id,undefined,h.owner)).value
-  assert.equal(f.billing.ledger.creditCents,3000);assert.equal(f.billing.ledger.lines.filter(x=>x.kind==='card').length,1)
+  assert.equal(f.billing.ledger.creditCents,0);assert.equal(f.billing.ledger.patientBalanceCents,6500);assert.equal(f.billing.ledger.lines.filter(x=>x.kind==='card').length,1)
   assert.equal(stripe.calls.filter(c=>c.path.endsWith('/present_payment_method')).length,1)
+  const saved=await saveCard(h,stripe,reception,client.id);await h.send('/pay/'+saved.token+'?setup='+saved.session)
+  const cardInput={...input,paymentId:crypto.randomUUID(),amount:'65.00'}
+  await h.cmd('pay.checkin.collect',cardInput,reception.cookie,409)
+  const reserved=await h.db.prepare('SELECT * FROM bm_card_payments WHERE id=?').bind(cardInput.paymentId).first()
+  assert.equal(reserved.status,'processing');assert.equal(reserved.payment_intent,null)
+  await h.cmd('pay.terminal.collect',{...cardInput,paymentId:crypto.randomUUID()},reception.cookie,409)
+  const postCount=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
+  const recovered=await h.cmd('pay.checkin.collect',cardInput,reception.cookie)
+  assert.equal(recovered.status,'succeeded');assert.equal(recovered.id,cardInput.paymentId);assert.equal(recovered.amount_cents,6500)
+  await h.cmd('pay.checkin.collect',cardInput,reception.cookie)
+  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,postCount)
+  assert.equal((await h.send('/api/balm/clients/'+client.id,undefined,h.owner)).value.billing.ledger.patientBalanceCents,0)
+  const nextVisit=await pastVisit(h,client.id,priya,service.id,h.owner,6)
+  await h.cmd('appointment.attend',{id:nextVisit})
+  const nextInvoice=await h.cmd('invoice.prepare',{appointmentId:nextVisit});await h.cmd('invoice.approve',{id:nextInvoice.id})
+  const revokedInput={...input,paymentId:crypto.randomUUID(),invoiceId:nextInvoice.id,amount:'10.00'}
+  revokeDuringRead=true
+  await h.cmd('pay.terminal.collect',revokedInput,reception.cookie,409)
+  assert.equal(await h.db.prepare('SELECT id FROM bm_card_payments WHERE id=?').bind(revokedInput.paymentId).first(),null)
+  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,postCount)
  }finally{await h.close()}
 })
 

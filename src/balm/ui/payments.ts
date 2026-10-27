@@ -1,5 +1,5 @@
 import { retailPanel } from './retail'
-import { terminalSettings, terminalCheckIn } from './card-terminal'
+import { terminalSettings, terminalCheckIn, responsibilityCheckIn } from './card-terminal'
 import { cardRefundsPanel } from './card-refunds'
 import { patientCyclePanel } from './statement-cycles'
 import { periodSuperbillForm } from './superbill-period'
@@ -31,7 +31,7 @@ export function clinicPayments(s: any) {
 
 /** The day view's check-in: one action checks the patient in and charges their copay to the card on file. */
 export function checkInActions(s: any, a: any, back: string) {
-  return savedCardCheckIn(s, a, back) + terminalCheckIn(s, a, back)
+  return savedCardCheckIn(s, a, back) + terminalCheckIn(s, a, back) + responsibilityCheckIn(s,a,back)
 }
 function savedCardCheckIn(s: any, a: any, back: string) {
   const v = s.payments?.visits?.[a.id]
