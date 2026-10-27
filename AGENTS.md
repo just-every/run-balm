@@ -137,3 +137,7 @@ their maintenance.
 
 Pinned reference: https://github.com/runeditrun/base/blob/ada9f574d8a7247edc3a1180b593ad182b1fbb37/TANSTACK-START-MIGRATION.md
 Native-session/runtime evidence: https://github.com/runeditrun/base/tree/ada9f574d8a7247edc3a1180b593ad182b1fbb37/default-seed
+
+## Lander-Regenerate
+
+COMM-003 evidence and Gap registers are generated from CONTRACT.md without changing acceptance text or homepage copy. Run `node scripts/contract-docs.mjs write COMM-003`, then `node scripts/contract-docs.mjs check`. Regenerate the edition source lock last with `node scripts/edition-authoring/cli.mjs lock`, then run its `check`.

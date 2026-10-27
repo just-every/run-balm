@@ -27,6 +27,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const later = await one(db, `SELECT MAX(
     COALESCE((SELECT MAX(r.written_at) FROM bm_note_revisions r JOIN bm_notes n ON n.id=r.note_id WHERE n.client_id=?),''),
     COALESCE((SELECT MAX(a.written_at) FROM bm_note_addenda a JOIN bm_notes n ON n.id=a.note_id WHERE n.client_id=?),''),
+    COALESCE((SELECT MAX(MAX(occurred_at,recorded_at)) FROM bm_calls WHERE client_id=?),''),
     COALESCE((SELECT MAX(sent_at) FROM bm_messages WHERE client_id=?),''),
     COALESCE((SELECT MAX(created_at) FROM bm_chart_documents WHERE client_id=?),''),
     COALESCE((SELECT MAX(recorded_at) FROM bm_disclosures WHERE client_id=?),''),
@@ -38,7 +39,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(created_at) FROM bm_outcome_schedules WHERE client_id=?),''),
     COALESCE((SELECT MAX(created_at) FROM bm_outcome_requests WHERE client_id=?),''),
     COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
-  ) AS at`,...Array(13).fill(client.id))
+  ) AS at`,...Array(14).fill(client.id))
   const authorizationDate = await one(db,`SELECT MAX(at) AS at FROM (SELECT prepared_at AS at FROM bm_authorization_requests WHERE client_id=? UNION ALL SELECT s.recorded_at FROM bm_authorization_submissions s JOIN bm_authorization_requests r ON r.id=s.request_id WHERE r.client_id=? UNION ALL SELECT d.recorded_at FROM bm_authorization_decisions d JOIN bm_authorization_requests r ON r.id=d.request_id WHERE r.client_id=?)`,client.id,client.id,client.id)
   const retailDate = await one(db,'SELECT MAX(recorded_at) AS at FROM (SELECT recorded_at FROM bm_retail_sales WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_events WHERE client_id=? UNION ALL SELECT used_at FROM bm_package_uses WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_cancellations WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_settlements WHERE client_id=?)',client.id,client.id,client.id,client.id,client.id)
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
