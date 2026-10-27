@@ -14,11 +14,11 @@ import { clientVisible } from '../domain/clients'
 import { audit, commit, guard, human, insist, need, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { smsBlock, type SmsEnv } from '../sms'
 import { liveCard, removeCard } from './cards'
-import { chargeCardOnFile } from './charges'
+import { chargeCardOnFile, reconcileCheckInCard } from './charges'
 import { saveVisitCodes, savePractitionerNpi, visitCodes } from './codes'
 import { connectStripe, disconnectStripe, stripeView } from './connect'
 import { superbillFacts } from './documents'
-import { ledger, openInvoices, parseDollars } from './ledger'
+import { ledger, openInvoices, parseDollars, checkInCollections, reserveCheckInCollection } from './ledger'
 import { createLink } from './links'
 import { balanceReview, clientPlans, planCommand } from './plans'
 
@@ -65,13 +65,33 @@ async function chargeInvoice(env: SmsEnv, db: D1Database, who: Actor, input: Dat
   insist(invoice, 'approved_invoice_not_found', 404)
   const open = (await openInvoices(db, invoice.client_id as string)).find(i => i.id === invoice.id)
   insist(open, 'there_is_no_patient_balance_to_charge_check_insurance_status', 409)
-  const balance = (await ledger(db, String(invoice.client_id))).patientBalanceCents
+  const balance = (await checkInCollections(db,String(invoice.client_id))).find(i=>i.id===invoice.id)?.balance_cents??0
   insist(balance > 0, 'there_is_no_patient_balance_to_charge_check_insurance_status', 409)
-  return chargeCardOnFile(env, db, who, { clientId: invoice.client_id as string, amountCents: Math.min(open.open_cents, balance), kind: 'charge', invoiceId: invoice.id as string, description: `Payment to ${await clinicName(db)}` })
+  const {reservation}=await reserveCheckInCollection(db,invoice.client_id,{invoiceId:invoice.id,purpose:'balance',amount:String(Math.min(open.open_cents,balance)/100),confirm:true})
+  return chargeCardOnFile(env, db, who, { reservation, clientId: invoice.client_id as string, amountCents: Math.min(open.open_cents, balance), kind: 'charge', invoiceId: invoice.id as string, description: `Payment to ${await clinicName(db)}` })
+}
+
+
+async function collectAtCheckIn(env: SmsEnv, db: D1Database, who: Actor, input: Data) {
+ need(who,'owner','reception');human(who)
+ const visit=await visibleAppointment(db,who,input.appointmentId),paymentId=text(input.paymentId,'payment_id',80)
+ insist(/^[a-f0-9-]{36}$/.test(paymentId),'invalid_payment_id')
+ const known=await one(db,'SELECT * FROM bm_card_payments WHERE id=?',paymentId)
+ if(known){
+  insist(known.appointment_id===visit.id && known.invoice_id===input.invoiceId && known.collection_purpose===input.purpose && known.amount_cents===parseDollars(input.amount),'payment_does_not_match_selection',409)
+  insist(!await one(db,'SELECT 1 FROM bm_terminal_payments WHERE payment_id=?',paymentId),'use_terminal_status_for_this_payment',409)
+  await commit(db,who,[audit(db,who,'payment.checkin_checked',visit.client_id,paymentId)])
+  return reconcileCheckInCard(env,db,known)
+ }
+ insist(visit.checked_in_at && ['booked','attended'].includes(visit.status),'check_the_patient_in_first',409)
+ insist(Math.abs(Date.parse(visit.start_at)-Date.now())<12*3600_000,'check_in_on_the_day_of_the_visit',409)
+ const {amount,reservation}=await reserveCheckInCollection(db,visit.client_id,input)
+ return chargeCardOnFile(env,db,who,{clientId:visit.client_id,amountCents:amount,kind:'charge',appointmentId:visit.id,invoiceId:input.invoiceId,paymentId,purpose:input.purpose,description:'Patient payment at check-in',reservation:[...reservation,guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND version=? AND checked_in_at IS NOT NULL AND status IN ('booked','attended'))",visit.id,visit.version)]})
 }
 
 export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, name: string, input: Data) {
   insist(who.role !== 'agent', 'agents_can_only_prepare', 403)
+  if(['pay.checkin.collect','pay.terminal.collect'].includes(name) && input.amount===undefined && Number.isSafeInteger(input.amountCents))input={...input,amount:(input.amountCents/100).toFixed(2)}
   if (['pay.statements.save', 'pay.plan.create', 'pay.plan.stop', 'pay.reminders.save', 'pay.reminders.stop', 'pay.review.save'].includes(name)) return planCommand(db, who, name, input)
   if (name.startsWith('pay.terminal.')) return terminalCommand(env, db, who, name, input)
   if (name.startsWith('pay.cycle.')) return statementCycleCommand(env, db, who, name, input)
@@ -89,6 +109,7 @@ export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, na
     case 'pay.copay.save': return saveCopay(db, who, input)
     case 'pay.link.create': return createLink(env, db, who, input)
     case 'pay.card.remove': return removeCard(env, db, who, input)
+    case 'pay.checkin.collect': return collectAtCheckIn(env,db,who,input)
     case 'pay.checkin': return checkIn(env, db, who, input)
     case 'pay.copay.charge': {
       const visit = await visibleAppointment(db, who, input.appointmentId)
@@ -104,11 +125,14 @@ export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, na
 export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
   if (who.role === 'agent') return {}
   const desk = deskRole(who), stripe = await stripeView(env, db)
-  const today = await rows(db, `SELECT a.id,a.checked_in_at,c.copay_cents,cd.brand,cd.last4,
+  const today = await rows(db, `SELECT a.id,a.client_id,a.checked_in_at,c.copay_cents,cd.brand,cd.last4,
     (SELECT json_object('id',p.id,'status',p.status,'amount',p.amount_cents,'receipt',p.receipt_number,'failure',p.failure) FROM bm_card_payments p WHERE p.appointment_id=a.id AND p.kind='copay' ORDER BY p.created_at DESC LIMIT 1) AS copay
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id LEFT JOIN bm_cards cd ON cd.client_id=a.client_id AND cd.removed_at IS NULL
     WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
-  const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
+  const collectionOptions = new Map<string, Data[]>()
+  if(desk)for(const v of today)if(!collectionOptions.has(v.client_id))collectionOptions.set(v.client_id,await checkInCollections(db,v.client_id))
+  const collectionPayments=desk?await rows(db,"SELECT id,appointment_id,invoice_id,collection_purpose,amount_cents,status,receipt_number,failure FROM bm_card_payments WHERE collection_purpose IS NOT NULL AND client_id IN (SELECT client_id FROM bm_appointments WHERE start_at BETWEEN ? AND ?) ORDER BY created_at DESC",new Date(Date.now()-12*3600_000).toISOString(),new Date(Date.now()+12*3600_000).toISOString()):[]
+  const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { collectionPayments:collectionPayments.filter(p=>p.appointment_id===v.id), collections: collectionOptions.get(v.client_id), copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
   return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: (await smsBlock(env)), visits, npis, ...(desk ? { cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
 }
@@ -127,7 +151,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
     ...await clientPlans(db, clientId),
     account: await accountEntriesFor(db, clientId),
     statements: await statementsFor(db, clientId),
-    payments: await rows(db, 'SELECT id,kind,amount_cents,applied_cents,refunded_cents,stripe_account_id,stripe_customer_id,payment_intent,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
+    payments: await rows(db, 'SELECT id,kind,collection_purpose,appointment_id,invoice_id,amount_cents,applied_cents,refunded_cents,stripe_account_id,stripe_customer_id,payment_intent,status,card_brand,card_last4,failure,receipt_number,receipt_delivery,created_at,succeeded_at FROM bm_card_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50', clientId),
     links: await rows(db, 'SELECT id,purpose,created_by,created_at,expires_at,delivery,delivery_result,opened_at FROM bm_pay_links WHERE client_id=? ORDER BY created_at DESC LIMIT 10', clientId),
     stripe: await stripeView(env, db), smsBlock: (await smsBlock(env)),
   }

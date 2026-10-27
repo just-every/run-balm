@@ -8,7 +8,7 @@ export const availableBalanceSql = `MAX(0,
    -COALESCE((SELECT SUM(x.amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0))),0)
  FROM bm_invoices i WHERE i.client_id=? AND i.status='approved'
  AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id))
- -(SELECT COALESCE(SUM(amount_cents-applied_cents),0) FROM bm_card_payments WHERE client_id=? AND status='succeeded')
+ -(SELECT COALESCE(SUM(amount_cents-refunded_cents-applied_cents),0) FROM bm_card_payments WHERE client_id=? AND status='succeeded')
  -(SELECT COALESCE(SUM(remaining_cents),0) FROM bm_credit_balances WHERE client_id=?)
  -(SELECT COALESCE(SUM(amount_cents),0) FROM bm_card_payments WHERE client_id=? AND status IN ('open','processing','requires_action')))`
 

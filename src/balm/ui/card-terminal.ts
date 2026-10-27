@@ -20,7 +20,7 @@ export function terminalSettings(s: any) {
 export function terminalCheckIn(s: any, visit: any, back: string) {
   const terminal = s.payments?.terminal, info = s.payments?.visits?.[visit.id]
   if (!desk(s) || !terminal || !info) return ''
-  const payment = terminal.payments.find((p: any) => p.appointment_id === visit.id)
+  const payment = terminal.payments.find((p: any) => p.appointment_id === visit.id && !p.collection_purpose)
   if (payment && payment.state !== 'canceled') {
     const fields = hidden('paymentId', payment.id)
     if (payment.status === 'succeeded') return `<p>${status(`Terminal copay ${money(payment.amount_cents)} paid`)} <a href="/api/balm/receipts/${h(payment.id)}.pdf">Receipt R-${h(String(payment.receipt_number).padStart(6, '0'))}</a></p>`
@@ -37,4 +37,30 @@ export function terminalCheckIn(s: any, visit: any, back: string) {
   const amount = money(info.copayCents)
   return form('pay.terminal.collect', back, hidden('appointmentId', visit.id) + hidden('paymentId', crypto.randomUUID())
     + hidden('amount', dollarsField(info.copayCents)), info.checkedInAt ? `Collect ${amount} copay on terminal` : `Check in and collect ${amount} on terminal`, true)
+}
+
+/** Invoice-specific collection is separate from the visit's configured copay. */
+export function responsibilityCheckIn(s: any, visit: any, back: string) {
+ const info=s.payments?.visits?.[visit.id],terminal=s.payments?.terminal
+ if(!desk(s)||!info||!['booked','attended'].includes(visit.status)||s.payments.stripe?.block)return ''
+ const records=(info.collectionPayments??[]).map((p:any)=>{
+  const label=p.collection_purpose==='coinsurance'?'Coinsurance':'Patient balance',fields=hidden('paymentId',p.id)
+  if(p.status==='succeeded')return `<p>${status(label+' '+money(p.amount_cents)+' paid')} · <a href="/api/balm/receipts/${h(p.id)}.pdf">Receipt R-${h(String(p.receipt_number).padStart(6,'0'))}</a></p>`
+  if(['failed','expired'].includes(p.status))return `<p>${status(label+' '+p.status)} ${h(p.failure??'')}</p>`
+  const reader=terminal?.payments.find((t:any)=>t.id===p.id)
+  return `<div class="entry"><p>${status(label+' pending')} · ${money(p.amount_cents)}. Check the original Stripe payment before collecting again.</p>`+
+   (reader?form('pay.terminal.sync',back,fields,'Check Stripe status',true)+(!reader.livemode?form('pay.terminal.simulate',back,fields,'Present test card in Stripe',true):'')+form('pay.terminal.cancel',back,fields+check('confirm','Cancel the original payment before collecting again.'),'Cancel terminal payment',true)
+   :form('pay.checkin.collect',back,fields+hidden('appointmentId',visit.id)+hidden('invoiceId',p.invoice_id)+hidden('purpose',p.collection_purpose)+hidden('amount',dollarsField(p.amount_cents)),'Check Stripe status',true))+'</div>'
+ }).join('')
+ if(!info.checkedInAt)return records
+ const choices=(info.collections??[]).map((i:any)=>{
+  const fields=()=>hidden('appointmentId',visit.id)+hidden('invoiceId',i.id)+hidden('paymentId',crypto.randomUUID())
+   +`<label>Collection<select name="purpose"><option value="balance">Outstanding patient responsibility</option>${i.coinsurance_cents>=50?'<option value="coinsurance">Adjudicated coinsurance</option>':''}</select></label>`
+   +field('amount','Amount to collect ($)',dollarsField(i.balance_cents),'text','required inputmode="decimal"')
+   +check('confirm','I confirm this selected amount with the patient, separately from the copay.')
+  return `<details class="checkin-collection"><summary><span>Collect patient responsibility · INV-${h(String(i.number).padStart(6,'0'))}</span></summary><p>Available ${money(i.balance_cents)}${i.coinsurance_cents>=50?' · adjudicated coinsurance up to '+money(i.coinsurance_cents):''}. Payments, credits and pending collections are deducted.</p>`
+   +(info.card?form('pay.checkin.collect',back,fields(),'Collect on saved card',true):'<p>No saved card.</p>')
+   +(terminal?.reader?form('pay.terminal.collect',back,fields(),'Collect on terminal',true):'')+'</details>'
+ }).join('')
+ return records+choices
 }

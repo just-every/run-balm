@@ -14,15 +14,16 @@ import { StripeRefusal, stripeCall } from './stripe-api'
 
 const stripeActor = { email: 'Stripe', role: 'payments' }
 const DONE = ['succeeded', 'failed', 'expired']
+const matchesCharge = (row: Data, c: Charge) => insist(!c.purpose || row.client_id===c.clientId && row.appointment_id===c.appointmentId && row.invoice_id===c.invoiceId && row.collection_purpose===c.purpose && row.amount_cents===c.amountCents,'payment_does_not_match_selection',409)
 const payment = (db: D1Database, paymentId: string) => one(db, 'SELECT * FROM bm_card_payments WHERE id=?', paymentId)
 
-export type Charge = { clientId: string; amountCents: number; kind: 'copay' | 'charge'; appointmentId?: string; invoiceId?: string; description: string; paymentId?: string; reservation?: D1PreparedStatement[] }
+export type Charge = { clientId: string; amountCents: number; kind: 'copay' | 'charge'; appointmentId?: string; invoiceId?: string; description: string; paymentId?: string; reservation?: D1PreparedStatement[]; purpose?: string }
 
 /** Charge the patient's card on file now; returns the payment row with its outcome. */
 export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor | null, c: Charge) {
   // A scheduler supplies a durable ID. An existing reservation is never sent
   // again, including after a lost Stripe response or a process crash.
-  if (c.paymentId) { const known = await payment(db, c.paymentId); if (known) return known }
+  if (c.paymentId) { const known = await payment(db, c.paymentId); if (known) { matchesCharge(known,c); return known } }
   const { settings, key } = await stripeReady(env, db)
   const card = await liveCard(db, c.clientId)
   insist(card, 'no_card_on_file', 409)
@@ -32,14 +33,17 @@ export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor
   const paymentId = c.paymentId ?? id(), source = who ?? { email: 'payment scheduler', role: 'payments' }
   try { await commit(db, who, [
     ...(c.reservation ?? []),
+    guard(db,'EXISTS(SELECT 1 FROM bm_cards WHERE id=? AND client_id=? AND removed_at IS NULL)',card.id,c.clientId),
+    guard(db,'EXISTS(SELECT 1 FROM bm_stripe WHERE account_id=?)',settings.account_id),
     ...(c.kind === 'copay' ? [guard(db, "NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE appointment_id=? AND kind='copay' AND status IN ('open','processing','requires_action','succeeded'))", c.appointmentId)] : []),
-    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,invoice_id,amount_cents,status,card_brand,card_last4,created_by,created_at,updated_at,stripe_account_id,stripe_customer_id) VALUES(?,?,?,?,?,?,'open',?,?,?,?,?,?,?)`,
-      paymentId, c.clientId, c.kind, c.appointmentId ?? null, c.invoiceId ?? null, c.amountCents, card.brand, card.last4, source.email, now(), now(), settings.account_id, customer),
+    stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,invoice_id,amount_cents,status,card_brand,card_last4,created_by,created_at,updated_at,stripe_account_id,stripe_customer_id,collection_purpose) VALUES(?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?)`,
+      paymentId, c.clientId, c.kind, c.appointmentId ?? null, c.invoiceId ?? null, c.amountCents, card.brand, card.last4, source.email, now(), now(), settings.account_id, customer, c.purpose ?? null),
     audit(db, source, `payment.${c.kind}_started`, c.clientId, paymentId, `${c.amountCents} cents`),
   ]) } catch (error) {
-    if (c.paymentId) { const known = await payment(db, c.paymentId); if (known) return known }
+    if (c.paymentId) { const known = await payment(db, c.paymentId); if (known) { matchesCharge(known,c); return known } }
     throw error
   }
+  await commit(db, who, [guard(db,'EXISTS(SELECT 1 FROM bm_cards WHERE id=? AND client_id=? AND removed_at IS NULL)',card.id,c.clientId),guard(db,'EXISTS(SELECT 1 FROM bm_stripe WHERE account_id=?)',settings.account_id)])
   let intent: Data
   try {
     intent = await stripeCall(key, 'POST', '/payment_intents', {
@@ -110,6 +114,7 @@ export async function syncIntent(env: Bindings, db: D1Database, intentId: string
 }
 
 async function applyIntent(env: Bindings, db: D1Database, row: Data, intent: Data) {
+  if(row.collection_purpose) insist(intent.metadata?.balm_payment===row.id && intent.metadata?.balm_client===row.client_id && Number(intent.amount)===row.amount_cents && intent.currency==='usd' && (typeof intent.customer==='string'?intent.customer:intent.customer?.id)===row.stripe_customer_id,'payment_does_not_match_reservation',409)
   if (intent.status === 'succeeded') return recordSucceeded(env, db, row, intent)
   const status = intent.status === 'processing' ? 'processing' : intent.status === 'requires_action' ? 'requires_action'
     : intent.status === 'canceled' || (intent.status === 'requires_payment_method' && intent.last_payment_error) ? 'failed' : null
@@ -130,7 +135,7 @@ export async function recordSucceeded(env: Bindings, db: D1Database, row: Data, 
     // A copay belongs to its visit: it waits as credit until that visit's invoice is approved.
     // Other payments go to the invoice charged first, then the oldest open invoices.
     const owed = await openInvoices(db, row.client_id)
-    const open = row.kind === 'copay' ? owed.filter(i => i.appointment_id === row.appointment_id) : owed.sort((a, b) => Number(b.id === row.invoice_id) - Number(a.id === row.invoice_id))
+    const open = row.collection_purpose ? owed.filter(i=>i.id===row.invoice_id) : row.kind === 'copay' ? owed.filter(i => i.appointment_id === row.appointment_id) : owed.sort((a, b) => Number(b.id === row.invoice_id) - Number(a.id === row.invoice_id))
     const posted = postStatements(db, { ...current, payment_intent: intent.id }, open, amount)
     try {
       await commit(db, null, [
@@ -152,4 +157,21 @@ export async function recordSucceeded(env: Bindings, db: D1Database, row: Data, 
   const done = (await payment(db, row.id))!
   await sendReceipt(env, db, done)
   return payment(db, row.id)
+}
+
+/** An uncertain saved-card send is recovered by reads of its original identity only. */
+export async function reconcileCheckInCard(env: Bindings, db: D1Database, row: Data) {
+ if(DONE.includes(row.status))return row
+ const {settings,key}=await stripeReady(env,db)
+ insist(row.stripe_account_id===settings.account_id,'original_stripe_account_must_be_connected',409)
+ let intentId=row.payment_intent
+ if(!intentId){
+  const found=await stripeCall(key,'GET','/payment_intents/search',{query:`metadata['balm_payment']:'${row.id}'`,limit:2})
+  insist(!found.has_more && found.data.length<=1,'multiple_payment_intents_need_owner_review',409)
+  const intent=found.data[0]
+  if(!intent)return row
+  insist(intent.metadata?.balm_payment===row.id && intent.metadata?.balm_client===row.client_id && Number(intent.amount)===row.amount_cents && intent.currency==='usd' && intent.customer===row.stripe_customer_id,'payment_does_not_match_reservation',409)
+  intentId=intent.id
+ }
+ return syncIntent(env,db,intentId,row.id)
 }

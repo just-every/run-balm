@@ -6,7 +6,7 @@ import { audit, commit, guard, human, insist, need, now, one, rows, sha256, stmt
 import { customerFor } from './cards'
 import { recordSucceeded } from './charges'
 import { stripeReady } from './connect'
-import { parseDollars } from './ledger'
+import { parseDollars, reserveCheckInCollection } from './ledger'
 import { stripeCall } from './stripe-api'
 
 const readerPath = (reader: unknown) => `/terminal/readers/${encodeURIComponent(String(reader))}`
@@ -61,7 +61,7 @@ async function configure(env: Bindings, db: D1Database, who: Actor, input: Data)
 export async function terminalState(db: D1Database, who: Actor) {
   if (who.role !== 'owner' && (who.staffRole !== 'reception' || who.staffKind && !['reception', 'biller'].includes(who.staffKind))) return null
   const reader = await one(db, `SELECT r.* FROM bm_terminal_reader r JOIN bm_stripe s ON s.account_id=r.account_id AND s.livemode=r.livemode WHERE r.id=1`)
-  const payments = await rows(db, `SELECT p.id,p.appointment_id,p.amount_cents,p.status,p.receipt_number,p.payment_intent,t.state,t.reader_id,t.livemode,t.failure,t.reader_status,t.action_status,t.checked_at
+  const payments = await rows(db, `SELECT p.id,p.appointment_id,p.invoice_id,p.collection_purpose,p.amount_cents,p.status,p.receipt_number,p.payment_intent,t.state,t.reader_id,t.livemode,t.failure,t.reader_status,t.action_status,t.checked_at
     FROM bm_terminal_payments t JOIN bm_card_payments p ON p.id=t.payment_id
     ORDER BY CASE WHEN t.state IN ('succeeded','canceled') THEN 1 ELSE 0 END,t.created_at DESC LIMIT 100`)
   return { reader, payments }
@@ -73,14 +73,15 @@ async function collect(env: Bindings, db: D1Database, who: Actor, input: Data) {
   insist(/^[a-f0-9-]{36}$/.test(paymentId), 'invalid_payment_id')
   const known = await terminalRow(db, paymentId)
   if (known) {
-    insist(known.appointment_id === visit.id, 'payment_does_not_match_visit', 409)
+    insist(known.appointment_id === visit.id && (known.collection_purpose??'copay')===(input.purpose??'copay') && (known.invoice_id??null)===(input.invoiceId??null) && known.amount_cents===parseDollars(input.amount), 'payment_does_not_match_visit', 409)
     return syncTerminalPayment(env, db, paymentId, who)
   }
   insist(visit.status === 'booked' || visit.status === 'attended' && visit.checked_in_at, 'only_a_booked_or_checked_in_visit_can_collect', 409)
   insist(Math.abs(Date.parse(visit.start_at) - Date.now()) < 12 * 3600_000, 'check_in_on_the_day_of_the_visit', 409)
   const client = await one(db, 'SELECT copay_cents FROM bm_clients WHERE id=? AND erased_at IS NULL', visit.client_id)
-  const amount = parseDollars(input.amount, 'copay')
-  insist(client && amount === Number(client.copay_cents) && amount >= 50, 'confirm_the_current_patient_copay_at_least_50_cents', 409)
+  const purpose=input.purpose??'copay', collection=purpose==='copay'?null:await reserveCheckInCollection(db,visit.client_id,input)
+  const amount = collection?.amount ?? parseDollars(input.amount, 'copay')
+  insist(collection || client && amount === Number(client.copay_cents) && amount >= 50, 'confirm_the_current_patient_copay_at_least_50_cents', 409)
   const { settings, key } = await stripeReady(env, db)
   const config = await one(db, 'SELECT * FROM bm_terminal_reader WHERE id=1 AND account_id=? AND livemode=?', settings.account_id, settings.livemode)
   insist(config, 'configure_a_terminal_reader_in_clinic_first', 409)
@@ -94,10 +95,11 @@ async function collect(env: Bindings, db: D1Database, who: Actor, input: Data) {
     await commit(db, who, [
       guard(db, 'EXISTS(SELECT 1 FROM bm_stripe WHERE account_id=? AND livemode=?)', settings.account_id, settings.livemode),
       guard(db, 'EXISTS(SELECT 1 FROM bm_terminal_reader WHERE id=1 AND account_id=? AND reader_id=? AND livemode=?)', settings.account_id, config.reader_id, settings.livemode),
-      guard(db, "EXISTS(SELECT 1 FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE a.id=? AND a.client_id=? AND a.version=? AND a.status IN ('booked','attended') AND c.copay_cents=? AND c.erased_at IS NULL)", visit.id, visit.client_id, visit.version, amount),
-      guard(db, "NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE appointment_id=? AND kind='copay' AND status IN ('open','processing','requires_action','succeeded'))", visit.id),
-      stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,amount_cents,status,stripe_account_id,stripe_customer_id,created_by,created_at,updated_at)
-        VALUES(?,?,'copay',?,?,'processing',?,?,?,?,?)`, paymentId, visit.client_id, visit.id, amount, settings.account_id, customer, who.email, now(), now()),
+      ...(collection?.reservation??[]),
+      guard(db, "EXISTS(SELECT 1 FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE a.id=? AND a.client_id=? AND a.version=? AND a.status IN ('booked','attended') AND (? OR c.copay_cents=?) AND c.erased_at IS NULL)", visit.id, visit.client_id, visit.version, collection?1:0, amount),
+      ...(!collection?[guard(db, "NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE appointment_id=? AND kind='copay' AND status IN ('open','processing','requires_action','succeeded'))", visit.id)]:[]),
+      stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,appointment_id,amount_cents,status,stripe_account_id,stripe_customer_id,created_by,created_at,updated_at,invoice_id,collection_purpose)
+        VALUES(?,?,?,?,?,'processing',?,?,?,?,?,?,?)`, paymentId, visit.client_id, collection?'charge':'copay', visit.id, amount, settings.account_id, customer, who.email, now(), now(), collection?input.invoiceId:null, collection?purpose:null),
       stmt(db, `INSERT INTO bm_terminal_payments(payment_id,account_id,reader_id,livemode,state,reader_status,created_at,checked_at) VALUES(?,?,?,?,'reserved',?,?,?)`,
         paymentId, settings.account_id, config.reader_id, settings.livemode, reader.status, now(), now()),
       ...(!visit.checked_in_at ? [stmt(db, "UPDATE bm_appointments SET checked_in_at=?,checked_in_by=?,version=version+1 WHERE id=? AND checked_in_at IS NULL AND status='booked'", now(), who.email, visit.id),
@@ -105,13 +107,14 @@ async function collect(env: Bindings, db: D1Database, who: Actor, input: Data) {
       audit(db, who, 'payment.terminal_started', visit.client_id, paymentId, `${amount} cents`),
     ])
   } catch (error) {
-    if (await terminalRow(db, paymentId)) return syncTerminalPayment(env, db, paymentId, who)
+    const raced=await terminalRow(db,paymentId)
+    if(raced){insist(raced.appointment_id===visit.id && (raced.collection_purpose??'copay')===purpose && (raced.invoice_id??null)===(input.invoiceId??null) && raced.amount_cents===amount,'payment_does_not_match_visit',409);return syncTerminalPayment(env,db,paymentId,who)}
     throw error
   }
   try {
     const intent = await stripeCall(key, 'POST', '/payment_intents', { amount, currency: 'usd', customer,
       allowed_payment_method_types: ['card_present'], capture_method: 'automatic', description: 'Clinic payment',
-      metadata: { balm_payment: paymentId, balm_client: visit.client_id, balm_kind: 'copay' } }, `balm-terminal-${paymentId}`)
+      metadata: { balm_payment: paymentId, balm_client: visit.client_id, balm_kind: collection?'charge':'copay' } }, `balm-terminal-${paymentId}`)
     await commit(db, who, [guard(db, "EXISTS(SELECT 1 FROM bm_terminal_payments WHERE payment_id=? AND state='reserved')", paymentId),
       stmt(db, 'UPDATE bm_card_payments SET payment_intent=?,updated_at=? WHERE id=? AND payment_intent IS NULL', intent.id, now(), paymentId),
       stmt(db, "UPDATE bm_terminal_payments SET state='intent_created',checked_at=? WHERE payment_id=?", now(), paymentId)])

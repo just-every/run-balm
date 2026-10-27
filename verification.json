@@ -27,6 +27,7 @@
         "pnpm run test:runtime",
         "node --test --test-concurrency=1 tests/mobile.test.mjs tests/code-sets-browser.mjs",
         "node tests/accounting-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-checkin\" node tests/card-payments-browser.mjs",
         "node tests/readiness-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
