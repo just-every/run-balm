@@ -9,7 +9,7 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode,...requested]=process.argv.slice(2)
-const ids=[...new Set(['REPORT-003',...requested.filter(id=>id!=='CHART-011')])]
+const ids=[...new Set(['REPORT-003','COMM-003',...requested.filter(id=>id!=='CHART-011')])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
