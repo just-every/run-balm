@@ -17,12 +17,19 @@ export function retailPanel(s:any,f:any) {
     +(kind!=='gift_card'?gift():'')+confirm
   return `<details><summary>Record ${label.toLowerCase()}</summary>${form('pay.retail.sell',path,fields,'Record '+label.toLowerCase())}</details>`
  }).join('')
+ const authorizationFields=()=>field('reason','Reason for this change','','text','required maxlength="500"')
+  +field('effectiveAt','Effective time (UTC, ISO format)',new Date().toISOString(),'text','required')
+  +field('authorizedAt','Patient authorization time (UTC, ISO format)','','text','required')
+  +field('authorizationMethod','How patient authorization was obtained','','text','required maxlength="200"')
+  +field('consentEvidence','Specific transition authorized by the patient','','text','required maxlength="500"')
+  +check('confirm','I attest to specific patient authorization for this transition, separate from intake, treatment or card consent. External billing is unchanged.')
  const list=sales.map((sale:any)=>{
   const remaining=['package','membership'].includes(sale.kind)?`${sale.visits_left} of ${sale.units} visits left`:sale.kind==='gift_card'?money(sale.gift_left_cents)+' gift value left':''
   const visits=f.appointments.filter((v:any)=>!v.package_assigned&&v.status==='booked'&&v.service_id===sale.service_id&&['self_pay','uninsured'].includes(v.coverage_choice))
   const assign=remaining&&sale.visits_left>0&&visits.length?form('pay.retail.assign',path,client+hidden('saleId',sale.id)+select('appointmentId','Matching cash-pay visit',visits.map((v:any)=>[v.id,usDate(v.start_at,zoneOf(s))])),'Assign visit',true):''
-  const membership=sale.kind==='membership'&&sale.visits_left>0?'<details><summary>Change membership status</summary>'+form('pay.retail.membership',path,client+hidden('saleId',sale.id)+hidden('state',sale.membership_state==='paused'?'active':'paused')+field('reason','Reason for this change','','text','required maxlength="500"')+field('consentEvidence','Patient authorization evidence','','text','required maxlength="500"')+check('confirm','The patient authorized this change; unused visits are preserved.'),sale.membership_state==='paused'?'Resume membership':'Pause membership',true)+'</details>':''
-  return `<li>${h(sale.label)} · ${h(remaining)} · <a href="/api/balm/receipts/${h(sale.id)}.pdf">Original receipt</a>${assign}${membership}</li>`
+  const membership=sale.kind==='membership'&&sale.membership_state!=='cancelled'&&sale.visits_left>0?'<details><summary>Change membership status</summary>'+form('pay.retail.membership',path,client+hidden('saleId',sale.id)+hidden('state',sale.membership_state==='paused'?'active':'paused')+authorizationFields(),sale.membership_state==='paused'?'Resume membership':'Pause membership',true)+'</details>':''
+  const cancel=sale.kind==='membership'&&sale.membership_state!=='cancelled'&&sale.visits_left===0?'<details><summary>Cancel exhausted membership</summary>'+form('pay.retail.cancel',path,client+hidden('saleId',sale.id)+authorizationFields(),'Record cancellation',true)+'</details>':''
+  return `<li>${h(sale.label)} · ${h(remaining)}${sale.kind==='membership'?' · '+h(sale.membership_state):''} · <a href="/api/balm/receipts/${h(sale.id)}.pdf">Original receipt</a>${assign}${membership}${cancel}</li>`
  }).join('')
  return panel('Cash sales and visit packages',`<p>Record cash already received. Finite memberships and packages cover only the named service. No automatic renewal, expiry, transfer, refund or provider charge. Record a later cash purchase separately; pausing preserves unused visits. Product tax uses your verified rate.</p>${list?'<ul class="plain">'+list+'</ul>':empty('No cash sales recorded.')}${forms}`,'','retail')
 }

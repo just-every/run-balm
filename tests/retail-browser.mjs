@@ -14,7 +14,7 @@ try{
  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
  await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
  const page=await context.newPage()
- await retailJourney(h,async({patient,cookie,today,from})=>{
+ await retailJourney(h,async({patient,cookie,today,from,service,priya})=>{
   for(const [name,path,selector,session] of [['retail-ledger','/app/clients/'+patient.id,'#retail',h.owner],['retail-portal','/portal/home','#statements',cookie],['retail-reports','/app/reports?from='+from+'&to='+today,'#report-financial-summary',h.owner]]){
    const [key,...value]=session.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
    for(const width of [1440,390]){
@@ -51,12 +51,35 @@ try{
        await item.locator('summary').filter({hasText:'Change membership status'}).click()
        await item.locator('[name=reason]').fill('Synthetic patient request')
        await item.locator('[name=consentEvidence]').fill('Explicit synthetic patient authorization')
+       await item.locator('[name=effectiveAt]').fill(new Date().toISOString())
+       await item.locator('[name=authorizedAt]').fill(new Date(Date.now()-120000).toISOString())
+       await item.locator('[name=authorizationMethod]').fill('Specific request in person')
        await item.locator('[name=confirm]').check()
+       await item.screenshot({path:output+'/retail-'+action.toLowerCase().split(' ')[0]+'-authorization-'+width+'.png'})
        await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/app/action')),item.getByRole('button',{name:action,exact:true}).click()])
        await page.waitForLoadState('networkidle')
        const updated=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.billing.retail.find(x=>x.label==='Browser '+kind+' '+width)
        assert.equal(updated.membership_state,action==='Pause membership'?'paused':'active')
        assert.equal(updated.visits_left,1)
+      }
+      if(kind==='membership'){
+       const created=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.billing.retail.find(x=>x.label==='Browser '+kind+' '+width)
+       const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,width===1440?14:17,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+       await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:created.id,appointmentId:visit})
+       await h.cmd('appointment.attend',{id:visit},priya.cookie)
+       await page.reload()
+       const item=page.locator('#retail li').filter({hasText:created.label})
+       await item.locator('summary').filter({hasText:'Cancel exhausted membership'}).click()
+       await item.locator('[name=reason]').fill('Patient requested closure after final visit')
+       await item.locator('[name=consentEvidence]').fill('Patient specifically authorized cancellation')
+       await item.locator('[name=effectiveAt]').fill(new Date().toISOString())
+       await item.locator('[name=authorizedAt]').fill(new Date(Date.now()-120000).toISOString())
+       await item.locator('[name=authorizationMethod]').fill('Specific request in person')
+       await item.locator('[name=confirm]').check()
+       await item.screenshot({path:output+'/retail-cancellation-authorization-'+width+'.png'})
+       await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/app/action')),item.getByRole('button',{name:'Record cancellation',exact:true}).click()])
+       await page.waitForLoadState('networkidle')
+       assert.match(await page.locator('#retail li').filter({hasText:created.label}).innerText(),/cancelled/)
       }
 
      }
@@ -71,7 +94,7 @@ try{
  const aged=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retained retail',dateOfBirth:'1950-01-01'})
  const visit=await pastVisit(h,aged.id,priya,service.id,h.owner,17)
  await h.db.prepare("UPDATE bm_appointments SET start_at='1990-01-02T02:00:00.000Z',end_at='1990-01-02T02:45:00.000Z' WHERE id=?").bind(visit).run()
- await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'gift_card','Synthetic old gift',0,1000,0,0,'','','synthetic-balm-browser-old','1990-01-02T03:00:00.000Z',?,?)").bind(crypto.randomUUID(),aged.id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical original')).run()
+ await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'product','Synthetic old product',0,1000,0,0,'','','synthetic-balm-browser-old','1990-01-02T03:00:00.000Z',?,?)").bind(crypto.randomUUID(),aged.id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical original')).run()
  await h.cmd('retention.save',{state:'AZ',adultYears:6,minorYears:6,payerYears:0,majorityAge:18})
  const [key,...value]=h.owner.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
  for(const width of [1440,390]) {

@@ -26,7 +26,8 @@
         "node --test --test-concurrency=1 tests/mobile.test.mjs tests/code-sets-browser.mjs",
         "node tests/accounting-browser.mjs",
         "node tests/readiness-browser.mjs",
-        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs"
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs"
       ]
     },
     {
@@ -66,7 +67,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs|retail and finance originals\" tests/archive.test.mjs"
       ]
     },
     {
