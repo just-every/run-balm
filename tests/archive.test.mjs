@@ -619,10 +619,12 @@ test('prior authorization signed packets and recorded payer decisions survive a 
   await checkout(source);await checkout(restored)
   await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
   h=await harness({root:source})
-  const {authorizationRequestFixture}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
+  const {authorizationRequestFixture,approveAuthorizationRelease}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
   await c.sign()
   const request=await h.cmd('insurance.authorization_request.prepare',c.input)
   const original=(await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,h.owner)).text
+  await approveAuthorizationRelease(h,request,c.patient.id)
+  assert.equal((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,c.biller.cookie)).status,200)
   await h.cmd('insurance.authorization_request.submit',{...request,channel:'availity',submittedOn:c.today,reference:'synthetic-balm-8',attest:true},c.biller.cookie)
   const result=await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},c.biller.cookie)
   const identity={auth:h.auth,owner:h.owner}

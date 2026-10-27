@@ -52,8 +52,12 @@ export async function releaseCommand(db:D1Database,who:Actor,name:string,input:D
  insist(input.attest===true||input.attest==='on','confirm_the_exact_minimum_necessary_records')
  insist(input.sha256===row.sha256,'review_the_exact_release_digest',409)
  const epoch=(await one(db,'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
- const current=await snapshot(db,row.client_id,JSON.parse(row.appointment_ids),row.payer_id,row.purpose,row.reference)
- insist(await sha256(JSON.stringify(current))===row.sha256,'notes_changed_prepare_a_new_release',409)
+ if(row.purpose==='prior_authorization'){
+  insist(await one(db,'SELECT 1 FROM bm_authorization_requests WHERE id=? AND client_id=? AND sha256=?',row.id,row.client_id,row.sha256),'authorization_packet_changed_prepare_a_new_release',409)
+ }else{
+  const current=await snapshot(db,row.client_id,JSON.parse(row.appointment_ids),row.payer_id,row.purpose,row.reference)
+  insist(await sha256(JSON.stringify(current))===row.sha256,'notes_changed_prepare_a_new_release',409)
+ }
  const at=now(),expiresAt=new Date(Date.now()+7*86400000).toISOString()
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_retention_epoch WHERE id=1 AND version=?)',epoch),guard(db,"EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action='note_release.reviewed')",row.id,who.email),guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?)',row.id),stmt(db,'INSERT INTO bm_note_release_approvals(release_id,sha256,approved_at,approved_by,expires_at) VALUES(?,?,?,?,?)',row.id,row.sha256,at,who.email,expiresAt),audit(db,who,'note_release.approved',row.client_id,row.id)])
  return {approved:true,expiresAt}
@@ -65,10 +69,10 @@ export async function releasesFor(db:D1Database,who:Actor,clientId:string){
 }
 export async function releasePdf(db:D1Database,who:Actor,key:string){
  allowed(who)
- const row=await one(db,`SELECT r.*,a.approved_at,a.expires_at,v.revoked_at FROM bm_note_releases r LEFT JOIN bm_note_release_approvals a ON a.release_id=r.id LEFT JOIN bm_note_release_revocations v ON v.release_id=r.id WHERE r.id=?`,key)
+ const row=await one(db,`SELECT r.*,a.approved_at,a.expires_at,a.sha256 AS approved_digest,v.revoked_at FROM bm_note_releases r LEFT JOIN bm_note_release_approvals a ON a.release_id=r.id LEFT JOIN bm_note_release_revocations v ON v.release_id=r.id WHERE r.id=?`,key)
  insist(row,'release_not_found',404)
- const approved=!!row.approved_at&&!row.revoked_at&&Date.parse(row.expires_at)>Date.now()
+ const approved=!!row.approved_at&&row.approved_digest===row.sha256&&!row.revoked_at&&Date.parse(row.expires_at)>Date.now()
  insist(who.role==='owner'||approved,'owner_approval_required_for_note_release',403)
- await commit(db,who,[...(who.role==='owner'?[]:[guard(db,"EXISTS(SELECT 1 FROM bm_note_release_approvals WHERE release_id=? AND expires_at>?) AND NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?)",key,now(),key)]),audit(db,who,who.role==='owner'?'note_release.reviewed':'note_release.downloaded',row.client_id,row.id)])
+ await commit(db,who,[...(who.role==='owner'?[]:[guard(db,"EXISTS(SELECT 1 FROM bm_note_release_approvals WHERE release_id=? AND expires_at>? AND sha256=?) AND NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?)",key,now(),row.sha256,key)]),audit(db,who,who.role==='owner'?'note_release.reviewed':'note_release.downloaded',row.client_id,row.id)])
  return new Uint8Array(row.pdf)
 }

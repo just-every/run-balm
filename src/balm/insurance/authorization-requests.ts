@@ -1,5 +1,6 @@
 import {audit,commit,day,guard,id,insist,now,one,rows,sha256,stmt,text,type Actor,type Data} from '../domain/model'
 import {biller} from '../domain/role-access'
+import {releasePdf} from '../domain/payer-note-releases'
 import {noteTemplate} from '../charting/template-catalog'
 import {pdf,type Block} from '../payments/pdf'
 import {insuranceActor,clientGuard} from './access'
@@ -28,12 +29,10 @@ function packet(payload:Data){
  return pdf({header:'Prior authorization request',title:'Prepared records for payer portal',blocks})
 }
 
-/** Clinical packets use the existing owner review boundary. Billers record external
- * work and decisions without gaining a new clinical read or outbound send door. */
+/** Staff prepare fixed packets; the existing reviewed release controls clinical reads. */
 export async function authorizationRequestCommand(db:D1Database,initial:Actor,name:string,input:Data){
  const who=await insuranceActor(db,initial,true);allowed(who)
  if(name==='insurance.authorization_request.prepare'){
-  insist(who.role==='owner','owner_prepares_clinical_authorization_packet',403)
   const epoch=(await one(db,'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
   const referral=await one(db,`SELECT f.*,p.member_id,p.payer_id,p.version AS policy_version,y.name AS payer,c.first_name,c.last_name FROM bm_referrals f JOIN bm_policies p ON p.id=f.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=f.client_id WHERE f.id=? AND c.erased_at IS NULL`,text(input.referralId,'referral',100))
   insist(referral,'insured_referral_not_found',404)
@@ -50,11 +49,12 @@ export async function authorizationRequestCommand(db:D1Database,initial:Actor,na
   const payload:Data={patient:referral.first_name+' '+referral.last_name,payer:referral.payer,payerId:referral.payer_id,member:referral.member_id,referralId:referral.id,preparedBy:who.email,evaluation:note,plan:{...plan,content:JSON.parse(plan.content)},scores,measures,addenda}
   // Store no physician sign-in token or other private link in the packet snapshot.
   delete payload.plan.sign_token_hash;delete payload.plan.sign_token_expires_at
-  const serialized=JSON.stringify(payload),digest=await sha256(serialized)
+  const serialized=JSON.stringify(payload),digest=await sha256(serialized),bytes=packet(payload)
   await commit(db,who,[clientGuard(db,who,referral.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_retention_epoch WHERE id=1 AND version=?)',epoch),
    guard(db,'EXISTS(SELECT 1 FROM bm_referrals WHERE id=? AND version=?)',referral.id,referral.version),
    guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',referral.policy_id,referral.policy_version),
-   stmt(db,'INSERT INTO bm_authorization_requests(id,client_id,referral_id,policy_id,episode_id,note_id,plan_id,payload,pdf,sha256,prepared_at,prepared_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',key,referral.client_id,referral.id,referral.policy_id,referral.episode_id,note.id,plan.id,serialized,packet(payload),digest,at,who.email),
+   stmt(db,'INSERT INTO bm_authorization_requests(id,client_id,referral_id,policy_id,episode_id,note_id,plan_id,payload,pdf,sha256,prepared_at,prepared_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',key,referral.client_id,referral.id,referral.policy_id,referral.episode_id,note.id,plan.id,serialized,bytes,digest,at,who.email),
+   stmt(db,'INSERT INTO bm_note_releases(id,client_id,payer_id,purpose,reference,appointment_ids,payload,pdf,sha256,prepared_at,prepared_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)',key,referral.client_id,referral.payer_id,'prior_authorization',referral.id,'[]',serialized,bytes,digest,at,who.email),
    audit(db,who,'insurance.authorization_request_prepared',referral.client_id,key)])
   return {id:key,sha256:digest,status:'prepared'}
  }
@@ -63,10 +63,13 @@ export async function authorizationRequestCommand(db:D1Database,initial:Actor,na
  insist(input.attest===true||input.attest==='on','confirm_the_recorded_external_work')
  const at=now()
  if(name==='insurance.authorization_request.submit'){
+  const received=who.role==='owner'
+   ? guard(db,"EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action IN ('insurance.authorization_packet_downloaded','note_release.reviewed'))",r.id,who.email)
+   : guard(db,"EXISTS(SELECT 1 FROM bm_note_release_approvals a JOIN bm_note_releases l ON l.id=a.release_id WHERE a.release_id=? AND a.sha256=? AND l.sha256=a.sha256 AND a.expires_at>?) AND NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?) AND EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action='note_release.downloaded')",r.id,r.sha256,at,r.id,r.id,who.email)
   const channel=text(input.channel,'submission_channel',30);insist(['availity','payer_portal'].includes(channel),'use_availity_or_the_payer_portal')
   const submittedOn=day(input.submittedOn,'submitted_on'),reference=text(input.reference,'submission_reference',160)
   insist(submittedOn<=at.slice(0,10),'submission_cannot_be_in_the_future')
-  await commit(db,who,[requestGuard(db,r),guard(db,'NOT EXISTS(SELECT 1 FROM bm_authorization_submissions WHERE request_id=?)',r.id),stmt(db,'INSERT INTO bm_authorization_submissions(request_id,channel,submitted_on,reference,recorded_at,recorded_by) VALUES(?,?,?,?,?,?)',r.id,channel,submittedOn,reference,at,who.email),audit(db,who,'insurance.authorization_submission_recorded',r.client_id,r.id)])
+  await commit(db,who,[requestGuard(db,r),received,guard(db,'NOT EXISTS(SELECT 1 FROM bm_authorization_submissions WHERE request_id=?)',r.id),stmt(db,'INSERT INTO bm_authorization_submissions(request_id,channel,submitted_on,reference,recorded_at,recorded_by) VALUES(?,?,?,?,?,?)',r.id,channel,submittedOn,reference,at,who.email),audit(db,who,'insurance.authorization_submission_recorded',r.client_id,r.id)])
   return {id:r.id,status:'submitted'}
  }
  insist(name==='insurance.authorization_request.decide','unknown_insurance_command',404)
@@ -89,8 +92,11 @@ export async function authorizationRequestsFor(db:D1Database,who:Actor,clientId:
  return requests.map((r):Data=>({...r,status:r.decision??(r.submitted_on?'submitted':'prepared')}))
 }
 export async function authorizationRequestPdf(db:D1Database,who:Actor,key:string){
- insist(who.role==='owner','owner_reviews_clinical_authorization_packet',403)
+ allowed(who)
  const r=await requestFor(db,who,key)
+ const release=await one(db,'SELECT 1 FROM bm_note_releases WHERE id=? AND purpose=?',r.id,'prior_authorization')
+ if(release)await releasePdf(db,who,r.id)
+ else insist(who.role==='owner','owner_approval_required_for_note_release',403)
  await commit(db,who,[clientGuard(db,who,r.client_id),audit(db,who,'insurance.authorization_packet_downloaded',r.client_id,r.id)])
  return {filename:'authorization-request-'+r.id+'.pdf',contentType:'application/pdf',body:new Uint8Array(r.pdf)}
 }
