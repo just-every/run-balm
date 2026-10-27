@@ -81,3 +81,27 @@ synthetic-balm-601,synthetic-balm-600,Original invoice number 41
 Use the patient identifier from the uploaded patient list. Source identifiers must be unique within each inventory category, and every row needs its original reference. An unknown patient or duplicate identifier blocks apply.
 
 These inventories preserve the source records for reconciliation only. Their source counts are compared with zero native carry: they do not create a collectible invoice, claim balance or usable authorization. The preview names every inventory row still to carry. Enter independent source counts, including historical documents and insurance policies, then **Check totals again**; changed controls require fresh mapping and cutover approvals. A written reason is required before accepting any difference or omission. The saved reconciliation retains those controls, differences and references with the reviewed source files. Keep the originals and complete their carry separately before relying on a complete cutover. Pre-cutover receivables and their run-out use the existing insurance run-out door.
+
+## Reviewed open-claim carry
+
+An open-claim inventory remains a list of records still to carry. To carry actual receivables together with the patient list, upload a reviewed conversion CSV in the **Claims** field with these headers instead:
+
+```csv
+Source ID,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status
+synthetic-balm-611,synthetic-balm-610,synthetic-balm-620,synthetic-balm-612,synthetic-balm-613,2026-01-15,100.00,80.00,open
+```
+
+This is Balm's reviewed conversion format, not a native vendor export. Use the uploaded patient identifier and the identifier of a payer already configured in Balm. Preserve the original source claim number and both claim controls; leave the payer control blank only when the payer has not assigned one. Service dates use the selected date order. Billed and balance amounts are USD decimals; a carried open balance must be positive and cannot exceed the original billed amount. Supported states are `open`, `denied` and `rejected`.
+
+Upload the independent source aging balances in the same section:
+
+```csv
+Patient ID,Balance
+synthetic-balm-610,80.00
+```
+
+Every patient with carried claims needs an aging balance. The sum of their claim balances must match that balance and the reviewed source control exactly; a written acceptance reason cannot waive a difference. Other opening balances retain their existing review. The aging record is a source control, not another collectible balance or a new invoice.
+
+The preview shows each claim and its remaining amount, the carried count and the source aging comparison. An unknown patient or payer, reused source claim, ambiguous claim control, changed payer mapping or closed run-out stops cutover. Only the owner approves the exact mapping and cutover. Patients, original source files, source aging, receivables and the saved reconciliation are committed together; a failed transaction adds nothing.
+
+These claims enter the existing receivables run-out with their original controls, dates, billed amounts and balances. Repeating the unchanged bundle or using the run-out import with the same originals adds no second claim and never resets a later payment. Source aging remains an immutable cutover snapshot; the run-out shows the current remaining amount. Carried receivables stay under existing retention custody and prevent undo of the bundle, even before a payment. Use the retained original records and reviewed retention process. This carry does not send a claim, create an invoice or establish a complete native cutover; native invoice and usable authorization carry remain incomplete.

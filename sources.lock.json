@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "fe6de877006560fda435755d226cad62d60fdf0436d796187c2ff7af2784c80f",
+      "sha256": "cafefc1521f1a0314aa8829f4f69856fc21640d38b331aeea0838a015d7d01ff",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "7250a7ca7cca1bd15f0f9d376824d0b2286d93d5d0bdb7208524b5f31f74e92a",
+      "sha256": "17efe756734bce24e6336693893e329152a9c57e6796f1e54d17a5cacb263292",
       "executable": false
     },
     "DEMO.md": {
@@ -242,7 +242,7 @@
       "executable": false
     },
     "docs/MOVE-IN-FORMATS.md": {
-      "sha256": "1e4331b31457fce7800be080a9a79b7c9b7c30030eea2533cf69a86ce4bcf7eb",
+      "sha256": "38312c89ebd926b34ec24a137fa311905d377ee777b47f4393b93ace25f198eb",
       "executable": false
     },
     "docs/MOVE-IN.md": {
@@ -2298,11 +2298,11 @@
       "executable": false
     },
     "src/balm/movein/bundle-plan.ts": {
-      "sha256": "f6b926286e95af78ec02bc75f39eb526e0bd6af6d966c8c951a1455b4ddb58c9",
+      "sha256": "1a092551f45f7d4f5ba6ec4c01704bd4086a838a09b23f8ed7b7252ce5b6a18d",
       "executable": false
     },
     "src/balm/movein/bundle-storage.ts": {
-      "sha256": "cc519e85367a907073200d59f96c7b87382031898d6b321d86b17ee8968d7203",
+      "sha256": "b4dc41133c3825a8c23d7bf5e5fa9d728e632fea184a7d89898e0a3d84840321",
       "executable": false
     },
     "src/balm/movein/bundle.ts": {
@@ -2322,11 +2322,11 @@
       "executable": false
     },
     "src/balm/movein/formats.ts": {
-      "sha256": "e2b3f2b6cb64ba5892c4a78fe0872a03b081c29a0141ead0a619b6675319d9ef",
+      "sha256": "ba07f598809b74c6d123f2d205c1512672b3b14d6a1737384b8ba7bf53310f98",
       "executable": false
     },
     "src/balm/movein/formats/columns.ts": {
-      "sha256": "354cc5272436ac5c15fc6f5c0df12350637ee65fd61ddb6ff9c2c078084a4c50",
+      "sha256": "7e18bca03cd6ec361e1c042ed2cad29f090eb0ebd05e9c4f32ddac2b4828c604",
       "executable": false
     },
     "src/balm/movein/formats/reader.ts": {
@@ -2334,7 +2334,7 @@
       "executable": false
     },
     "src/balm/movein/formats/rows.ts": {
-      "sha256": "f1f00edb23e59880a1305a6c89b26d20c155968b5ca5e13a1769d37e00a77422",
+      "sha256": "0bbb73d21d0a9936ec5d6c472c4afde31c5f4c2f4eea013bf757af411c6b3512",
       "executable": false
     },
     "src/balm/movein/formats/values.ts": {
@@ -2346,7 +2346,7 @@
       "executable": false
     },
     "src/balm/movein/mapping-report.ts": {
-      "sha256": "83e051f476dc73d1eb7f1f28a64187088a7c118eba7c30124c70361fcf9fd215",
+      "sha256": "3d19db23d87a70d4407c288fa8c792d1b5c3d4089f965a6d3973928ead7c0b75",
       "executable": false
     },
     "src/balm/movein/targets.ts": {
@@ -3006,7 +3006,7 @@
       "executable": false
     },
     "src/balm/ui/movein-bundle.ts": {
-      "sha256": "3647ec30bbaf3d38f1e311e5ac479c2d08457a9810b107b6465eca6c0b1a7d26",
+      "sha256": "fdecacfc0b3d264ef75d42c5f77df5923f08f7052327ef718b04c5993b55a9d8",
       "executable": false
     },
     "src/balm/ui/movein-guide.ts": {
@@ -5278,7 +5278,7 @@
       "executable": false
     },
     "tests/agent-migration-browser.mjs": {
-      "sha256": "dfcc91c1c040e979a355935c0f384d8fb80bd75d6b5c5bd7474290e021a14c20",
+      "sha256": "5b9febeaff3c2fe1883dc535126904587ad84575ace7c7c2c7fec7f1fcb34b90",
       "executable": false
     },
     "tests/alerts.test.mjs": {
@@ -5286,7 +5286,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "4a408abf6b8f9c04f22d6d28ce8bbfee6b74419c122e18dbaed9cb5b26e4ecfe",
+      "sha256": "4562e45a7a6fd828a0915a0147fb7cc1dcad4d612552f2c6a3c31f02a962a1f2",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5618,11 +5618,11 @@
       "executable": false
     },
     "tests/movein-reconciliation-journey.mjs": {
-      "sha256": "3cd049324b932a010e25e7d5175678b151cf280978dcb05c5d81f9c5779d9863",
+      "sha256": "91d8c7654caa4638772649194b6432a096c01c86fd81cb38b6553e48caa5bfc9",
       "executable": false
     },
     "tests/movein.test.mjs": {
-      "sha256": "4c13b559c9b87f1de930ab37af926944b5a35ba243e2ca1e184ea89cb5f98b80",
+      "sha256": "e5054e01a0be8f2f42621ff88d6ceb34f038855f62f62fc32e07acb387be76e7",
       "executable": false
     },
     "tests/outcome-followthrough-journey.mjs": {
