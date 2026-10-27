@@ -3,7 +3,7 @@ import { harness } from './harness.mjs'
 import { viewportProof } from './viewport-proof.mjs'
 import { clinic } from './clinic.mjs'
 import { customFields } from './migration-agent-journey.mjs'
-import { cutoverInventory, cutoverClaims } from './movein-reconciliation-journey.mjs'
+import { cutoverInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 
 const h = await harness({ browserHttps: true })
 try {
@@ -72,6 +72,30 @@ try {
     await page.getByRole('button', { name: 'Apply move-in', exact: true }).click()
     await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
     if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Carried open claims', { exact: true }) }).locator('td').allTextContents(), ['Carried open claims', '2', '2'])
+  } }])
+  const authorizations = cutoverAuthorizations(payer.id)
+  await viewportProof(h, [{ name: 'migration-carried-authorizations', path: '/app/import', cookie: h.owner, selector: 'tr:has(> td:text-is("Authorization carried"))', interact: async ({ page, width }) => {
+    await page.goto(h.origin + '/app/import')
+    for (const file of authorizations.files) await page.locator('input[name=' + file.kind + ']').setInputFiles({ name: file.name, mimeType: 'text/csv', buffer: Buffer.from(file.csv) })
+    await page.getByRole('button', { name: 'Preview move-in', exact: true }).click()
+    await page.getByRole('heading', { name: 'Proposed field mapping', exact: true }).waitFor()
+    if (width === 1440) {
+      assert.equal(await page.getByText('Authorization carried', { exact: true }).count(), 2)
+      assert.deepEqual(await page.locator('tr').filter({ has: page.locator('input[name=expectedAuthorizations]') }).locator('td').last().textContent(), '2')
+      assert.match(await page.locator('tr').filter({ has: page.getByText('Authorization carried', { exact: true }) }).first().textContent(), /2 visits at cutover/)
+    }
+  } }])
+  await viewportProof(h, [{ name: 'migration-authorizations-saved', path: '/app/import', cookie: h.owner, selector: 'section:has(> h2:text-is("Saved reconciliation"))', interact: async ({ page, width }) => {
+    await page.goto(h.origin + '/app/import')
+    for (const file of authorizations.files) await page.locator('input[name=' + file.kind + ']').setInputFiles({ name: file.name, mimeType: 'text/csv', buffer: Buffer.from(file.csv) })
+    await page.getByRole('button', { name: 'Preview move-in', exact: true }).click()
+    await page.getByRole('heading', { name: 'Proposed field mapping', exact: true }).waitFor()
+    await page.locator('input[name=mappingApproval]').check()
+    await page.locator('input[name=cutoverApproval]').check()
+    await page.locator('textarea[name=acceptanceReason]').fill('Reviewed original policy coverage, authorization allowances, prior usage and source cutover date.')
+    await page.getByRole('button', { name: 'Apply move-in', exact: true }).click()
+    await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
+    if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Carried authorizations', { exact: true }) }).locator('td').allTextContents(), ['Carried authorizations', '2', '2'])
   } }])
   await viewportProof(h, [{ name: 'migration-key-scope', path: '/app/agent', cookie: h.owner, selector: 'select[name=scopes]', interact: async ({page}) => { await page.locator('select[name=scopes]').selectOption('migration.prepare') } }])
   console.log('PASS migration mapping, explicit owner approval and saved cutover at 1440 and 390')

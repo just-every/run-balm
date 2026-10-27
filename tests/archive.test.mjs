@@ -1,4 +1,4 @@
-import { cutoverInventory, cutoverClaims } from './movein-reconciliation-journey.mjs'
+import { cutoverInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
 import { createHmac, randomBytes } from 'node:crypto'
@@ -620,6 +620,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const payer=await h.cmd('insurance.payer.save',{name:'Synthetic archive carry payer',payerId:'ARCHIVE'})
     const claimCarryInput=cutoverClaims(payer.id),claimCarryPreview=await h.cmd('movein.prepare',claimCarryInput)
     const moveinClaims=await h.cmd('movein.cutover',{...claimCarryInput,fingerprint:claimCarryPreview.fingerprint,mappingApproval:claimCarryPreview.mappingDigest,cutoverApproval:claimCarryPreview.fingerprint,acceptanceReason:'Original aging exactly matches carried receivables; retain the source records.'})
+    const authorizationInput=cutoverAuthorizations(payer.id,priya.id),authorizationPreview=await h.cmd('movein.prepare',authorizationInput)
+    const moveinAuthorizations=await h.cmd('movein.cutover',{...authorizationInput,fingerprint:authorizationPreview.fingerprint,mappingApproval:authorizationPreview.mappingDigest,cutoverApproval:authorizationPreview.fingerprint,acceptanceReason:'Reviewed original source allowances and usage; retain native policy custody.'})
+    const authorizationClient=authorizationPreview.patients[1].id
+    const authorizationBefore=(await h.send('/api/balm/clients/'+authorizationClient,undefined,h.owner)).value.insurance
     const carriedBeforeRestore=(await h.cmd('insurance.runout.read',{})).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
@@ -634,6 +638,11 @@ test('retail and finance originals, paused entitlements and preparation authorit
       const carriedAfterRestore=(await h.cmd('insurance.runout.read',{},owner)).claims.filter(c=>moveinClaims.records.some(r=>r.target_id===c.id))
       assert.deepEqual(carriedAfterRestore.map(({age_days,...facts})=>facts),carriedBeforeRestore.map(({age_days,...facts})=>facts),'all original carried claim facts and balances survive restore')
       await h.cmd('movein.undo',{jobId:moveinClaims.job.id},owner,409)
+    const authorizationAfter=(await h.send('/api/balm/clients/'+authorizationClient,undefined,owner)).value.insurance
+    assert.deepEqual(authorizationAfter.policies,authorizationBefore.policies,'native carried policy facts survive CLI restore')
+    assert.deepEqual(authorizationAfter.authorizations,authorizationBefore.authorizations,'source authorization baseline, scope and remaining allowance survive CLI restore')
+    assert.deepEqual((await h.cmd('movein.journal',{jobId:moveinAuthorizations.job.id},owner)).job.report,moveinAuthorizations.job.report)
+    await h.cmd('movein.undo',{jobId:moveinAuthorizations.job.id},owner,409)
     assert.equal((await h.state(owner)).accounting.connection,null,'restored clinic must explicitly reconnect its accounting provider')
     assert.equal((await h.send(member.receiptUrl,undefined,owner)).text,original)
     const file=(await h.send('/api/balm/clients/'+patient.id,undefined,owner)).value

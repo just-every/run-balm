@@ -1,4 +1,5 @@
 import { audit, commit, guard, now, rows, stmt, type Actor } from '../domain/model.ts'
+import { authorizationCarryStatements } from './authorization-carry'
 import { carryClaimStatements } from './claim-carry.ts'
 import { chunks, textChunks } from './batches.ts'
 import { identityText } from './targets.ts'
@@ -60,6 +61,7 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   for (const group of chunks(insurance)) body.push(
     stmt(db, `INSERT INTO bm_movein_insurance(id,job_id,client_id,source_id,payer,member_id,group_number) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.payer'),json_extract(value,'$.memberId'),json_extract(value,'$.groupNumber') FROM json_each(?)`, jobId, JSON.stringify(group))
   )
+  body.push(...authorizationCarryStatements(db, who, plan, jobId))
   body.push(...carryClaimStatements(db, who, plan, jobId, at))
   const sets = [patients, appointments, notes, balances, insurance]
   const kinds = ['patient', 'appointment', 'note', 'balance', 'insurance']

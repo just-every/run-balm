@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { pastVisit } from './clinic.mjs'
 
 export const cutoverInventory = () => ({ provider: 'cliniko', files: [
   { kind: 'patients', name: 'patients.csv', csv: 'Source ID,First Name,Last Name,Date of Birth\nsynthetic-balm-600,Inventory,Patient,1980-01-15' },
@@ -154,4 +155,68 @@ export async function reconciliationClaimCarry(h, reception) {
   assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM bm_invoices').first()).n, 0, 'carry creates no duplicate collectible invoices')
   await h.cmd('movein.undo', { jobId: applied.job.id }, h.owner, 409)
   assert.equal((await h.state()).clients.length, 1)
+}
+
+export const cutoverAuthorizations = (payerId, practitionerId = '') => ({ provider: 'cliniko', files: [
+  { kind: 'patients', name: 'authorization-patients.csv', csv: 'Source ID,First Name,Last Name,Date of Birth\nsynthetic-balm-630,Authorization,Visits,1980-01-15\nsynthetic-balm-631,Authorization,Units,1981-01-15' },
+  { kind: 'authorizations', name: 'authorization-carry.csv', csv: 'Source ID,Patient ID,Policy ID,Payer ID,Member ID,Policy Starts On,Policy Ends On,Number,Starts On,Ends On,Cutover On,Allowance Kind,Allowance,Used,Units Per Visit,CPT Scope,Practitioner ID,Booking Action,Patient Sex,Address,City,State,Postal Code\n' +
+    `synthetic-balm-632,synthetic-balm-630,synthetic-balm-634,${payerId},synthetic-balm-636,2020-01-01,2099-12-31,synthetic-balm-638,2026-01-01,2099-12-31,2026-01-15,visits,3,1,,,${practitionerId},block,F,1 Example St,Austin,TX,78701\n` +
+    `synthetic-balm-633,synthetic-balm-631,synthetic-balm-635,${payerId},synthetic-balm-637,2020-01-01,2099-12-31,synthetic-balm-639,2026-01-01,2099-12-31,2026-01-15,units,10,4,3,97110,${practitionerId},block,M,2 Example St,Austin,TX,78701` },
+] })
+
+export async function reconciliationAuthorizationCarry(h, therapist, service, reception) {
+  const payer = await h.cmd('insurance.payer.save', { name: 'Synthetic authorization carry', payerId: 'AUTHCARRY', unitMethod: 'cms' })
+  const input = { ...cutoverAuthorizations(payer.id, therapist.id), practitionerId: therapist.id, serviceId: service.id }
+  input.files.push({ kind: 'appointments', name: 'authorization-history.csv', csv: 'Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-640,synthetic-balm-630,2026-01-14T09:00:00+10:00,2026-01-14T09:45:00+10:00,attended\nsynthetic-balm-641,synthetic-balm-630,2026-01-16T09:00:00+10:00,2026-01-16T09:45:00+10:00,attended' })
+  const preview = await h.cmd('movein.prepare', input)
+  assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
+  assert.equal(preview.counts.authorizations, 2)
+  assert.equal(preview.counts.insurance, 2)
+  assert.deepEqual(preview.reconciliation.mismatches, [])
+  const approval = p => ({ fingerprint: p.fingerprint, mappingApproval: p.mappingDigest, cutoverApproval: p.fingerprint, acceptanceReason: 'Checked source allowances, prior usage, policy identity and cutover date against original payer records.' })
+  const before = (await h.state()).clients.length
+  for (const mutate of [b => { b.files[1].csv = b.files[1].csv.replaceAll(payer.id, 'synthetic-balm-absent') }, b => { b.files[1].csv = b.files[1].csv.replace('visits,3,1', 'visits,3,4') }, b => { b.files[1].csv = b.files[1].csv.replace('synthetic-balm-635', 'synthetic-balm-634') }, b => { b.files[1].csv = b.files[1].csv.replace('2026-01-15,units', '2025-12-31,units') }, b => { b.files[1].csv = b.files[1].csv.replaceAll(therapist.id, 'synthetic-balm-absent') }, b => { b.files[1].csv = b.files[1].csv.replace('synthetic-balm-632,synthetic-balm-630', 'synthetic-balm-632,synthetic-balm-absent') }, b => { b.files[1].csv = b.files[1].csv.replaceAll('2026-01-15,', '2090-01-15,') }]) {
+    const bad = structuredClone(input); mutate(bad)
+    const p = await h.cmd('movein.prepare', bad)
+    assert.equal(p.canApply, false, JSON.stringify(p.diagnostics))
+    await h.cmd('movein.cutover', { ...bad, ...approval(p) }, h.owner, 409)
+    assert.equal((await h.state()).clients.length, before)
+  }
+  await h.cmd('movein.cutover', { ...input, ...approval(preview) }, reception.cookie, 403)
+  await h.cmd('movein.cutover', { ...input, ...approval(preview) }, therapist.cookie, 403)
+  const biller = await h.staff('AuthorizationCarryBiller', 'biller')
+  await h.cmd('movein.cutover', { ...input, ...approval(preview) }, biller.cookie, 403)
+  await h.cmd('insurance.payer.save', { id: payer.id, name: 'Synthetic authorization carry reviewed', payerId: 'AUTHCARRY', unitMethod: 'cms' })
+  await h.cmd('movein.cutover', { ...input, ...approval(preview) }, h.owner, 409)
+  const current = await h.cmd('movein.prepare', input), accepted = { ...input, ...approval(current) }
+  const attempts = await Promise.all([h.send('/api/balm/command', { name: 'movein.cutover', input: accepted }, h.owner), h.send('/api/balm/command', { name: 'movein.cutover', input: accepted }, h.owner)])
+  assert.ok(attempts.some(r => r.status === 200))
+  assert.ok(attempts.every(r => r.status === 200 || r.status === 409))
+  const applied = attempts.find(r => r.status === 200).value.result
+  assert.deepEqual(applied.records.map(r => r.kind).sort(), ['appointment', 'appointment', 'authorization', 'authorization', 'patient', 'patient', 'policy', 'policy'])
+  const clients = current.patients.map(p => p.id)
+  const file = async index => (await h.send('/api/balm/clients/' + clients[index], undefined, h.owner)).value
+  let visits = (await file(0)).insurance.authorizations[0], units = (await file(1)).insurance.authorizations[0]
+  assert.deepEqual([visits.number, visits.visits, visits.imported_used, visits.used_visits, visits.remaining_allowance, visits.booking_action], ['synthetic-balm-638', 3, 1, 2, 1, 'block'])
+  assert.deepEqual([units.units, units.imported_used, units.used_units, units.remaining_allowance, units.units_per_visit, JSON.parse(units.cpt_scope), units.practitioner_id], [10, 4, 4, 6, 3, ['97110'], therapist.id])
+  const booking = { clientId: clients[0], practitionerId: therapist.id, serviceId: service.id, date: new Date(Date.now() + 2 * 86400_000 + 10 * 3600_000).toISOString().slice(0, 10), time: '10:00', acknowledgeInsurance: true }
+  const booked = { appointmentId: await pastVisit(h, clients[0], therapist, service.id, h.owner, 2, { acknowledgeInsurance: true }) }
+  assert.equal((await file(0)).insurance.authorizations[0].remaining_allowance, 0)
+  await h.cmd('appointment.attend', { id: booked.appointmentId })
+  visits = (await file(0)).insurance.authorizations[0]
+  assert.deepEqual([visits.used_visits, visits.reserved_visits, visits.remaining_allowance], [3, 0, 0])
+  const exhausted = await h.cmd('appointment.book', booking, h.owner, 409)
+  assert.ok(exhausted.detail.insuranceBooking.warnings.some(w => w.code === 'authorization_exhausted' && w.blocking))
+  const unitVisit = { appointmentId: await pastVisit(h, clients[1], therapist, service.id, h.owner, 3, { acknowledgeInsurance: true }) }
+  assert.deepEqual([(await file(1)).insurance.authorizations[0].reserved_units, (await file(1)).insurance.authorizations[0].remaining_allowance], [3, 3])
+  await h.cmd('appointment.attend', { id: unitVisit.appointmentId })
+  const note = await h.cmd('note.write', { clientId: clients[1], appointmentId: unitVisit.appointmentId, body: 'Synthetic reviewed care', charges: [{ code: '97110', minutes: 15 }] }, therapist.cookie)
+  await h.cmd('note.sign', { id: note.id, revision: note.revision, signature: 'Priya', credentials: 'PT', attest: true }, therapist.cookie)
+  units = (await file(1)).insurance.authorizations[0]
+  assert.deepEqual([units.used_units, units.reserved_units, units.remaining_allowance], [5, 0, 5])
+  assert.equal((await h.cmd('movein.cutover', accepted)).job.id, applied.job.id)
+  assert.equal((await h.cmd('movein.apply', accepted)).job.id, applied.job.id)
+  assert.equal((await file(1)).insurance.authorizations[0].remaining_allowance, 5, 'repeat cannot reset source or native usage')
+  assert.deepEqual((await h.cmd('movein.journal', { jobId: applied.job.id })).job.report.reconciliation, current.reconciliation)
+  await h.cmd('movein.undo', { jobId: applied.job.id }, h.owner, 409)
 }

@@ -29,9 +29,10 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
   }
   const reportPatients = ['simplepractice', 'jane', 'webpt'].includes(bundle.provider) && file.kind === 'patients' && ((at.get('fullName') ?? -1) >= 0 || (bundle.provider === 'webpt' && keys.includes('name (first)')))
   if (reportPatients) diagnostic('warning', 'report_identity_review', 'Check the first and last names in the preview. If the report has no patient number, Balm uses the name and email or birth date to recognize an unchanged upload. Other report columns are listed below.')
+  const carryAuthorizations = file.kind === 'authorizations' && keys.includes('allowance')
   const carryClaims = file.kind === 'claims' && keys.includes('billed')
-  const inventoryKind = !carryClaims && (file.kind === 'invoices' || file.kind === 'authorizations' || file.kind === 'claims') ? file.kind as 'invoices' | 'authorizations' | 'claims' : null
-  const seen = new Set<string>(file.kind === 'claims' ? [...bundle.carriedClaims.map(r => r.sourceId), ...bundle.inventory.filter(r => r.kind === 'claims').map(r => r.sourceId)] : inventoryKind ? bundle.inventory.filter(r => r.kind === inventoryKind).map(r => r.sourceId) : file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind as 'appointments' | 'notes' | 'insurance'].map(p => p.sourceId))
+  const inventoryKind = !carryAuthorizations && !carryClaims && (file.kind === 'invoices' || file.kind === 'authorizations' || file.kind === 'claims') ? file.kind as 'invoices' | 'authorizations' | 'claims' : null
+  const seen = new Set<string>(carryAuthorizations ? bundle.carriedAuthorizations.map(r => r.sourceId) : file.kind === 'claims' ? [...bundle.carriedClaims.map(r => r.sourceId), ...bundle.inventory.filter(r => r.kind === 'claims').map(r => r.sourceId)] : inventoryKind ? bundle.inventory.filter(r => r.kind === inventoryKind).map(r => r.sourceId) : file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind as 'appointments' | 'notes' | 'insurance'].map(p => p.sourceId))
   let nonempty = 0
   for (const { cells, row } of rows.slice(1)) {
     if (!cells.some(c => c.trim())) continue
@@ -77,7 +78,17 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
         const sourceId = required('sourceId', 600), patientId = required('patientId', 600)
         if (seen.has(sourceId)) throw new Error(`Duplicate ${file.kind} source ID.`)
         seen.add(sourceId)
-        if (inventoryKind) {
+        if (carryAuthorizations) {
+          const whole = (key: string, min: number, max: number) => { const v = required(key); if (!/^\d+$/.test(v) || !Number.isSafeInteger(+v) || +v < min || +v > max) throw new Error(`${key} is outside the supported whole-number range.`); return +v }
+          const allowanceKind = required('allowance kind'), bookingAction = required('booking action')
+          if (!['visits', 'units'].includes(allowanceKind) || !['warn', 'block'].includes(bookingAction)) throw new Error('Choose visits or units and an explicit warn or block booking action.')
+          const allowance = whole('allowance', 1, allowanceKind === 'visits' ? 10000 : 1000000), used = whole('used', 0, allowance)
+          const startsOn = date('starts on'), endsOn = date('ends on'), cutoverOn = date('cutover on')
+          if (endsOn < startsOn || cutoverOn < startsOn || cutoverOn > endsOn) throw new Error('Cutover must be within the original authorization dates.')
+          const cptScope = get('cpt scope').split(/\s+/).filter(Boolean)
+          if (cptScope.length > 200 || cptScope.some(code => !/^(?:\d{4}[\dA-Z]|[A-Z]\d{4})$/.test(code))) throw new Error('CPT scope must contain space-separated procedure codes.')
+          bundle.carriedAuthorizations.push({ ...location, sourceId, patientId, policySourceId: required('policy id', 100), number: required('number', 50), startsOn, endsOn, cutoverOn, allowanceKind: allowanceKind as 'visits' | 'units', allowance, used, unitsPerVisit: allowanceKind === 'units' ? whole('units per visit', 1, 10000) : 1, cptScope, practitionerId: get('practitioner id'), bookingAction: bookingAction as 'warn' | 'block', policyInput: { payerId: required('payer id', 100), memberId: required('member id', 80), patientSex: required('patient sex'), address: required('address', 100), city: required('city', 30), state: required('state', 2), postalCode: required('postal code', 10), relationship: get('relationship') || '18', subscriberFirst: get('subscriber first'), subscriberLast: get('subscriber last'), subscriberDob: get('subscriber dob') ? date('subscriber dob') : '', subscriberSex: get('subscriber sex'), groupNumber: get('group number'), startsOn: date('policy starts on'), endsOn: date('policy ends on') } })
+        } else if (inventoryKind) {
           bundle.inventory.push({ ...location, kind: inventoryKind, sourceId, patientId, reference: required('reference', 240) })
         } else if (carryClaims) {
           if (sourceId.length > 100) throw new Error('Source claim ID must have at most 100 characters.')
