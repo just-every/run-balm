@@ -51,7 +51,8 @@ export async function authorizationRequestJourney(h){
  for(const cookie of ['',c.biller.cookie,c.reception.cookie,c.priya.cookie])assert.ok([401,403].includes((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,cookie)).status))
  const client=await file(c.biller.cookie)
  assert.equal(client.notes,null,'biller never receives clinical notes')
- assert.ok(!JSON.stringify(client.insurance.authorizationRequests).includes('Synthetic presenting condition'))
+ assert.ok(!JSON.stringify(client.insurance).includes('Synthetic presenting condition'))
+ assert.deepEqual(client.insurance.authorizationPreparation.map(r=>[r.note_id,r.plan_id]),[[c.note.id,c.plan.id]],'biller receives the signed preparation choices without the clinical chart')
  assert.equal(client.insurance.authorizationRequests[0].status,'prepared')
  await h.cmd(command+'decide',{...c.approval,...request},c.biller.cookie,409)
  const submission={...request,channel:'payer_portal',submittedOn:c.today,reference:'synthetic-balm-4',attest:true}
@@ -91,7 +92,7 @@ export async function authorizationRequestJourney(h){
  await h.cmd('client.erase',{id:c.patient.id},h.owner,409)
  const audit=[];let auditBefore=''
  do{const page=(await h.send('/api/balm/clients/'+c.patient.id+(auditBefore?'?auditBefore='+auditBefore:''),undefined,h.owner)).value;audit.push(...page.audit);auditBefore=page.auditPage.older}while(auditBefore)
- for(const action of ['insurance.authorization_request_prepared','insurance.authorization_submission_recorded','insurance.authorization_decision_recorded','insurance.authorization_packet_downloaded','insurance.authorization_request_read','insurance.authorization_requests_read','note_release.reviewed','note_release.approved','note_release.downloaded'])assert.ok(audit.some(a=>a.action===action),action+' audited')
+ for(const action of ['insurance.authorization_request_prepared','insurance.authorization_submission_recorded','insurance.authorization_decision_recorded','insurance.authorization_packet_downloaded','insurance.authorization_request_read','insurance.authorization_requests_read','insurance.authorization_preparation_choices_read','note_release.reviewed','note_release.approved','note_release.downloaded'])assert.ok(audit.some(a=>a.action===action),action+' audited')
  await h.cmd('note_release.revoke',{id:request.id})
  assert.equal((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,c.biller.cookie)).status,403)
  const denied=await h.cmd(command+'prepare',c.input)

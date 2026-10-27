@@ -28,7 +28,7 @@ try{
     assert.ok(icons.every(el=>el.tooltip),'icon-only controls have tooltips: '+JSON.stringify(icons))
     await page.screenshot({path:root+'/'+name+'-'+width+'.png'})
    }
-   await cookie(h.owner);await page.goto(h.origin+'/app/clients/'+c.patient.id)
+   await cookie(c.biller.cookie);await page.goto(h.origin+'/app/clients/'+c.patient.id)
    await page.getByText('Prepare a prior authorization request',{exact:true}).click()
    const prepare=page.locator('form[action*="insurance.authorization_request.prepare"]')
    await prepare.locator('[name=referralId]').selectOption(c.referral.id)
@@ -38,6 +38,8 @@ try{
    await prepare.getByRole('button',{name:'Prepare authorization packet',exact:true}).click()
    const request=(await h.send('/api/balm/clients/'+c.patient.id,undefined,h.owner)).value.insurance.authorizationRequests[0]
    assert.ok(request)
+   assert.equal(await page.getByRole('link',{name:'Download fixed authorization packet'}).count(),0)
+   await cookie(h.owner);await page.reload()
    assert.ok(await page.getByRole('link',{name:'Download fixed authorization packet'}).isVisible())
    await capture('INS-004-fixed-packet','#authorization-requests')
    await cookie(c.biller.cookie);await page.reload()

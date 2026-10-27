@@ -85,6 +85,14 @@ export async function authorizationRequestCommand(db:D1Database,initial:Actor,na
  return {id:r.id,status:decision,authorizationId:write?.id??null}
 }
 
+/** Preparation choices expose identifiers and signing dates, never clinical content. */
+export async function authorizationPreparationFor(db:D1Database,who:Actor,clientId:string){
+ if(who.role!=='owner'&&!biller(who))return []
+ const choices=await rows(db,`SELECT n.id AS note_id,n.signed_at,p.id AS plan_id,p.created_at AS plan_signed_at FROM bm_notes n JOIN bm_plans_of_care p ON p.note_id=n.id AND p.client_id=n.client_id AND p.author_id=n.author_id WHERE n.client_id=? AND n.signed_at IS NOT NULL AND (json_extract(n.template_snapshot,'$.kind')='evaluation' OR n.template LIKE '%.evaluation') ORDER BY n.signed_at DESC,p.created_at DESC`,clientId)
+ if(choices.length)await commit(db,who,[clientGuard(db,who,clientId),audit(db,who,'insurance.authorization_preparation_choices_read',clientId)])
+ return choices
+}
+
 export async function authorizationRequestsFor(db:D1Database,who:Actor,clientId:string){
  if(who.role!=='owner'&&!biller(who))return null
  const requests=await rows(db,`SELECT r.id,r.client_id,r.referral_id,r.policy_id,r.episode_id,r.note_id,r.plan_id,r.sha256,r.prepared_at,r.prepared_by,s.channel,s.submitted_on,s.reference AS submission_reference,s.recorded_by AS submitted_by,d.decision,d.decided_on,d.reference AS decision_reference,d.reason,d.authorization_id,d.recorded_by AS decided_by FROM bm_authorization_requests r LEFT JOIN bm_authorization_submissions s ON s.request_id=r.id LEFT JOIN bm_authorization_decisions d ON d.request_id=r.id WHERE r.client_id=? ORDER BY r.prepared_at DESC,r.id`,clientId)

@@ -8,10 +8,11 @@ export function authorizationRequestsPanel(s:any,f:any){
  const list=f.insurance?.authorizationRequests
  if(!list)return ''
  const path='/app/clients/'+f.client.id
- const prepare=owner(s)?`<details><summary>Prepare a prior authorization request</summary><p>Choose the referral, its signed evaluation and the plan signed by the same therapist. Outcome scores must already be recorded in that evaluation. The owner reviews the fixed packet and submits it outside Balm.</p>${form('insurance.authorization_request.prepare',path,
+ const choices=f.insurance.authorizationPreparation??[]
+ const prepare=`<details><summary>Prepare a prior authorization request</summary><p>Choose the referral, its signed evaluation and the plan signed by the same therapist. Outcome scores must already be recorded in that evaluation. The owner reviews the fixed packet and approves its release before a biller downloads it. Submission takes place outside Balm.</p>${form('insurance.authorization_request.prepare',path,
  select('referralId','Referral',(f.referrals??[]).filter((r:any)=>r.policy_id).map((r:any)=>[r.id,usDate(r.received_on,zoneOf(s))+' · '+r.referring_first+' '+r.referring_last]))+
- select('noteId','Signed evaluation',(f.notes??[]).filter((n:any)=>n.signature&&(n.templateDefinition?.kind==='evaluation'||/\.evaluation$/.test(n.template))).map((n:any)=>[n.id,usDate(n.visitAt,zoneOf(s))+' · '+n.signature.name]))+
- select('planId','Signed plan of care',(f.plans??[]).map((p:any)=>[p.id,usDate(p.createdAt,zoneOf(s))+' · '+p.therapistName])),'Prepare authorization packet')}</details>`:''
+ select('noteId','Signed evaluation',[...new Map(choices.map((c:any)=>[c.note_id,c])).values()].map((c:any)=>[c.note_id,'Signed '+stamp(s,c.signed_at)]))+
+ select('planId','Signed plan of care',choices.map((c:any)=>[c.plan_id,'Signed '+stamp(s,c.plan_signed_at)])),'Prepare authorization packet')}</details>`
  const records=list.map((r:any)=>{
   const ids=hidden('id',r.id)+hidden('sha256',r.sha256)
   const original=owner(s)?`<p><a href="/api/balm/insurance/authorization-request/${h(r.id)}">Download fixed authorization packet</a></p>`:''

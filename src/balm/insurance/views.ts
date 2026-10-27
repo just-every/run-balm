@@ -1,4 +1,4 @@
-import {authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
+import {authorizationPreparationFor,authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
 import {injuryState} from './injury'
 import {runoutState} from './runout'
 import { batchCodeGuards } from './batch-coding'
@@ -45,7 +45,7 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
       e.benefits = JSON.stringify(benefits)
     }
   }
-  return {authorizationRequests:await authorizationRequestsFor(db,who,clientId),cob:who.role==='owner'||biller(who)?await cobState(db,initial,clientId):null,policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
+  return {authorizationPreparation:await authorizationPreparationFor(db,who,clientId),authorizationRequests:await authorizationRequestsFor(db,who,clientId),cob:who.role==='owner'||biller(who)?await cobState(db,initial,clientId):null,policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
 }
 export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   const who=await insuranceActor(env.DB,initial),db=env.DB,desk=who.role==='owner'||who.staffRole==='reception'

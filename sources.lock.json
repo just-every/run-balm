@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "c8b71fbe1d0816729ef4f7a7d410dfaf5bceb7126446a485981853ff0ebeedf9",
+      "sha256": "521943ee7fa9067679da147479f40459afffe005b1e9013b74e549b220cde190",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "4edd68e1e58c4ba50ea79a0692bff1e6543fe86ef4d04b08767d9553462046ec",
+      "sha256": "475794e47dacc9ac54a3157874badd0755e477097b5d7a72b56e537282db32b3",
       "executable": false
     },
     "DEMO.md": {
@@ -2026,7 +2026,7 @@
       "executable": false
     },
     "src/balm/insurance/authorization-requests.ts": {
-      "sha256": "f4e8c66be3647be37a68ea5915827e44e1e0d81e59214d998078f5d5f134a0f6",
+      "sha256": "c29685f00e953691e2804a94884bf39d8d6936db642cc2a433c7aeba9bb85c4b",
       "executable": false
     },
     "src/balm/insurance/authorization.ts": {
@@ -2186,7 +2186,7 @@
       "executable": false
     },
     "src/balm/insurance/views.ts": {
-      "sha256": "e471ea8fcef77bf7748a63cf38f03e8c658e185aea9dacb294d7b400bb3bfc25",
+      "sha256": "a520d5ce2dafe2798336f1bb8dfc2ecac99fb5089603b0a3b71cac2d90dc0529",
       "executable": false
     },
     "src/balm/insurance/x12.ts": {
@@ -2770,7 +2770,7 @@
       "executable": false
     },
     "src/balm/ui/authorization-requests.ts": {
-      "sha256": "1eb217fd12b915b40abca803b33e68a870404f1421f7ca6e54b16be6c6b8bbde",
+      "sha256": "af68ec96e26693fa2feb4bfd352b7be991aff4ec27a1e825701d5e5f7526b3a0",
       "executable": false
     },
     "src/balm/ui/backups.ts": {
@@ -5294,11 +5294,11 @@
       "executable": false
     },
     "tests/authorization-request-browser.mjs": {
-      "sha256": "d879b5c758b9ec6758fd474e3cb8415ad9de109fa2dd82cb1601f028bc7139b6",
+      "sha256": "468ebd5313dc05de9cf7420e0a60e16572b57d8cc403a980b8f7ee42d9e0c3f5",
       "executable": false
     },
     "tests/authorization-request-journey.mjs": {
-      "sha256": "93a39f2849ef967bd05efab4b37525465bcba2a786b1fb83f6d6b9d9a17562aa",
+      "sha256": "5f942d1a69514e85663406ece884a654530b74f61a48366362c599d470739174",
       "executable": false
     },
     "tests/authorization.test.mjs": {
