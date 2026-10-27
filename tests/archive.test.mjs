@@ -44,6 +44,7 @@ async function historicalErasurePatient(h,priya,service) {
   const patient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
   const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,12)
   await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',visit).run()
+  await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'incoming','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:00:00Z','Historical archived call','practitioner',?)").bind(crypto.randomUUID(),patient.id,priya.id,priya.email,priya.id).run()
   return patient
 }
 async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
@@ -89,6 +90,8 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
 
     const visit=await pastVisit(h,maya.id,priya,service.id,h.owner,2,{coverageChoice:'self_pay',deliveryMethod:'portal'})
     await h.cmd('appointment.attend',{id:visit})
+    await h.cmd('call.log',{clientId:maya.id,recipient:priya.id,direction:'incoming',occurredAt:'2000-01-02T00:30:00Z',disposition:'Archived call disposition'},priya.cookie)
+    const archivedCalls=(await h.send('/api/balm/clients/'+maya.id+'/communications?communicationChannel=call',undefined,h.owner)).value
     const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
     await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-3'})
     const noteCheck=await h.cmd('note.check',{id:checkedNote.id,revision:1},priya.cookie)
@@ -133,12 +136,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -200,6 +203,8 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       assert.equal(restoredEntry.sha256,external.sha256,'PAY-004 exact approved proposal survives CLI archive')
       assert.ok(restoredEntry.approved_by)
       assert.equal((await restoredClinic.send('/api/balm/receipts/'+external.id+'.pdf',undefined,cookie)).text,externalReceipt,'PAY-004 original external receipt survives CLI archive')
+      assert.deepEqual((await restoredClinic.send('/api/balm/clients/'+maya.id+'/communications?communicationChannel=call',undefined,cookie)).value,archivedCalls,'COMM-003 exact call facts and searchable history survive CLI archive restore')
+      await assert.rejects(restoredClinic.db.prepare('DELETE FROM bm_calls WHERE client_id=?').bind(maya.id).run(),/calls_are_health_records/)
       const restoredMail=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.mailHistory
       assert.ok(restoredMail.some(m=>m.kind==='intake'&&m.state==='delivered'),'COMM-001 verified delivery survives the public CLI archive round trip')
       const restoredState=await restoredClinic.state(cookie)
@@ -239,7 +244,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
         assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
@@ -256,7 +261,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
       assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
     } finally {await current.dispose()}
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
