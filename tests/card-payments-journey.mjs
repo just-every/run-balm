@@ -112,5 +112,110 @@ export async function cardPaymentsJourney({ h, stripe, service, priya, reception
   let auditFile=await file();const audit=[...auditFile.audit]
   while(auditFile.auditPage.older){auditFile=(await h.send('/api/balm/clients/'+client.id+'?auditBefore='+auditFile.auditPage.older,undefined,h.owner)).value;audit.push(...auditFile.audit)}
   for(const action of ['card.entry_authorized','card.saved','payment.refund_approved','payment.refund_confirmed','payment.terminal_started'])assert.ok(audit.some(x=>x.action===action),action)
+  if(stripe)await checkInResponsibilityJourney({h,stripe,service,priya,reception},hooks)
   return {client,setup,portalSetup,payment,refund:approved,terminal:paid}
+}
+
+/** Adjudicated responsibility is collected at a later check-in, with no payer advance. */
+export async function checkInResponsibilityJourney({h,stripe,service,priya,reception},hooks={}) {
+ const {pastVisit,visitDate}=await import('./clinic.mjs')
+ const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Responsibility',dateOfBirth:'1988-04-02',email:'responsibility@patient.example'})
+ await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
+ await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
+ await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
+ const payer=await h.cmd('insurance.payer.save',{name:'Synthetic check-in payer',payerId:'SYNTHETICBALM',receiverId:'BALMPAYER',unitMethod:'cms',fees:[{code:'97110',cents:9500}]})
+ await h.cmd('insurance.enrollment.save',{payerId:payer.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
+ const policy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:payer.id,memberId:'synthetic-balm-901',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
+ const oldVisit=await pastVisit(h,patient.id,priya,service.id,h.owner,4)
+ await h.cmd('appointment.attend',{id:oldVisit})
+ const note=await h.cmd('note.write',{clientId:patient.id,appointmentId:oldVisit,body:'Synthetic therapy follow-up.',charges:[{code:'97110',minutes:15}]},priya.cookie)
+ await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
+ await h.cmd('pay.codes.save',{appointmentId:oldVisit,icd10:'M25.561'})
+ const invoice=await h.cmd('invoice.prepare',{appointmentId:oldVisit});await h.cmd('invoice.approve',{id:invoice.id})
+ const claim=await h.cmd('insurance.claim.prepare',{appointmentId:oldVisit,policyId:policy.id,therapyGroup:'pt_slp'})
+ assert.equal(claim.status,'ready')
+ const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]})
+ assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).status,200)
+ await h.cmd('pay.copay.save',{clientId:patient.id,copay:'30.00'},reception.cookie)
+ const link=await h.cmd('pay.link.create',{clientId:patient.id,purpose:'card',delivery:'shown'},reception.cookie),path=new URL(link.url).pathname
+ const started=await h.form(path+'?do=card',{consent:'on'});stripe.complete(started.location.split('/').at(-1),{declined:true})
+ await h.send(path+'?setup='+started.location.split('/').at(-1))
+ const appointmentId=await pastVisit(h,patient.id,priya,service.id,reception.cookie,0,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+ await h.cmd('pay.checkin',{appointmentId},reception.cookie)
+ const day=await visitDate(h,appointmentId),input={appointmentId,invoiceId:invoice.id,purpose:'coinsurance',amount:'35.00',confirm:true,paymentId:randomUUID()}
+ await h.cmd('pay.checkin.collect',input,reception.cookie,409)
+ await h.cmd('pay.terminal.collect',{...input,purpose:'balance'},reception.cookie,409)
+ assert.equal((await h.state(reception.cookie)).payments.visits[appointmentId].collections.length,0)
+ await h.cmd('insurance.remittance.import',{payerId:payer.id,x12:`ST*835*0001*005010X221A1~BPR*I*60*C*CHK************20261027~TRN*1*synthetic-balm-902*1234567890~N1*PR*CHECKIN*XV*SYNTHETICBALM~CLP*${claim.id}*1*95*60*35*CI*synthetic-balm-903~CAS*PR*2*35~SE*7*0001~`})
+ let option=(await h.state(reception.cookie)).payments.visits[appointmentId].collections.find(i=>i.id===invoice.id)
+ assert.deepEqual([option.balance_cents,option.coinsurance_cents],[3500,3500])
+ await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:500,reference:'synthetic-balm-904'})
+ const credit=await h.cmd('pay.entry.prepare',{clientId:patient.id,kind:'credit',amount:'4.00',reference:'synthetic-balm-905',reason:'Patient bank transfer',occurredOn:day},reception.cookie)
+ await h.cmd('pay.entry.approve',{id:credit.id,sha256:credit.sha256,attest:true})
+ option=(await h.state(reception.cookie)).payments.visits[appointmentId].collections.find(i=>i.id===invoice.id)
+ assert.deepEqual([option.balance_cents,option.coinsurance_cents],[2600,2600])
+ await h.cmd('pay.checkin.collect',{...input,amount:'26.01'},reception.cookie,409)
+ await h.cmd('pay.checkin.collect',{...input,amount:'16.00',confirm:false},reception.cookie,400)
+ await h.cmd('pay.checkin.collect',{...input,amount:'16.00'},priya.cookie,403)
+ await h.cmd('pay.terminal.configure',{locationId:'tml_syntheticbalm1',simulated:true})
+ await hooks.screen?.('responsibility-choice','/app?date='+day,'form[action*="pay.checkin.collect"]',reception.cookie)
+ const declinedInput={...input,amount:'16.00',paymentId:randomUUID()}
+ const declined=await h.cmd('pay.checkin.collect',declinedInput,reception.cookie)
+ assert.equal(declined.status,'failed');assert.equal(declined.amount_cents,1600)
+ const declinedWrites=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
+ await h.cmd('pay.checkin.collect',declinedInput,reception.cookie)
+ assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,declinedWrites)
+ const replacement=await h.form(path+'?do=card',{consent:'on'});stripe.complete(replacement.location.split('/').at(-1));await h.send(path+'?setup='+replacement.location.split('/').at(-1))
+ const beforeReport=(await h.send('/api/balm/reports/financial?from='+day+'&to='+day,undefined,h.owner)).value
+ const cardTotal=report=>report.deposits.rows.filter(r=>r.source==='Card payments (Stripe)').reduce((n,r)=>n+r.receivedCents,0)
+ const first={...input,amount:'16.00'},other={...first,paymentId:randomUUID()}
+ const writesBefore=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
+ let collected
+ if(hooks.collectResponsibility)collected=await hooks.collectResponsibility(first,day,reception.cookie,'saved')
+ else {
+  const race=await Promise.all([first,other].map(input=>h.send('/api/balm/command',{name:'pay.checkin.collect',input},reception.cookie)))
+  assert.deepEqual(race.map(r=>r.status).sort(),[200,409])
+  collected=race.find(r=>r.status===200).value.result
+ }
+ assert.equal(collected.amount_cents,1600);assert.equal(collected.collection_purpose,'coinsurance');assert.equal(collected.invoice_id,invoice.id)
+ const selected={...first,paymentId:collected.id}
+ await h.cmd('pay.checkin.collect',selected,reception.cookie)
+ await h.cmd('pay.checkin.collect',{...selected,purpose:'balance'},reception.cookie,409)
+ assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,writesBefore+1)
+ const cookie=await portalLogin(h,'responsibility@patient.example')
+ const original=await h.send('/portal/receipts/'+collected.id+'.pdf',undefined,cookie)
+ assert.equal(original.status,200);assert.match(original.text,/Adjudicated coinsurance at check-in/);assert.match(original.text,/16.00/)
+ const coinsuranceInput={...input,amount:'4.00',paymentId:randomUUID()}
+ const coinsurance=await h.cmd('pay.terminal.collect',coinsuranceInput,reception.cookie)
+ assert.equal(coinsurance.collection_purpose,'coinsurance');assert.equal(coinsurance.amount_cents,400)
+ await h.cmd('pay.checkin.collect',{...input,purpose:'balance',amount:'6.01',paymentId:randomUUID()},reception.cookie,409)
+ assert.equal((await h.cmd('pay.terminal.simulate',{paymentId:coinsurance.id},reception.cookie)).status,'succeeded')
+ const balance=await h.cmd('pay.checkin.collect',{...input,purpose:'balance',amount:'2.00',paymentId:randomUUID()},reception.cookie)
+ assert.equal(balance.collection_purpose,'balance');assert.equal(balance.amount_cents,200);assert.equal(balance.status,'succeeded')
+ const terminalInput={...input,purpose:'balance',amount:'4.00',paymentId:randomUUID()}
+ const terminal=hooks.collectResponsibility?await hooks.collectResponsibility(terminalInput,day,reception.cookie,'terminal'):await h.cmd('pay.terminal.collect',terminalInput,reception.cookie)
+ assert.equal(terminal.amount_cents,400);assert.equal(terminal.status,'processing');assert.equal(terminal.collection_purpose,'balance')
+ await h.cmd('pay.checkin.collect',{...input,amount:'0.50',paymentId:randomUUID()},reception.cookie,409)
+ const repeat=await h.cmd('pay.terminal.collect',{...terminalInput,paymentId:terminal.id},reception.cookie);assert.equal(repeat.payment_intent,terminal.payment_intent)
+ await hooks.screen?.('responsibility-pending','/app?date='+day,'form[action*="pay.terminal.sync"]',reception.cookie)
+ const paid=await h.cmd('pay.terminal.simulate',{paymentId:terminal.id},reception.cookie)
+ assert.equal(paid.status,'succeeded');assert.equal(paid.amount_cents,400)
+ await h.cmd('pay.terminal.sync',{paymentId:terminal.id},reception.cookie)
+ const receipt=await h.send('/portal/receipts/'+terminal.id+'.pdf',undefined,cookie)
+ assert.equal(receipt.status,200);assert.match(receipt.text,/Patient balance at check-in/);assert.match(receipt.text,/4.00/)
+ assert.equal((await h.send('/portal/receipts/'+collected.id+'.pdf',undefined,cookie)).text,original.text)
+ const foreign=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Foreign',email:'foreign-responsibility@patient.example'})
+ const foreignCookie=await portalLogin(h,'foreign-responsibility@patient.example')
+ for(const id of [collected.id,terminal.id]){assert.equal((await h.send('/portal/receipts/'+id+'.pdf',undefined,foreignCookie)).status,404);assert.equal((await h.send('/portal/receipts/'+id+'.pdf')).status,303)}
+ const file=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
+ assert.equal(file.billing.ledger.patientBalanceCents,0);assert.equal(file.invoices.find(i=>i.id===invoice.id).paid_cents,9500)
+ assert.equal(file.billing.ledger.lines.filter(l=>l.kind==='card').reduce((n,l)=>n+l.paymentCents,0),2600)
+ const report=(await h.send('/api/balm/reports/financial?from='+day+'&to='+day,undefined,h.owner)).value
+ assert.equal(cardTotal(report)-cardTotal(beforeReport),2600)
+ await hooks.screen?.('responsibility-paid','/app?date='+day,'a[href="/api/balm/receipts/'+terminal.id+'.pdf"]',reception.cookie)
+ await hooks.screen?.('responsibility-portal','/portal/home','#statements',cookie)
+ await h.cmd('staff.save',{id:reception.id,name:'Rosa',email:'rosa@clinic.example',role:'reception',active:false})
+ await h.cmd('pay.checkin.collect',selected,reception.cookie,403)
+ await h.cmd('pay.terminal.sync',{paymentId:terminal.id},reception.cookie,403)
+ return {patient,invoice,saved:collected,terminal:paid,receipt:receipt.text,original:original.text,cookie,day}
 }

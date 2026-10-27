@@ -81,7 +81,7 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
   const unapplied = (p.amount_cents as number) - posted.reduce((sum, item) => sum + Number(item.amount_cents), 0), number = receiptNumber(p.receipt_number as number)
   const blocks: Block[] = [
     { kind: 'facts', rows: [...clinicFacts(clinic), ['Receipt', number], ['Date', usDate(p.succeeded_at as string, clinic.time_zone as string)], ['Patient', `${p.first_name} ${p.last_name}`],
-      ['For', p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
+      ['For', p.collection_purpose === 'coinsurance' ? 'Adjudicated coinsurance at check-in' : p.collection_purpose === 'balance' ? 'Patient balance at check-in' : p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
     { kind: 'table', columns: [{ label: 'Applied to', width: 4 }, { label: 'Amount', width: 1, right: true }],
       rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
     { kind: 'notes', lines: [`Stripe payment ${p.payment_intent}. Keep this receipt for your records.`] },

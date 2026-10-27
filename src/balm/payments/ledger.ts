@@ -4,7 +4,7 @@
 // unique, so a payment can never be matched to an invoice twice); what is not yet
 // posted is the patient's credit, applied when their next invoice is approved.
 import { externalCreditsForInvoice } from './account-credit'
-import { guard, id, insist, now, rows, stmt, type Data } from '../domain/model'
+import { guard, id, insist, now, one, rows, stmt, type Data } from '../domain/model'
 import { invoiceNumber } from '../domain/invoices'
 
 /** Dollars as typed ("65", "65.00", "$1,065.50") in cents. */
@@ -95,4 +95,40 @@ export async function creditStatements(db: D1Database, invoice: Data, insuranceH
   }
   if(!insuranceHeld)statements.push(...await externalCreditsForInvoice(db, invoice, open))
   return statements
+}
+
+// The same live money expressions power check-in choices and the atomic reservation.
+const pendingInvoiceSql = `(SELECT COALESCE(SUM(p.amount_cents),0) FROM bm_card_payments p WHERE p.invoice_id=i.id AND p.status IN ('open','processing','requires_action'))`
+const invoiceOwedSql = `MAX(0,i.amount_cents
+ -(SELECT COALESCE(SUM(p.amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id)
+ -(SELECT COALESCE(SUM(x.amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id)
+ -${pendingInvoiceSql})`
+const coinsuranceSql = `MAX(0,COALESCE((SELECT SUM(json_extract(j.value,'$.amountCents'))
+ FROM json_tree((SELECT d.detail FROM bm_cob_adjudications d WHERE d.invoice_id=i.id
+ ORDER BY CAST(json_extract(d.detail,'$.priority') AS INTEGER) DESC,d.recorded_at DESC,d.rowid DESC LIMIT 1)) j
+ WHERE j.type='object' AND json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.group')='PR'
+ AND CAST(json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.reason') AS TEXT)='2'),0)
+ -(SELECT COALESCE(SUM(p.amount_cents),0) FROM bm_invoice_payments p WHERE p.invoice_id=i.id AND p.reference NOT LIKE 'era:%' AND p.reference NOT LIKE 'payer:%')
+ -(SELECT COALESCE(SUM(x.amount_cents),0) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id AND x.source='manual')
+ -${pendingInvoiceSql})`
+const collectionSql = `SELECT i.id,i.number,${invoiceOwedSql} AS balance_cents,MIN(${invoiceOwedSql},${coinsuranceSql}) AS coinsurance_cents
+ FROM bm_invoices i JOIN bm_appointments a ON a.id=i.appointment_id JOIN bm_clients c ON c.id=i.client_id
+ WHERE i.client_id=? AND i.status='approved' AND a.status='attended' AND c.erased_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)`
+export async function checkInCollections(db: D1Database, clientId: string): Promise<Data[]> {
+ const { availablePlanBalance } = await import('./plan-balance')
+ const available = await availablePlanBalance(db,clientId)
+ return (await rows(db,collectionSql,clientId)).map(i=>({...i,balance_cents:Math.min(i.balance_cents,available),coinsurance_cents:Math.min(i.coinsurance_cents,available)})).filter(i=>i.balance_cents>=50)
+}
+export async function reserveCheckInCollection(db: D1Database, clientId: string, input: Data) {
+ const { availableBalanceSql } = await import('./plan-balance')
+ insist(['balance','coinsurance'].includes(input.purpose),'select_coinsurance_or_patient_balance')
+ insist(input.confirm===true || input.confirm==='on','confirm_the_selected_patient_amount')
+ const amount=parseDollars(input.amount), column=input.purpose==='coinsurance'?'coinsurance_cents':'balance_cents'
+ const option=(await checkInCollections(db,clientId)).find(i=>i.id===input.invoiceId)
+ insist(option && amount>=50 && amount<=option[column],'amount_exceeds_current_patient_responsibility',409)
+ return {amount,reservation:[
+  guard(db,`EXISTS(SELECT 1 FROM (${collectionSql}) WHERE id=? AND ${column}>=?)`,clientId,input.invoiceId,amount),
+  guard(db,`${availableBalanceSql}>=?`,clientId,clientId,clientId,clientId,amount),
+ ]}
 }

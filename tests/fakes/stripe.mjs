@@ -44,6 +44,8 @@ export function fakeProviders() {
       if (!s) return json({ error: { message: 'No such checkout session' } }, 404)
       return json({ ...s, payment_intent: s.payment_intent ? intents.get(s.payment_intent) : null })
     }
+    if(path==='/payment_intents/search')return json({data:[...intents.values()].filter(i=>body.query===`metadata['balm_payment']:'${i.metadata?.balm_payment}'`),has_more:false})
+    if(path.match(/^\/payment_intents\/pi_\w+\/cancel$/)){const i=intents.get(path.split('/')[2]);i.status='canceled';return json(i)}
     if (path === '/payment_intents') {
       if(body['allowed_payment_method_types[0]']==='card_present'){
         const id=next('pi'),intent={id,status:'requires_payment_method',amount:Number(body.amount),amount_received:0,currency:'usd',customer:body.customer,livemode:false,payment_method_types:['card_present'],metadata:{balm_payment:body['metadata[balm_payment]'],balm_client:body['metadata[balm_client]']},latest_charge:null};intents.set(id,intent);return json(intent)

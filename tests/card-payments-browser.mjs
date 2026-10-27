@@ -3,11 +3,14 @@ import { mkdir } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { harness } from './harness.mjs'
 import { clinic } from './clinic.mjs'
-import { cardPaymentsJourney } from './card-payments-journey.mjs'
+import { fakeProviders } from './fakes/stripe.mjs'
+import { cardPaymentsJourney, checkInResponsibilityJourney } from './card-payments-journey.mjs'
 
 const output=process.env.BALM_UI_SCREENSHOTS
 assert.ok(output,'Set a screenshot directory')
-assert.ok(process.env.STRIPE_SECRET_KEY?.includes('_test_'),'A held Stripe test key is required')
+const live=!!process.env.STRIPE_SECRET_KEY
+if(live)assert.ok(process.env.STRIPE_SECRET_KEY.includes('_test_'),'A held Stripe test key is required')
+const stripe=live?null:fakeProviders()
 await mkdir(output,{recursive:true})
 const provider=async request=>{
  const body=request.method==='POST'?await request.arrayBuffer():null
@@ -19,14 +22,14 @@ const provider=async request=>{
  }
  return response
 }
-const h=await harness({browserHttps:true,outbound:provider})
+const h=await harness({browserHttps:true,outbound:live?provider:stripe.handler})
 let browser,page
 try{
  await h.finishSetup()
  const {service,practitioners:[priya]}=await clinic(h),reception=await h.staff('Rosa','reception')
- await h.cmd('pay.stripe.connect',{secretKey:process.env.STRIPE_SECRET_KEY})
+ await h.cmd('pay.stripe.connect',{secretKey:live?process.env.STRIPE_SECRET_KEY:'synthetic-balm-1'})
  const client=await h.cmd('client.save',{firstName:'Ava',lastName:'Ng',dateOfBirth:'1992-06-15',email:'ava@client.example'})
- browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})
+ browser=await chromium.launch({headless:true,...(process.env.BALM_CHROMIUM_PATH?{executablePath:process.env.BALM_CHROMIUM_PATH}:{}),args:['--no-sandbox','--use-mock-keychain','--password-store=basic']})
  const context=await browser.newContext({ignoreHTTPSErrors:true})
  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
  await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
@@ -63,7 +66,7 @@ try{
   }
  }
  let locationId
- {
+ if(live){
   const r=await fetch('https://api.stripe.com/v1/terminal/locations',{method:'POST',headers:{authorization:'Bearer '+process.env.STRIPE_SECRET_KEY,'content-type':'application/x-www-form-urlencoded','stripe-version':'2026-09-30.endive'},body:new URLSearchParams({display_name:'Synthetic Balm clinic','address[line1]':'123 Test Street','address[city]':'San Francisco','address[state]':'CA','address[postal_code]':'94103','address[country]':'US'})})
   const v=await r.json();assert.ok(r.ok,v.error?.message);locationId=v.id
  }
@@ -106,7 +109,22 @@ try{
  }
  const cardSaved=async(source,setup)=>console.log(JSON.stringify({proof:source,checkout:setup.id,setupIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(setup.card_id).first()).setup_intent,card:setup.card_id}))
  const refunded=async({payment,approved,setup,portalSetup})=>console.log(JSON.stringify({proof:'cards-and-refund',account:payment.stripe_account_id,intakeSetup:setup.id,intakeIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(setup.card_id).first()).setup_intent,portalSetup:portalSetup.id,portalIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(portalSetup.card_id).first()).setup_intent,charge:payment.payment_intent,originalCharge:approved.charge_id,refund:approved.provider_refund_id}))
+ const collectResponsibility=async(input,day,cookie,method)=>{
+  await signIn(cookie);await page.goto(h.origin+'/app?date='+day)
+  const name=method==='saved'?'pay.checkin.collect':'pay.terminal.collect'
+  const form=page.locator('form[action*="'+name+'"]').filter({has:page.locator('input[name="invoiceId"][value="'+input.invoiceId+'"]')})
+  await form.evaluate(el=>{for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true})
+  await form.locator('[name=purpose]').selectOption(input.purpose);await form.locator('[name=amount]').fill(input.amount);await form.locator('[name=confirm]').check()
+  const id=await form.locator('[name=paymentId]').inputValue()
+  await submit(form)
+  return h.db.prepare('SELECT * FROM bm_card_payments WHERE id=?').bind(id).first()
+ }
+ if(!live){
+  const result=await checkInResponsibilityJourney({h,stripe,service,priya,reception},{screen,collectResponsibility})
+  console.log('PASS PAY-002 patient responsibility: saved coinsurance, Terminal balance, exact ledger, patient receipts and icon tooltips at 1440 and 390')
+ }else{
  const result=await cardPaymentsJourney({h,service,priya,reception,client},{screen,checkout,startCard,locationId,checkin,collect,refunded,cardSaved})
  console.log('PASS PAY-002 at 1440 and 390: intake, portal, approval, ledger, reports, Terminal pending and paid; named icon tooltips checked')
  console.log(JSON.stringify({account:result.payment.stripe_account_id,intakeSetup:result.setup.id,intakeIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.setup.card_id).first()).setup_intent,portalSetup:result.portalSetup.id,portalIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.portalSetup.card_id).first()).setup_intent,originalCharge:result.refund.charge_id,charge:result.payment.payment_intent,refund:result.refund.provider_refund_id,reader:result.terminal.reader_id,terminalIntent:result.terminal.payment_intent,terminalReceipt:result.terminal.receipt_number}))
+ }
 }catch(error){if(page)await page.screenshot({path:output+'/failed.png',fullPage:true}).catch(()=>{});throw error}finally{await browser?.close();await h.close()}
