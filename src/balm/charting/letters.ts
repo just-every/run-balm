@@ -51,6 +51,7 @@ export async function deliverLetter(db: D1Database, who: Actor, input: Data) {
   const key=id(),at=now()
   await commit(db,who,[authorFence(db,who),documentScope(db,who,letter.client_id),guard(db,delivery,letter.id),guard(db,'EXISTS(SELECT 1 FROM bm_clinical_letters WHERE id=? AND sha256=?)',letter.id,letter.sha256),
     stmt(db,`INSERT INTO bm_chart_documents(id,client_id,title,document_type,document_date,search_text,filename,mime,byte_length,content_base64,sha256,created_at,created_by) VALUES(?,?,?,'other',?,?,?,'application/pdf',?,?,?,?,?)`,key,letter.client_id,'Progress letter',at.slice(0,10),letter.body,'progress-letter-'+key+'.pdf',letter.byte_length,letter.content_base64,letter.sha256,at,who.email),
+    ...(!letter.episode_id?[stmt(db,"DELETE FROM bm_episode_records WHERE record_kind='document' AND record_id=?",key)]:[]),
     ...(letter.episode_id?[stmt(db,`INSERT INTO bm_episode_records(record_kind,record_id,client_id,episode_id,assigned_at,assigned_by) VALUES('document',?,?,?,?,?) ON CONFLICT(record_kind,record_id) DO UPDATE SET episode_id=excluded.episode_id`,key,letter.client_id,letter.episode_id,at,who.email)]:[]),
     stmt(db,`INSERT INTO bm_letter_deliveries(letter_id,document_id,client_id,channel,delivered_at,delivered_by,sha256) VALUES(?,?,?,'portal',?,?,?)`,letter.id,key,letter.client_id,at,who.email,letter.sha256),audit(db,who,'letter.portal_delivered',letter.client_id,letter.id)])
   return {id:letter.id,documentId:key,clientId:letter.client_id,sha256:letter.sha256,channel:'portal'}

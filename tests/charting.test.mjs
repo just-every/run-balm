@@ -880,4 +880,4 @@ test('a care-team or emergency reader gets the patient’s name and the episodes
 test('CHART-011: clinician reviews and delivers a fixed progress original with episode history and reason-audited emergency reads', () => run(async h => {
  const {letterJourney}=await import('./clinical-letter-journey.mjs')
  await letterJourney(h)
-}))
+}, {browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
