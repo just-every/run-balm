@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "ed6f601c0ed9be71e0f6b8b9c7dfb6038365577218221b4710af23f5701086fe",
+      "sha256": "cdd285ec1350ce474e4480a505e3e29e203d9b191ac056d35fc1d56149d1ee3d",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "d820612ea8a5d43ca72d46546c72efee096789e09be9f3f6592d6eda159757c3",
+      "sha256": "2a611bf0d81c4dc1dfdb8c26cc46f8901ef8c7f81be3fca2e6d238f00b630995",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "9fa973fb4328fcaa6866a7fb56b9b5ec0cfaefea4e573b77f5f134d9e6d7559c",
+      "sha256": "ee2a8a884a616f1b6266f921a2a4cb6db2b3d1c5a530b14b0b2b9c9ed27c36ef",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -258,7 +258,7 @@
       "executable": false
     },
     "docs/payments.md": {
-      "sha256": "1302ac7a53f691ac05545aa0a0ec92e7bd9a91be8e6fb16fb95cb85690f7e17f",
+      "sha256": "7bf29b480f8c68f2a9ebbbfd396fc8c67f1d6e506a55162785b63e1b4d75ad1a",
       "executable": false
     },
     "docs/people-and-audit.md": {
@@ -783,6 +783,10 @@
     },
     "migrations/core/0119_balm_clinical_letters.sql": {
       "sha256": "6d4586f2b1970cb90f832bb0be1e9419148b6b8391a2267d78f7b9696788abcc",
+      "executable": false
+    },
+    "migrations/core/0120_balm_checkin_collection.sql": {
+      "sha256": "376247277faf0cfdc2c8174060826cd7ffbad09be9b132b1501a1029a97aa385",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -2498,7 +2502,7 @@
       "executable": false
     },
     "src/balm/payments/ledger.ts": {
-      "sha256": "ad0aca6825e6ab89c51b7a23b6eed5478336e2344c37b783497595599d16af1c",
+      "sha256": "c1e381a5cb2202c605716d326c95b6d109739f2a0405704d6649ff52b5041749",
       "executable": false
     },
     "src/balm/payments/links.ts": {
@@ -5366,7 +5370,7 @@
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
-      "sha256": "470b2fe131867b0df8c3c7950af09cd3244fb85900f8a108e596ed8945157527",
+      "sha256": "86badd8d3bad0275933c7feba0d8359bdb664d63f13f17680f5da0c576eab9f3",
       "executable": false
     },
     "tests/card-payments-journey.mjs": {

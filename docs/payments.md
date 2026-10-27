@@ -32,6 +32,16 @@ On the **Schedule**, a visit booked for today shows **Check in and charge $30.00
 
 The copay waits on the visit until its invoice is approved, and then counts toward that invoice.
 
+## Coinsurance and patient responsibility at check-in
+
+After checking the patient in, expand **Collect patient responsibility** for the chosen invoice. Choose **Adjudicated coinsurance** or **Outstanding patient responsibility**, enter the exact dollar amount, confirm it with the patient separately from the configured copay, then choose **Collect on saved card** or **Collect on terminal**. Only approved invoices for attended visits appear. Coinsurance comes from the final recorded payer adjudication; a payer hold makes that invoice unavailable.
+
+The available amount deducts posted payments, adjustments, patient credit and pending collections, including collections started from another screen. A competing request cannot reserve the same remaining amount twice. The original payment retains its selected purpose, invoice, visit and Stripe identity. These check-in payments apply only to that selected invoice; any amount no longer applicable after a later change remains patient credit for review.
+
+A saved-card decline stays visible without another charge on replay. An uncertain saved-card or Terminal send stays reserved: **Check Stripe status** reads the original payment, including recovery of a lost intent response. It never starts another charge. Terminal cancellation explicitly cancels the original Stripe intent before releasing its reservation. The patient’s signed-in portal provides each fixed original receipt, and the ledger and financial report include the same cents.
+
+The software paths have network-edge proof. Live qualification of these additions and physical paired-reader operation remain outstanding.
+
 ## Approved Stripe refunds
 
 In the patient’s file, open **Stripe refunds**, choose the original succeeded payment, enter the exact refund amount and reason, and select **Prepare refund for approval**. Preparation moves no money. The owner or an assigned biller reviews the original Stripe charge and current patient and practice account, then confirms **Approve and refund**. Balm checks the original processor facts again before sending and retains the approver and exact approved action.
