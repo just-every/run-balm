@@ -445,5 +445,12 @@ test('COMM-003: live authority changes refuse call writes and search reads befor
   assert.equal(refused.status,409)
   assert.ok(!refused.text.includes(c.call.disposition)&&!refused.text.includes(recorded.id),'refused read exposes neither record nor snippet')
   assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action LIKE 'communication.%'").first()).n,before,'failed read releases no results')
+  const callSession=await h.signIn(c.priya.email)
+  await h.cmd('call.log',c.call,callSession,409,{'x-synthetic-session-revoke':c.priya.email})
+  assert.deepEqual(await h.db.prepare('SELECT COUNT(*) n FROM bm_calls').first(),count,'session revocation fences call writes')
+  const readSession=await h.signIn(c.priya.email)
+  const revokedRead=await h.send('/api/balm/clients/'+c.patient.id+'/communications?communicationQuery=Shoulder',undefined,readSession,{'x-synthetic-session-revoke':c.priya.email})
+  assert.equal(revokedRead.status,409)
+  assert.ok(!revokedRead.text.includes(c.call.disposition),'session revocation fences clinical search results')
  } finally {await h.close()}
 })
