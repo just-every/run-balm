@@ -59,14 +59,15 @@ export async function outcomeReport(db: D1Database, who: Actor, input: Data) {
     const first = list[0], eligible = list.filter(v => Date.parse(v.start_at) < Date.parse(range.end))
     for (const key of present) {
       const groupKey = JSON.stringify([first.practitioner_id,key])
-      const row = groups.get(groupKey) ?? { practitionerId:first.practitioner_id, practitioner:practitioners.find(p => p.id === first.practitioner_id)?.name ?? 'Former practitioner', ...variants.get(key), episodes:0, paired:0, missingBaseline:0, missingFollowUp:0, missingBoth:0, baselineTotal:0, followUpTotal:0, changeTotal:0 }
+      const row = groups.get(groupKey) ?? { practitionerId:first.practitioner_id, practitioner:practitioners.find(p => p.id === first.practitioner_id)?.name ?? 'Former practitioner', ...variants.get(key), episodes:0, paired:0, unversionedPairs:0, missingBaseline:0, missingFollowUp:0, missingBoth:0, baselineTotal:0, followUpTotal:0, changeTotal:0 }
       const pair = outcomePair(eligible.map(v => ({ ...v, points:(points.get(v.id) ?? []).filter(p => p.key === key) })))
       row.episodes++
       if (pair.baseline === null) row.missingBaseline++
       if (pair.followUp === null) row.missingFollowUp++
       if (pair.baseline === null && pair.followUp === null) row.missingBoth++
       if (pair.baseline !== null && pair.followUp !== null) {
-        row.paired++; row.baselineTotal += pair.baseline; row.followUpTotal += pair.followUp; row.changeTotal += pair.followUp - pair.baseline
+        if (row.source === 'Signed chart') row.unversionedPairs++
+        else { row.paired++; row.baselineTotal += pair.baseline; row.followUpTotal += pair.followUp; row.changeTotal += pair.followUp - pair.baseline }
       }
       groups.set(groupKey,row)
     }
@@ -76,10 +77,11 @@ export async function outcomeReport(db: D1Database, who: Actor, input: Data) {
     .sort((a:Data,b:Data) => a.practitioner.localeCompare(b.practitioner) || a.instrument.localeCompare(b.instrument) || JSON.stringify(a).localeCompare(JSON.stringify(b)))
   await commit(db,who,[audit(db,who,'report.outcomes_read',null,null,JSON.stringify({from:range.from,to:range.to,practitionerId,diagnosis,payerId})),
     ...[...new Set(cohort.map(list => String(list[0].client_id)))].map(clientId => audit(db,who,'report.outcomes_read',clientId))])
-  return {from:range.from,to:range.to,timeZone:range.zone,practitionerId,diagnosis,payerId,practitioners,payers,diagnoses,episodes:cohort.length,rows:result}
+  const episodesWithoutScores = cohort.filter(list => !list.some(v => Date.parse(v.start_at) < Date.parse(range.end) && points.get(v.id)?.length)).length
+  return {from:range.from,to:range.to,timeZone:range.zone,practitionerId,diagnosis,payerId,practitioners,payers,diagnoses,episodes:cohort.length,episodesWithoutScores,rows:result}
 }
 
 export function outcomeCsv(report: Awaited<ReturnType<typeof outcomeReport>>) {
-  const columns = ['practitioner','source','instrument','instrumentVersion','scoringVersion','side','unit','direction','episodes','paired','missingBaseline','missingFollowUp','missingBoth','baselineMean','followUpMean','meanChange']
+  const columns = ['practitioner','source','instrument','instrumentVersion','scoringVersion','side','unit','direction','episodes','paired','missingBaseline','missingFollowUp','missingBoth','baselineMean','followUpMean','meanChange','unversionedPairs']
   return [columns,...report.rows.map(r => columns.map(k => (r as Data)[k] ?? ''))].map(row => row.map(csvCell).join(',')).join('\r\n')+'\r\n'
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {clinic,slots} from './clinic.mjs'
+import {clinic,slots,pastVisit} from './clinic.mjs'
 
 export async function outcomeReportFixture(h) {
  await h.finishSetup()
@@ -44,7 +44,7 @@ export async function outcomeReportFixture(h) {
  // Repeated diagnoses and secondary coverage must never multiply an episode.
  await h.cmd('insurance.policy.save',{clientId:episodes[0].client.id,payerId:payer.id,memberId:'synthetic-balm-secondary',priority:2,relationship:'18',patientSex:'U',address:'100 Synthetic Street',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2000-01-01',endsOn:'2099-12-31'})
  const query='from='+date(-1)+'&to='+date(5)
- return {priya,sam,payer,episodes,query,record,publish,date}
+ return {service,priya,sam,payer,episodes,query,record,publish,date}
 }
 
 export async function assertOutcomeReport(h,c) {
@@ -52,6 +52,7 @@ export async function assertOutcomeReport(h,c) {
  const report=await read(),row=id=>report.rows.find(r=>r.practitionerId===id)
  const counts=r=>[r.episodes,r.paired,r.missingBaseline,r.missingFollowUp,r.missingBoth,r.baselineMean,r.followUpMean,r.meanChange]
  assert.equal(report.episodes,20);assert.equal(report.rows.length,2)
+ assert.equal(report.episodesWithoutScores,2)
  assert.deepEqual(counts(row(c.priya.id)),[10,7,2,2,1,40,60,20])
  assert.deepEqual(counts(row(c.sam.id)),[10,8,1,2,1,20,40,20])
  assert.deepEqual((await read('&diagnosis=M25.561&payerId='+c.payer.id)).rows.map(counts),[[10,7,2,2,1,40,60,20]])
@@ -62,8 +63,8 @@ export async function assertOutcomeReport(h,c) {
  assert.equal(csv.status,200);assert.match(csv.headers.get('content-type'),/^text\/csv/)
  const lines=csv.text.trim().split('\r\n').map(line=>[...line.matchAll(/"((?:[^"]|"")*)"/g)].map(m=>m[1].replaceAll('""','"')))
  assert.equal(lines.length,3)
- assert.deepEqual(lines[1].slice(8),['10','7','2','2','1','40','60','20'])
- assert.deepEqual(lines[2].slice(8),['10','8','1','2','1','20','40','20'])
+ assert.deepEqual(lines[1].slice(8),['10','7','2','2','1','40','60','20','0'])
+ assert.deepEqual(lines[2].slice(8),['10','8','1','2','1','20','40','20','0'])
  assert.ok(!JSON.stringify(report).includes('Outcome 0'),'no patient names in report')
  const audit=await h.db.prepare("SELECT client_id,detail FROM bm_audit WHERE action='report.outcomes_read'").all()
  assert.equal(new Set(audit.results.filter(r=>r.client_id).map(r=>r.client_id)).size,20)
@@ -86,5 +87,18 @@ export async function assertOutcomeReport(h,c) {
  const revised=separated.rows.find(r=>r.instrumentVersion!==row(c.priya.id).instrumentVersion)
  assert.deepEqual(counts(revised),[10,0,10,9,9,null,null,null])
  assert.deepEqual(counts(separated.rows.find(r=>r.instrumentVersion===row(c.priya.id).instrumentVersion)),[10,7,2,2,1,40,60,20])
+ // Signed chart measurements have no instrument or scoring version. Their
+ // presence is counted, but they cannot silently enter compatible means.
+ for(const [i,value] of [[0,10],[1,90]]){
+  const appointmentId=await pastVisit(h,c.episodes[0].client.id,c.priya,c.service.id,h.owner,i?2:4)
+  await h.cmd('appointment.attend',{id:appointmentId})
+  const note=await h.cmd('note.write',{clientId:c.episodes[0].client.id,appointmentId,body:'Synthetic score observation'},c.priya.cookie)
+  await h.cmd('note.measure',{noteId:note.id,kind:'score',name:'LEFS',value,unit:'points'},c.priya.cookie)
+  await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya',credentials:'PT',attest:true},c.priya.cookie)
+ }
+ const chartReport=await h.send('/api/balm/reports/outcomes?from='+c.date(-5)+'&to='+c.date(5),undefined,h.owner)
+ assert.equal(chartReport.status,200)
+ const chart=chartReport.value.rows.find(r=>r.source==='Signed chart')
+ assert.equal(chart.unversionedPairs,1);assert.equal(chart.paired,0);assert.equal(chart.meanChange,null)
  return report
 }

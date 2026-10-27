@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "caa8c168cf9ad08ffc319f82e5355d04e5bcd63d9d129329aea3b54bb8d0b580",
+      "sha256": "d9171c8fd6b1aece7eaebe74d78488320ddb2e80af3fd595d5cfa60a85606335",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "1f3978d0eb7a21ee17388f6103698174873e8f5e7599068e4fcdcd7a9b8bd08c",
+      "sha256": "28f728160d4aa8be597871fc69a7cfa9eaa1484885a7ee9741d2f09b87ea9b86",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "59378b76262807614e3c0782224262021f038350ed2c89d2702d04a8da51ff40",
+      "sha256": "f0fdcb25a8e25942d7dbb6d455b30dab99031cf71da621b3471d66877b52de92",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -2662,7 +2662,7 @@
       "executable": false
     },
     "src/balm/reports/outcomes.ts": {
-      "sha256": "e8e23f1d12ab7f385c2fe81522149b9ef6beb4830de81f157781cfab12c8d475",
+      "sha256": "8dc39580ae6216595c2fef0fcd1ea44930ad517fc46d8829e8b019dd5f554c77",
       "executable": false
     },
     "src/balm/reports/range.ts": {
@@ -3150,7 +3150,7 @@
       "executable": false
     },
     "src/balm/ui/reports.ts": {
-      "sha256": "54909c5db32e8c347dc745293384d810e92c61a8f6a847dc85cba5a00e622640",
+      "sha256": "578136381fb409743d3545a9a9d8390ffbaeedcef925d7639633a25ffdd2fa6d",
       "executable": false
     },
     "src/balm/ui/retail.ts": {
@@ -5682,11 +5682,11 @@
       "executable": false
     },
     "tests/outcome-report-browser.mjs": {
-      "sha256": "f2150cc0ac9dc8f6e92aa3b3860ac2336a7c1e3c4f499c82171482c208f0bdd3",
+      "sha256": "38ce5f84c22c18519e2f3b8c2293f456b39b97e54157e04c5ed5b26819e31875",
       "executable": false
     },
     "tests/outcome-report-journey.mjs": {
-      "sha256": "b989806c838d7a704d73a955835ca17b66db846dd16ad1a6f7939ddb368f2d06",
+      "sha256": "2c7183f25cf081fd0b30fb93a35096487f5d6476d9e978a3690a485b48509ab0",
       "executable": false
     },
     "tests/payer-estimate-journey.mjs": {
@@ -5802,7 +5802,7 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "25e6bb168bb1c2acd77d9b099131f329eae1ae1da73177c18dff0deb35b25a97",
+      "sha256": "03d5d12f39519a4a247b1d54ec5eda232d14e53c133ed8b873e6f25a361c4a10",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {
