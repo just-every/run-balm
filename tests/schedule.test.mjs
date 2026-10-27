@@ -706,5 +706,10 @@ test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation 
   await h.send(replacement.location)
   assert.equal((await h.db.prepare("SELECT COUNT(*) AS n FROM bm_card_payments WHERE status='succeeded'").first()).n,1)
   assert.ok((await h.send('/app/clinic',undefined,h.owner)).text.includes('Booking payment review'))
+  // Age only this fixture's attempt clock; the same patient keeps authenticated receipt access.
+  await h.db.prepare('UPDATE bm_booking_payments SET attempted_at=? WHERE id=?').bind(new Date(Date.now()-25*3600000).toISOString(),review.id).run()
+  assert.equal((await h.send(replacement.location)).status,410)
+  assert.equal((await h.form(replacement.location,{})).status,410)
+  assert.equal((await h.send('/portal/receipts/'+payment.id+'.pdf',undefined,cookie)).status,200)
  }finally{await h.close()}
 })

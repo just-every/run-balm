@@ -127,6 +127,8 @@ export async function bookingPaymentResponse(request:Request,env:Bindings):Promi
  if(!await takeAddressRate(env,request,'payment'))return html('<h1>Too many requests</h1>',429)
  const b=/^[A-Za-z0-9_-]{32}$/.test(token)?await one(db,'SELECT b.* FROM bm_booking_payments b JOIN bm_booking_payment_tokens t ON t.id=b.id WHERE t.token_hash=?',await sha256(token)):null
  if(!b)return html('<h1>This booking link is unavailable</h1>',404)
+ const tokenExpiry=b.attempted_at?Date.parse(b.attempted_at)+24*3600_000:Date.parse(b.expires_at)
+ if(Date.now()>=tokenExpiry)return html('<h1>This booking link has expired</h1><p>Open your signed-in patient portal or contact the clinic to check the original payment.</p><a href="/portal">Open patient portal</a>',410)
  const client=await one(db,'SELECT id,email FROM bm_clients WHERE id=? AND erased_at IS NULL',b.client_id)
  if(!client)return html('<h1>This booking link is unavailable</h1>',404)
  if(!await takePatientRate(env,'payment',client as any))return html('<h1>Too many requests</h1>',429)
