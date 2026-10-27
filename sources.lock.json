@@ -170,7 +170,7 @@
       "executable": false
     },
     "docs/ACCESS-MATRIX.md": {
-      "sha256": "5a690f3a787a3f97025d39679d5ea9999b6b46d1bd1c6611c83f929fafab84de",
+      "sha256": "c84c1e80a50ea2fcf26f384df110de2aeb38291691b6a02fc81a9c9dd66ba342",
       "executable": false
     },
     "docs/ACCOUNTING.md": {
@@ -1350,7 +1350,7 @@
       "executable": false
     },
     "README.md": {
-      "sha256": "d9bacfdec0ba99735bcede2947e0227175594784f54b80e1b67f85f736f47aec",
+      "sha256": "5818fd92a533d531e2f65de43ae1c3c350c9bac7c05bf5e2cb09c365055b95b1",
       "executable": false
     },
     "release-history/0.1.0.json": {

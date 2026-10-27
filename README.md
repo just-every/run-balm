@@ -111,6 +111,8 @@ pnpm run typecheck
 rer verify
 ```
 
+After intentional source edits, refresh the edition source lock with `node scripts/edition-authoring/cli.mjs lock`, then check it with `node scripts/edition-authoring/cli.mjs check`. Stage new source files before refreshing the lock so they are included. Regenerate the lock last after resolving a merge.
+
 The tests run the real Worker on workerd and D1 through its public doors (sign-in, booking, intake links, the command API and the agent door) plus the public `rer export`/`rer import` CLI. Builds and deploys run no tests. The run site (`rer build --site`: the homepage, `/run` and the docs built from `docs/*.md`) is in `src/site`; the app's screens use Base's theme until their design round.
 
 ## Release listing
