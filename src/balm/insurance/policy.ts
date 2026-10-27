@@ -4,6 +4,7 @@ export const stateCode = (v: unknown) => { const s = text(v, 'state', 2).toUpper
 export const postal = (v: unknown) => { const s = text(v, 'postal_code', 10).replace(/-/g, ''); insist(/^\d{5}(\d{4})?$/.test(s), 'invalid_postal_code'); return s }
 const sex = (v: unknown) => { insist(['M','F','U'].includes(String(v)), 'invalid_sex'); return String(v) }
 const columns = ['id','client_id','payer_id','member_id','group_number','plan_name','relationship','subscriber_first','subscriber_last','subscriber_dob','subscriber_sex','patient_sex','address','city','state','postal_code','starts_on','ends_on','priority']
+export { columns as policyColumns }
 
 /** Shared claim-field validation, independent of the staff or private intake door. */
 export function policyRecord(client: Data, input: Data, key: string = id()) {

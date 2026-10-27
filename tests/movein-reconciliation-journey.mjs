@@ -159,9 +159,10 @@ export async function reconciliationClaimCarry(h, reception) {
 
 export const cutoverAuthorizations = (payerId, practitionerId = '') => ({ provider: 'cliniko', files: [
   { kind: 'patients', name: 'authorization-patients.csv', csv: 'Source ID,First Name,Last Name,Date of Birth\nsynthetic-balm-630,Authorization,Visits,1980-01-15\nsynthetic-balm-631,Authorization,Units,1981-01-15' },
-  { kind: 'authorizations', name: 'authorization-carry.csv', csv: 'Source ID,Patient ID,Policy ID,Payer ID,Member ID,Policy Starts On,Policy Ends On,Number,Starts On,Ends On,Cutover On,Allowance Kind,Allowance,Used,Units Per Visit,CPT Scope,Practitioner ID,Booking Action,Patient Sex,Address,City,State,Postal Code\n' +
-    `synthetic-balm-632,synthetic-balm-630,synthetic-balm-634,${payerId},synthetic-balm-636,2020-01-01,2099-12-31,synthetic-balm-638,2026-01-01,2099-12-31,2026-01-15,visits,3,1,,,${practitionerId},block,F,1 Example St,Austin,TX,78701\n` +
-    `synthetic-balm-633,synthetic-balm-631,synthetic-balm-635,${payerId},synthetic-balm-637,2020-01-01,2099-12-31,synthetic-balm-639,2026-01-01,2099-12-31,2026-01-15,units,10,4,3,97110,${practitionerId},block,M,2 Example St,Austin,TX,78701` },
+  { kind: 'authorizations', name: 'authorization-carry.csv', csv: 'Source ID,Patient ID,Policy ID,Payer ID,Member ID,Policy Starts On,Policy Ends On,Number,Starts On,Ends On,Cutover On,Allowance Kind,Allowance,Used,Units Per Visit,CPT Scope,Practitioner ID,Booking Action,Patient Sex,Address,City,State,Postal Code,Relationship,Subscriber First,Subscriber Last,Subscriber DOB,Subscriber Sex,Group Number,Plan Name,Priority\n' +
+    `synthetic-balm-632,synthetic-balm-630,synthetic-balm-634,${payerId},synthetic-balm-636,2020-01-01,2099-12-31,synthetic-balm-638,2026-01-01,2099-12-31,2026-01-15,visits,3,1,,,${practitionerId},block,F,1 Example St,Austin,TX,78701,18,,,,,synthetic-balm-650,Source primary plan,1\n` +
+    `synthetic-balm-633,synthetic-balm-631,synthetic-balm-635,${payerId},synthetic-balm-637,2020-01-01,2099-12-31,synthetic-balm-639,2026-01-01,2099-12-31,2026-01-15,units,10,4,3,97110,${practitionerId},block,M,2 Example St,Austin,TX,78701,19,Synthetic,Subscriber,1970-01-15,F,synthetic-balm-651,Source family plan,1\n` +
+    `synthetic-balm-642,synthetic-balm-630,synthetic-balm-634,${payerId},synthetic-balm-636,2020-01-01,2099-12-31,synthetic-balm-644,2025-01-01,2025-12-31,2025-01-15,visits,10,8,,,${practitionerId},block,F,1 Example St,Austin,TX,78701,18,,,,,synthetic-balm-650,Source primary plan,1` },
 ] })
 
 export async function reconciliationAuthorizationCarry(h, therapist, service, reception) {
@@ -170,7 +171,7 @@ export async function reconciliationAuthorizationCarry(h, therapist, service, re
   input.files.push({ kind: 'appointments', name: 'authorization-history.csv', csv: 'Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-640,synthetic-balm-630,2026-01-14T09:00:00+10:00,2026-01-14T09:45:00+10:00,attended\nsynthetic-balm-641,synthetic-balm-630,2026-01-16T09:00:00+10:00,2026-01-16T09:45:00+10:00,attended' })
   const preview = await h.cmd('movein.prepare', input)
   assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
-  assert.equal(preview.counts.authorizations, 2)
+  assert.equal(preview.counts.authorizations, 3)
   assert.equal(preview.counts.insurance, 2)
   assert.deepEqual(preview.reconciliation.mismatches, [])
   const approval = p => ({ fingerprint: p.fingerprint, mappingApproval: p.mappingDigest, cutoverApproval: p.fingerprint, acceptanceReason: 'Checked source allowances, prior usage, policy identity and cutover date against original payer records.' })
@@ -193,11 +194,15 @@ export async function reconciliationAuthorizationCarry(h, therapist, service, re
   assert.ok(attempts.some(r => r.status === 200))
   assert.ok(attempts.every(r => r.status === 200 || r.status === 409))
   const applied = attempts.find(r => r.status === 200).value.result
-  assert.deepEqual(applied.records.map(r => r.kind).sort(), ['appointment', 'appointment', 'authorization', 'authorization', 'patient', 'patient', 'policy', 'policy'])
+  assert.deepEqual(applied.records.map(r => r.kind).sort(), ['appointment', 'appointment', 'authorization', 'authorization', 'authorization', 'patient', 'patient', 'policy', 'policy'])
   const clients = current.patients.map(p => p.id)
   const file = async index => (await h.send('/api/balm/clients/' + clients[index], undefined, h.owner)).value
   let visits = (await file(0)).insurance.authorizations[0], units = (await file(1)).insurance.authorizations[0]
   assert.deepEqual([visits.number, visits.visits, visits.imported_used, visits.used_visits, visits.remaining_allowance, visits.booking_action], ['synthetic-balm-638', 3, 1, 2, 1, 'block'])
+  assert.equal((await file(0)).insurance.policies.length, 1, 'two source authorizations reuse the same exact native policy')
+  assert.equal((await file(0)).insurance.authorizations.length, 2)
+  const unitPolicy = (await file(1)).insurance.policies[0]
+  assert.deepEqual([unitPolicy.relationship, unitPolicy.subscriber_first, unitPolicy.subscriber_last, unitPolicy.subscriber_dob, unitPolicy.subscriber_sex, unitPolicy.plan_name, unitPolicy.priority], ['19', 'Synthetic', 'Subscriber', '1970-01-15', 'F', 'Source family plan', 1])
   assert.deepEqual([units.units, units.imported_used, units.used_units, units.remaining_allowance, units.units_per_visit, JSON.parse(units.cpt_scope), units.practitioner_id], [10, 4, 4, 6, 3, ['97110'], therapist.id])
   const booking = { clientId: clients[0], practitionerId: therapist.id, serviceId: service.id, date: new Date(Date.now() + 2 * 86400_000 + 10 * 3600_000).toISOString().slice(0, 10), time: '10:00', acknowledgeInsurance: true }
   const booked = { appointmentId: await pastVisit(h, clients[0], therapist, service.id, h.owner, 2, { acknowledgeInsurance: true }) }

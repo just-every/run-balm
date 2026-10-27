@@ -25,7 +25,18 @@ export const headerKey = (text: string) => text.trim().toLowerCase().replace(/[_
 
 export const claimColumns: Column[] = [source, patient, field('payerId', ['Payer ID'], true), field('patientControl', ['Patient control'], true), field('payerControl', ['Payer control']), field('serviceDate', ['Service date'], true), field('billed', ['Billed'], true), field('balance', ['Balance'], true), field('status', ['Status'], true)]
 
-export const authorizationColumns: Column[] = [source, patient, ...['Policy ID', 'Payer ID', 'Member ID', 'Policy Starts On', 'Policy Ends On', 'Starts On', 'Ends On', 'Number', 'Cutover On', 'Allowance Kind', 'Allowance', 'Used', 'Units Per Visit', 'CPT Scope', 'Practitioner ID', 'Booking Action', 'Patient Sex', 'Address', 'City', 'State', 'Postal Code', 'Relationship', 'Subscriber First', 'Subscriber Last', 'Subscriber DOB', 'Subscriber Sex', 'Group Number'].map(name => field(headerKey(name), [name], ['Policy ID', 'Payer ID', 'Member ID', 'Policy Starts On', 'Policy Ends On', 'Starts On', 'Ends On', 'Number', 'Cutover On', 'Allowance Kind', 'Allowance', 'Used', 'Booking Action', 'Patient Sex', 'Address', 'City', 'State', 'Postal Code'].includes(name)))]
+const authorizationFields = [
+  'Policy ID', 'Payer ID', 'Member ID', 'Policy Starts On', 'Policy Ends On', 'Starts On', 'Ends On', 'Number', 'Cutover On',
+  'Allowance Kind', 'Allowance', 'Used', 'Units Per Visit', 'CPT Scope', 'Practitioner ID', 'Booking Action',
+  'Patient Sex', 'Address', 'City', 'State', 'Postal Code', 'Relationship', 'Subscriber First', 'Subscriber Last',
+  'Subscriber DOB', 'Subscriber Sex', 'Group Number', 'Plan Name', 'Priority',
+]
+const requiredAuthorizationFields = new Set([
+  'Policy ID', 'Payer ID', 'Member ID', 'Policy Starts On', 'Starts On', 'Ends On', 'Number', 'Cutover On',
+  'Allowance Kind', 'Allowance', 'Used', 'Booking Action', 'Patient Sex', 'Address', 'City', 'State', 'Postal Code',
+])
+export const authorizationColumns: Column[] = [source, patient, ...authorizationFields.map(name => field(headerKey(name), [name], requiredAuthorizationFields.has(name)))]
+
 
 /** The proposal and the importer share the same header decisions. */
 export function columnsFor(provider: Provider, kind: FileKind, headers: string[]) {

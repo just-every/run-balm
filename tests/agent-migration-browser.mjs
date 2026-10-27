@@ -80,8 +80,8 @@ try {
     await page.getByRole('button', { name: 'Preview move-in', exact: true }).click()
     await page.getByRole('heading', { name: 'Proposed field mapping', exact: true }).waitFor()
     if (width === 1440) {
-      assert.equal(await page.getByText('Authorization carried', { exact: true }).count(), 2)
-      assert.deepEqual(await page.locator('tr').filter({ has: page.locator('input[name=expectedAuthorizations]') }).locator('td').last().textContent(), '2')
+      assert.equal(await page.getByText('Authorization carried', { exact: true }).count(), 3)
+      assert.deepEqual(await page.locator('tr').filter({ has: page.locator('input[name=expectedAuthorizations]') }).locator('td').last().textContent(), '3')
       assert.match(await page.locator('tr').filter({ has: page.getByText('Authorization carried', { exact: true }) }).first().textContent(), /2 visits at cutover/)
     }
   } }])
@@ -95,7 +95,7 @@ try {
     await page.locator('textarea[name=acceptanceReason]').fill('Reviewed original policy coverage, authorization allowances, prior usage and source cutover date.')
     await page.getByRole('button', { name: 'Apply move-in', exact: true }).click()
     await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
-    if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Carried authorizations', { exact: true }) }).locator('td').allTextContents(), ['Carried authorizations', '2', '2'])
+    if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Carried authorizations', { exact: true }) }).locator('td').allTextContents(), ['Carried authorizations', '3', '3'])
   } }])
   await viewportProof(h, [{ name: 'migration-key-scope', path: '/app/agent', cookie: h.owner, selector: 'select[name=scopes]', interact: async ({page}) => { await page.locator('select[name=scopes]').selectOption('migration.prepare') } }])
   console.log('PASS migration mapping, explicit owner approval and saved cutover at 1440 and 390')
