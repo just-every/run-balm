@@ -130,6 +130,61 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal(final.find(x=>x.id===membership.id).visits_left,0)
  assert.equal(final.find(x=>x.id===later.id).membership_state,'active')
  assert.equal(final.find(x=>x.id===later.id).visits_left,0)
+ // An explicit renewal buys new entitlements once; the exhausted original stays fixed.
+ const renewalTerms={...resume,saleId:later.id,kind:'membership',label:'Authorized renewed membership',serviceId:service.id,units:2,amountCents:7001,reference:'synthetic-balm-renewal',cashConfirm:true,effectiveAt:new Date().toISOString()}
+ await h.cmd('pay.retail.renew',renewalTerms,reception.cookie,403)
+ await h.cmd('pay.retail.renew',{...renewalTerms,clientId:other.id},h.owner,404)
+ await h.cmd('pay.retail.renew',{...renewalTerms,saleId:membership.id},h.owner,409)
+ await h.cmd('pay.retail.renew',{...renewalTerms,saleId:packageSale.id},h.owner,404)
+ await h.cmd('pay.retail.renew',{...renewalTerms,cashConfirm:false},h.owner,400)
+ await h.cmd('pay.retail.renew',{...renewalTerms,confirm:false},h.owner,400)
+ await h.cmd('pay.retail.renew',{...renewalTerms,authorizerKind:'guardian'},h.owner,403)
+ for(const missing of ['effectiveAt','authorizedAt','authorizationMethod','consentEvidence','reason'])await h.cmd('pay.retail.renew',{...renewalTerms,[missing]:undefined},h.owner,400)
+ const sourceOriginal=(await h.send('/portal/receipts/'+later.id+'.pdf',undefined,cookie)).text
+ const attempts=await Promise.all([renewalTerms,{...renewalTerms,reference:'synthetic-balm-concurrent-renewal'}].map(input=>h.send('/api/balm/command',{name:'pay.retail.renew',input},h.owner)))
+ assert.deepEqual(attempts.map(r=>r.status).sort(),[200,409],'competing renewals create exactly one receipt')
+ const renewed=attempts.find(r=>r.status===200).value.result
+ assert.equal((await h.send('/portal/receipts/'+later.id+'.pdf',undefined,cookie)).text,sourceOriginal)
+ await h.cmd('pay.retail.renew',{...renewalTerms,saleId:renewed.id,reference:'synthetic-balm-unconsumed-renewal'},h.owner,409)
+ await h.cmd('pay.retail.renew',{...renewalTerms,reference:'synthetic-balm-renewal-repeat'},h.owner,409)
+ const renewedFile=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
+ assert.deepEqual(renewedFile.billing.retail.filter(x=>[later.id,renewed.id].includes(x.id)).map(x=>[x.id,x.visits_left,x.renewal_of]).sort(),[[later.id,0,null],[renewed.id,2,later.id]].sort())
+ const renewalOriginal=await h.send('/portal/receipts/'+renewed.id+'.pdf',undefined,cookie)
+ assert.equal(renewalOriginal.status,200);assert.ok(renewalOriginal.text.includes('$70.01'));assert.ok(renewalOriginal.text.includes(later.id))
+ assert.equal((await h.send('/portal/receipts/'+renewed.id+'.pdf',undefined,foreign)).status,404)
+ const noticed=await h.send('/portal/home',undefined,cookie)
+ assert.ok(noticed.text.includes('Authorized renewed membership'))
+ assert.ok(noticed.text.includes('2 of 2 visits left'))
+ assert.ok(noticed.text.includes('renewed purchase'))
+ assert.ok(noticed.text.includes('cancelled'))
+ assert.ok(noticed.text.includes('paused'))
+ assert.ok(!noticed.text.includes(renewalTerms.consentEvidence),'internal consent evidence is not a patient notice')
+ assert.ok(!(await h.send('/portal/home',undefined,foreign)).text.includes('Authorized renewed membership'))
+ const obligations=(await h.send('/api/balm/reports/financial?from='+dates[0]+'&to='+today,undefined,h.owner)).value
+ assert.deepEqual(obligations.retail.rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.purchases,r.visitsSold,r.visitsUsed,r.visitsLeft,r.unearnedCents,r.renewals]),[
+  ['package','active',1,5,2,3,24000,0],['membership','active',1,2,0,2,7001,1],['membership','exhausted',1,1,1,0,0,0],['membership','cancelled',1,1,1,0,0,0]
+ ])
+ assert.equal(obligations.retail.giftLiabilityCents,4587)
+ assert.equal(obligations.retail.unearnedCents,31001)
+ assert.equal(obligations.retail.visitsLeft,5)
+ assert.equal(obligations.summary.chargesCents,62414)
+ assert.equal(obligations.summary.paymentsCents,62414)
+ assert.equal(obligations.deposits.total.receivedCents,67001)
+ const csv=await h.send('/api/balm/reports/financial/retail.csv?from='+dates[0]+'&to='+today,undefined,h.owner)
+ assert.equal(csv.status,200);assert.ok(csv.text.includes('"membership","active","1","2","0","2","70.01","1"'));assert.ok(csv.text.includes('"gift_card","held","","","","","45.87",""'))
+ assert.equal((await h.send('/api/balm/reports/financial?from='+today+'&to='+today,undefined,reception.cookie)).status,403)
+ const renewalFacts=await h.db.prepare('SELECT renewal_authorization FROM bm_retail_sales WHERE id=?').bind(renewed.id).first()
+ assert.equal(JSON.parse(renewalFacts.renewal_authorization).authorizedAt,renewalTerms.authorizedAt)
+ assert.equal(JSON.parse(renewalFacts.renewal_authorization).evidence,renewalTerms.consentEvidence)
+ // A retained anonymous receipt from an older release must not invent visit dates.
+ await h.db.prepare("INSERT INTO bm_destroyed_retail(id,kind,units,amount_cents,tax_cents,recorded_at) VALUES(?,'membership',4,1234,0,'1990-01-02T03:00:00.000Z')").bind(crypto.randomUUID()).run()
+ const incomplete=(await h.send('/api/balm/reports/financial?from='+today+'&to='+today,undefined,h.owner)).value.retail
+ assert.equal(incomplete.incompleteHistory,1)
+ assert.equal(incomplete.unearnedCents,31001)
+ const legacyPage=await h.send('/app/reports?from='+today+'&to='+today,undefined,h.owner)
+ assert.ok(legacyPage.text.includes('These obligation totals are incomplete'))
+ assert.ok((await h.db.prepare("SELECT action FROM bm_audit WHERE subject_id=? AND action='retail.renewed'").bind(renewed.id).all()).results.length===1)
+ await assert.rejects(h.db.prepare("UPDATE bm_retail_sales SET renewal_of=NULL WHERE id=?").bind(renewed.id).run(),/original_record_is_immutable/)
  assert.equal(h.outboundRequests.filter(x=>/stripe|quickbooks|payer/.test(x.origin)).length,0,'cash sales and membership transitions create no provider charge or billing handoff')
  await proof({patient,cookie,today,from:dates[0],service,priya})
 }

@@ -1,3 +1,4 @@
+import { retailObligations } from './retail'
 import {isPayerPayment} from '../payments/ledger'
 import { biller } from '../domain/role-access'
 import { anonymousFinancialFacts } from '../retention/accounting'
@@ -12,7 +13,7 @@ import { csvCell } from '../domain/disclosures'
 import { audit, commit, human, insist, need, type Actor, type Data } from '../domain/model'
 import { reportRange } from './range'
 
-export const financialKinds = ['summary', 'aging-payer', 'aging-patient', 'deposits'] as const
+export const financialKinds = ['summary', 'aging-payer', 'aging-patient', 'deposits', 'retail'] as const
 export type FinancialKind = typeof financialKinds[number]
 export const agingBuckets = ['0-30', '31-60', '61-90', '91-120', 'over-120'] as const
 
@@ -126,6 +127,7 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   if (named.size) await commit(db, who, [...named].map(clientId => audit(db, who, 'report.financial_read', clientId)))
   return {
     from: r.from, to: r.to, timeZone: r.zone,
+    retail:await retailObligations(db,r.end),
     summary: {
       chargesCents, charges: charged.length,
       paymentsCents: sum(posted), insurancePaymentsCents: sum(posted, p => kindOf(p) === 'insurance'), cardPaymentsCents: sum(posted, p => kindOf(p) === 'card'), deskPaymentsCents: sum(posted, p => kindOf(p) === 'desk'),
@@ -160,6 +162,12 @@ export function financialCsv(report: FinancialReports, kind: FinancialKind) {
     for (const d of report.deposits.rows) table.push([d.date, d.source, d.reference, dollars(d.receivedCents), dollars(d.postedCents), dollars(d.creditCents), dollars(d.unpostedCents), dollars(d.refundedCents), dollars(d.interestCents??0), dollars(d.recoupedCents??0)])
     const t = report.deposits.total
     table.push(['', 'All', '', dollars(t.receivedCents), dollars(t.postedCents), dollars(t.creditCents), dollars(t.unpostedCents), dollars(t.refundedCents), dollars(t.interestCents), dollars(t.recoupedCents)])
+  }
+  if(kind==='retail') {
+    table.push(['kind','state','purchases','visits_sold','visits_used','visits_left','unearned_usd','renewals'])
+    for(const row of report.retail.rows)table.push([row.kind,row.state,row.purchases,row.visitsSold,row.visitsUsed,row.visitsLeft,dollars(row.unearnedCents),row.renewals])
+    table.push(['incomplete_historical_purchases',report.retail.incompleteHistory,'','','','','',''])
+    table.push(['gift_card','held','','','','',dollars(report.retail.giftLiabilityCents),''])
   }
   return table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }

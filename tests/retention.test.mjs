@@ -83,6 +83,12 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.db.prepare('INSERT INTO bm_package_uses VALUES(?,?,?,?)').bind(retailVisit,historicalMember,retail.id,'2003-01-02T03:00:00.000Z').run()
   assert.equal((await review()).eligibleAfter,'2009-01-02','consumption, rather than the old visit date, extends retention')
   assert.equal((await review()).eligible,true,'exhaustion clears the unresolved entitlement fence')
+  const obligationAt=async day=>(await h.send('/api/balm/reports/financial?from='+day+'&to='+day,undefined,h.owner)).value.retail
+  assert.deepEqual((await obligationAt('2000-01-02')).rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.visitsLeft,r.unearnedCents]),[['membership','active',2,2000]])
+  assert.deepEqual((await obligationAt('2001-01-02')).rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.visitsLeft,r.unearnedCents]),[['membership','active',1,1000],['membership','paused',1,1000]])
+  assert.deepEqual((await obligationAt('2002-01-02')).rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.visitsLeft,r.unearnedCents]),[['membership','active',2,2000]])
+  assert.deepEqual((await obligationAt('2003-01-02')).rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.visitsLeft,r.unearnedCents]),[['membership','active',1,1000],['membership','exhausted',0,0]])
+
   const gift=crypto.randomUUID()
   await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'gift_card','Historical gift',0,1000,0,0,'','','synthetic-balm-retention-gift','2004-01-02T03:00:00.000Z',?,?)").bind(gift,retail.id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic gift original')).run()
   assert.equal((await review()).eligibleAfter,'2010-01-02')
@@ -225,6 +231,8 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
   const finalRedemption=crypto.randomUUID()
   await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'product','Private final gift redemption',0,4587,0,0,'TX','Private tax evidence',?,?,'1990-01-02T04:00:00.000Z',?,?)").bind(finalRedemption,patient.id,giftId,'synthetic-balm-final-gift',h.auth.OWNER_EMAIL,retailOriginal).run()
+  const historicalObligationsBefore=(await h.send('/api/balm/reports/financial?from=1990-01-02&to=1990-01-02',undefined,h.owner)).value.retail
+  assert.deepEqual(historicalObligationsBefore.rows.filter(r=>r.purchases).map(r=>[r.kind,r.state,r.visitsUsed,r.visitsLeft,r.unearnedCents]),[['membership','cancelled',1,0,0]])
   const reportBefore=await reports()
   assert.equal(reportBefore.operational.evaluations.total.pt,1)
   assert.equal(reportBefore.operational.plans.total.completed,1)
@@ -271,6 +279,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   assert.equal(ledger.invoiced,9500)
   assert.equal(ledger.paid,9500)
   for(const id of [giftId,productId,packageId])assert.equal((await h.send('/api/balm/receipts/'+id+'.pdf',undefined,h.owner)).status,404)
+  assert.deepEqual((await h.send('/api/balm/reports/financial?from=1990-01-02&to=1990-01-02',undefined,h.owner)).value.retail,historicalObligationsBefore,'anonymous dated obligation history survives destruction')
   const retailFacts=await h.db.prepare('SELECT * FROM bm_destroyed_retail').all()
   assert.equal(retailFacts.results.length,4)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_membership_cancellations WHERE client_id=?').bind(patient.id).first()).n,0)

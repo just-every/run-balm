@@ -595,6 +595,9 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,8,{coverageChoice:'self_pay',deliveryMethod:'paper'})
     await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:exhausted.id,appointmentId:visit})
     await h.cmd('appointment.attend',{id:visit},priya.cookie)
+    const renewalTerms={clientId:patient.id,saleId:exhausted.id,kind:'membership',serviceId:service.id,units:3,amountCents:3000,label:'Synthetic renewed membership',reference:'synthetic-balm-archive-renewal',reason:'Patient requested three new cash visits',consentEvidence:'Specific patient authorization',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Patient in person',confirm:true,cashConfirm:true}
+    const renewed=await h.cmd('pay.retail.renew',renewalTerms)
+    const renewalBefore=await h.db.prepare('SELECT * FROM bm_retail_sales WHERE id=?').bind(renewed.id).first()
     const cancellationTerms={clientId:patient.id,saleId:exhausted.id,reason:'Patient requested cancellation after consumption',consentEvidence:'Patient authorized cancelling this exhausted membership',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Specific patient request in person',confirm:true}
     await h.cmd('pay.retail.cancel',cancellationTerms)
     const cancellationBefore=await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first()
@@ -627,6 +630,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.equal(file.billing.retail.find(x=>x.id===exhausted.id).membership_state,'cancelled')
     assert.equal(file.billing.retail.find(x=>x.id===exhausted.id).visits_left,0)
     assert.deepEqual(await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first(),cancellationBefore)
+    assert.deepEqual(await h.db.prepare('SELECT * FROM bm_retail_sales WHERE id=?').bind(renewed.id).first(),renewalBefore)
+    assert.equal(file.billing.retail.find(x=>x.id===renewed.id).visits_left,3)
+    await h.cmd('pay.retail.renew',renewalTerms,owner,409)
+    await h.cmd('pay.retail.renew',renewalTerms,inactive.cookie,401)
     await h.cmd('pay.retail.cancel',cancellationTerms,owner,409)
     await h.cmd('pay.retail.membership',{...cancellationTerms,state:'active'},owner,409)
 

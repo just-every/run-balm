@@ -1,3 +1,4 @@
+import { retailNotices } from '../payments/retail'
 import { cardRefundsFor, cardRefundReceipt } from '../payments/refunds'
 import { cardEntryView, portalCardEntry } from '../payments/card-entry'
 import { patientOutcomes, respondOutcome } from '../cases/outcomes-patient'
@@ -42,6 +43,7 @@ export async function portalHome(env: Bindings, patient: Patient, setupId?: stri
   await commit(db, null, [portalGuard(db, patient), audit(db, guardianActor(patient), 'portal.viewed', patient.clientId),
     audit(db, guardianActor(patient), 'message.thread_read', patient.clientId), ...messages.map(m => audit(db, guardianActor(patient), 'message.read', patient.clientId, m.id)),
     audit(db, guardianActor(patient), 'statement.opened', patient.clientId),
+    audit(db, guardianActor(patient), 'retail.notices_read', patient.clientId),
   ])
   return {
     outcomeFollowthrough: await patientOutcomes(db, patient),
@@ -54,7 +56,7 @@ export async function portalHome(env: Bindings, patient: Patient, setupId?: stri
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     paymentPlans: await patientPlans(db, patient.clientId),
-    billing: { cardRefunds: await cardRefundsFor(db, patient.clientId), cardEntry: await cardEntryView(env, patient.clientId, 'portal', setupId), payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
+    billing: { retail:await retailNotices(db,patient.clientId), cardRefunds: await cardRefundsFor(db, patient.clientId), cardEntry: await cardEntryView(env, patient.clientId, 'portal', setupId), payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
   }
 }
 
