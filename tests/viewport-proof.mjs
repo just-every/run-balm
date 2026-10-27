@@ -6,7 +6,7 @@ import {chromium} from '@playwright/test'
 export async function viewportProof(h,scenes){
  if(!process.env.BALM_UI_SCREENSHOTS)return
  await mkdir(process.env.BALM_UI_SCREENSHOTS,{recursive:true})
- const browser=await chromium.launch({headless:true,args:['--use-mock-keychain','--password-store=basic']})
+ const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH} : {}),args:['--no-sandbox','--use-mock-keychain','--password-store=basic']})
  try{
   const context=await browser.newContext({ignoreHTTPSErrors:true})
   for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))

@@ -5,21 +5,21 @@ import { sha256, rows, one } from '../domain/model.ts'
 import { identityText } from './targets.ts'
 import { mappingReport } from './mapping-report.ts'
 
-export type Totals = { patients: number; appointmentsByMonth: Record<string, number>; balancesByPatient: Record<string, number>; documents: number; insurance: number }
+export type Totals = { patients: number; appointmentsByMonth: Record<string, number>; balancesByPatient: Record<string, number>; documents: number; insurance: number; invoices: number; authorizations: number; claims: number }
 export type BundlePlan = Awaited<ReturnType<typeof planBundle>>
 export const targetId = async (provider: string, kind: string, source: string) => 'movein-' + await sha256(JSON.stringify([provider, kind, source]))
 export const isError = (d: { severity: string }) => d.severity.toLowerCase() === 'error'
 
-function totals(bundle: ReturnType<typeof normalizeBundle>, appointments = bundle.appointments, timeZone = 'UTC'): Totals {
+function totals(bundle: ReturnType<typeof normalizeBundle>, appointments = bundle.appointments, timeZone = 'UTC', source = false): Totals {
   const appointmentsByMonth: Record<string, number> = {}, balancesByPatient: Record<string, number> = {}
   for (const a of appointments) { const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit' }).formatToParts(new Date(a.startAt)); const month = parts.find(p => p.type === 'year')!.value + '-' + parts.find(p => p.type === 'month')!.value; appointmentsByMonth[month] = (appointmentsByMonth[month] ?? 0) + 1 }
   for (const b of bundle.balances) balancesByPatient[b.patientId] = (balancesByPatient[b.patientId] ?? 0) + b.cents
-  return { patients: bundle.patients.length, appointmentsByMonth, balancesByPatient, documents: bundle.notes.length, insurance: bundle.insurance.length }
+  return { patients: bundle.patients.length, appointmentsByMonth, balancesByPatient, documents: bundle.notes.length, insurance: bundle.insurance.length, invoices: source ? bundle.inventory.filter(r => r.kind === 'invoices').length : 0, authorizations: source ? bundle.inventory.filter(r => r.kind === 'authorizations').length : 0, claims: source ? bundle.inventory.filter(r => r.kind === 'claims').length : 0 }
 }
 
 function compare(source: Totals, planned: Totals) {
   const mismatches: { metric: string; source: number; planned: number }[] = []
-  for (const metric of ['patients', 'documents', 'insurance'] as const) if (source[metric] !== planned[metric]) mismatches.push({ metric, source: source[metric], planned: planned[metric] })
+  for (const metric of ['patients', 'documents', 'insurance', 'invoices', 'authorizations', 'claims'] as const) if (source[metric] !== planned[metric]) mismatches.push({ metric, source: source[metric], planned: planned[metric] })
   for (const metric of ['appointmentsByMonth', 'balancesByPatient'] as const) {
     for (const key of new Set([...Object.keys(source[metric]), ...Object.keys(planned[metric])])) {
       const a = source[metric][key] ?? 0, b = planned[metric][key] ?? 0
@@ -33,13 +33,18 @@ function expectedTotals(input: unknown, actual: Totals): Totals {
   if (input === undefined) return actual
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ImportError('invalid_expected_totals', 400)
   const values = input as Record<string, unknown>
-  if (values.patients !== undefined && (!Number.isSafeInteger(values.patients) || Number(values.patients) < 0)) throw new ImportError('invalid_expected_totals', 400)
+  const counts: Partial<Totals> = {}
+  for (const field of ['patients', 'documents', 'insurance', 'invoices', 'authorizations', 'claims'] as const) {
+    if (values[field] === undefined) continue
+    if (!Number.isSafeInteger(values[field]) || Number(values[field]) < 0) throw new ImportError('invalid_expected_totals', 400)
+    counts[field] = Number(values[field])
+  }
   for (const field of ['appointmentsByMonth', 'balancesByPatient']) {
     const record = values[field]
     if (record === undefined) continue
     if (!record || typeof record !== 'object' || Array.isArray(record) || Object.entries(record).some(([key, value]) => !key || !Number.isSafeInteger(value) || (field === 'appointmentsByMonth' && Number(value) < 0))) throw new ImportError('invalid_expected_totals', 400)
   }
-  return { ...actual, patients: values.patients === undefined ? actual.patients : Number(values.patients), appointmentsByMonth: values.appointmentsByMonth === undefined ? actual.appointmentsByMonth : { ...actual.appointmentsByMonth, ...values.appointmentsByMonth as Record<string, number> }, balancesByPatient: values.balancesByPatient === undefined ? actual.balancesByPatient : { ...actual.balancesByPatient, ...values.balancesByPatient as Record<string, number> } }
+  return { ...actual, ...counts, appointmentsByMonth: values.appointmentsByMonth === undefined ? actual.appointmentsByMonth : { ...actual.appointmentsByMonth, ...values.appointmentsByMonth as Record<string, number> }, balancesByPatient: values.balancesByPatient === undefined ? actual.balancesByPatient : { ...actual.balancesByPatient, ...values.balancesByPatient as Record<string, number> } }
 }
 
 /** Fingerprint binds exact source records, mapping and the owner's control totals. */
@@ -51,9 +56,9 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const practitionerId = typeof input.practitionerId === 'string' ? input.practitionerId : ''
   const serviceId = typeof input.serviceId === 'string' ? input.serviceId : ''
   const timeZone = settings!.time_zone as string
-  const source = expectedTotals(input.expectedTotals, totals(bundle, bundle.appointments, timeZone))
+  const source = expectedTotals(input.expectedTotals, totals(bundle, bundle.appointments, timeZone, true))
   const fingerprint = await sha256(JSON.stringify({ version: 1, bundle, practitionerId, serviceId, expectedTotals: source, timeZone }))
-  const sourcePayload = JSON.stringify({ bundle, practitionerId, serviceId })
+  const sourcePayload = JSON.stringify({ bundle, practitionerId, serviceId }, (key, value) => key === 'inventory' && Array.isArray(value) && !value.length ? undefined : value)
   const sourceJson = sourcePayload.length > 200_000 ? JSON.stringify({ version: 2, sha256: await sha256(sourcePayload) }) : sourcePayload
   const previous = await rows(db, 'SELECT id,state FROM bm_movein_jobs WHERE source_json=?', sourceJson)
   const [clients, erased, staff, services] = await Promise.all([
@@ -92,9 +97,9 @@ export async function planBundle(db: D1Database, input: Record<string, unknown>)
   const mappingDigest = await sha256(JSON.stringify({ fingerprint, migrationReport }))
   const preparation = await one(db, "SELECT actor_email,actor_role FROM bm_audit WHERE action='movein.mapping_prepared' AND subject_id=? AND detail=? ORDER BY sequence DESC LIMIT 1", fingerprint, mappingDigest)
   const requiresAcceptance = mismatches.length > 0 || diagnostics.some(d => !isError(d)) || bundle.unmappedColumns.length > 0 || bundle.unmappedRows.length > 0
-  return { bundle, sourceJson, sourcePayload, timeZone, settingsVersion: settings!.version, provider: bundle.provider, fingerprint, patients, appointments, notes: bundle.notes, balances: bundle.balances, insurance: bundle.insurance,
+  return { bundle, sourceJson, sourcePayload, timeZone, settingsVersion: settings!.version, provider: bundle.provider, fingerprint, patients, appointments, inventory: bundle.inventory, notes: bundle.notes, balances: bundle.balances, insurance: bundle.insurance,
     practitionerId, serviceId, practitionerVersion: staff[0]?.version, serviceVersion: services[0]?.version,
-    counts: { patients: patients.length, appointments: appointments.length, notes: bundle.notes.length, balances: bundle.balances.length, insurance: bundle.insurance.length },
+    counts: { patients: patients.length, appointments: appointments.length, notes: bundle.notes.length, balances: bundle.balances.length, insurance: bundle.insurance.length, invoices: 0, authorizations: 0, claims: 0 },
     diagnostics, unmappedColumns: bundle.unmappedColumns, unmappedRows: bundle.unmappedRows,
     reconciliation: { source, planned, mismatches }, migrationReport, mappingDigest, mappingPrepared: !!preparation, preparation,
     requiresAcceptance, canApply: !diagnostics.some(isError), existingJob: previous[0] ?? null }

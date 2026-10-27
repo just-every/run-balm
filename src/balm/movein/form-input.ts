@@ -1,7 +1,7 @@
 import { fileFromField } from '../forms'
 import { ImportError } from './errors'
 
-const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance'] as const
+const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance', 'invoices', 'authorizations', 'claims'] as const
 
 /** Reconstitute the reviewed bytes; submitted reconciliation fields remain editable. */
 export function bundleFormInput(input: Record<string, unknown>) {
@@ -16,7 +16,10 @@ export function bundleFormInput(input: Record<string, unknown>) {
   for (const approval of ['mappingApproval', 'cutoverApproval']) if (input[approval] === undefined) delete next[approval]
   if (!Array.isArray(next.files)) next.files = kinds.filter(kind => typeof input[kind] === 'string' && input[kind]).map(kind => ({ kind, name: input[kind + 'Name'] ?? kind + '.csv', csv: input[kind] }))
   const expected: Record<string, any> = {}
-  if (input.expectedPatients !== undefined && input.expectedPatients !== '') expected.patients = Number(input.expectedPatients)
+  for (const field of ['patients', 'documents', 'insurance', 'invoices', 'authorizations', 'claims']) {
+    const value = input['expected' + field[0].toUpperCase() + field.slice(1)]
+    if (value !== undefined && value !== '') expected[field] = Number(value)
+  }
   for (const [key, value] of Object.entries(input)) {
     if (key.startsWith('month_')) (expected.appointmentsByMonth ??= {})[key.slice(6)] = Number(value)
     if (key.startsWith('balance_')) {

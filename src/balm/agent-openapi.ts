@@ -39,7 +39,7 @@ export function agentOpenApi(origin: string) {
                     serviceId: { type: 'string' },
                     expectedTotals: { type: 'object', description: 'Owner-supplied source control totals for reconciliation.' },
                     dateFormat: { type: 'string', enum: ['MDY','DMY','YMD'] },
-                    files: { type: 'array', items: { type: 'object', required: ['kind','name','csv'], properties: { kind: { type: 'string', enum: ['patients','appointments','balances','insurance'] }, name: { type: 'string' }, csv: { type: 'string' } } }, description: 'Owner-supplied export files. Clinical note files are refused at the agent door; returned metadata excludes field examples and patient records.' },
+                    files: { type: 'array', items: { type: 'object', required: ['kind','name','csv'], properties: { kind: { type: 'string', enum: ['patients','appointments','balances','insurance','invoices','authorizations','claims'] }, name: { type: 'string' }, csv: { type: 'string' } } }, description: 'Owner-supplied export files. Clinical note files are refused at the agent door; returned metadata excludes field examples and patient records.' },
                     month: { type: 'string', description: 'YYYY-MM for finance.reconcile.prepare; requires its explicit finance scope. Only prepares cited review items, with no outbound request or refund.' },
                     appointmentId: { type: 'string' },
                     amountCents: { type: 'integer', minimum: 0 },
