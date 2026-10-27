@@ -652,6 +652,9 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const authorizationAfter=(await h.send('/api/balm/clients/'+authorizationClient,undefined,owner)).value.insurance
     assert.deepEqual(authorizationAfter.policies,authorizationBefore.policies,'native carried policy facts survive CLI restore')
     assert.deepEqual(authorizationAfter.authorizations,authorizationBefore.authorizations,'source authorization baseline, scope and remaining allowance survive CLI restore')
+    const carriedAuthorization = authorizationAfter.authorizations[0]
+    await h.cmd('insurance.authorization.save', { id: carriedAuthorization.id, policyId: carriedAuthorization.policy_id, number: carriedAuthorization.number, startsOn: carriedAuthorization.starts_on, endsOn: carriedAuthorization.ends_on, allowanceKind: 'visits', visits: 12 }, owner, 409)
+
     assert.deepEqual((await h.cmd('movein.journal',{jobId:moveinAuthorizations.job.id},owner)).job.report,moveinAuthorizations.job.report)
     await h.cmd('movein.undo',{jobId:moveinAuthorizations.job.id},owner,409)
     assert.equal((await h.state(owner)).accounting.connection,null,'restored clinic must explicitly reconnect its accounting provider')

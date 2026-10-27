@@ -81,9 +81,9 @@ export async function existingVisitWarnings(db: D1Database, clientId: string): P
       if (!choices.length) continue
       const current = selectAuthorization(choices, policy.id, on, visit.practitioner_id, visit.episodeId), a = current ?? choices[0], base = warningBase(a)
       if (!current) warnings.push({ ...base, code: 'authorization_outside_dates', message: 'The visit is outside the authorization dates.' })
-      else if (!authorizationCoversVisit(a, visit, charges)) warnings.push({ ...base, code: 'authorization_not_covered', message: 'This visit is not covered by the current authorization.' })
+      else if (!authorizationCoversVisit(a, visit, charges, undefined, settings!.time_zone)) warnings.push({ ...base, code: 'authorization_not_covered', message: 'This visit is not covered by the current authorization.' })
       else {
-        const usage = visitAllowance(a, visit, charges), position = (reserved.get(a.id) ?? 0) + usage.reserved
+        const usage = visitAllowance(a, visit, charges, undefined, settings!.time_zone), position = (reserved.get(a.id) ?? 0) + usage.reserved
         reserved.set(a.id, position)
         const label = a.allowance_kind === 'units' ? 'unit' : 'visit'
         if (a.used_allowance + position > a.allowance_total) warnings.push({ ...base, code: 'authorization_exhausted', message: `This visit exceeds the authorized ${label} allowance.` })

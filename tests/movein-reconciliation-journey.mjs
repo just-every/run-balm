@@ -167,6 +167,18 @@ export const cutoverAuthorizations = (payerId, practitionerId = '') => ({ provid
 
 export async function reconciliationAuthorizationCarry(h, therapist, service, reception) {
   const payer = await h.cmd('insurance.payer.save', { name: 'Synthetic authorization carry', payerId: 'AUTHCARRY', unitMethod: 'cms' })
+  // The first clinic-local cutover morning is still the previous UTC day.
+  const boundary = { ...cutoverAuthorizations(payer.id, therapist.id), practitionerId: therapist.id, serviceId: service.id }
+  for (const file of boundary.files) file.csv = file.csv.replaceAll('synthetic-balm-6', 'synthetic-balm-7').replaceAll('Authorization,', 'Boundary,').replace('visits,3,1', 'visits,1,1')
+  boundary.files.push({ kind: 'appointments', name: 'boundary.csv', csv: 'Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-740,synthetic-balm-730,2026-01-15T09:00:00+10:00,2026-01-15T09:45:00+10:00,booked' })
+  const boundaryPreview = await h.cmd('movein.prepare', boundary)
+  const boundaryApplied = await h.cmd('movein.cutover', { ...boundary, fingerprint: boundaryPreview.fingerprint, mappingApproval: boundaryPreview.mappingDigest, cutoverApproval: boundaryPreview.fingerprint, acceptanceReason: 'Reviewed clinic-local cutover morning against original usage.' })
+  await h.cmd('movein.undo', { jobId: boundaryApplied.job.id }, h.owner, 409)
+  const boundaryFile = (await h.send('/api/balm/clients/' + boundaryPreview.patients[0].id, undefined, h.owner)).value
+  const boundaryAuth = boundaryFile.insurance.authorizations[0]
+  assert.deepEqual([boundaryAuth.used_allowance, boundaryAuth.reserved_allowance, boundaryAuth.allowance_total], [1, 1, 1])
+  const boundaryVisit = boundaryApplied.records.find(r => r.kind === 'appointment')
+  assert.ok(boundaryFile.insurance.warnings[boundaryVisit.target_id].some(w => w.code === 'authorization_exhausted' && w.blocking), 'clinic-local cutover reservation must warn when it exceeds the allowance')
   const input = { ...cutoverAuthorizations(payer.id, therapist.id), practitionerId: therapist.id, serviceId: service.id }
   input.files.push({ kind: 'appointments', name: 'authorization-history.csv', csv: 'Source ID,Patient ID,Start At,End At,Status\nsynthetic-balm-640,synthetic-balm-630,2026-01-14T09:00:00+10:00,2026-01-14T09:45:00+10:00,attended\nsynthetic-balm-641,synthetic-balm-630,2026-01-16T09:00:00+10:00,2026-01-16T09:45:00+10:00,attended' })
   const preview = await h.cmd('movein.prepare', input)
@@ -204,6 +216,13 @@ export async function reconciliationAuthorizationCarry(h, therapist, service, re
   const unitPolicy = (await file(1)).insurance.policies[0]
   assert.deepEqual([unitPolicy.relationship, unitPolicy.subscriber_first, unitPolicy.subscriber_last, unitPolicy.subscriber_dob, unitPolicy.subscriber_sex, unitPolicy.plan_name, unitPolicy.priority], ['19', 'Synthetic', 'Subscriber', '1970-01-15', 'F', 'Source family plan', 1])
   assert.deepEqual([units.units, units.imported_used, units.used_units, units.remaining_allowance, units.units_per_visit, JSON.parse(units.cpt_scope), units.practitioner_id], [10, 4, 4, 6, 3, ['97110'], therapist.id])
+  for (const [auth, replacement] of [[visits, { allowanceKind: 'units', units: 12, unitsPerVisit: 3 }], [units, { allowanceKind: 'visits', visits: 12 }]]) {
+    const edit = { id: auth.id, policyId: auth.policy_id, number: auth.number, startsOn: auth.starts_on, endsOn: auth.ends_on, bookingAction: auth.booking_action, practitionerId: therapist.id }
+    const refused = await h.cmd('insurance.authorization.save', { ...edit, ...replacement }, h.owner, 409)
+    assert.equal(refused.error, 'Imported authorization dimension cannot change.')
+    await h.cmd('insurance.authorization.save', { ...edit, allowanceKind: auth.allowance_kind, visits: auth.visits, units: auth.units, unitsPerVisit: auth.units_per_visit })
+  }
+  assert.deepEqual([(await file(0)).insurance.authorizations[0].used_allowance, (await file(1)).insurance.authorizations[0].used_allowance], [2, 4], 'same-dimension edits preserve source usage')
   const booking = { clientId: clients[0], practitionerId: therapist.id, serviceId: service.id, date: new Date(Date.now() + 2 * 86400_000 + 10 * 3600_000).toISOString().slice(0, 10), time: '10:00', acknowledgeInsurance: true }
   const booked = { appointmentId: await pastVisit(h, clients[0], therapist, service.id, h.owner, 2, { acknowledgeInsurance: true }) }
   assert.equal((await file(0)).insurance.authorizations[0].remaining_allowance, 0)

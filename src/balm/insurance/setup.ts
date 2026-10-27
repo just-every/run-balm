@@ -67,6 +67,7 @@ export async function authorizationWrite(db: D1Database, who: Actor, input: Data
   const staff = optional(input.practitionerId,'practitioner',100)
   const kind = input.allowanceKind ?? previous?.allowance_kind ?? 'visits'
   insist(kind === 'visits' || kind === 'units', 'invalid_allowance_kind')
+  insist(!previous?.imported_cutover_on || kind === previous.allowance_kind, 'imported_authorization_dimension_cannot_change', 409)
   const units = kind === 'units' ? integer(input.units ?? previous?.units, 'units', 1, 1_000_000) : null
   const perVisit = kind === 'units' ? integer(input.unitsPerVisit ?? previous?.units_per_visit, 'units_per_visit', 1, 10_000) : null
   const visits = kind === 'visits' ? integer(input.visits ?? previous?.visits, 'visits', 1, 10_000) : 1

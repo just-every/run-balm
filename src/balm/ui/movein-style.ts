@@ -1,5 +1,6 @@
 export const moveinStyle = `
 .movein-preview{overflow-wrap:anywhere}
+.movein th,.movein code,.movein pre{font-size:13px}
 @media(max-width:600px){
 .movein-records,.movein-records tbody{display:block;width:100%}
 .movein-records thead{display:none}

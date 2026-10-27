@@ -83,6 +83,11 @@ try {
       assert.equal(await page.getByText('Authorization carried', { exact: true }).count(), 3)
       assert.deepEqual(await page.locator('tr').filter({ has: page.locator('input[name=expectedAuthorizations]') }).locator('td').last().textContent(), '3')
       assert.match(await page.locator('tr').filter({ has: page.getByText('Authorization carried', { exact: true }) }).first().textContent(), /2 visits at cutover/)
+      const review = page.locator('section.movein-preview')
+      for (const fact of ['Original allowance: 3 visits', 'Prior usage: 1 visits', 'Cutover: 2026-01-15', 'CPT scope: 97110', 'Reservation: 3 units per visit', 'Booking action: block', 'SYNTHETIC-BALM-636', 'Source family plan', 'synthetic-balm-651']) assert.ok((await review.textContent()).includes(fact), 'approval exposes ' + fact)
+      assert.ok((await review.textContent()).includes('Carried authorizations create native policies and prevent undo immediately.'))
+      assert.ok(!(await review.textContent()).includes('Undo removes the whole bundle'))
+
     }
   } }])
   await viewportProof(h, [{ name: 'migration-authorizations-saved', path: '/app/import', cookie: h.owner, selector: 'section:has(> h2:text-is("Saved reconciliation"))', interact: async ({ page, width }) => {
