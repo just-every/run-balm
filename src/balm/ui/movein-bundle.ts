@@ -14,10 +14,10 @@ function upload(s: any) {
     + select('practitionerId', 'Assign these visits to', [['', 'Choose a practitioner'], ...practitioners(s).map(p => [p.id, p.name] as [string, string])], '', '')
     + select('serviceId', 'Service for these visits', [['', 'Choose a service'], ...services(s).map(p => [p.id, p.name] as [string, string])], '', '')
     + '<p class="help">Each upload assigns its visits to one practitioner and service. Export one therapist and appointment type at a time in WebPT. Times are read in your clinic’s time zone.</p></details>'
-    + '<details><summary>Reconcile records still to carry</summary><p>Optional reviewed inventories name invoices, authorizations and open claims that still need to be carried. These files are retained with the reconciliation; they create no invoice, usable authorization or claim. Use the documented inventory format.</p>'
+    + '<details><summary>Reconcile inventories or carry open claims</summary><p>Reviewed inventories list records still to carry. An inventory retains original references without creating an invoice, usable authorization or claim. Use the documented carry format and source aging to carry open claims instead.</p>'
     + '<p>Open claims can instead use the reviewed claim carry format in the guide, with a configured Balm payer identifier and the original aging balances. Carried receivables prevent undo, even before payment, to preserve their custody.</p>'
     + '<label>Source aging balances for carried claims (.csv)<input type="file" name="balances" accept=".csv,text/csv"></label>'
-    + ['invoices', 'authorizations', 'claims'].map(kind => `<label>${h(kind[0].toUpperCase() + kind.slice(1))} inventory (.csv)<input type="file" name="${kind}" accept=".csv,text/csv"></label>`).join('') + '</details>'
+    + ['invoices', 'authorizations', 'claims'].map(kind => `<label>${h(kind === 'claims' ? 'Claims inventory or carry' : kind[0].toUpperCase() + kind.slice(1) + ' inventory')} (.csv)<input type="file" name="${kind}" accept=".csv,text/csv"></label>`).join('') + '</details>'
     + select('dateFormat', 'Dates in the files', dateFormats, 'MDY')
     + field('expectedPatients', 'Patient count reported by your old system (optional)', '', 'number', 'min="0" step="1"')
     + '<p class="help">Up to 50,000 records and 20 MB per file. Large imports are processed in smaller groups automatically. You review the totals before any record is added.</p><button type="submit">Preview move-in</button>'
