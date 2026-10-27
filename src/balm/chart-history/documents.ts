@@ -49,8 +49,8 @@ export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
 /** Search reads metadata and entered text, never the original file's bytes. */
 export async function documentsFor(db: D1Database, who: Actor, clientId: string) {
   await documentReader(db, who, clientId)
-  return rows(db, `SELECT id,title,document_type,document_date,search_text,filename,mime,byte_length,sha256,created_at,created_by
-    FROM bm_chart_documents WHERE client_id=? ORDER BY document_date DESC,id`, clientId)
+  return rows(db, `SELECT f.id,f.title,CASE WHEN EXISTS(SELECT 1 FROM bm_letter_deliveries d WHERE d.document_id=f.id) THEN 'progress_letter' ELSE f.document_type END AS document_type,f.document_date,f.search_text,f.filename,f.mime,f.byte_length,f.sha256,f.created_at,f.created_by
+    FROM bm_chart_documents f WHERE f.client_id=? ORDER BY f.document_date DESC,f.id`, clientId)
 }
 
 export async function downloadDocument(db: D1Database, who: Actor, key: string) {

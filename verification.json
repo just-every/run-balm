@@ -6,7 +6,8 @@
       "hosted": false,
       "commands": [
         "pnpm run check --profile first-party",
-        "node scripts/contract-docs.mjs check REPORT-003"
+        "node scripts/contract-docs.mjs check REPORT-003",
+        "node scripts/contract-docs.mjs check"
       ]
     },
     {
@@ -31,7 +32,8 @@
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-denial\" node tests/denial-resolver-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs",
-        "node tests/outcome-report-browser.mjs"
+        "node tests/outcome-report-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-letters\" node --test --test-name-pattern=\"^CHART-011:\" tests/charting.test.mjs"
       ]
     },
     {

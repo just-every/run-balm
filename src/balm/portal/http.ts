@@ -1,3 +1,4 @@
+import { patientLetter } from '../charting/letters'
 import { portalRefundReceipt } from './data'
 import {guardianActor} from './guardians'
 import {programPdf} from './programs'
@@ -44,6 +45,8 @@ export async function portalResponse(request: Request, env: Bindings): Promise<R
       return patient ? redirect('/portal/home' + (url.searchParams.has('rescheduled') ? '?rescheduled=1' : url.searchParams.has('cancelled') ? '?cancelled=1' : '')) : renderPortal('signin', { language:url.searchParams.get('lang')==='es'?'es':'en',notice: url.searchParams.has('rescheduled') ? 'Your appointment was moved. Sign in to see your updated visit.' : url.searchParams.has('cancelled') ? 'Your appointment was cancelled. Sign in to see your visits.' : '' })
     }
     const patient = await portalPatient(env.DB, request)
+    const letterPath=path.match(/^\/portal\/letters\/([\w-]+)\.pdf$/)
+    if(letterPath && request.method==='GET')return await patientLetter(env.DB,patient,letterPath[1])
     if(path==='/portal/program.pdf'&&request.method==='GET')return new Response(await programPdf(env.DB,patient),{headers:{...headers,'content-type':'application/pdf','content-disposition':'attachment; filename="home-program.pdf"'}})
     const recordPath=path.match(/^\/portal\/records\/([\w-]+)\.(pdf|json)$/)
     if(recordPath&&request.method==='GET')return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',patient)

@@ -876,3 +876,8 @@ test('a care-team or emergency reader gets the patient’s name and the episodes
     for (const other of ['1984-05-06', 'marisol@patient.example', '5550142', 'Pelvic floor', 'Discharged to a home program']) assert.ok(!read.text.includes(other), 'the note access opens no other part of the file')
   }
 }))
+
+test('CHART-011: clinician reviews and delivers a fixed progress original with episode history and reason-audited emergency reads', () => run(async h => {
+ const {letterJourney}=await import('./clinical-letter-journey.mjs')
+ await letterJourney(h)
+}))

@@ -1,3 +1,4 @@
+import { prepareLetter, editLetter, deliverLetter, lettersFor, previewLetter } from './charting/letters'
 import { readinessCommand, readinessState } from './domain/readiness'
 import { accountingCommand, accountingView } from './payments/accounting'
 import { cardEntryView, intakeCardEntry } from './payments/card-entry'
@@ -113,7 +114,7 @@ async function fileFor(env: Bindings, who: Actor, clientId: string, auditBefore?
   for (const appointment of file.appointments) appointment.cancellation = cancellations.find(c => c.appointment_id === appointment.id)
   const composeVisit = file.appointments.find(a=>a.id===historyInput.compose)
   const composedDate = composeVisit ? hostDateAt(new Date(composeVisit.start_at as string),zone) : undefined
-  const enriched = { ...file, outcomeFollowthrough: file.careAccess?.teamOnly || file.careAccess?.supervisionOnly ? null : await outcomesFor(env.DB, who, clientId, env.AUTH_ORIGIN), guardianGrants:await guardianGrants(env.DB,who,clientId),portalProfileChanges:await profileForStaff(env.DB,who,clientId), billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), exerciseLibrary: who.role==='owner'||who.staffRole==='practitioner' ? await exerciseLibrary(env.DB,who,historyInput):null,homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
+  const enriched = { ...file, letters: await lettersFor(env.DB,who,clientId), outcomeFollowthrough: file.careAccess?.teamOnly || file.careAccess?.supervisionOnly ? null : await outcomesFor(env.DB, who, clientId, env.AUTH_ORIGIN), guardianGrants:await guardianGrants(env.DB,who,clientId),portalProfileChanges:await profileForStaff(env.DB,who,clientId), billingCodeCatalog: who.role==='owner'||who.staffRole==='practitioner' ? await resolveChargeCatalog(env.DB,composedDate) : [], noteReleases: await releasesFor(env.DB,who,clientId), estimates: await estimateFile(env.DB,who,clientId), aeobs:who.role==='owner'?await aeobsFor(env.DB,clientId):null, retention: who.role === 'owner' ? await retentionClient(env.DB, who, clientId) : null, followups: await followupsFor(env.DB, who, clientId), alerts: await alertsFor(env.DB, who, file.client.id as string), disclosures: await disclosuresFor(env.DB, who, file.client.id as string), imported: await importedForClient(env.DB, who, file.client.id as string), insurance: who.role === 'agent' ? undefined : await insuranceFile(env.DB, who, file.client.id as string), intakeDocuments: { ...await intakeChart(env.DB, who, file.client.id as string), ai: await insuranceAiStatus(env) }, billing: await clientBilling(env, env.DB, who, file.client.id as string), messages: await messageFile(env.DB, who, file.client.id as string), exerciseLibrary: who.role==='owner'||who.staffRole==='practitioner' ? await exerciseLibrary(env.DB,who,historyInput):null,homeExercises: who.role === 'owner' || who.staffRole === 'practitioner' ? await portalExercisesFor(env.DB, who, file.client.id as string) : null, mailHistory: await mailHistory(env.DB, file.client.id as string, file.appointments.map(a => a.id as string)), reminderHistory: await reminderHistory(env.DB, file.appointments.map(a => a.id as string)), insuredCharges: Object.fromEntries(await Promise.all(file.appointments.filter(a => a.status === 'attended').map(async a => [a.id, await insuredCharge(env.DB, a.id as string)]))) }
   return { ...enriched, chartHistory: await fileHistory(env.DB, who, enriched, zone, historyInput) }
 }
 
@@ -175,6 +176,9 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'visit_policy.save') return saveVisitPolicy(env.DB, who, input)
   if (name === 'appointment.fee.confirm') return confirmVisitFee(env, env.DB, who, input)
   if (name.startsWith('followups.')) return followupCommand(env.DB, who, name, input)
+  if (name === 'letter.prepare') return prepareLetter(env.DB,who,input)
+  if (name === 'letter.edit') return editLetter(env.DB,who,input)
+  if (name === 'letter.deliver') return deliverLetter(env.DB,who,input)
   if (name === 'chart.document.upload') return uploadDocument(env.DB, who, input)
   if (name.startsWith('episode.')) return episodeCommand(env.DB, who, name, input)
   if (name.startsWith('referral.')) return referralCommand(env.DB, who, name, input)
@@ -519,6 +523,8 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       const recordPath=path.match(/^\/api\/balm\/records\/([\w-]+)\.(pdf|json)$/)
       if(recordPath)return await recordDownload(env.DB,recordPath[1],recordPath[2]==='pdf'?'pdf':'fhir',who)
       if (manager(who) && path === '/api/balm/reports/location') return json((await locationState(env.DB,who,Object.fromEntries(url.searchParams))).location)
+      const letterPreview=path.match(/^\/api\/balm\/letters\/([\w-]+)\.pdf$/)
+      if(letterPreview && request.method==='GET') return await previewLetter(env.DB,who,letterPreview[1])
       const chartDocument = path.match(/^\/api\/balm\/chart-documents\/([\w-]+)$/)
       if (chartDocument) return await downloadDocument(env.DB, who, chartDocument[1])
       const chartSearch = path.match(/^\/api\/balm\/clients\/([\w-]+)\/history$/)
@@ -650,6 +656,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         }
         if (name === 'accounting.prepare') return await page(env, who, back, { message: (result as any).status === 'up_to_date' ? 'QuickBooks matches this day. No new journal is needed.' : 'Review the saved journal below, then approve the exact handoff.' })
         if (name === 'accounting.sync') return await page(env, who, back, { message: 'The saved journal matches QuickBooks. Repeating it creates no new entry.' })
+        if (name.startsWith('letter.')) return redirect(back+'#clinical-letters')
         if (name === 'chart.document.upload') return redirect('/app/clients/' + encodeURIComponent(String((result as any).clientId)) + '#chart-history')
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
