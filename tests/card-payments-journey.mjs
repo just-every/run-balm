@@ -196,6 +196,10 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  const terminalInput={...input,purpose:'balance',amount:'4.00',paymentId:randomUUID()}
  const terminal=hooks.collectResponsibility?await hooks.collectResponsibility(terminalInput,day,reception.cookie,'terminal'):await h.cmd('pay.terminal.collect',terminalInput,reception.cookie)
  assert.equal(terminal.amount_cents,400);assert.equal(terminal.status,'processing');assert.equal(terminal.collection_purpose,'balance')
+ const balanceLink=await h.cmd('pay.link.create',{clientId:patient.id,purpose:'balance',delivery:'shown'},reception.cookie)
+ const checkoutWrites=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/checkout/sessions').length
+ assert.equal((await h.form(new URL(balanceLink.url).pathname+'?do=pay',{amount:'4.00'})).status,409)
+ assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/checkout/sessions').length,checkoutWrites)
  await h.cmd('pay.checkin.collect',{...input,amount:'0.50',paymentId:randomUUID()},reception.cookie,409)
  const repeat=await h.cmd('pay.terminal.collect',{...terminalInput,paymentId:terminal.id},reception.cookie);assert.equal(repeat.payment_intent,terminal.payment_intent)
  await hooks.screen?.('responsibility-pending','/app?date='+day,'form[action*="pay.terminal.sync"]',reception.cookie)
