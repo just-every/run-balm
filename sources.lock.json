@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "31a60556e32edca6726b95c6032f71795155ffb0d28b034a1a9830baec19dd09",
+      "sha256": "a8407947cd2d283ed59031eee049fa2b5ce6da244fcf14bfb0fbfe73ae685eb7",
       "executable": false
     },
     "DEMO.md": {
@@ -5414,7 +5414,7 @@
       "executable": false
     },
     "tests/denial-resolver-browser.mjs": {
-      "sha256": "4644562ae2639060ce143ba51576e46dc586359d81bff61cfa235971490c370c",
+      "sha256": "637c3c6e7cabce7a617e8d75e1664f94c6d99c285f49e04feed961973a8fbd80",
       "executable": false
     },
     "tests/denial-resolver-journey.mjs": {

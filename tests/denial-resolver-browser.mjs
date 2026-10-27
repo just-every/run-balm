@@ -19,7 +19,7 @@ try{
   await denialJourney(h,{capture:async(state,c,packet)=>{
    const value=state==='rejected'?h.owner:c.biller.cookie,[name,...parts]=value.split('=')
    await context.clearCookies();await context.addCookies([{name,value:parts.join('='),url:h.origin,secure:true}])
-   await page.setViewportSize({width:1440,height:1000});await page.goto(h.origin+'/app/cases#case-'+c.referral.id)
+   await page.setViewportSize({width:1440,height:1000});await page.goto(h.origin+'/app/cases');await page.reload()
    const card=page.locator('#case-'+c.referral.id)
    assert.equal(await card.count(),1)
    if(packet){
