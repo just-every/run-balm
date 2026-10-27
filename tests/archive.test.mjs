@@ -51,9 +51,9 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
   let h
   try {
     for (const path of (erasureOnly ? [source,erased,refused] : [source,restored,erased,refused])) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'], { cwd:source, env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'}, maxBuffer:4e6 })
+    // Apply fixture SQL and its ledger in the existing Worker; public transfers below still use the CLI.
     const webhookKey='whsec_'+Buffer.from('synthetic-balm-1').toString('base64')
-    h=await harness({root:source,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
+    h=await harness({root:source,migrate:true,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
     const p=await h.cmd('client.save',{firstName:'Temporary',lastName:'Enquiry',dateOfBirth:'2000-01-01'})
     const {service,practitioners:[priya]}=await clinic(h)
     if (erasureOnly) {

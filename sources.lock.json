@@ -2814,7 +2814,7 @@
       "executable": false
     },
     "src/balm/ui/base-style.ts": {
-      "sha256": "8bf13b2b14fbfebfcb863de1ae273147e8d9812df51f996c7acb228ec5b56ff7",
+      "sha256": "b3a6bb7bb4459bc97c0b11f6e19d68adf2e41f1d2fedd2127f725a3640e9bd66",
       "executable": false
     },
     "src/balm/ui/calendar-feed.ts": {
@@ -3182,7 +3182,7 @@
       "executable": false
     },
     "src/balm/ui/shell-style.ts": {
-      "sha256": "c4b7bb5313a442f3ceed6825fb02d1b21733efebb9422115dd233fe26c43e9dd",
+      "sha256": "e54497ba0e53e57e7f9d7fbadb61b0901af2e54094f4c574f6ccb2b091aeb60f",
       "executable": false
     },
     "src/balm/ui/shell.ts": {
@@ -5322,7 +5322,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "234faa670e8b99998ac6b3e790f477153783bf353820bd535c070d82864539c3",
+      "sha256": "94ad4e116e8858076ef7e26414d53e3d85dc3768e80716385b97ea69a4e1fc7a",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
