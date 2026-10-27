@@ -11,7 +11,7 @@ export type Tab = { url: string; label: string; icon: string; count?: number; to
 /** The pages this person can open, with the counts that need them. */
 export function tabsFor(s: any): Tab[] {
   if (s.location) return [{url:'/app',label:'Location schedule',icon:'calendar'},{url:'/app/reports',label:'Location reports',icon:'bars'}]
-  if (s.actor.role !== 'owner' && s.actor.staffKind === 'biller') return [{url:'/app/clients',label:'Clients',icon:'person'},{url:'/app/invoices',label:'Invoices',icon:'card'},{url:'/app/insurance',label:'Insurance',icon:'claim'},{url:'/app/reports',label:'Financial reports',icon:'bars'}]
+  if (s.actor.role !== 'owner' && s.actor.staffKind === 'biller') return [{url:'/app/clients',label:'Clients',icon:'person'},{url:'/app/invoices',label:'Invoices',icon:'card'},{url:'/app/insurance',label:'Insurance',icon:'claim'},{url:'/app/cases',label:'Cases',icon:'case'},{url:'/app/reports',label:'Financial reports',icon:'bars'}]
   const waiting = rows(s, 'invoices').filter(i => i.status === 'draft').length + rows(s, 'drafts').filter(d => d.type === 'reminder' && d.status === 'draft').length
   const fixes = (s.insurance?.queue ?? []).filter((q: any) => ['denied', 'rejected', 'partial'].includes(q.status)).length
   return [

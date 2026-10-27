@@ -128,7 +128,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
     if (s.calendar.selected) s.calendar.summary = await visitSummary(env, who, s.calendar.selected.client_id)
   }
   if(path==='/app/insurance'&&(who.role==='owner'||biller(who)))s.insurance.work=await claimWork(env.DB,who,Object.fromEntries(new URLSearchParams(query)))
-  if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception')) s.cases = await caseList(env, who)
+  if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception' || who.staffKind==='biller')) s.cases = await caseList(env, who)
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
   if (path === '/app/reports' && (who.role === 'owner' || biller(who))) s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})

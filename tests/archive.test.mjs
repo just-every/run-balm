@@ -725,3 +725,34 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
   assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+test('denial appeal originals and complete adjudications survive public CLI archive round trip', {timeout:240000},async()=>{
+ const {denialJourney}=await import('./denial-resolver-journey.mjs')
+ const temporary=await mkdtemp(join(tmpdir(),'balm-denial-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  h=await harness({root:source,migrate:true})
+  const c=await denialJourney(h)
+  await h.cmd('note_release.revoke',{id:c.packet.releaseId})
+  const before=(await c.view()).appeals.find(a=>a.id===c.packet.id)
+  const pdf=(await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,h.owner)).text
+  const adjudications=(await h.db.prepare('SELECT * FROM bm_cob_adjudications WHERE claim_id=? ORDER BY rowid').bind(c.claim.id).all()).results
+  assert.equal(adjudications.length,2)
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'denial.rer.gz')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  const after=(await h.send('/api/balm/cases',undefined,owner)).value.cases.find(a=>a.referral.id===c.referral.id).appeals.find(a=>a.id===c.packet.id)
+  assert.deepEqual(after,before,'approved packet, all citations, authorization snapshot, digest and payment resolution survive restore')
+  const originals=(await h.db.prepare("SELECT detail FROM bm_claim_events WHERE claim_id=? AND kind='835' ORDER BY rowid").bind(c.claim.id).all()).results.map(r=>JSON.parse(r.detail))
+  assert.deepEqual(originals,c.originals,'every original adjudication field survives CLI restore')
+  assert.deepEqual((await h.db.prepare('SELECT * FROM bm_cob_adjudications WHERE claim_id=? ORDER BY rowid').bind(c.claim.id).all()).results,adjudications,'all immutable coordination adjudication payloads survive CLI restore')
+  assert.equal((await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,owner)).text,pdf)
+  const biller=await h.signIn('appealbiller@clinic.example')
+  assert.equal((await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,biller)).status,403,'revocation survives restore')
+ }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
