@@ -83,5 +83,5 @@ export async function outcomeReport(db: D1Database, who: Actor, input: Data) {
 
 export function outcomeCsv(report: Awaited<ReturnType<typeof outcomeReport>>) {
   const columns = ['practitioner','source','instrument','instrumentVersion','scoringVersion','side','unit','direction','episodes','paired','missingBaseline','missingFollowUp','missingBoth','baselineMean','followUpMean','meanChange','unversionedPairs']
-  return [columns,...report.rows.map(r => columns.map(k => (r as Data)[k] ?? ''))].map(row => row.map(csvCell).join(',')).join('\r\n')+'\r\n'
+  return [columns,...report.rows.map(r => columns.map(k => (r as Data)[k] ?? ''))].map(row => row.map(value => typeof value === 'number' ? String(value) : csvCell(value)).join(',')).join('\r\n')+'\r\n'
 }

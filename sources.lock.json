@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "ebe0e74be92b873204af679cf8ecaf5af7745ac64b41e7f49c9cff255f3321f7",
+      "sha256": "90e27cab83a85ce888c2055eb1b73d0a0eb6ee1de193faca56b7681830991a32",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "4c85a5b970d1648e9a480d4c5d7feeff00ac1453d6ff84f2439d95cc214f8379",
+      "sha256": "6ce69d3fcd924915a22626bfddd47e489a5479749ccece3402e1a48176c3b9c2",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "d190efe39b725a6a7e4587a8476e8e3819c947c2ca25060d9df37bde1d6aa5c9",
+      "sha256": "1c98c0dc5a6fe47d969210c81ac639ab6a5954229212d7f2b9f383e0e3c5aef8",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -2670,7 +2670,7 @@
       "executable": false
     },
     "src/balm/reports/outcomes.ts": {
-      "sha256": "8dc39580ae6216595c2fef0fcd1ea44930ad517fc46d8829e8b019dd5f554c77",
+      "sha256": "17702746baca7c1b9856c4ed232e96fee265cf89e089125521861521b2aa4f71",
       "executable": false
     },
     "src/balm/reports/range.ts": {
@@ -3162,7 +3162,7 @@
       "executable": false
     },
     "src/balm/ui/reports.ts": {
-      "sha256": "578136381fb409743d3545a9a9d8390ffbaeedcef925d7639633a25ffdd2fa6d",
+      "sha256": "15f23f3d9736795f289ebba0de75c2b607152260126d554a71ce5e96bdf4fc96",
       "executable": false
     },
     "src/balm/ui/retail.ts": {
@@ -5698,11 +5698,11 @@
       "executable": false
     },
     "tests/outcome-report-browser.mjs": {
-      "sha256": "38ce5f84c22c18519e2f3b8c2293f456b39b97e54157e04c5ed5b26819e31875",
+      "sha256": "b563b7c6b0ceadc67d64b1dd8a81eba2b1c032d533536d3a9d1e26069b0c53b7",
       "executable": false
     },
     "tests/outcome-report-journey.mjs": {
-      "sha256": "2c7183f25cf081fd0b30fb93a35096487f5d6476d9e978a3690a485b48509ab0",
+      "sha256": "e81aa1f07965f9f97bc6a86a4ce36e37ab2690a93f5faa64a37906ddf263e12e",
       "executable": false
     },
     "tests/payer-estimate-journey.mjs": {
