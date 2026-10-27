@@ -5398,7 +5398,7 @@
       "executable": false
     },
     "tests/denial-resolver-browser.mjs": {
-      "sha256": "fa90eaf01126b32af9395ae32bac1212b503dc83b93bc6be4af1b01f6f7adbaf",
+      "sha256": "1b0100e4d517b88e1581ac36cf8d085532a13137399afaa81aa63d26f3058f0d",
       "executable": false
     },
     "tests/denial-resolver-journey.mjs": {

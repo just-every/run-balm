@@ -18,7 +18,7 @@ try{
   const page=await context.newPage()
   const show=async(d,name)=>{
    const [key,...value]=d.biller.cookie.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
-   await page.goto(h.origin+'/app/cases#case-'+d.referral.id)
+   await page.goto(h.origin+'/app/cases?proof='+name+'#case-'+d.referral.id)
    const card=page.locator('#case-'+d.referral.id)
    if(name==='prepared'){
     assert.match(await card.innerText(),/recorded authorization synthetic-balm-2/)
