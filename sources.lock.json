@@ -2294,7 +2294,7 @@
       "executable": false
     },
     "src/balm/messages/access.ts": {
-      "sha256": "19703ea221a84e7e2213af75000351ecef4935e54fe37a5110eccec71efe1a72",
+      "sha256": "2bb2175c2099394267eccb1179dc336009230899acae2d6d9ac7b3c18f5b1351",
       "executable": false
     },
     "src/balm/messages/attachments.ts": {
@@ -5442,7 +5442,7 @@
       "executable": false
     },
     "tests/communication-worker.ts": {
-      "sha256": "6aa60860c63d09fd8b5f25d63573b8be076ebcff6b80b16ba3cc4eaea8140666",
+      "sha256": "dfa83bff2432a2ce180776607e7f6bb3d260d1a15bf9f2417087d88d28ef4815",
       "executable": false
     },
     "tests/daily-close-clinic.mjs": {
@@ -5746,7 +5746,7 @@
       "executable": false
     },
     "tests/reminders.test.mjs": {
-      "sha256": "151a64c8c160b335e7e8b9d425050701f8d2d362083dbf68398917509796c25e",
+      "sha256": "184a0c29ced20f4b180996782d4b57ec099a124d15ccfe3a33f7457f4b2b14f0",
       "executable": false
     },
     "tests/report.test.mjs": {
