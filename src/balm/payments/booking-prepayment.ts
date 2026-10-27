@@ -112,7 +112,7 @@ export async function recordBookingSucceeded(env:Bindings,db:D1Database,p:Data,i
  try{await post()}catch(error){
   if((await one(db,'SELECT status FROM bm_card_payments WHERE id=?',p.id))?.status!=='succeeded'){
    if(review)throw error
-   review='Payment received but the slot or clinic authority changed; staff must review. No refund has been sent.'
+   review='Payment received but the slot or clinic authority changed; staff must review. No refund is sent automatically.'
    await post()
   }
  }
@@ -138,7 +138,7 @@ export async function bookingPaymentResponse(request:Request,env:Bindings):Promi
   if(p?.checkout_session)await syncBookingCheckout(env,db,b.payment_id)
   const current=(await one(db,'SELECT * FROM bm_booking_payments WHERE id=?',b.id))!
   if(current.state==='booked')return html('<h1>Your appointment is booked</h1><p>Your payment was confirmed once. Open your patient portal for the visit, intake and fixed payment receipt.</p><a href="/portal">Open patient portal</a>')
-  if(current.state==='review')return html('<h1>Your payment needs clinic review</h1><p>Payment was received, but your appointment could not be confirmed. Contact the clinic. No refund has been sent.</p><a href="/portal">Open patient portal</a>')
+  if(current.state==='review')return html('<h1>Your payment needs clinic review</h1><p>Payment was received, but your appointment could not be confirmed. Contact the clinic. No refund is sent automatically.</p><a href="/portal">Open patient portal</a>')
   if(current.state==='closed'||(!b.attempted_at&&Date.parse(b.expires_at)<=Date.now()))return html('<h1>This reservation has expired</h1><p>No booking is confirmed. <a href="/book">Choose another time</a>.</p>')
   if(request.method==='POST')return redirect(await startCheckout(env,db,current))
  }catch(e){error='Payment could not be confirmed. Keep this link and contact the clinic if needed. An uncertain payment is never charged with a new payment identity.'}
