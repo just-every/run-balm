@@ -44,7 +44,7 @@ try{
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width+' '+JSON.stringify(await page.locator('body *').evaluateAll(items=>items.filter(el=>el.getBoundingClientRect().right>innerWidth+1&&el.getClientRects().length).slice(-8).map(el=>({tag:el.tagName,cls:el.className,text:el.textContent?.slice(0,70)})))))
    const controls=await page.locator('button,a,[role=button]').evaluateAll(items=>items.filter(el=>{if(!el.getClientRects().length)return false;const clone=el.cloneNode(true);clone.querySelectorAll('[role=tooltip]').forEach(t=>t.remove());return !/[\p{L}\p{N}]/u.test(clone.textContent??'')}).map(el=>({label:el.getAttribute('aria-label'),tooltip:!!el.querySelector('[role=tooltip]')})))
    assert.ok(controls.every(c=>c.label&&c.tooltip),name+' named tooltips '+JSON.stringify(controls))
-   if(name==='terminal-pending'){
+   if(name==='terminal-pending'||name==='responsibility-pending'){
     const control=page.getByRole('link',{name:'Previous day',exact:true}),tip=control.getByRole('tooltip')
     await page.mouse.move(0,0);await control.blur()
     await control.evaluate(el=>{window.tooltipObservation=new Promise(resolve=>el.addEventListener('pointerenter',()=>{const values=[],tip=el.querySelector('[role=tooltip]');setTimeout(()=>values.push(getComputedStyle(tip).opacity),100);setTimeout(()=>{values.push(getComputedStyle(tip).opacity);resolve(values)},450)},{once:true}))})
@@ -110,7 +110,7 @@ try{
  const cardSaved=async(source,setup)=>console.log(JSON.stringify({proof:source,checkout:setup.id,setupIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(setup.card_id).first()).setup_intent,card:setup.card_id}))
  const refunded=async({payment,approved,setup,portalSetup})=>console.log(JSON.stringify({proof:'cards-and-refund',account:payment.stripe_account_id,intakeSetup:setup.id,intakeIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(setup.card_id).first()).setup_intent,portalSetup:portalSetup.id,portalIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(portalSetup.card_id).first()).setup_intent,charge:payment.payment_intent,originalCharge:approved.charge_id,refund:approved.provider_refund_id}))
  const collectResponsibility=async(input,day,cookie,method)=>{
-  await signIn(cookie);await page.goto(h.origin+'/app?date='+day)
+  await page.setViewportSize({width:1440,height:1000});await signIn(cookie);await page.goto(h.origin+'/app?date='+day)
   const name=method==='saved'?'pay.checkin.collect':'pay.terminal.collect'
   const form=page.locator('form[action*="'+name+'"]').filter({has:page.locator('input[name="invoiceId"][value="'+input.invoiceId+'"]')})
   await form.evaluate(el=>{for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true})
