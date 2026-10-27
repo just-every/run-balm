@@ -8,6 +8,7 @@ import { syncTerminalPayment } from './terminal'
 import type { Bindings } from '../../auth.server'
 import { audit, commit, guard, id, insist, now, one, stmt, type Actor, type Data } from '../domain/model'
 import { liveCard, customerFor } from './cards'
+import { availableBalanceSql, availablePlanBalance } from './plan-balance'
 import { stripeReady } from './connect'
 import { openInvoices, postStatements } from './ledger'
 import { sendReceipt } from './notify'
@@ -68,6 +69,7 @@ export async function chargeCardOnFile(env: Bindings, db: D1Database, who: Actor
 
 /** The patient pays from their link: a Stripe Checkout address for `amount`. */
 export async function startLinkPayment(env: Bindings, db: D1Database, link: Data, linkUrl: string, amountCents: number) {
+  insist(amountCents<=await availablePlanBalance(db,link.client_id),'amount_exceeds_current_patient_responsibility',409)
   const { settings, key } = await stripeReady(env, db)
   const customer = await customerFor(db, key, settings.account_id as string, link.client_id)
   const clinic = (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string, paymentId = id()
@@ -78,6 +80,7 @@ export async function startLinkPayment(env: Bindings, db: D1Database, link: Data
     success_url: `${linkUrl}?paid={CHECKOUT_SESSION_ID}`, cancel_url: linkUrl,
   })
   await commit(db, null, [
+    guard(db,`${availableBalanceSql}>=?`,link.client_id,link.client_id,link.client_id,link.client_id,amountCents),
     stmt(db, `INSERT INTO bm_card_payments(id,client_id,kind,link_id,amount_cents,status,checkout_session,created_by,created_at,updated_at,stripe_account_id,stripe_customer_id) VALUES(?,?,'link',?,?,'open',?,'patient link',?,?,?,?)`,
       paymentId, link.client_id, link.id, amountCents, session.id, now(), now(), settings.account_id, customer),
     audit(db, { email: 'patient link', role: 'patient' }, 'payment.link_started', link.client_id, paymentId, `${amountCents} cents`),
