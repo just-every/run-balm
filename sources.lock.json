@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "49ae4bc825cb037040af1670a58692b65b39c48707e1b1f909591b6864333f83",
+      "sha256": "4bde99ebc3591e9f4ef9d585c05e3131650cf8daf447e5c1fe28f34a58b48c55",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "f6bd5a1c72521a69e964e8224c085991e07ad164fa59ada92ee0c20badf800bb",
+      "sha256": "63b9e1dce7e11400de28ee25c941ccf7c09ccb2c4f4e074e5735d19bb0d87ace",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "b980ecd45dedc6475f1d03391601f58b77f72fdab0b2d63c0550d7f8a17d39ce",
+      "sha256": "bde3fe18ddfe661ae3875f3a4a2b3b347aef6bc1324ddd9add4a4eb77de8a98e",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -258,7 +258,7 @@
       "executable": false
     },
     "docs/payments.md": {
-      "sha256": "1302ac7a53f691ac05545aa0a0ec92e7bd9a91be8e6fb16fb95cb85690f7e17f",
+      "sha256": "7bf29b480f8c68f2a9ebbbfd396fc8c67f1d6e506a55162785b63e1b4d75ad1a",
       "executable": false
     },
     "docs/people-and-audit.md": {
@@ -2522,7 +2522,7 @@
       "executable": false
     },
     "src/balm/payments/ledger.ts": {
-      "sha256": "ef7ed80d5058932ecfe914736dd60eacfb81078b825a252903a0764cb719090c",
+      "sha256": "fac5076e35058664ac5344aa92163b816d5ee29310de71b36677b6d40a4f8d83",
       "executable": false
     },
     "src/balm/payments/links.ts": {
@@ -5398,7 +5398,7 @@
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
-      "sha256": "470b2fe131867b0df8c3c7950af09cd3244fb85900f8a108e596ed8945157527",
+      "sha256": "86badd8d3bad0275933c7feba0d8359bdb664d63f13f17680f5da0c576eab9f3",
       "executable": false
     },
     "tests/card-payments-journey.mjs": {

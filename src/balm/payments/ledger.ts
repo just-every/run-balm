@@ -4,7 +4,8 @@
 // unique, so a payment can never be matched to an invoice twice); what is not yet
 // posted is the patient's credit, applied when their next invoice is approved.
 import { externalCreditsForInvoice } from './account-credit'
-import { guard, id, insist, now, one, rows, stmt, type Data } from '../domain/model'
+import { guard, id, insist, now, rows, stmt, type Data } from '../domain/model'
+import { availablePlanBalance, availableBalanceSql } from './plan-balance'
 import { invoiceNumber } from '../domain/invoices'
 
 /** Dollars as typed ("65", "65.00", "$1,065.50") in cents. */
@@ -116,12 +117,10 @@ const collectionSql = `SELECT i.id,i.number,${invoiceOwedSql} AS balance_cents,M
  WHERE i.client_id=? AND i.status='approved' AND a.status='attended' AND c.erased_at IS NULL
  AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)`
 export async function checkInCollections(db: D1Database, clientId: string): Promise<Data[]> {
- const { availablePlanBalance } = await import('./plan-balance')
  const available = await availablePlanBalance(db,clientId)
  return (await rows(db,collectionSql,clientId)).map(i=>({...i,balance_cents:Math.min(i.balance_cents,available),coinsurance_cents:Math.min(i.coinsurance_cents,available)})).filter(i=>i.balance_cents>=50)
 }
 export async function reserveCheckInCollection(db: D1Database, clientId: string, input: Data) {
- const { availableBalanceSql } = await import('./plan-balance')
  insist(['balance','coinsurance'].includes(input.purpose),'select_coinsurance_or_patient_balance')
  insist(input.confirm===true || input.confirm==='on','confirm_the_selected_patient_amount')
  const amount=parseDollars(input.amount), column=input.purpose==='coinsurance'?'coinsurance_cents':'balance_cents'
