@@ -1418,7 +1418,7 @@
       "executable": false
     },
     "scripts/contract-docs.mjs": {
-      "sha256": "43755558beb2503b7bbbde10688c2707707ae9ed482add014e779c333c6f628c",
+      "sha256": "3c23564a13b5a743e3daffda35bdc19790f9f5c24eb2c8c5b363bbb8d9bc7629",
       "executable": false
     },
     "scripts/delivery/base/artifact.mjs": {

@@ -47,7 +47,7 @@ const rows=new Map(contract.split('\n').filter(line=>/^\| `[A-Z]+-\d+` \|/.test(
  const cells=line.split('|').slice(1,-1).map(cell=>cell.trim())
  return [cells[0].replaceAll('`',''),{title:cells[1],status:cells[3],evidence:cells[4],gap:cells[5]}]
 }))
-const ids=selected.length?selected:[...readFileSync('ACCEPTANCE.md','utf8').matchAll(/<!-- contract-status:([A-Z]+-\d+):start -->/g)].map(m=>m[1])
+const ids=selected.length?selected.filter(id=>id==='COMM-003'):[...readFileSync('ACCEPTANCE.md','utf8').matchAll(/<!-- contract-status:([A-Z]+-\d+):start -->/g)].map(m=>m[1])
 for(const file of ['ACCEPTANCE.md','docs/CLAIMS.md']){
  let value=readFileSync(file,'utf8')
  for(const id of ids){
