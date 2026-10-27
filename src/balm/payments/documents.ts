@@ -77,16 +77,21 @@ export async function receiptPdf(db: D1Database, paymentId: string) {
   if (!p) return await one(db,'SELECT id FROM bm_retail_sales WHERE id=?',paymentId) ? retailReceipt(db,paymentId) : externalReceipt(db, paymentId)
   insist(clinic, 'receipt_not_found', 404)
   if (p.receipt_base64) return { name: `receipt-${receiptNumber(p.receipt_number as number)}.pdf`, bytes: receiptBytes(p.receipt_base64 as string) }
-  const posted = await rows(db, 'SELECT p.amount_cents,i.number FROM bm_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
+  const isBooking=await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',paymentId)
+  const posted = isBooking?[]:await rows(db, 'SELECT p.amount_cents,i.number FROM bm_payments p JOIN bm_invoices i ON i.id=p.invoice_id WHERE p.card_payment_id=? ORDER BY i.number', paymentId)
   const unapplied = (p.amount_cents as number) - posted.reduce((sum, item) => sum + Number(item.amount_cents), 0), number = receiptNumber(p.receipt_number as number)
+  const booking=await one(db,'SELECT mode,start_at,price_cents,receipt_facts FROM bm_booking_payments WHERE payment_id=?',paymentId)
+  const fixed=booking?JSON.parse(booking.receipt_facts as string):null
+  const receiptClinic=fixed?.clinic??clinic, receiptPatient=fixed?.patient??p
   const blocks: Block[] = [
-    { kind: 'facts', rows: [...clinicFacts(clinic), ['Receipt', number], ['Date', usDate(p.succeeded_at as string, clinic.time_zone as string)], ['Patient', `${p.first_name} ${p.last_name}`],
-      ['For', p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
+    { kind: 'facts', rows: [...clinicFacts(receiptClinic), ['Receipt', number], ['Date', usDate(p.succeeded_at as string, receiptClinic.time_zone as string)], ['Patient', `${receiptPatient.first_name} ${receiptPatient.last_name}`],
+      ...(booking ? [['Visit',String(booking.start_at)],['Service price',dollars(Number(booking.price_cents))]] as [string,string][] : []),
+      ['For', booking ? (booking.mode==='full'?'Online booking prepayment':'Online booking deposit') : p.kind === 'copay' ? 'Copay at check-in' : p.kind === 'link' ? 'Payment from your statement link' : 'Payment toward your balance'], ['Paid with', cardLabel(p.card_brand, p.card_last4)], ['Amount paid', dollars(p.amount_cents as number)]] },
     { kind: 'table', columns: [{ label: 'Applied to', width: 4 }, { label: 'Amount', width: 1, right: true }],
-      rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
+      rows: [...posted.map(x => [`Invoice ${invoiceNumber(x.number as number)}`, dollars(x.amount_cents as number)]), ...(unapplied ? [[booking ? 'Reserved for this booked visit; contact the clinic about any change' : p.kind === 'copay' ? 'This visit’s invoice, once it is issued' : 'Credit toward your next visit', dollars(unapplied)]] : [])] },
     { kind: 'notes', lines: [`Stripe payment ${p.payment_intent}. Keep this receipt for your records.`] },
   ]
-  const original = base64Bytes(pdf({ header: clinic.clinic_name as string, title: `Receipt ${number}`, blocks }))
+  const original = base64Bytes(pdf({ header: receiptClinic.clinic_name as string, title: `Receipt ${number}`, blocks }))
   await db.prepare('UPDATE bm_card_payments SET receipt_base64=? WHERE id=? AND receipt_base64 IS NULL').bind(original, paymentId).run()
   const saved = (await one(db, 'SELECT receipt_base64 FROM bm_card_payments WHERE id=?', paymentId))!
   return { name: `receipt-${number}.pdf`, bytes: receiptBytes(saved.receipt_base64 as string) }

@@ -1,5 +1,6 @@
 import { prepareLetter, editLetter, deliverLetter, lettersFor, previewLetter } from './charting/letters'
 import { readinessCommand, readinessState } from './domain/readiness'
+import { bookingPaymentResponse } from './payments/booking-prepayment'
 import { accountingCommand, accountingView } from './payments/accounting'
 import { cardEntryView, intakeCardEntry } from './payments/card-entry'
 import { outcomeCommand, outcomesFor } from './cases/outcomes'
@@ -331,6 +332,7 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
     if (request.method !== 'GET') fail('method_not_allowed', 405)
     return calendarFeed(env.DB, feed[1])
   }
+  if(path.startsWith('/book/payment/'))return bookingPaymentResponse(request,env)
   if (path === '/book') {
     if (request.method === 'POST' && request.headers.get('origin') !== env.AUTH_ORIGIN) fail('cross_site_request_refused', 403)
     if (!await takeAddressRate(env, request, 'booking')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
@@ -346,7 +348,8 @@ async function publicResponse(request: Request, env: Bindings, path: string): Pr
         input = await inputBody(request)
         if (!await takeEmailRate(env, 'booking', typeof input.email === 'string' ? input.email : '')) return renderPublic('missing', { error: 'Too many requests. Wait up to 15 minutes and try again.' }, 429)
         if (input.website) fail('booking_refused', 400) // A filled hidden field is a bot.
-        const booked = await bookOnline(env.DB, input)
+        const booked = await bookOnline(env.DB, input, env)
+        if(booked.paymentToken)return redirect('/book/payment/'+booked.paymentToken)
         const intake = await bookedIntake(env.DB, booked.clientId, booked.appointmentId, booked.startAt, [booked.appointmentId])
         const mail = intake === 'ask' ? await sendIntake(env, booked.clientId, booked.token, booked.startAt, undefined, [booked.appointmentId], booked.email)
           : await sendBooked(env, booked.clientId, booked.startAt, 1, [booked.appointmentId], booked.email)
@@ -493,7 +496,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
   const url = new URL(request.url), path = url.pathname
   const isPortal = path === '/portal' || path.startsWith('/portal/')
   const intakeDocumentPath = path.match(/^\/app\/intake\/(consents|insurance|identity)\/([\w-]+)(\.pdf|\/(front|back)|\/photo)$/)
-  const isPublic = isPortal || path.startsWith('/calendar/') || path === '/book' || path.startsWith('/consent/') || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
+  const isPublic = isPortal || path.startsWith('/calendar/') || (path === '/book' || path.startsWith('/book/payment/')) || path.startsWith('/consent/') || path.startsWith('/intake/') || path.startsWith('/offer/') || path.startsWith('/pay/') || path.startsWith('/plan/') || path.startsWith('/visit/') || path.startsWith('/messages/')
   if (!isPublic && !intakeDocumentPath && !path.startsWith('/api/balm/') && !pages.test(path) && path !== '/app/action') return null
   const env = runtimeBindings(original), isAgent = path.startsWith('/api/balm/agent/')
   let who: Actor | undefined

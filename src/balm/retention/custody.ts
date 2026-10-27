@@ -138,4 +138,5 @@ export const custody = [
   {"table":"bm_authorization_decisions","client":false,"links":[["request_id","bm_authorization_requests","id"]]},
   {"table":"bm_clinical_letters","client":true,"links":[]},
   {"table":"bm_letter_deliveries","client":true,"links":[]},
+  {"table":"bm_booking_payments","client":true,"links":[["client_id","bm_clients","id"],["payment_id","bm_card_payments","id"]]},
 ] as const

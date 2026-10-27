@@ -80,8 +80,8 @@ export function postStatements(db: D1Database, payment: Data, open: Data[], amou
 /** On an invoice's approval: apply the patient's unposted card payments, this visit's copay first. */
 export async function creditStatements(db: D1Database, invoice: Data, insuranceHeld = false) {
   // A copay waits for its own visit's invoice; other credit applies to whichever invoice comes next.
-  const credits = await rows(db, `SELECT * FROM bm_card_payments WHERE client_id=? AND status='succeeded' AND applied_cents<amount_cents-refunded_cents AND NOT EXISTS(SELECT 1 FROM bm_card_refunds r WHERE r.payment_id=bm_card_payments.id AND r.status IN ('approved','attempted','uncertain')) AND (?=0 OR kind='copay') AND (kind<>'copay' OR appointment_id=?)
-    ORDER BY CASE WHEN appointment_id=? THEN 0 ELSE 1 END, succeeded_at`, invoice.client_id, insuranceHeld?1:0, invoice.appointment_id, invoice.appointment_id)
+  const credits = await rows(db, `SELECT * FROM bm_card_payments WHERE client_id=? AND status='succeeded' AND applied_cents<amount_cents-refunded_cents AND NOT EXISTS(SELECT 1 FROM bm_card_refunds r WHERE r.payment_id=bm_card_payments.id AND r.status IN ('approved','attempted','uncertain')) AND (?=0 OR kind='copay') AND (kind<>'copay' OR appointment_id=?) AND NOT EXISTS(SELECT 1 FROM bm_booking_payments b WHERE b.payment_id=bm_card_payments.id AND (b.state<>'booked' OR b.appointment_id<>?))
+    ORDER BY CASE WHEN appointment_id=? THEN 0 ELSE 1 END, succeeded_at`, invoice.client_id, insuranceHeld?1:0, invoice.appointment_id, invoice.appointment_id, invoice.appointment_id)
   const statements: D1PreparedStatement[] = []
   let open = invoice.amount_cents as number
   for (const c of credits) {

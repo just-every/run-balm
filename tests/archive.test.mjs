@@ -793,3 +793,32 @@ test('denial appeal originals and complete adjudications survive public CLI arch
   assert.equal((await h.send('/api/balm/note-releases/'+c.packet.releaseId+'.pdf',undefined,biller)).status,403,'revocation survives restore')
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+test('booking prepayments and fixed receipts survive a public CLI archive round trip without bearer authority', {timeout:240000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-booking-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  const {fakeProviders}=await import('./fakes/stripe.mjs'),stripe=fakeProviders()
+  h=await harness({root:source,migrate:true,outbound:stripe.handler})
+  const {bookingPrepaymentJourney}=await import('./booking-prepayment-journey.mjs')
+  const {paid,receipt,client}=await bookingPrepaymentJourney(h,stripe)
+  const bookingRows=(await h.db.prepare('SELECT * FROM bm_booking_payments ORDER BY id').all()).results
+  const originalTokens=(await h.db.prepare('SELECT token_hash FROM bm_booking_payment_tokens').all()).results
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'booking.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  const archiveText=await readFile(archive,'utf8')
+  for(const t of originalTokens)assert.ok(!archiveText.includes(t.token_hash),'booking bearer hashes do not travel')
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.equal((await h.send('/api/balm/receipts/'+paid.id+'.pdf',undefined,owner)).text,receipt.text)
+  const restoredRows=(await h.db.prepare('SELECT * FROM bm_booking_payments ORDER BY id').all()).results
+  assert.deepEqual(restoredRows.map(({checkout_url,...r})=>r),bookingRows.map(({checkout_url,...r})=>r))
+  assert.ok(restoredRows.every(r=>r.checkout_url===null))
+  assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM bm_booking_payment_tokens').first()).n,0)
+  assert.equal((await h.send('/api/balm/clients/'+client.id,undefined,owner)).value.billing.ledger.paymentsCents,15000)
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})

@@ -648,3 +648,61 @@ test('booking never opens a patient outside the booker’s care or location, thr
   assert.equal((await file(priya.cookie)).status, 404, 'no booking door opened the file to another practitioner')
   assert.deepEqual((await h.state()).appointments.filter(a => a.client_id === maya.id).map(a => a.practitioner_id), [sam.id])
 }))
+
+test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation until provider resolution and paid conflicts need human review', {timeout:120000},async()=>{
+ const stripe=fakeProviders();let lose=false
+ const h=await harness({outbound:async request=>{
+  const response=await stripe.handler(request)
+  if(lose&&request.method==='POST'&&new URL(request.url).pathname==='/v1/checkout/sessions'){lose=false;return new Response('synthetic-balm-transport',{status:503})}
+  return response
+ }})
+ try{
+  await h.finishSetup();const {service,practitioners:[priya]}=await clinic(h)
+  await h.cmd('pay.stripe.connect',{secretKey:'synthetic-balm-1'})
+  await h.cmd('service.save',{id:service.id,prepayMode:'full'})
+  const times=await slots(h,service.id,priya.id)
+  const version=(await h.state()).services.find(s=>s.id===service.id).version
+  const fields=(start,n)=>({serviceId:service.id,practitionerId:priya.id,start,firstName:'Synthetic',lastName:'Booking '+n,dateOfBirth:'1990-01-01',email:'booking'+n+'@patient.example',privacy:'on',coverageChoice:'self_pay',deliveryMethod:'portal',confirmPayment:'on',confirmedAmountCents:9500,serviceVersion:version})
+  const a=await h.form('/book',fields(times[0],1));assert.equal(a.status,303,a.text)
+  const cross=await h.mf.dispatchFetch(h.origin+a.location,{method:'POST',headers:{origin:'https://foreign.example'}})
+  assert.equal(cross.status,403);assert.equal(stripe.sessions.size,0)
+  lose=true
+  assert.equal((await h.form(a.location,{})).status,200)
+  let b=await h.db.prepare('SELECT * FROM bm_booking_payments').first()
+  assert.ok(b.attempted_at);assert.equal(b.checkout_url,null);assert.equal(stripe.sessions.size,1)
+  const attempted=stripe.calls.filter(c=>c.path==='/checkout/sessions')[0]
+  const recovered=await h.form(a.location,{})
+  assert.equal(recovered.status,303);assert.equal(stripe.sessions.size,1,'uncertain create reconciles with the original idempotency key')
+  assert.equal(stripe.calls.filter(c=>c.path==='/checkout/sessions').at(-1).idempotencyKey,attempted.idempotencyKey)
+  assert.deepEqual(stripe.calls.filter(c=>c.path==='/checkout/sessions').at(-1).body,attempted.body)
+  const session=stripe.sessions.get(recovered.location.split('/').at(-1))
+  const declinedId='pi_syntheticbalmdecline'
+  stripe.intents.set(declinedId,{id:declinedId,status:'requires_payment_method',last_payment_error:{message:'Synthetic decline'}});session.payment_intent=declinedId
+  await h.send(a.location)
+  assert.equal((await h.state()).appointments.length,0)
+  assert.equal((await h.db.prepare('SELECT state FROM bm_booking_payments WHERE id=?').bind(b.id).first()).state,'reserved','a declined attempt cannot release a Checkout session that can still be paid')
+  session.status='expired';session.payment_intent=null
+  await h.send(a.location)
+  assert.equal((await h.db.prepare('SELECT state FROM bm_booking_payments WHERE id=?').bind(b.id).first()).state,'closed')
+  assert.equal((await h.db.prepare('SELECT status FROM bm_card_payments WHERE id=?').bind(b.payment_id).first()).status,'expired')
+  assert.equal(stripe.refunds.size,0)
+  const replacement=await h.form('/book',fields(times[0],2));assert.equal(replacement.status,303,replacement.text)
+  const checkout=await h.form(replacement.location,{})
+  // Current authority can close booking while the patient's provider-hosted page is open.
+  await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane',bookingOpen:false})
+  stripe.complete(checkout.location.split('/').at(-1))
+  const reviewed=await h.send(replacement.location)
+  assert.match(reviewed.text,/payment needs clinic review/)
+  const review=await h.db.prepare("SELECT * FROM bm_booking_payments WHERE state='review'").first()
+  assert.ok(review);assert.equal((await h.state()).appointments.length,0)
+  const payment=await h.db.prepare('SELECT * FROM bm_card_payments WHERE id=?').bind(review.payment_id).first()
+  assert.equal(payment.status,'succeeded');assert.equal(payment.amount_cents,9500);assert.equal(payment.appointment_id,null)
+  assert.equal(stripe.refunds.size,0,'no invented refund')
+  const cookie=await portalLogin(h,'booking2@patient.example')
+  assert.match((await h.send('/portal/home',undefined,cookie)).text,/contact the clinic for review/)
+  assert.equal((await h.send('/portal/receipts/'+payment.id+'.pdf',undefined,cookie)).status,200)
+  await h.send(replacement.location)
+  assert.equal((await h.db.prepare("SELECT COUNT(*) AS n FROM bm_card_payments WHERE status='succeeded'").first()).n,1)
+  assert.ok((await h.send('/app/clinic',undefined,h.owner)).text.includes('Booking payment review'))
+ }finally{await h.close()}
+})

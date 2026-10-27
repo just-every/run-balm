@@ -10,6 +10,7 @@ export function fakeProviders() {
   let n = 0
   const next = prefix => `${prefix}_test${String(++n).padStart(6, '0')}`
   const sessions = new Map(), intents = new Map(), refunds = new Map(), readers = new Map(), calls = [], texts = []
+  const checkoutKeys=new Map()
   let webhookSecret = null
   const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
   const card = { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2034 }
@@ -33,9 +34,12 @@ export function fakeProviders() {
     if (path === '/webhook_endpoints') { webhookSecret = 'synthetic-balm-' + (++n); return json({ id: next('we'), secret: webhookSecret, url: body.url }) }
     if (path.startsWith('/webhook_endpoints/')) return json({ id: path.split('/')[2], deleted: true })
     if (path === '/checkout/sessions') {
+      const key=request.headers.get('idempotency-key')
+      if(key&&checkoutKeys.has(key))return json(sessions.get(checkoutKeys.get(key)))
       const id = next('cs')
       sessions.set(id, { id, object: 'checkout.session', mode: body.mode, status: 'open', customer: body.customer ?? null, metadata: { balm_payment: body['metadata[balm_payment]'], balm_client: body['metadata[balm_client]'] },
         amount: Number(body['line_items[0][price_data][unit_amount]'] ?? 0), url: `https://checkout.stripe.com/c/pay/${id}`, success_url: body.success_url, setup_intent: null, payment_intent: null })
+      if(key)checkoutKeys.set(key,id)
       return json(sessions.get(id))
     }
     const session = path.match(/^\/checkout\/sessions\/(cs_\w+)$/)

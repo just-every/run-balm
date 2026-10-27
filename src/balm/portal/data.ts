@@ -1,3 +1,4 @@
+import { patientBookingPayments,portalBookingPayment } from '../payments/booking-prepayment'
 import { patientLetters } from '../charting/letters'
 import { retailNotices } from '../payments/retail'
 import { cardRefundsFor, cardRefundReceipt } from '../payments/refunds'
@@ -29,6 +30,7 @@ import { exerciseProgress, patientExercises } from './programs'
 /** The session's client id is the only patient selector accepted by portal reads. */
 export async function portalHome(env: Bindings, patient: Patient, setupId?: string | null) {
   const db = env.DB, at = now()
+  const bookingPayments=await patientBookingPayments(env,patient.clientId)
   const policy = await getVisitPolicy(db)
   const [clinic, appointments, exercises, messages, balance, block, receipts, superbills, messageRecipients] = await Promise.all([
     one<{ clinic_name: string; time_zone: string }>(db, 'SELECT clinic_name,time_zone FROM bm_settings WHERE id=1'),
@@ -58,7 +60,7 @@ export async function portalHome(env: Bindings, patient: Patient, setupId?: stri
     intake: appointments.filter(a => a.intake_open).map(a => ({ appointmentId: a.id, id: a.id, startAt: a.start_at, service: a.service })),
     exercises, messageRecipients, messages: messages.map(({ notification, ...m }) => m),
     paymentPlans: await patientPlans(db, patient.clientId),
-    billing: { retail:await retailNotices(db,patient.clientId), cardRefunds: await cardRefundsFor(db, patient.clientId), cardEntry: await cardEntryView(env, patient.clientId, 'portal', setupId), payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
+    billing: { bookingPayments, retail:await retailNotices(db,patient.clientId), cardRefunds: await cardRefundsFor(db, patient.clientId), cardEntry: await cardEntryView(env, patient.clientId, 'portal', setupId), payerEstimates:await aeobsFor(db,patient.clientId,true), estimates: await estimatesFor(db,patient.clientId), ...balance, block, issuedStatements: await statementsFor(db, patient.clientId), statementUrl: '/portal/statement.pdf', receipts: [...receipts, ...await externalReceipts(db, patient.clientId)], superbills },
   }
 }
 
@@ -104,6 +106,7 @@ export async function portalAction(env: Bindings, patient: Patient, name: string
     case 'exercise.done': return exerciseProgress(env.DB, patient, input, true)
     case 'message.send': return messageSend(env, patient, input)
     case 'intake.open': return intakeOpen(env.DB, patient, input)
+    case 'booking.payment':return portalBookingPayment(env,patient,input)
     case 'payment.card': return portalCardEntry(env, patient, input)
     case 'payment.open': return paymentOpen(env, patient, input)
   }

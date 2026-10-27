@@ -110,7 +110,7 @@ export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
     WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
   const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
-  return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: (await smsBlock(env)), visits, npis, ...(desk ? { cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
+  return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: (await smsBlock(env)), visits, npis, ...(desk ? { bookingReview: await rows(db,"SELECT id,client_id,amount_cents,start_at,review_reason FROM bm_booking_payments WHERE state='review' OR (state='reserved' AND attempted_at IS NOT NULL) ORDER BY created_at"), cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
 }
 
 /** The billing part of a client file: codes for the visits this actor sees, and for the desk the ledger and card. */

@@ -97,6 +97,11 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
   for(const key of people)insist(await one(db,"SELECT 1 FROM bm_staff WHERE id=? AND role='practitioner' AND active=1 AND erased_at IS NULL",key),'practitioner_not_found',404)
   for(const key of places)insist(await one(db,'SELECT 1 FROM bm_locations WHERE id=? AND active=1',key),'location_not_found',404)
   const before=integer(input.beforeBuffer===undefined?previous?.before_buffer??0:input.beforeBuffer,'before_buffer',0,120),after=integer(input.afterBuffer===undefined?previous?.after_buffer??0:input.afterBuffer,'after_buffer',0,120)
+  const prepayMode=input.prepayMode===undefined?previous?.prepay_mode??'none':String(input.prepayMode)
+  insist(['none','deposit','full'].includes(prepayMode),'invalid_prepayment_mode')
+  const price=integer(input.priceCents===undefined?previous?.price_cents:input.priceCents,'price_cents',0,10_000_000)
+  const deposit=integer(input.depositCents===undefined?previous?.deposit_cents??0:input.depositCents,'deposit_cents',0,10_000_000)
+  insist(prepayMode==='none'||(price>=50&&(prepayMode==='full'||(deposit>=50&&deposit<=price))),'deposit_must_be_between_50_cents_and_service_price')
   await commit(db, who, [
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=?)', serviceId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))] : []),
     stmt(db, `INSERT INTO bm_services(id,name,duration_minutes,price_cents,active,note_template,self_book_enabled,self_book_notice_minutes,self_book_plan_required,self_book_auth_required,intake_discipline) VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -105,6 +110,7 @@ export async function saveService(db: D1Database, who: Actor, input: Data) {
     serviceId, text(input.name === undefined ? previous?.name : input.name, 'name', 120), integer(input.durationMinutes === undefined ? previous?.duration_minutes : input.durationMinutes, 'duration_minutes', 5, 480),
     integer(input.priceCents === undefined ? previous?.price_cents : input.priceCents, 'price_cents', 0, 10_000_000), serviceBoolean(input.active, 'active', previous?.active ?? 1), noteTemplate, enabled, notice, plan, authorization,intakeDiscipline),
     stmt(db,'UPDATE bm_services SET practitioner_ids=?,location_ids=?,cpt_defaults=?,before_buffer=?,after_buffer=? WHERE id=?',JSON.stringify(people),JSON.stringify(places),JSON.stringify(defaults),before,after,serviceId),
+    stmt(db,'UPDATE bm_services SET prepay_mode=?,deposit_cents=? WHERE id=?',prepayMode,deposit,serviceId),
     audit(db, who, 'service.saved', null, serviceId),
   ])
   return { id: serviceId }

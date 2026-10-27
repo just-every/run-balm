@@ -22,7 +22,7 @@ export const invoiceNumber = (n: number) => 'INV-' + String(n).padStart(6, '0')
 /** The facts an invoice freezes; approval re-reads them and compares byte for byte. */
 export async function snapshot(db: D1Database, appointmentId: string, amountCents?: number) {
   const row = await one(db, `SELECT a.id,a.start_at,a.status,a.coverage_choice,a.client_id,c.first_name,c.last_name,c.date_of_birth,p.name AS practitioner,p.profession,p.provider_number,
-    s.name AS service,s.duration_minutes,s.price_cents,st.clinic_name,st.abn,st.practice_npi,st.tax_id_type,st.address,st.time_zone
+    s.name AS service,s.duration_minutes,COALESCE((SELECT price_cents FROM bm_booking_payments b WHERE b.appointment_id=a.id AND b.state='booked'),s.price_cents) AS price_cents,st.clinic_name,st.abn,st.practice_npi,st.tax_id_type,st.address,st.time_zone
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id, bm_settings st WHERE a.id=?`, appointmentId)
   insist(row, 'appointment_not_found', 404)
   // Freeze the same payer method and signed units used by pricing and claims.

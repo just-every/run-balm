@@ -1,3 +1,5 @@
+import type { Bindings } from '../../auth.server'
+import { reserveBooking, bookingHoldGuard } from '../payments/booking-prepayment'
 import { ruleChecker, serviceGuards } from '../scheduling/service-rules'
 import {manager,locationWrite} from './role-access'
 import { bookingCoverage, bookingEstimate } from '../payments/estimate-requests'
@@ -50,11 +52,12 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
     rows(db, 'SELECT weekday,start_minute AS startMinute,end_minute AS endMinute FROM bm_hours WHERE practitioner_id=?', practitioner),
     rows(db, `SELECT id,start_at AS startAt,end_at AS endAt FROM bm_appointments WHERE practitioner_id=? AND ${live} AND end_at>?`, practitioner, new Date(Date.now() - 86400_000).toISOString()),
   ])
+  const holds=await rows(db,"SELECT id,start_at AS startAt,end_at AS endAt FROM bm_booking_payments WHERE practitioner_id=? AND state='reserved' AND (expires_at>? OR attempted_at IS NOT NULL)",practitioner,now())
   return {
     hostTimeZone: zone, recurringWindows: hours as any[], overrides: [...(rule?.practitionerOverrides ?? []), ...(rule?.location?.time_zone ? [] : JSON.parse(String((await settings(db)).holidays))).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] }))],
     constraints: { ...onlineRules, minimumNoticeMinutes, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     // Where overlap is allowed (staff placement, or an online double-booking service) capacity decides instead (SCHED-010).
-    internalClaims: claims.filter(c => !overlapAllowed && !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) })), calendarBusy: [],
+    internalClaims: [...holds.map(c=>({startAt:c.startAt,endAt:c.endAt,hostDate:hostDateAt(new Date(c.startAt),zone)})),...claims.filter(c => !overlapAllowed && !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) }))], calendarBusy: [],
   }
 }
 
@@ -116,8 +119,9 @@ export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
 /** Same-batch fences: neither the practitioner, the room nor the equipment holds another live visit then. */
-export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string }) {
+export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string; reservationId?: string }) {
   return [
+    bookingHoldGuard(db,v),
     guard(db, "NOT EXISTS(SELECT 1 FROM bm_settings,json_each(bm_settings.holidays) h WHERE json_extract(h.value,'$.startAt')<? AND json_extract(h.value,'$.endAt')>?)", v.endAt, v.startAt),
     ...await serviceGuards(db,v),
     capacityGuard(db, v),
@@ -213,7 +217,7 @@ const unproven = `CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=?
   CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE phone=? AND erased_at IS NULL) THEN NULL ELSE ? END`
 
 /** Public online booking for a new client. Returns the one-time intake link token. */
-export async function bookOnline(db: D1Database, input: Data) {
+export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
   const unchanged = await selfServiceSnapshot(db)
   const clinic = await settings(db)
   insist(clinic.booking_open === 1, 'online_booking_closed', 409)
@@ -239,7 +243,8 @@ export async function bookOnline(db: D1Database, input: Data) {
   if (double) insist(await patientFits(db, existing?.id as string ?? null, practitioner.id as string, service.id as string, start.toISOString(), end.toISOString()), 'slot_unavailable', 409)
   const eligibility = await checkSelfService(db, { clientId: existing?.id as string | undefined, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString() })
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
-  await commit(db, null, [
+  const visit={ id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }
+  const writes=[
     unchanged, ...eligibility.guards,
     guard(db, `${upcomingOnline}<3`, client.email, client.email, now()),
     ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
@@ -247,9 +252,15 @@ export async function bookOnline(db: D1Database, input: Data) {
         clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.email, client.email, client.phone, client.phone, now()),
       audit(db, visitor, 'client.created', clientId, clientId, 'online booking'),
     ]),
-    ...await appointmentStatements(db, visitor, { id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }),
-  ])
-  return { appointmentId, clientId, token, startAt: start.toISOString(), practitioner: practitioner.name, service: service.name, timeZone: clinic.time_zone, email: client.email, firstName: client.firstName }
+  ]
+  const result={ appointmentId, clientId, token, startAt: start.toISOString(), practitioner: practitioner.name, service: service.name, timeZone: clinic.time_zone, email: client.email, firstName: client.firstName }
+  if(service.prepay_mode!=='none')insist(visit.coverageChoice!=='unknown','choose_your_payment_coverage_before_booking',409)
+  if(service.prepay_mode!=='none'&&['self_pay','uninsured'].includes(visit.coverageChoice)){
+    insist(env,'booking_payment_unavailable',409)
+    return {...result,paymentToken:await reserveBooking(env,db,service,visit,input,visitor,writes)}
+  }
+  await commit(db,null,[...writes,...await appointmentStatements(db,visitor,visit)])
+  return {...result,paymentToken:null}
 }
 
 /** Staff book an existing client inside the practitioner's hours; the notice and horizon do not apply. */

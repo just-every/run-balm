@@ -1,3 +1,4 @@
+import { recordBookingSucceeded, syncBookingCheckout } from './booking-prepayment'
 import { syncTerminalPayment } from './terminal'
 // Money in through the clinic's Stripe account: the card on file charged off
 // session (a copay at check-in, an invoice's balance) or the patient paying a
@@ -83,6 +84,7 @@ export async function startLinkPayment(env: Bindings, db: D1Database, link: Data
 /** Read a Checkout Session back from Stripe and record what it says; safe to repeat. */
 export async function syncCheckout(env: Bindings, db: D1Database, sessionId: string) {
   const row = await one(db, 'SELECT * FROM bm_card_payments WHERE checkout_session=?', sessionId)
+  if (row && await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',row.id))return syncBookingCheckout(env,db,row.id)
   if (!row || DONE.includes(row.status as string)) return row
   const { key } = await stripeReady(env, db)
   const session = await stripeCall(key, 'GET', `/checkout/sessions/${encodeURIComponent(sessionId)}`, { expand: ['payment_intent.latest_charge'] })
@@ -100,6 +102,7 @@ export async function syncCheckout(env: Bindings, db: D1Database, sessionId: str
 export async function syncIntent(env: Bindings, db: D1Database, intentId: string, paymentId?: string) {
   const row = await one(db, 'SELECT * FROM bm_card_payments WHERE payment_intent=? OR id=?', intentId, paymentId ?? '')
   if (!row) return row
+  if(await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',row.id))return syncBookingCheckout(env,db,row.id,intentId)
   if (await one(db, 'SELECT 1 FROM bm_terminal_payments WHERE payment_id=?', row.id)) return syncTerminalPayment(env, db, row.id, null, intentId)
   if (DONE.includes(row.status as string)) return row
   const { settings, key } = await stripeReady(env, db)
@@ -120,6 +123,7 @@ async function applyIntent(env: Bindings, db: D1Database, row: Data, intent: Dat
 
 /** Post a succeeded intent once: the payment, its receipt number and its matching to invoices in one batch. */
 export async function recordSucceeded(env: Bindings, db: D1Database, row: Data, intent: Data) {
+  if(await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',row.id))return recordBookingSucceeded(env,db,row,intent)
   const card = intent.latest_charge && typeof intent.latest_charge === 'object' ? (intent.latest_charge.payment_method_details?.card ?? intent.latest_charge.payment_method_details?.card_present) : null
   const amount = Number(intent.amount_received)
   insist(amount === Number(row.amount_cents) && intent.currency === 'usd', 'stripe_payment_amount_changed', 409)
