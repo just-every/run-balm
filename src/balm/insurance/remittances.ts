@@ -30,7 +30,6 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
     }
     const {claim,facts,crossover}=await remitIdentity(db,who,r,payerId)
     const stage=await stageForClaim(db,claim),forwarded=await crossoverTarget(db,claim,r.crossedTo)
-    const previous=await one(db,'SELECT 1 FROM bm_remittance_claims WHERE claim_id=?',claim.id)
     const prior=await remitPrior(db,claim,facts,r,key)
     insist(crossover||['batched','exported','submitted','accepted','rejected','denied'].includes(claim.status),'remittance_claim_state_invalid',409)
     insist(r.chargeCents===claim.amount_cents,'remittance_charge_does_not_match_claim')
@@ -51,8 +50,9 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
     const errors=status==='denied'||status==='partial'?r.adjustments.filter(a=>a.group==='CO').map(a=>({code:'carc_'+a.reason,field:'claim',message:`${adjustmentLabel(a.group,a.reason)}. ${r.remarks.map(remarkLabel).join('; ')} ${denialNextStep(a.reason)}`})):[]
     statements.push(
       ...adjudicationStatements(db,claim,prior,id(),at,status==='denied'||status==='partial',forwarded),
-      ...(!crossover&&!previous?[guard(db,'NOT EXISTS(SELECT 1 FROM bm_remittance_claims WHERE claim_id=?)',claim.id),
-      stmt(db,'INSERT INTO bm_remittance_claims(import_id,claim_id,paid_cents,co_cents,pr_cents,payer_control,adjustments) VALUES(?,?,?,?,?,?,?)',key,claim.id,r.paidCents,co,r.prCents,r.control,JSON.stringify({adjustments:r.adjustments,remarks:r.remarks,lines:r.lines}))]:[]),
+      ...(!crossover?[
+      // This row projects the current result; immutable adjudications and events above retain every original.
+      stmt(db,'INSERT INTO bm_remittance_claims(import_id,claim_id,paid_cents,co_cents,pr_cents,payer_control,adjustments) VALUES(?,?,?,?,?,?,?) ON CONFLICT(claim_id) DO UPDATE SET import_id=excluded.import_id,paid_cents=excluded.paid_cents,co_cents=excluded.co_cents,pr_cents=excluded.pr_cents,payer_control=excluded.payer_control,adjustments=excluded.adjustments',key,claim.id,r.paidCents,co,r.prCents,r.control,JSON.stringify({adjustments:r.adjustments,remarks:r.remarks,lines:r.lines}))]:[]),
       ...(r.paidCents?[stmt(db,'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)',id(),claim.invoice_id,r.paidCents,`era:${payerId}:${parsed.trace}:${claim.id}`,who.email,at)]:[]),
       ...(writeoff?[stmt(db,'INSERT INTO bm_insurance_adjustments(id,invoice_id,amount_cents,reason,remittance_id,recorded_by,recorded_at) VALUES(?,?,?,?,?,?,?)',id(),claim.invoice_id,writeoff,r.adjustments.filter(a=>a.group==='CO').map(a=>adjustmentLabel(a.group,a.reason)).join('; '),key,who.email,at)]:[]),
       guard(db,`(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)+(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=?)<=(SELECT amount_cents FROM bm_invoices WHERE id=? AND status='approved')`,claim.invoice_id,claim.invoice_id,claim.invoice_id),

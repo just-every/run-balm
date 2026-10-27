@@ -45,12 +45,15 @@ export async function denialJourney(h,{capture=async()=>{}}={}){
  await capture('rejected',c)
  await c.deny();const auth=await c.authorize(),packet=await c.prepare(auth)
  for(const cookie of [c.reception.cookie,c.priya.cookie])await h.cmd('case.appeal.prepare',{caseId:c.referral.id,claimId:c.claim.id,authorizationId:auth.id},cookie,403)
+ const event=await h.db.prepare("SELECT id,detail FROM bm_claim_events WHERE claim_id=? AND kind='835'").bind(c.claim.id).first()
+ assert.equal(packet.eventId,event.id,'the appeal cites the actual imported denial event')
+ assert.deepEqual(packet.adjudication,JSON.parse(event.detail),'the packet attaches the original adjudication without recomputation')
  const proposed=(await c.view(c.biller.cookie)).appeals.find(a=>a.id===packet.id)
  assert.equal(proposed.resolution,'awaiting_payment')
  assert.match(proposed.wording,/197/);assert.match(proposed.wording,/synthetic-balm-2/)
  assert.deepEqual(proposed.citations,[
   {kind:'claim',href:`/app/clients/${c.patient.id}#claim-${c.claim.id}`,label:`Claim ${c.claim.id}`},
-  {kind:'era',href:`/app/clients/${c.patient.id}#claim-${c.claim.id}`,label:`835 adjudication ${packet.eventId}`},
+  {kind:'era',href:`/app/clients/${c.patient.id}#claim-${c.claim.id}`,label:`835 adjudication ${event.id}`},
   {kind:'note',href:`/app/clients/${c.patient.id}#note-${c.note.id}`,label:'Signed treatment note'},
   {kind:'authorization',href:`/app/clients/${c.patient.id}#authorization-${auth.id}`,label:'Authorization synthetic-balm-2'}
  ],'each exact citation points to the denial records')
@@ -86,7 +89,7 @@ export async function denialJourney(h,{capture=async()=>{}}={}){
  const resolved=(await c.view()).appeals.find(a=>a.id===packet.id)
  assert.equal(resolved.resolution,'resolved');assert.equal(resolved.wording,proposed.wording)
  const file=(await h.send('/api/balm/clients/'+c.patient.id,undefined,h.owner)).value
- assert.equal(file.billing.ledger.paymentsCents,6000);assert.equal(file.billing.ledger.patientBalanceCents,1500)
+ assert.equal(file.insurance.claims.find(r=>r.id===c.claim.id).payer_paid_cents,6000,'the patient file reflects the later payment');assert.equal(file.billing.ledger.paymentsCents,6000);assert.equal(file.billing.ledger.patientBalanceCents,1500)
  const originals=(await h.db.prepare("SELECT detail FROM bm_claim_events WHERE claim_id=? AND kind='835' ORDER BY rowid").bind(c.claim.id).all()).results.map(r=>JSON.parse(r.detail))
  assert.deepEqual(originals,[{id:c.claim.id,status:'4',chargeCents:9500,paidCents:0,prCents:0,control:'PAYERDENIED001',adjustments:[{group:'CO',reason:'197',amountCents:9500,line:null}],remarks:['N54'],lines:[{code:'97110',modifiers:['GP'],units:2,chargeCents:7000,paidCents:0,adjustments:[],adjudicatedOn:'2026-10-17',reference:'synthetic-balm-4'},{code:'97140',modifiers:['GP'],units:1,chargeCents:2500,paidCents:0,adjustments:[],adjudicatedOn:'2026-10-17',reference:'synthetic-balm-5'}]},{id:c.claim.id,status:'1',chargeCents:9500,paidCents:6000,prCents:1500,control:'PAYERPAID001',adjustments:[{group:'CO',reason:'45',amountCents:2000,line:null},{group:'PR',reason:'3',amountCents:1500,line:null}],remarks:['M15'],lines:[{code:'97110',modifiers:['GP'],units:2,chargeCents:7000,paidCents:4500,adjustments:[],adjudicatedOn:'2026-10-17',reference:'synthetic-balm-4'},{code:'97140',modifiers:['GP'],units:1,chargeCents:2500,paidCents:1500,adjustments:[],adjudicatedOn:'2026-10-17',reference:'synthetic-balm-5'}]}],'complete original adjudications survive payment')
  const audits=(await h.db.prepare('SELECT action FROM bm_audit WHERE client_id=?').bind(c.patient.id).all()).results.map(r=>r.action)

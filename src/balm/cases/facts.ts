@@ -31,9 +31,6 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
     one(db, 'SELECT MIN(received_on) AS on_ FROM bm_referrals WHERE client_id=? AND received_on>? ', clientId, referral.received_on),
   ])
   for(const claim of claims){
-    const latest=await one(db,"SELECT e.detail,i.trace,i.imported_at FROM bm_claim_events e JOIN bm_insurance_imports i ON i.id=(SELECT source_id FROM bm_cob_adjudications WHERE claim_id=e.claim_id ORDER BY recorded_at DESC,rowid DESC LIMIT 1) WHERE e.claim_id=? AND e.kind='835' ORDER BY e.created_at DESC,e.rowid DESC LIMIT 1",claim.id)
-    if(latest){const detail=JSON.parse(latest.detail);claim.paid_cents=detail.paidCents;claim.pr_cents=detail.prCents;claim.era_trace=latest.trace;claim.era_at=latest.imported_at;claim.adjustments=JSON.stringify({adjustments:detail.adjustments,remarks:detail.remarks,lines:detail.lines})}
-
     const manual=await rows(db,`SELECT l.*,b.reference,b.closed_at FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id WHERE l.claim_id=? AND b.status='closed' ORDER BY b.closed_at,l.id`,claim.id)
     if(manual.length){
       claim.paid_cents=Number(claim.paid_cents??0)+manual.reduce((sum,l)=>sum+(l.kind==='recoupment'?-l.amount_cents:l.paid_cents),0)
