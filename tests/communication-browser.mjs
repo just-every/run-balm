@@ -16,12 +16,20 @@ try {
  await h.cmd('message.send',{clientId:c.patient.id,recipient:c.priya.id,body:'Shoulder secure conversation',delivery:'shown'},c.priya.cookie)
  context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}})
  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
- await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
+ await context.route('**/fonts/**/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
  const login=async cookie=>{const [name,...parts]=cookie.split('=');await context.clearCookies();await context.addCookies([{name,value:parts.join('='),url:h.origin,secure:true}])}
  const page=await context.newPage()
+ const fonts=await context.newCDPSession(page)
+ await fonts.send('DOM.enable');await fonts.send('CSS.enable')
  const capture=async(name,width)=>{
   await page.setViewportSize({width,height:1000})
   await page.locator('#communications').scrollIntoViewIfNeeded()
+  await page.evaluate(()=>document.fonts.ready)
+  if(width===1440){
+   const {root:document}=await fonts.send('DOM.getDocument')
+   const {nodeId}=await fonts.send('DOM.querySelector',{nodeId:document.nodeId,selector:'#communications h2'})
+   console.log(name+' rendered fonts '+JSON.stringify((await fonts.send('CSS.getPlatformFontsForNode',{nodeId})).fonts.map(f=>({family:f.familyName,custom:f.isCustomFont,glyphs:f.glyphCount}))))
+  }
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width)
   const icons=await page.locator('button,a,label[for]').evaluateAll(els=>els.filter(el=>el.getBoundingClientRect().width&&el.getBoundingClientRect().height&&!el.textContent.trim()&&el.querySelector('svg')).map(el=>({label:el.getAttribute('aria-label'),tooltip:!!el.querySelector('[role=tooltip]')})))
   assert.ok(icons.every(el=>el.tooltip),'icon-only controls have tooltips: '+JSON.stringify(icons))

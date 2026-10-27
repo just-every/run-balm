@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "cea7defdbfc9d7da337a5656fc17fadd0c9bcc233a3f03d8ae9ce839c60428a0",
+      "sha256": "15e56a1808dd6dd3da5421a724530cea138063e480e1f6c7198434236af6a437",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "6b68c30f963ee0a9f04d4f9ce54dbdd84d914b1472974b17002b70ec98c96d12",
+      "sha256": "74e493fb21d8e3974e49f9292bb64481ece81235273d1ade8cbd2d713cec58a9",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "c209c7653bba5b7df2d135456aa84a8abfa24742fa3c6785b69b4ff32ef177e0",
+      "sha256": "3ab6f1d9094ee570bd91c5f4c567bdc332c6cd019bb9c8cda63195b473763ee6",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -914,7 +914,7 @@
       "executable": false
     },
     "public/rer-theme.css": {
-      "sha256": "61fb013b40edb3a57c4f9485452272953c18434bc56b43f0269bda4b6c4ea785",
+      "sha256": "aa574f7c0010a27c3e05c52ee01531989cf03ee082e52a4887d300609c0cfee9",
       "executable": false
     },
     "public/site/band-1152.avif": {
@@ -2998,7 +2998,7 @@
       "executable": false
     },
     "src/balm/ui/index.ts": {
-      "sha256": "4f7f9680c757ee601de07d917697479d5f7fb588b7745d6aee73bad97c36e01f",
+      "sha256": "6988bd4b2fb1734fba7bc69fd3114e8be2a4a1781c4c836db5c8cc2638c13004",
       "executable": false
     },
     "src/balm/ui/injury.ts": {
@@ -5358,7 +5358,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "9874f7d2ee9a746ed98406a921b0887f12b678907ab1838011ed8c56e9976cf8",
+      "sha256": "0cc75c618eaebc6acf1c426e67054c5f6c8f0f1fffc28e4c2bb07c9faa917857",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5450,7 +5450,7 @@
       "executable": false
     },
     "tests/communication-browser.mjs": {
-      "sha256": "2d025d661c23cb05fe7d6b654348d4c77ee8ede43ddcd8323d9d8c8be08a71c1",
+      "sha256": "ac6e98586d07d00d4ef7006af6ca98480b428ddd5d7d9c7b718c321aed17fdd5",
       "executable": false
     },
     "tests/communication-journey.mjs": {

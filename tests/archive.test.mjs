@@ -90,8 +90,6 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
 
     const visit=await pastVisit(h,maya.id,priya,service.id,h.owner,2,{coverageChoice:'self_pay',deliveryMethod:'portal'})
     await h.cmd('appointment.attend',{id:visit})
-    await h.cmd('call.log',{clientId:maya.id,recipient:priya.id,direction:'incoming',occurredAt:'2000-01-02T00:30:00Z',disposition:'Archived call disposition'},priya.cookie)
-    const archivedCalls=(await h.send('/api/balm/clients/'+maya.id+'/communications?communicationChannel=call',undefined,h.owner)).value
     const checkedNote=await h.cmd('note.write',{clientId:maya.id,appointmentId:visit,body:'Restored treatment note'},priya.cookie)
     await h.cmd('scribe.save',{provider:'anthropic',key:'synthetic-balm-3'})
     const noteCheck=await h.cmd('note.check',{id:checkedNote.id,revision:1},priya.cookie)
@@ -136,12 +134,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
-  const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -203,8 +201,6 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       assert.equal(restoredEntry.sha256,external.sha256,'PAY-004 exact approved proposal survives CLI archive')
       assert.ok(restoredEntry.approved_by)
       assert.equal((await restoredClinic.send('/api/balm/receipts/'+external.id+'.pdf',undefined,cookie)).text,externalReceipt,'PAY-004 original external receipt survives CLI archive')
-      assert.deepEqual((await restoredClinic.send('/api/balm/clients/'+maya.id+'/communications?communicationChannel=call',undefined,cookie)).value,archivedCalls,'COMM-003 exact call facts and searchable history survive CLI archive restore')
-      await assert.rejects(restoredClinic.db.prepare('DELETE FROM bm_calls WHERE client_id=?').bind(maya.id).run(),/calls_are_health_records/)
       const restoredMail=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value.mailHistory
       assert.ok(restoredMail.some(m=>m.kind==='intake'&&m.state==='delivered'),'COMM-001 verified delivery survives the public CLI archive round trip')
       const restoredState=await restoredClinic.state(cookie)
@@ -740,6 +736,56 @@ test('prior authorization signed packets and recorded payer decisions survive a 
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
+
+// Keep call custody independent of the large clinical archive fixture. Both
+// installations start from the real migrations; only public CLI transfer moves data.
+test('COMM-003: public CLI archive round trip preserves exact calls and custody in an empty install', {timeout:180000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ const snapshot=async(db,clientId)=>({
+  calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
+  audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
+ })
+ try{
+  await checkout(source);await checkout(restored)
+  // Build an unclaimed, empty installation without spawning Wrangler for each
+  // migration. The CLI still checks the ledger and enforces empty-target restore.
+  h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
+  h=await harness({root:source,migrate:true,codeSets:false})
+  const desk=await h.staff('Rosa','reception')
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody'})
+  const ids=[]
+  for(const [direction,occurredAt,disposition] of [
+   ['incoming','2000-01-02T03:00:00Z','synthetic-balm-301 scheduling question'],
+   ['outgoing','2000-01-03T04:00:00Z','synthetic-balm-302 appointment confirmed'],
+  ])ids.push((await h.cmd('call.log',{clientId:patient.id,recipient:'front_desk',direction,occurredAt,disposition},desk.cookie)).id)
+  const path='/api/balm/clients/'+patient.id+'/communications?communicationChannel=call'
+  const history=(await h.send(path,undefined,h.owner)).value
+  assert.equal(history.total,2)
+  assert.deepEqual(new Set(history.results.map(r=>r.id)),new Set(ids))
+  const original=await snapshot(h.db,patient.id)
+  assert.equal(original.calls.length,2)
+  assert.deepEqual(original.calls.map(c=>[c.direction,c.occurred_at,c.staff_id,c.staff_name,c.recorded_by,c.disposition]).sort(),[
+   ['incoming','2000-01-02T03:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-301 scheduling question'],
+   ['outgoing','2000-01-03T04:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-302 appointment confirmed'],
+  ])
+  assert.equal(original.audit.filter(a=>a.action==='call.logged').length,2)
+  assert.equal(original.audit.filter(a=>a.action==='communication.call_read').length,2)
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'calls.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity,codeSets:false})
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field and patient custody audit row survives unchanged')
+  assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
+  const cookie=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
+  await assert.rejects(h.db.prepare('UPDATE bm_calls SET disposition=? WHERE id=?').bind('Changed original',ids[0]).run(),/calls_are_health_records/)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_calls WHERE id=?').bind(ids[0]).run(),/calls_are_health_records/)
+  await h.cmd('client.erase',{id:patient.id},cookie,409)
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
 
 test('HIPAA-001: public CLI archive restores the readiness review and complete BAA history', {timeout:600000},async()=>{
  const temporary=await mkdtemp(join(tmpdir(),'balm-readiness-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
