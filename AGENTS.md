@@ -145,8 +145,10 @@ Native-session/runtime evidence: https://github.com/runeditrun/base/tree/ada9f57
 
 ## Contract documentation regeneration
 
-Lander-Regenerate: `node scripts/contract-docs.mjs write`, then
-`node scripts/contract-docs.mjs check`. CONTRACT.md supplies acceptance, status,
+Lander-Regenerate: `node scripts/contract-docs.mjs write REPORT-003 CHART-011`, then
+`node scripts/contract-docs.mjs check REPORT-003 CHART-011`. Both adopted projections
+are maintained together, including when an older invocation names only REPORT-003.
+CONTRACT.md supplies acceptance, status,
 evidence and gaps. The generator incrementally adopts marked clauses while
 preserving legacy acceptance narratives and homepage claim rows. Regenerate
 `sources.lock.json` last with `node scripts/edition-authoring/cli.mjs lock`.
