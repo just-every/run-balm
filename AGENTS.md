@@ -137,3 +137,11 @@ their maintenance.
 
 Pinned reference: https://github.com/runeditrun/base/blob/ada9f574d8a7247edc3a1180b593ad182b1fbb37/TANSTACK-START-MIGRATION.md
 Native-session/runtime evidence: https://github.com/runeditrun/base/tree/ada9f574d8a7247edc3a1180b593ad182b1fbb37/default-seed
+
+## Contract documentation regeneration
+
+Lander-Regenerate: `node scripts/contract-docs.mjs write`, then
+`node scripts/contract-docs.mjs check`. CONTRACT.md supplies acceptance, status,
+evidence and gaps. The generator incrementally adopts marked clauses while
+preserving legacy acceptance narratives and homepage claim rows. Regenerate
+`sources.lock.json` last with `node scripts/edition-authoring/cli.mjs lock`.

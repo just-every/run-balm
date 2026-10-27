@@ -708,6 +708,9 @@ test('prior authorization signed packets and recorded payer decisions survive a 
   assert.equal((await h.send('/api/balm/insurance/authorization-request/'+request.id,undefined,c.biller.cookie)).status,200)
   await h.cmd('insurance.authorization_request.submit',{...request,channel:'availity',submittedOn:c.today,reference:'synthetic-balm-8',attest:true},c.biller.cookie)
   const result=await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},c.biller.cookie)
+  const clinicalLetter=await h.cmd('letter.prepare',{noteId:c.input.noteId},c.priya.cookie)
+  const deliveredLetter=await h.cmd('letter.deliver',{...clinicalLetter,attest:true},c.priya.cookie)
+  const letterOriginal=(await h.send('/api/balm/chart-documents/'+deliveredLetter.documentId,undefined,h.owner)).text
   const identity={auth:h.auth,owner:h.owner}
   await h.close();h=null
   const archive=join(temporary,'authorization.rer')
@@ -720,6 +723,9 @@ test('prior authorization signed packets and recorded payer decisions survive a 
   const record=file.insurance.authorizationRequests[0]
   assert.deepEqual([record.status,record.channel,record.submission_reference,record.decision_reference,record.authorization_id],['approved','availity','synthetic-balm-8','synthetic-balm-5',result.authorizationId])
   assert.equal(file.insurance.authorizations.find(a=>a.id===result.authorizationId).remaining_visits,1)
+  assert.equal((await h.send('/api/balm/chart-documents/'+deliveredLetter.documentId,undefined,owner)).text,letterOriginal)
+  const restoredLetter=await h.db.prepare('SELECT l.author_id,l.episode_id,d.sha256,d.channel FROM bm_clinical_letters l JOIN bm_letter_deliveries d ON d.letter_id=l.id WHERE l.id=?').bind(clinicalLetter.id).first()
+  assert.equal(restoredLetter.author_id,c.priya.id);assert.equal(restoredLetter.sha256,deliveredLetter.sha256);assert.equal(restoredLetter.channel,'portal')
   assert.ok(file.audit.some(a=>a.action==='insurance.authorization_decision_recorded'))
   await h.cmd('insurance.authorization_request.decide',{...c.approval,...request},owner,409)
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}

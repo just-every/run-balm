@@ -6,7 +6,7 @@ import { clinicalActor, documentReader, documentsFor, documentScope, documentTyp
 
 const PAGE_SIZE = 50
 const fold = (value: string) => value.toLocaleLowerCase('en-US')
-export const historyTypes = [...documentTypes, ['note','Treatment note'], ['intake','Intake form'], ['plan','Plan of care'], ['consent','Signed consent'], ['insurance_card','Insurance card'], ['identity','Photo ID'], ['historical_note','Historical note'], ['message','Secure message'], ['message_attachment','Message attachment']] as const
+export const historyTypes = [...documentTypes, ['progress_letter','Progress letter'], ['note','Treatment note'], ['intake','Intake form'], ['plan','Plan of care'], ['consent','Signed consent'], ['insurance_card','Insurance card'], ['identity','Photo ID'], ['historical_note','Historical note'], ['message','Secure message'], ['message_attachment','Message attachment']] as const
 
 /** Existing notes/intake keep their current scope; only uploads use shared clinical access. */
 export async function chartHistory(db: D1Database, who: Actor, file: Data, zone: string, input: Data = {}) {

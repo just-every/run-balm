@@ -291,6 +291,13 @@ test('a verified guardian switches between two minors without seeing unrelated r
   await h.cmd('guardian.grant',{...grant,clientId:child1.id},priya.cookie,403)
   await h.cmd('guardian.grant',{...grant,clientId:child1.id,verified:false},h.owner,400)
   await h.cmd('guardian.grant',{...grant,clientId:adult.id},h.owner,409)
+  const letterVisit=(await h.state()).appointments.find(a=>a.client_id===child1.id)
+  const letterNote=await h.cmd('note.write',{clientId:child1.id,appointmentId:letterVisit.id,body:'Synthetic child progress letter'},priya.cookie)
+  await h.cmd('note.sign',{id:letterNote.id,revision:1,signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  const childLetter=await h.cmd('letter.prepare',{noteId:letterNote.id},priya.cookie)
+  const childDelivery=await h.cmd('letter.deliver',{...childLetter,attest:true},priya.cookie)
+  const childOriginal=(await h.send('/api/balm/chart-documents/'+childDelivery.documentId,undefined,priya.cookie)).text
+  const childLetterPath='/portal/letters/'+childDelivery.documentId+'.pdf'
   const first=await h.cmd('guardian.grant',{...grant,clientId:child1.id})
   await h.cmd('guardian.grant',{...grant,clientId:child2.id})
   const cookie=await portalLogin(h,'guardian@family.example')
@@ -298,6 +305,8 @@ test('a verified guardian switches between two minors without seeing unrelated r
   assert.equal((await h.form('/portal/action',{name:'guardian.select',id:foreign.id},cookie)).status,404)
   for(const child of [child1,child2]){
    assert.equal((await h.form('/portal/action',{name:'guardian.select',id:child.id},cookie)).status,303)
+   const letterRead=await h.send(childLetterPath,undefined,cookie)
+   if(child.id===child1.id)assert.equal(letterRead.text,childOriginal);else assert.equal(letterRead.status,404)
    const home=await h.send('/portal/home',undefined,cookie)
    assert.equal(home.status,200,home.text)
    assert.match(home.text,new RegExp(child.id===child1.id?'Lucia home task':'Mateo home task'))
@@ -327,6 +336,7 @@ test('a verified guardian switches between two minors without seeing unrelated r
    {name:'guardian-insurance-update',path:'/portal/home',cookie,selector:'#profile',open:'Update insurance details'},
    {name:'guardian-owner-grant',path:'/app/clients/'+child1.id,cookie:h.owner,open:'Grant verified guardian access',selector:'form[action*="guardian.grant"]'}])
   await h.cmd('guardian.revoke',{id:first.id})
+  assert.equal((await h.send(childLetterPath,undefined,cookie)).status,303)
   assert.equal((await h.send('/portal/home',undefined,cookie)).status,303)
   const again=await portalLogin(h,'guardian@family.example')
   assert.equal((await h.form('/portal/action',{name:'guardian.select',id:child1.id},again)).status,404)

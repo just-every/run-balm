@@ -5,7 +5,8 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "pnpm run check --profile first-party"
+        "pnpm run check --profile first-party",
+        "node scripts/contract-docs.mjs check"
       ]
     },
     {
@@ -29,7 +30,8 @@
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-denial\" node tests/denial-resolver-browser.mjs",
-        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs"
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-letters\" node --test --test-name-pattern=\"^CHART-011:\" tests/charting.test.mjs"
       ]
     },
     {

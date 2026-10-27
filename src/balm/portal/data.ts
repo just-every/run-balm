@@ -1,3 +1,4 @@
+import { patientLetters } from '../charting/letters'
 import { retailNotices } from '../payments/retail'
 import { cardRefundsFor, cardRefundReceipt } from '../payments/refunds'
 import { cardEntryView, portalCardEntry } from '../payments/card-entry'
@@ -46,6 +47,7 @@ export async function portalHome(env: Bindings, patient: Patient, setupId?: stri
     audit(db, guardianActor(patient), 'retail.notices_read', patient.clientId),
   ])
   return {
+    letters: await patientLetters(db,patient),
     outcomeFollowthrough: await patientOutcomes(db, patient),
     language:await patientLanguage(db,patient),
     guardianChildren:await guardianChildren(db,patient),clientId:patient.clientId,profile:await patientProfile(db,patient),
