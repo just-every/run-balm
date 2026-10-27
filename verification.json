@@ -68,7 +68,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs|retail and finance originals\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"CLI archive preserves jobs|retail and finance originals|denial appeal approval\" tests/archive.test.mjs"
       ]
     },
     {

@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "4702e58723a1b6aa44459618d9c69ea0878ad7d4dd8ababcbea5b68a4cb222f5",
+      "sha256": "dd2b17cf6a803d71869b4b391c3f91918f3dd1ca0f39e30a58ab4d78842b623a",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "da2d85f53186bdcf84f98160c137ed1907ffdf1937010fcd990eff23b57f4a00",
+      "sha256": "1340130585ff00e832355a585f22c967f9d0d0901b2d332a518415dfe4052eec",
       "executable": false
     },
     "DEMO.md": {
@@ -5290,7 +5290,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "5d1b8712a2216e7a7028379c87401cbd184a2da6c7996dc2b318acf269c3157c",
+      "sha256": "891d18bbed192fc94ba2424239e0bebf6e50503dcfd9847256ce87178f61d87e",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5402,7 +5402,7 @@
       "executable": false
     },
     "tests/denial-resolver-journey.mjs": {
-      "sha256": "e6a953bfc2287737a0a08bfa648f00cb5072e22feac9f2448b2a793dd9f10c33",
+      "sha256": "4ee0cbb5a44adcd49b99993165f855fffcfdd10f42b1aefc0567d6a7610279ba",
       "executable": false
     },
     "tests/denial-work-browser.mjs": {
@@ -5750,7 +5750,7 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "7a39bd40efbc564b9161289ed8436708d07ad35c3d1fb223382d023aad18f919",
+      "sha256": "cae505c3b8714bfe756808bbe32136bf166a7682af6d8fb4dbdc0358333afdb5",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {

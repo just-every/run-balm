@@ -83,4 +83,5 @@ export async function denialResolverJourney(h,options={}){
  assert.equal((await h.send(pdfPath,undefined,biller.cookie)).status,403)
  const audit=await h.db.prepare("SELECT action FROM bm_audit WHERE subject_id=?").bind(release.id).all()
  for(const action of ['note_release.prepared','note_release.reviewed','note_release.approved','note_release.downloaded','note_release.revoked'])assert.ok(audit.results.some(r=>r.action===action),action)
+ return {patient,referral,release,claim,letter:step.appeal.letter,pdf:pdf.text}
 }

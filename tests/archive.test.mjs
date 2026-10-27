@@ -706,3 +706,33 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
   assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+
+test('denial appeal approval, evidence custody and paid adjudications survive the public CLI archive', {timeout:240000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-appeal-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  h=await harness({root:source,migrate:true})
+  const {denialResolverJourney}=await import('./denial-resolver-journey.mjs')
+  const result=await denialResolverJourney(h),identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'appeal.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  const owner=await h.signIn(h.auth.OWNER_EMAIL),biller=await h.signIn('appealbiller@clinic.example')
+  const cases=await h.send('/api/balm/cases',undefined,biller)
+  assert.equal(cases.status,200,cases.text)
+  const c=cases.value.cases.find(c=>c.referral.id===result.referral.id)
+  const approved=c.history.find(s=>s.kind==='denial.appeal')
+  assert.equal(approved.wording,result.letter);assert.equal(approved.result.releaseDigest,result.release.sha256)
+  assert.equal(approved.approved_by,'appealbiller@clinic.example');assert.equal(approved.approved_role,'biller')
+  assert.deepEqual(c.denials,[{claimId:result.claim.id,state:'resolved',paidCents:6000}])
+  const pdfPath='/api/balm/note-releases/'+result.release.id+'.pdf'
+  assert.equal((await h.send(pdfPath,undefined,owner)).text,result.pdf)
+  assert.equal((await h.send(pdfPath,undefined,biller)).status,403,'the archived revocation still ends biller access')
+  const originals=await h.db.prepare('SELECT paid_cents FROM bm_cob_adjudications WHERE claim_id=? ORDER BY recorded_at,id').bind(result.claim.id).all()
+  assert.deepEqual(originals.results.map(r=>r.paid_cents),[0,6000])
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
