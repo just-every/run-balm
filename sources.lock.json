@@ -3014,7 +3014,7 @@
       "executable": false
     },
     "src/balm/ui/movein-bundle.ts": {
-      "sha256": "fdecacfc0b3d264ef75d42c5f77df5923f08f7052327ef718b04c5993b55a9d8",
+      "sha256": "0d386384eaf23e5d19da1cabb69164f03502577f89aeb1da73c019cec5008132",
       "executable": false
     },
     "src/balm/ui/movein-guide.ts": {
@@ -5626,7 +5626,7 @@
       "executable": false
     },
     "tests/movein-reconciliation-journey.mjs": {
-      "sha256": "91d8c7654caa4638772649194b6432a096c01c86fd81cb38b6553e48caa5bfc9",
+      "sha256": "b384a7be0d7813ea87e44208f3eab4276c67dbc2cbc59e8b5e77c827b131ab2a",
       "executable": false
     },
     "tests/movein.test.mjs": {
