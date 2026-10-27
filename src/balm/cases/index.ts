@@ -114,7 +114,7 @@ async function approve(env: Bindings, who: Actor, input: Data) {
   insist(!step.blocked, step.blocked ?? 'step_blocked', 409)
   const wording = step.draftable ? text(input.wording, 'wording', 4000) : '', key = id()
   await commit(db, who, [stmt(db, `INSERT INTO bm_case_steps(id,referral_id,step_key,kind,title,digest,citations,wording,approved_by,approved_role,approved_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,'sending')`,
-    key, c.referral.id, step.key, step.kind, step.title, step.digest, JSON.stringify(step.citations), wording, who.email, who.role, now()), audit(db, who, 'case.step_approved', c.client.id, key, step.kind)])
+    key, c.referral.id, step.key, step.kind, step.title, step.digest, JSON.stringify(step.citations), wording, who.email, biller(who)?'biller':who.role, now()), audit(db, who, 'case.step_approved', c.client.id, key, step.kind)])
   const finish = (status: 'done' | 'failed', result: Data) => commit(db, null, [stmt(db, "UPDATE bm_case_steps SET status=?,result=?,finished_at=? WHERE id=? AND status='sending'", status, JSON.stringify(result), now(), key)])
   let outcome
   try { outcome = await perform(env, who, c.facts, step, wording) }
