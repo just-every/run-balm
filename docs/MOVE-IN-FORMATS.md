@@ -67,3 +67,17 @@ Balm reads the patient number, first and last name, birth date, email and mobile
 - Keep your original charts, invoices, payments, claims, authorizations and intake forms. These patient reports do not establish a complete clinic migration. Opening balances previously brought into Balm are separate from collectible invoices and do not appear on payment statements.
 
 The documented report fields were checked against these vendor guides on 18 October 2026. Automated checks use fictional records in those documented shapes; no private clinic export was used.
+
+
+## Reconciliation inventories
+
+For a reviewed conversion bundle, **Reconcile records still to carry** accepts separate invoice, authorization and open-claim CSV inventories. Each uses these columns:
+
+```csv
+Source ID,Patient ID,Reference
+synthetic-balm-601,synthetic-balm-600,Original invoice number 41
+```
+
+Use the patient identifier from the uploaded patient list. Source identifiers must be unique within each inventory category, and every row needs its original reference. An unknown patient or duplicate identifier blocks apply.
+
+These inventories preserve the source records for reconciliation only. Their source counts are compared with zero native carry: they do not create a collectible invoice, claim balance or usable authorization. The preview names every inventory row still to carry. Enter independent source counts, including historical documents and insurance policies, then **Check totals again**; changed controls require fresh mapping and cutover approvals. A written reason is required before accepting any difference or omission. The saved reconciliation retains those controls, differences and references with the reviewed source files. Keep the originals and complete their carry separately before relying on a complete cutover. Pre-cutover receivables and their run-out use the existing insurance run-out door.
