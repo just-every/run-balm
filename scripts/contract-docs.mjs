@@ -8,8 +8,8 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 
-const [mode,...requested]=process.argv.slice(2)
-const ids=[...new Set(['REPORT-003','PAY-002',...requested.filter(id=>id!=='CHART-011')])]
+const [mode='check',...requested]=process.argv.slice(2)
+const ids=[...new Set(['REPORT-003','PAY-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
@@ -90,5 +90,43 @@ for(const [path,value] of files){
  else if(value!==before.get(path))throw Error('Generated contract documentation is stale: '+path)
 }
 console.log('contract-docs '+mode+': '+adopted.join(', ')+'; '+done+' done, '+partial+' partial, '+missing+' missing')
+
+}
+
+{
+
+
+// Incremental adoption keeps the existing acceptance and homepage claim text intact.
+// Only explicitly selected status rows acquire generated evidence registers.
+const [mode='check',...selected]=process.argv.slice(2)
+if(!['write','check'].includes(mode))throw Error('Expected write or check')
+const contract=readFileSync('CONTRACT.md','utf8')
+const rows=new Map(contract.split('\n').filter(line=>/^\| `[A-Z]+-\d+` \|/.test(line)).map(line=>{
+ const cells=line.split('|').slice(1,-1).map(cell=>cell.trim())
+ return [cells[0].replaceAll('`',''),{title:cells[1],status:cells[3],evidence:cells[4],gap:cells[5]}]
+}))
+const ids=['COMM-003']
+for(const file of ['ACCEPTANCE.md','docs/CLAIMS.md']){
+ let value=readFileSync(file,'utf8')
+ for(const id of ids){
+  const row=rows.get(id)
+  if(!row)throw Error('Unknown contract clause '+id)
+  const start='<!-- contract-status:'+id+':start -->',end='<!-- contract-status:'+id+':end -->'
+  const generated=start+'\n**'+id+' — '+row.title+'** ('+row.status+'). Evidence: '+row.evidence+'. Gap: '+(row.gap||'None.')+'\n'+end
+  const at=value.indexOf(start),until=value.indexOf(end)
+  if(at!==-1){if(until<at)throw Error('Incomplete generated register in '+file);value=value.slice(0,at)+generated+value.slice(until+end.length)}
+  else if(file==='ACCEPTANCE.md'){
+   const lines=value.split('\n'),index=lines.findIndex(line=>line.startsWith('- **'+id+' — '))
+   if(index<0)throw Error('Acceptance entry missing for '+id)
+   lines[index]=lines[index].replace(/\((done|partial|missing)\)\./,'('+row.status+').')
+   lines.splice(index+1,0,'',generated)
+   value=lines.join('\n')
+  }else value=value.trimEnd()+'\n\n'+generated+'\n'
+ }
+ const original=readFileSync(file,'utf8')
+ if(mode==='write'){if(value!==original)writeFileSync(file,value)}
+ else if(value!==original)throw Error('Stale generated status register: '+file)
+}
+console.log('Contract status registers '+mode+' passed: '+ids.join(', '))
 
 }

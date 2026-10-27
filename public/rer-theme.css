@@ -7,11 +7,11 @@
    The look is the owner-picked app screen (design desk, 17 Oct 2026): an airy
    off-white page, white hairline cards, deep navy-green ink and buttons, sage for
    done, amber for waiting, sky for booked, coral only for an exception, Newsreader
-   for titles and Inter for the rest. The brand colours are the homepage's
+   for titles and Outfit for the rest. The brand colours are the homepage's
    (public/site/theme.css); the page is the pick's cooler off-white, not the
    homepage's ivory. */
 :root {
-  --rer-font-body: 'Inter', 'Inter Fallback', Arial, sans-serif;
+  --rer-font-body: 'Outfit', 'Outfit Fallback', Arial, sans-serif;
   --rer-font-heading: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
   --rer-page: #fbfdfc;
   --rer-surface: #ffffff;

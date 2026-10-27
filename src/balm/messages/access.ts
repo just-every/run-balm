@@ -5,7 +5,7 @@ export async function messageActor(db: D1Database, who: Actor) {
   human(who)
   const live = await actor(db, who.id)
   insist(live.role === 'owner' || live.staffRole === 'practitioner' || live.staffRole === 'reception', 'clinical_messages_are_private', 403)
-  return live
+  return { ...live, ...(who.sessionId ? { sessionId: who.sessionId } : {}) }
 }
 
 /** An appointment is the clinic's existing treating-practitioner assignment. */

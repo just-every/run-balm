@@ -46,6 +46,7 @@ async function historicalErasurePatient(h,priya,service) {
   const patient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
   const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,12)
   await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',visit).run()
+  await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'incoming','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:00:00Z','Historical archived call','practitioner',?)").bind(crypto.randomUUID(),patient.id,priya.id,priya.email,priya.id).run()
   return patient
 }
 async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
@@ -241,7 +242,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
         assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
@@ -258,7 +259,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
       assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
     } finally {await current.dispose()}
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
@@ -747,6 +748,56 @@ test('prior authorization signed packets and recorded payer decisions survive a 
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
+
+// Keep call custody independent of the large clinical archive fixture. Both
+// installations start from the real migrations; only public CLI transfer moves data.
+test('COMM-003: public CLI archive round trip preserves exact calls and custody in an empty install', {timeout:180000},async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ const snapshot=async(db,clientId)=>({
+  calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
+  audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
+ })
+ try{
+  await checkout(source);await checkout(restored)
+  // Build an unclaimed, empty installation without spawning Wrangler for each
+  // migration. The CLI still checks the ledger and enforces empty-target restore.
+  h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
+  h=await harness({root:source,migrate:true,codeSets:false})
+  const desk=await h.staff('Rosa','reception')
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody'})
+  const ids=[]
+  for(const [direction,occurredAt,disposition] of [
+   ['incoming','2000-01-02T03:00:00Z','synthetic-balm-301 scheduling question'],
+   ['outgoing','2000-01-03T04:00:00Z','synthetic-balm-302 appointment confirmed'],
+  ])ids.push((await h.cmd('call.log',{clientId:patient.id,recipient:'front_desk',direction,occurredAt,disposition},desk.cookie)).id)
+  const path='/api/balm/clients/'+patient.id+'/communications?communicationChannel=call'
+  const history=(await h.send(path,undefined,h.owner)).value
+  assert.equal(history.total,2)
+  assert.deepEqual(new Set(history.results.map(r=>r.id)),new Set(ids))
+  const original=await snapshot(h.db,patient.id)
+  assert.equal(original.calls.length,2)
+  assert.deepEqual(original.calls.map(c=>[c.direction,c.occurred_at,c.staff_id,c.staff_name,c.recorded_by,c.disposition]).sort(),[
+   ['incoming','2000-01-02T03:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-301 scheduling question'],
+   ['outgoing','2000-01-03T04:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-302 appointment confirmed'],
+  ])
+  assert.equal(original.audit.filter(a=>a.action==='call.logged').length,2)
+  assert.equal(original.audit.filter(a=>a.action==='communication.call_read').length,2)
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'calls.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity,codeSets:false})
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field and patient custody audit row survives unchanged')
+  assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
+  const cookie=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
+  await assert.rejects(h.db.prepare('UPDATE bm_calls SET disposition=? WHERE id=?').bind('Changed original',ids[0]).run(),/calls_are_health_records/)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_calls WHERE id=?').bind(ids[0]).run(),/calls_are_health_records/)
+  await h.cmd('client.erase',{id:patient.id},cookie,409)
+ }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})
 
 test('HIPAA-001: public CLI archive restores the readiness review and complete BAA history', {timeout:600000},async()=>{
  const temporary=await mkdtemp(join(tmpdir(),'balm-readiness-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')

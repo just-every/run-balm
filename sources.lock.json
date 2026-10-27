@@ -130,11 +130,11 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "acf7f1bf2bcaca6632d2f8dac1df6ff9c0766477e7013deb96ce048bab32f801",
+      "sha256": "40b7858cf0a502d0a19ee955bfd5094cef832d584bdf7edba17942e525b62d96",
       "executable": false
     },
     "AGENTS.md": {
-      "sha256": "4fbba7ffda5564356a09724b13b51879b8ddd46ce95956f22b80ec51e4df29ad",
+      "sha256": "eb46c4d12f0648ebf02d5d7e5ff7aa75f58fc3302cc0524b380f0cf9a06daec4",
       "executable": false
     },
     "base-copies.json": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "b9ce5a4eb5cae4e84944a5773bec1d83a0c8b3a5efdb8e5618a68f3cc5a3aa12",
+      "sha256": "589d10ce8581b7ba3b9c1398ff8052289771d1126a932e3317b170eea4c51be4",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "ccf7058f4825de52165936fad50335cf0df57471ed10d291cf2ee462d96036d9",
+      "sha256": "29d6a29ba3e98182a9f657cedb731e37e4f465cd1e2f9d262a0b3675741d9ed0",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -781,6 +781,10 @@
       "sha256": "10ca196a24ba7301739309eadb723d96bf09e9921efc602958e432c25ded92b9",
       "executable": false
     },
+    "migrations/core/0119_balm_calls.sql": {
+      "sha256": "eee46d34c4cbd217e60d4f61469970b0bc234ec8abe8b7cf53679f61463b9204",
+      "executable": false
+    },
     "migrations/core/0119_balm_clinical_letters.sql": {
       "sha256": "6d4586f2b1970cb90f832bb0be1e9419148b6b8391a2267d78f7b9696788abcc",
       "executable": false
@@ -914,7 +918,7 @@
       "executable": false
     },
     "public/rer-theme.css": {
-      "sha256": "61fb013b40edb3a57c4f9485452272953c18434bc56b43f0269bda4b6c4ea785",
+      "sha256": "aa574f7c0010a27c3e05c52ee01531989cf03ee082e52a4887d300609c0cfee9",
       "executable": false
     },
     "public/site/band-1152.avif": {
@@ -1422,7 +1426,7 @@
       "executable": false
     },
     "scripts/contract-docs.mjs": {
-      "sha256": "7831d69aba906336059ae43a7936d04efebff69659daa7bea92a3b9b28ace486",
+      "sha256": "fd284591b36c5e4d5124fc310de0f8ab2bb18805460cb1c0c6ca80d650ec0207",
       "executable": false
     },
     "scripts/delivery/base/artifact.mjs": {
@@ -1926,7 +1930,7 @@
       "executable": false
     },
     "src/balm/domain/clients.ts": {
-      "sha256": "574fc6042109a2bf49b0a751db3c70a124398037209fbe0d89132cadfe59120c",
+      "sha256": "d03d5d453f03749e153c24e6b7dccee7360462a5a490ae1d1cd6a80ac5caf83e",
       "executable": false
     },
     "src/balm/domain/clinic.ts": {
@@ -2042,7 +2046,7 @@
       "executable": false
     },
     "src/balm/http.ts": {
-      "sha256": "f9375e98e27527a4cb9c63982bc55714d5d9f159e3109d4d7a39439a6ade2f78",
+      "sha256": "7aa820ecce0aeeecf0c18c52119b18c718464f2e49712eb2f3298a8351c33ca2",
       "executable": false
     },
     "src/balm/identity-settings.ts": {
@@ -2298,15 +2302,23 @@
       "executable": false
     },
     "src/balm/mail/history.ts": {
-      "sha256": "823dd9cf29e86e318bda7bc1011a980da63f52abecc3cd98e800613ea6ccde65",
+      "sha256": "c821858fc5dd55e836ec33fda642811e50651dcd34249bd7f900a227311dad09",
       "executable": false
     },
     "src/balm/messages/access.ts": {
-      "sha256": "19703ea221a84e7e2213af75000351ecef4935e54fe37a5110eccec71efe1a72",
+      "sha256": "2bb2175c2099394267eccb1179dc336009230899acae2d6d9ac7b3c18f5b1351",
       "executable": false
     },
     "src/balm/messages/attachments.ts": {
       "sha256": "0022a74c913915e96e582e8a00c5a47fcf1b5651cfdc90a63322b0cb149bfbeb",
+      "executable": false
+    },
+    "src/balm/messages/calls.ts": {
+      "sha256": "552fd01669dcd513326951633fe35c87f6e73efb74e754a905704683ba75bf45",
+      "executable": false
+    },
+    "src/balm/messages/history.ts": {
+      "sha256": "57640570fe5c0b6040009d8f6433c82dd99eb6d373b9509a215a4582b05b5abc",
       "executable": false
     },
     "src/balm/messages/index.ts": {
@@ -2694,7 +2706,7 @@
       "executable": false
     },
     "src/balm/retention/custody.ts": {
-      "sha256": "c0997a6a27de8c337094cfde97885564ea3a1b363973690b6f57741b04679fcc",
+      "sha256": "e1ae182680c8de45aeac3d7b0acec457bd785b319e664ab3d0d1a542e50b0360",
       "executable": false
     },
     "src/balm/retention/destruction.ts": {
@@ -2702,7 +2714,7 @@
       "executable": false
     },
     "src/balm/retention/eligibility.ts": {
-      "sha256": "7494a77d78bc9a8bb7f22c2f7cc9850c56995f3a8487635d1a723e3f0e5206df",
+      "sha256": "7c9676445510f40f0844050a8f99ea4451d34386c2cf58cc74bae7ca80b85aa0",
       "executable": false
     },
     "src/balm/retention/index.ts": {
@@ -2886,7 +2898,7 @@
       "executable": false
     },
     "src/balm/ui/clients.ts": {
-      "sha256": "4c4dda0e3176d96db88aa9b24487b02ce04d55a2b3abae7e42f07ef28a6271ee",
+      "sha256": "e42608a5c94b1cf62895341d9335ba830d885326907b623605a99de21fe6c19f",
       "executable": false
     },
     "src/balm/ui/clinic-identity.ts": {
@@ -2907,6 +2919,10 @@
     },
     "src/balm/ui/code-sets.ts": {
       "sha256": "459428826b7c3f862048fc3ef2d163882d4d193dc39c40408d87c8dca64d16f9",
+      "executable": false
+    },
+    "src/balm/ui/communications.ts": {
+      "sha256": "1d601d027ff754ff3dbbd338e0934e9f5a8b85599fcc2588bcb4537a5e5c912f",
       "executable": false
     },
     "src/balm/ui/consents.ts": {
@@ -2986,7 +3002,7 @@
       "executable": false
     },
     "src/balm/ui/index.ts": {
-      "sha256": "4f7f9680c757ee601de07d917697479d5f7fb588b7745d6aee73bad97c36e01f",
+      "sha256": "6988bd4b2fb1734fba7bc69fd3114e8be2a4a1781c4c836db5c8cc2638c13004",
       "executable": false
     },
     "src/balm/ui/injury.ts": {
@@ -5346,7 +5362,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "e540500c7f9f89882a738da5cd6e23601b395cb43320d396e3bdae45b23a660f",
+      "sha256": "05af6633c06f23ed256fd1be49d4bc366976358dd758db6e65218689b86dd077",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5435,6 +5451,18 @@
     },
     "tests/code-sets-journey.mjs": {
       "sha256": "910f1a53ff85b5b76c9b9e2b17ff8bc5dcc11f762c493d67f83fb65bf77fb921",
+      "executable": false
+    },
+    "tests/communication-browser.mjs": {
+      "sha256": "ac6e98586d07d00d4ef7006af6ca98480b428ddd5d7d9c7b718c321aed17fdd5",
+      "executable": false
+    },
+    "tests/communication-journey.mjs": {
+      "sha256": "b08914c3f64042b8a5fd23ba73f905511f3d419e4b62acf261dd5b5c760a1e1c",
+      "executable": false
+    },
+    "tests/communication-worker.ts": {
+      "sha256": "dfa83bff2432a2ce180776607e7f6bb3d260d1a15bf9f2417087d88d28ef4815",
       "executable": false
     },
     "tests/daily-close-clinic.mjs": {
@@ -5738,7 +5766,7 @@
       "executable": false
     },
     "tests/reminders.test.mjs": {
-      "sha256": "1bf95e6292fe4c963ee6f765b8cf775a8891d2cfba829f634fa6ab765a00c463",
+      "sha256": "184a0c29ced20f4b180996782d4b57ec099a124d15ccfe3a33f7457f4b2b14f0",
       "executable": false
     },
     "tests/report.test.mjs": {
@@ -5754,7 +5782,7 @@
       "executable": false
     },
     "tests/retention.test.mjs": {
-      "sha256": "c09531ea3471fcf08b042982caeeb4f4991aa67fe4f5b34019c1f0cc6940af3c",
+      "sha256": "231ea610f484d213924090712929e8882b1ad761f9f0e78a4db7718a79172504",
       "executable": false
     },
     "tests/runtime.mjs": {
@@ -5822,7 +5850,7 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "954686606b294dd32854590597c79da75288841d1ffc52d0e66605f29644dfaa",
+      "sha256": "544c038d734bea594a0320ed43b58d147fc68360bd5af7f013504c3fac82914f",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {
