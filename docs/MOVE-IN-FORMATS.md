@@ -67,3 +67,58 @@ Balm reads the patient number, first and last name, birth date, email and mobile
 - Keep your original charts, invoices, payments, claims, authorizations and intake forms. These patient reports do not establish a complete clinic migration. Opening balances previously brought into Balm are separate from collectible invoices and do not appear on payment statements.
 
 The documented report fields were checked against these vendor guides on 18 October 2026. Automated checks use fictional records in those documented shapes; no private clinic export was used.
+
+
+## Reconciliation inventories
+
+For a reviewed conversion bundle, **Reconcile records still to carry** accepts separate invoice, authorization and open-claim CSV inventories. Each uses these columns:
+
+```csv
+Source ID,Patient ID,Reference
+synthetic-balm-601,synthetic-balm-600,Original invoice number 41
+```
+
+Use the patient identifier from the uploaded patient list. Source identifiers must be unique within each inventory category, and every row needs its original reference. An unknown patient or duplicate identifier blocks apply.
+
+These inventories preserve the source records for reconciliation only. Their source counts are compared with zero native carry: they do not create a collectible invoice, claim balance or usable authorization. The preview names every inventory row still to carry. Enter independent source counts, including historical documents and insurance policies, then **Check totals again**; changed controls require fresh mapping and cutover approvals. A written reason is required before accepting any difference or omission. The saved reconciliation retains those controls, differences and references with the reviewed source files. Keep the originals and complete their carry separately before relying on a complete cutover. Pre-cutover receivables and their run-out use the existing insurance run-out door.
+
+## Reviewed open-claim carry
+
+An open-claim inventory remains a list of records still to carry. To carry actual receivables together with the patient list, upload a reviewed conversion CSV in the **Claims** field with these headers instead:
+
+```csv
+Source ID,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status
+synthetic-balm-611,synthetic-balm-610,synthetic-balm-620,synthetic-balm-612,synthetic-balm-613,2026-01-15,100.00,80.00,open
+```
+
+This is Balm's reviewed conversion format, not a native vendor export. Use the uploaded patient identifier and the identifier of a payer already configured in Balm. Preserve the original source claim number and both claim controls; leave the payer control blank only when the payer has not assigned one. Service dates use the selected date order. Billed and balance amounts are USD decimals; a carried open balance must be positive and cannot exceed the original billed amount. Supported states are `open`, `denied` and `rejected`.
+
+Upload the independent source aging balances in the same section:
+
+```csv
+Patient ID,Balance
+synthetic-balm-610,80.00
+```
+
+Every patient with carried claims needs an aging balance. The sum of their claim balances must match that balance and the reviewed source control exactly; a written acceptance reason cannot waive a difference. Other opening balances retain their existing review. The aging record is a source control, not another collectible balance or a new invoice.
+
+The preview shows each claim and its remaining amount, the carried count and the source aging comparison. An unknown patient or payer, reused source claim, ambiguous claim control, changed payer mapping or closed run-out stops cutover. Only the owner approves the exact mapping and cutover. Patients, original source files, source aging, receivables and the saved reconciliation are committed together; a failed transaction adds nothing.
+
+These claims enter the existing receivables run-out with their original controls, dates, billed amounts and balances. Repeating the unchanged bundle or using the run-out import with the same originals adds no second claim and never resets a later payment. Source aging remains an immutable cutover snapshot; the run-out shows the current remaining amount. Carried receivables stay under existing retention custody and prevent undo of the bundle, even before a payment. Use the retained original records and reviewed retention process. This carry does not send a claim, create an invoice or establish a complete native cutover; native invoice carry remains incomplete. Usable authorizations can use the separate reviewed carry below.
+
+## Reviewed authorization carry
+
+The **Authorizations inventory or carry** field also accepts usable authorizations in Balm's reviewed conversion format. This is not a native vendor layout. Use one row per source authorization and repeat the exact same policy facts for authorizations sharing a source policy identifier:
+
+```csv
+Source ID,Patient ID,Policy ID,Payer ID,Member ID,Policy Starts On,Policy Ends On,Number,Starts On,Ends On,Cutover On,Allowance Kind,Allowance,Used,Units Per Visit,CPT Scope,Practitioner ID,Booking Action,Patient Sex,Address,City,State,Postal Code
+synthetic-balm-632,synthetic-balm-630,synthetic-balm-634,synthetic-balm-620,synthetic-balm-636,2020-01-01,2099-12-31,synthetic-balm-638,2026-01-01,2099-12-31,2026-01-15,visits,12,8,,,,block,F,1 Example St,Austin,TX,78701
+```
+
+Use the uploaded patient identifier and a configured Balm payer identifier. Source policy identifiers must identify the same patient and coverage every time. Policies retain their own coverage dates; authorization dates must be inside that coverage. The patient birth date, sex and address must support a valid insurance policy. Self coverage is the default relationship; dependent coverage additionally supplies `Relationship` (`01` or `19`), `Subscriber First`, `Subscriber Last`, `Subscriber DOB` and `Subscriber Sex`. `Group Number` and `Plan Name` are optional. `Priority` uses the existing policy priority of 1, 2 or 3, defaulting to primary (1). An ongoing policy can leave `Policy Ends On` blank; authorization dates still need a definite end.
+
+`Allowance Kind` is `visits` or `units`. `Allowance` is the original granted total and `Used` is the amount already consumed before `Cutover On`, not the amount remaining. Units also require `Units Per Visit`, the reservation for an unsigned visit. `CPT Scope` contains space-separated procedure codes; blank retains the existing unrestricted scope. `Practitioner ID` is an active Balm practitioner identifier, or blank for unrestricted practitioner coverage. `Booking Action` must explicitly be `warn` or `block`.
+
+The cutover date is in the clinic time zone, within the authorization dates, and cannot be in the future. Original authorization dates stay intact. Imported historical visits before that date do not consume the allowance again. Visits on or after it use Balm's existing attendance, signed-charge and booking-reservation accounting. The prior source usage baseline cannot be edited. Reports before the baseline do not reconstruct historical authorization usage. Imported authorizations join the patient's legacy unfiled history; an episode is never guessed.
+
+The owner reviews the policy and authorization counts and exact source facts before approving cutover. Patients, policies, authorizations, originals and saved reconciliation commit together. Invalid coverage, conflicting source policy facts, unknown payers or inactive practitioners stop apply. Changed payer or practitioner mappings require a new preview. Repeating the same bundle preserves subsequent usage. Native policy retention custody prevents undo of the bundle; retain originals and use the existing reviewed retention process. A three-column inventory still carries no usable authorization. Native packages and native invoice carry remain incomplete.

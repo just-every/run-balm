@@ -25,7 +25,7 @@ export function mappingReport(bundle: Bundle, diagnostics: BundleDiagnostic[], s
       const target = nativeWebpt ? nativeTargets[headerKey(column)] ?? null : candidates.length === 1 ? candidates[0].key : null
       const examples = target ? [] : body.filter(r => r.cells[index]?.trim()).slice(0, 3).map(r => ({ row: r.row, value: r.cells[index].trim().slice(0, 160) }))
       fields.push({ file: file.name, kind: file.kind, column, target, examples,
-        explanation: target ? 'Recognized by the importer’s supported header rules; review the normalized records before approval.' : 'No supported destination field. This column is omitted; retain the original export. Its meaning is not inferred from example values.' })
+        explanation: (file.kind === 'invoices' || file.kind === 'authorizations' && !headers.some(h => headerKey(h) === 'allowance') || file.kind === 'claims' && !headers.some(h => headerKey(h) === 'billed')) ? 'Retained in the reconciliation inventory only; this field creates no native invoice, claim or usable authorization.' : target ? 'Recognized by the importer’s supported header rules; review the normalized records before approval.' : 'No supported destination field. This column is omitted; retain the original export. Its meaning is not inferred from example values.' })
     })
   }
   const rowKey = (file: string, row: number) => JSON.stringify([file, row])
@@ -44,6 +44,7 @@ export function mappingReport(bundle: Bundle, diagnostics: BundleDiagnostic[], s
     if (!reported.has(key)) { unmappedRecords.push({ file: diagnostic.file, row: diagnostic.row!, reason: diagnostic.code, explanations: [diagnostic.message], blocking: true }); reported.add(key) }
   }
   if (!mappedAppointments) for (const record of bundle.appointments) unmappedRecords.push({ file: record.file, row: record.row, reason: 'appointment_mapping_required', explanations: ['No active practitioner and service mapping was selected. This visit is omitted until both are mapped.'], blocking: false })
+  for (const record of bundle.inventory) unmappedRecords.push({ file: record.file, row: record.row, reason: 'inventory_not_carried', explanations: [`${record.kind} record ${record.sourceId} (${record.reference}) is retained in the reviewed source only. No native invoice, claim or usable authorization is created.`], blocking: false })
   for (const d of diagnostics.filter(d => d.code === 'incomplete_insurance' && d.row)) unmappedRecords.push({ file: d.file, row: d.row!, reason: d.code, explanations: [d.message], blocking: false })
   const balances = new Map<string, Bundle['balances']>()
   for (const record of bundle.balances) { const list = balances.get(record.patientId) ?? []; list.push(record); balances.set(record.patientId, list) }
@@ -55,9 +56,9 @@ export function mappingReport(bundle: Bundle, diagnostics: BundleDiagnostic[], s
       records: records.map(r => ({ file: r.file, row: r.row, cents: r.cents })),
       explanation: `The source control is ${amount(d.source)}; valid uploaded opening balances total ${amount(uploadedCents)} and Balm will carry ${amount(d.planned)}. The difference is ${amount(d.source - d.planned)}. ${uploadedCents === d.planned ? 'The uploaded records contain no additional balance explaining the source control. Check the original aging report and any omitted or invalid balance rows; no adjustment is invented.' : 'Review the listed balance records and mapping before cutover.'}` }
   })
-  const countDifferences = mismatches.filter(d => !d.metric.startsWith('balancesByPatient:')).map(d => ({ ...d, explanation: `Source control ${d.source}; mapped records ${d.planned}; difference ${d.source - d.planned}. Check the original export against the file row counts and the unmapped record explanations. The source control alone does not establish why a record is absent.` }))
+  const countDifferences = mismatches.filter(d => !d.metric.startsWith('balancesByPatient:')).map(d => ({ ...d, uploadedInventory: ['invoices', 'authorizations', 'claims'].includes(d.metric) ? bundle.inventory.filter(r => r.kind === d.metric).length : undefined, explanation: `Source control ${d.source}; mapped records ${d.planned}; difference ${d.source - d.planned}. Check the original export against the file row counts and the unmapped record explanations. The source control alone does not establish why a record is absent.` }))
   return { method: 'supported-header-rules', fields, files, unmappedRecords, balanceDifferences, countDifferences, source, planned,
-    limitations: ['Only the record types supported by Move in are proposed. Native complete exports, attachments, claims and authorizations remain outside this importer.', 'Unrecognized columns are omitted with source examples for the owner; the assistant never infers clinical meaning or invents balancing entries.'],
+    limitations: ['Only the record types supported by Move in are proposed. Native complete exports and attachments remain outside this importer. Usable authorizations require the documented reviewed carry format. Open claims carry only through the documented reviewed format; inventories alone never carry them.', 'Unrecognized columns are omitted with source examples for the owner; the assistant never infers clinical meaning or invents balancing entries.'],
     approval: 'The owner must approve this exact mapping and reconciliation, then approve cutover. Preparation creates no clinic records.' }
 }
 

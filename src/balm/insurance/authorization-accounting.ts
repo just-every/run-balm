@@ -86,6 +86,7 @@ export function authorizationCoversVisit(a: Data, visit: Data, chargeRows: Data[
 }
 export function visitAllowance(a: Data, visit: Data, chargeRows: Data[], cutoff?: string, zone = 'UTC') {
   const empty = { used: 0, reserved: 0, usedVisits: 0, reservedVisits: 0 }
+  if (a.imported_cutover_on && hostDateAt(new Date(visit.start_at), zone) < a.imported_cutover_on) return empty
   if (!['booked', 'attended'].includes(visit.status) || !beforeCutoff(visit.created_at, cutoff, zone)
     || visit.status === 'attended' && !beforeCutoff(visit.start_at, cutoff, zone)
     || !authorizationCoversVisit(a, visit, chargeRows, cutoff, zone)) return empty
@@ -99,7 +100,7 @@ export function visitAllowance(a: Data, visit: Data, chargeRows: Data[], cutoff?
  * Selection is by latest start per policy/episode/provider, inclusive bounds;
  * exhaustion never suppresses actual signed usage. Inputs remain unchanged. */
 export function accountAuthorizations(auths: Data[], visits: Data[], zone: string, chargeRows: Data[], cutoff?: string): AccountedAuthorization[] {
-  const out: AccountedAuthorization[] = [...auths].sort(authorizationOrder).map(a => ({ ...a, allowance_kind: a.allowance_kind ?? 'visits', allowance_total: allowanceTotal(a), used_allowance: 0, reserved_allowance: 0, remaining_allowance: 0, used_visits: 0, reserved_visits: 0, remaining_visits: 0, used_units: 0, reserved_units: 0, remaining_units: null }))
+  const out: AccountedAuthorization[] = auths.filter(a => !cutoff || !a.imported_cutover_on || (cutoff.length === 10 ? cutoff : hostDateAt(new Date(Date.parse(cutoff) - 1), zone)) >= a.imported_cutover_on).sort(authorizationOrder).map(a => ({ ...a, allowance_kind: a.allowance_kind ?? 'visits', allowance_total: allowanceTotal(a), used_allowance: Number(a.imported_used ?? 0), reserved_allowance: 0, remaining_allowance: 0, used_visits: a.allowance_kind === 'units' ? 0 : Number(a.imported_used ?? 0), reserved_visits: 0, remaining_visits: 0, used_units: 0, reserved_units: 0, remaining_units: null }))
   const charges = new Map<string, Data[]>()
   for (const row of chargeRows) charges.set(row.appointment_id, [...(charges.get(row.appointment_id) ?? []), row])
   for (const visit of visits) {

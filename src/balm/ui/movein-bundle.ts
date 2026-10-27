@@ -14,6 +14,10 @@ function upload(s: any) {
     + select('practitionerId', 'Assign these visits to', [['', 'Choose a practitioner'], ...practitioners(s).map(p => [p.id, p.name] as [string, string])], '', '')
     + select('serviceId', 'Service for these visits', [['', 'Choose a service'], ...services(s).map(p => [p.id, p.name] as [string, string])], '', '')
     + '<p class="help">Each upload assigns its visits to one practitioner and service. Export one therapist and appointment type at a time in WebPT. Times are read in your clinic’s time zone.</p></details>'
+    + '<details><summary>Reconcile inventories or carry records</summary><p>Reviewed inventories list records still to carry. An inventory retains original references without creating an invoice, usable authorization or claim. Use the documented carry formats for open claims or usable authorizations instead.</p>'
+    + '<p>Open claims can instead use the reviewed claim carry format in the guide, with a configured Balm payer identifier and the original aging balances. Carried receivables prevent undo, even before payment, to preserve their custody.</p>'
+    + '<label>Source aging balances for carried claims (.csv)<input type="file" name="balances" accept=".csv,text/csv"></label>'
+    + ['invoices', 'authorizations', 'claims'].map(kind => `<label>${h(kind === 'claims' ? 'Claims inventory or carry' : kind === 'authorizations' ? 'Authorizations inventory or carry' : kind[0].toUpperCase() + kind.slice(1) + ' inventory')} (.csv)<input type="file" name="${kind}" accept=".csv,text/csv"></label>`).join('') + '</details>'
     + select('dateFormat', 'Dates in the files', dateFormats, 'MDY')
     + field('expectedPatients', 'Patient count reported by your old system (optional)', '', 'number', 'min="0" step="1"')
     + '<p class="help">Up to 50,000 records and 20 MB per file. Large imports are processed in smaller groups automatically. You review the totals before any record is added.</p><button type="submit">Preview move-in</button>'
@@ -37,7 +41,7 @@ function totals(data: any, input: any) {
   const compare = [[h('Patients'), field('expectedPatients', 'Source patients', source.patients, 'number', 'min="0" step="1" required'), h(planned.patients)]]
   for (const month of [...new Set([...Object.keys(source.appointmentsByMonth), ...Object.keys(planned.appointmentsByMonth)])].sort()) compare.push([h(`Appointments · ${month}`), field('month_' + month, `Source appointments in ${month}`, expected.appointmentsByMonth?.[month] ?? source.appointmentsByMonth[month] ?? 0, 'number', 'min="0" step="1" required'), h(planned.appointmentsByMonth[month] ?? 0)])
   for (const id of [...new Set([...Object.keys(source.balancesByPatient), ...Object.keys(planned.balancesByPatient)])].sort()) compare.push([h(`Open balance · ${names.get(id) ?? id} (${id})`), field('balance_' + id, `Source balance for ${names.get(id) ?? id}`, dollarsField(expected.balancesByPatient?.[id] ?? source.balancesByPatient[id] ?? 0), 'text', 'inputmode="decimal" required'), h(money(planned.balancesByPatient[id] ?? 0))])
-  compare.push([h('Historical documents'), h(source.documents), h(planned.documents)], [h('Insurance policies'), h(source.insurance), h(planned.insurance)])
+  for (const [key, label] of [['documents', 'Historical documents'], ['insurance', 'Insurance policies'], ['invoices', 'Invoices'], ['authorizations', 'Carried authorizations'], ['claims', 'Carried open claims']]) compare.push([h(label), field('expected' + key[0].toUpperCase() + key.slice(1), 'Source ' + label.toLowerCase(), source[key] ?? 0, 'number', 'min="0" step="1" required'), h(planned[key] ?? 0)])
   return '<h3>Check your totals before switching</h3><p>Compare the file with the totals reported by your old system. Enter a different source total and choose <strong>Check totals again</strong> to see each difference. Balances are opening balances, separate from Balm invoices.</p>' + table(['Total', 'Source / file', 'Balm after import'], compare)
 }
 
@@ -53,7 +57,7 @@ function preview(s: any, notice: any) {
   const differenceLabel = (m: any) => {
     if (String(m.metric).startsWith('balancesByPatient:')) return `Open balance for ${names.get(m.metric.slice(18)) ?? m.metric.slice(18)}: source ${money(m.source)}, Balm ${money(m.planned)}`
     if (String(m.metric).startsWith('appointmentsByMonth:')) return `Appointments in ${m.metric.slice(20)}: source ${m.source}, Balm ${m.planned}`
-    return `${({ patients: 'Patients', documents: 'Historical documents', insurance: 'Insurance policies' } as Record<string, string>)[m.metric] ?? 'Total'}: source ${m.source}, Balm ${m.planned}`
+    return `${({ patients: 'Patients', documents: 'Historical documents', insurance: 'Insurance policies', invoices: 'Invoices', authorizations: 'Carried authorizations', claims: 'Carried open claims' } as Record<string, string>)[m.metric] ?? 'Total'}: source ${m.source}, Balm ${m.planned}`
   }
   const differences = data.reconciliation.mismatches ?? []
   const differenceText = differences.length ? '<div class="notice" role="status"><strong>Totals differ. Apply is blocked until you resolve or explicitly accept the differences.</strong><ul>' + differences.map((m: any) => `<li>${h(typeof m === 'string' ? m : differenceLabel(m))}</li>`).join('') + '</ul></div>' : '<p><strong>All compared totals match.</strong></p>'
@@ -61,6 +65,9 @@ function preview(s: any, notice: any) {
     ...data.patients.map((p: any) => ['Patient', h(p.sourceId.startsWith('derived:') ? 'Name and email or birth date' : p.sourceId), h(`${p.file}, row ${p.row}`), h(`${p.firstName} ${p.lastName} · ${p.dateOfBirth ? usDate(p.dateOfBirth, zoneOf(s)) : 'No birth date'}`)]),
     ...data.appointments.map((a: any) => ['Appointment', h(names.get(a.patientId) ?? a.patientId), h(`${a.file}, row ${a.row}`), `${when(s, a.startAt)} · ${h(a.status)}`]),
     ...data.notes.map((n: any) => ['Read-only document', h(names.get(n.patientId) ?? n.patientId), h(`${n.file}, row ${n.row}`), h(n.title)]),
+    ...(data.inventory ?? []).map((r: any) => [h(r.kind + ' inventory — not carried'), h(names.get(r.patientId) ?? r.patientId), h(`${r.file}, row ${r.row}`), h(`${r.sourceId} · ${r.reference}`)]),
+    ...(data.authorizationCarry?.authorizations ?? []).map((r: any) => ['Authorization carried', h(names.get(r.patientId) ?? r.patientId), h(`${r.file}, row ${r.row}`), h(`${r.number} · ${r.allowance - r.used} ${r.allowanceKind} at cutover · ${r.startsOn} to ${r.endsOn}`)]),
+    ...(data.carriedClaims ?? []).map((r: any) => ['Open claim carried', h(names.get(r.patientId) ?? r.patientId), h(`${r.file}, row ${r.row}`), h(`${r.sourceId} · ${r.patientControl} · ${money(r.balanceCents)} remaining`)]),
     ...data.insurance.map((p: any) => ['Insurance', h(names.get(p.patientId) ?? p.patientId), h(`${p.file}, row ${p.row}`), h(`${p.payer} · ${p.memberId}`)]),
   ], 'movein-records')
   const carry = hidden('bundleBase64', fileField(JSON.stringify(input))) + hidden('fingerprint', data.fingerprint)
@@ -69,7 +76,7 @@ function preview(s: any, notice: any) {
     ? `<label class="check"><input type="checkbox" name="mappingApproval" value="${h(data.mappingDigest)}" required><span>I approve this exact proposed mapping, including the listed omissions and reconciliation.</span></label><label class="check"><input type="checkbox" name="cutoverApproval" value="${h(data.fingerprint)}" required><span>I approve cutover and importing these reviewed records together.</span></label>`
     : '<label class="check"><input type="checkbox" name="confirm" required><span>I reviewed the rows, totals and omissions. Import these records together.</span></label>'
   const actions = `<button type="submit" formnovalidate formaction="/app/action?name=movein.prepare&amp;returnTo=%2Fapp%2Fimport">Check totals again</button>${errors ? '<p><strong>Fix the named errors in your files and upload again before applying.</strong></p>' : approval + '<button type="submit">Apply move-in</button>'}`
-  return panel(`${label(data.provider)} preview`, (data.existingJob ? `<p><strong>This bundle was already ${h(data.existingJob.state)}. Applying it again changes nothing.</strong></p>` : '') + '<p>Nothing has been imported by this preview. Re-importing unchanged records adds no duplicates. Undo removes the whole bundle; new work or edits block undo to protect the record.</p>' + (diagnostics.length ? '<h3>Columns and rows to review</h3><ul>' + diagnostics.map(d => `<li>${h(d)}</li>`).join('') + '</ul>' : '') + mappingProposal(data) + `<p>Appointment times are in ${h(zoneOf(s))}. Assigned practitioner and service apply to every appointment in this bundle.</p>` + counts + `<form method="post" action="/app/action?name=${data.mappingPrepared ? 'movein.cutover' : 'movein.apply'}&amp;returnTo=%2Fapp%2Fimport">` + carry + totals(data, input) + differenceText + acceptance + actions + '</form>', 'full movein-preview')
+  return panel(`${label(data.provider)} preview`, (data.existingJob ? `<p><strong>This bundle was already ${h(data.existingJob.state)}. Applying it again changes nothing.</strong></p>` : '') + `<p>Nothing has been imported by this preview. Re-importing unchanged records adds no duplicates. ${(data.carriedClaims ?? []).length ? 'Carried receivables stay under retention custody and prevent undo of this bundle.' : 'Undo removes the whole bundle; new work or edits block undo to protect the record.'}</p>` + (diagnostics.length ? '<h3>Columns and rows to review</h3><ul>' + diagnostics.map(d => `<li>${h(d)}</li>`).join('') + '</ul>' : '') + mappingProposal(data) + `<p>Appointment times are in ${h(zoneOf(s))}. Assigned practitioner and service apply to every appointment in this bundle.</p>` + counts + `<form method="post" action="/app/action?name=${data.mappingPrepared ? 'movein.cutover' : 'movein.apply'}&amp;returnTo=%2Fapp%2Fimport">` + carry + totals(data, input) + differenceText + acceptance + actions + '</form>', 'full movein-preview')
 }
 
 function jobs(s: any, notice: any) {
@@ -84,7 +91,7 @@ function savedReport(data: any) {
   const body = [[h('Patients'), h(r.source.patients), h(r.planned.patients)]]
   for (const month of [...new Set([...Object.keys(r.source.appointmentsByMonth), ...Object.keys(r.planned.appointmentsByMonth)])].sort()) body.push([h('Appointments · ' + month), h(r.source.appointmentsByMonth[month] ?? 0), h(r.planned.appointmentsByMonth[month] ?? 0)])
   for (const patient of [...new Set([...Object.keys(r.source.balancesByPatient), ...Object.keys(r.planned.balancesByPatient)])].sort()) body.push([h('Open balance · ' + patient), h(money(r.source.balancesByPatient[patient] ?? 0)), h(money(r.planned.balancesByPatient[patient] ?? 0))])
-  body.push([h('Historical documents'), h(r.source.documents), h(r.planned.documents)], [h('Insurance policies'), h(r.source.insurance), h(r.planned.insurance)])
+  for (const [key, label] of [['documents', 'Historical documents'], ['insurance', 'Insurance policies'], ['invoices', 'Invoices'], ['authorizations', 'Carried authorizations'], ['claims', 'Carried open claims']]) body.push([h(label), h(r.source[key] ?? 0), h(r.planned[key] ?? 0)])
   return panel('Saved reconciliation', `<p>${h(label(data.job.provider))} · ${h(data.job.state)}. These are the totals reviewed at import.</p>` + table(['Total', 'Source / file', 'Balm at import'], body) + mappingProposal(report)
     + `<p><strong>Owner acceptance:</strong> ${h(data.job.acceptance_reason || 'No differences accepted.')}</p>`
     + '<ul>' + (report.diagnostics ?? []).map((d: any) => `<li>${h(d.file || 'Import')}${d.row ? ', row ' + h(d.row) : ''}: ${h(d.message)}</li>`).join('')
@@ -93,5 +100,5 @@ function savedReport(data: any) {
 }
 
 export function bundleMovein(s: any, notice: any) {
-  return `<h1>Move in</h1><p>Bring your patient list across from a supported export, check the preview, then import it. WebPT’s Scheduled Visits report can also bring visits onto the calendar. Keep your original charts and billing records. PDF and ZIP chart packages, claims, authorizations and payment history are not imported here.</p>${preview(s, notice)}${savedReport(result(notice))}<div class="grid">${upload(s)}${jobs(s, notice)}</div>`
+  return `<h1>Move in</h1><p>Bring your patient list across from a supported export, check the preview, then import it. WebPT’s Scheduled Visits report can also bring visits onto the calendar. Keep your original charts and billing records. PDF and ZIP chart packages and payment history are not imported here. Reviewed conversion files can carry usable authorizations and open claims.</p>${preview(s, notice)}${savedReport(result(notice))}<div class="grid">${upload(s)}${jobs(s, notice)}</div>`
 }
