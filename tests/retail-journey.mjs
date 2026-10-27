@@ -84,17 +84,23 @@ export async function retailJourney(h,proof=async()=>{}){
  const change={clientId:patient.id,saleId:membership.id,state:'paused',reason:'Patient requested a pause',consentEvidence:'Patient authorized reversible pause; all unused visits retained',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Patient request received in person',confirm:true}
  await h.cmd('pay.retail.membership',change,reception.cookie,403)
  await h.cmd('pay.retail.membership',{...change,confirm:false},h.owner,400)
- await h.cmd('pay.retail.membership',{...change,authorizedAt:undefined},h.owner,400)
+ for(const missing of ['effectiveAt','authorizedAt','authorizationMethod','consentEvidence'])await h.cmd('pay.retail.membership',{...change,[missing]:undefined},h.owner,400)
+ for(const authorizedAt of ['2020-99-99T03:04:00Z','2020-02-30T03:04:00Z','2020-01-02T25:04:00Z','2020-01-02T03:99:00Z'])await h.cmd('pay.retail.membership',{...change,authorizedAt},h.owner,400)
  await h.cmd('pay.retail.membership',{...change,effectiveAt:'2999-01-01T00:00:00.000Z'},h.owner,400)
+ const mailBeforeTransitions=h.mail.length
  await h.cmd('pay.retail.membership',change)
  await h.cmd('pay.retail.membership',change,h.owner,409)
  await h.cmd('appointment.attend',{id:memberVisit},priya.cookie,409)
  let membershipFile=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value
  assert.equal(membershipFile.billing.retail.find(x=>x.id===membership.id).visits_left,1)
  assert.equal(membershipFile.billing.retail.find(x=>x.id===membership.id).membership_state,'paused')
+ const later=await h.cmd('pay.retail.sell',{...sale,kind:'membership',units:1,amountCents:5000,label:'Later independent membership',reference:'synthetic-balm-member-2'})
+ const independent=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.billing.retail
+ assert.deepEqual(independent.filter(x=>[membership.id,later.id].includes(x.id)).map(x=>[x.id,x.membership_state,x.visits_left]).sort(),[[membership.id,'paused',1],[later.id,'active',1]].sort(),'a later purchase neither resumes nor merges the paused entitlement')
  await h.cmd('pay.retail.cancel',change,h.owner,409)
  const resume={...change,effectiveAt:new Date().toISOString(),state:'active',consentEvidence:'Patient specifically authorized resuming the remaining visit'}
  await h.cmd('pay.retail.membership',resume)
+ assert.equal(h.mail.length,mailBeforeTransitions,'recording transitions creates no outbound notice')
  const events=(await h.db.prepare('SELECT * FROM bm_membership_events WHERE sale_id=? ORDER BY rowid').bind(membership.id).all()).results
  assert.deepEqual(events.map(x=>[x.state,x.visits_left]),[['paused',1],['active',1]])
  for(const [i,terms] of [change,resume].entries()){assert.equal(events[i].effective_at,terms.effectiveAt);assert.equal(events[i].authorized_at,terms.authorizedAt);assert.equal(events[i].authorization_method,terms.authorizationMethod);assert.equal(events[i].consent_evidence,terms.consentEvidence);assert.equal(events[i].recorded_by,h.auth.OWNER_EMAIL)}
@@ -110,7 +116,6 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.deepEqual(cancellation,{state:'cancelled',visitsLeft:0,providerCharge:false,externalBillingChanged:false})
  await h.cmd('pay.retail.cancel',{...resume,effectiveAt:new Date().toISOString()},h.owner,409)
  await h.cmd('pay.retail.membership',{...resume,state:'paused',effectiveAt:new Date().toISOString()},h.owner,409)
- const later=await h.cmd('pay.retail.sell',{...sale,kind:'membership',units:1,amountCents:5000,label:'Later independent membership',reference:'synthetic-balm-member-2'})
  const laterVisit=exhausted
  await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:later.id,appointmentId:laterVisit})
  await h.cmd('appointment.attend',{id:laterVisit},priya.cookie)
@@ -125,5 +130,6 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.equal(final.find(x=>x.id===membership.id).visits_left,0)
  assert.equal(final.find(x=>x.id===later.id).membership_state,'active')
  assert.equal(final.find(x=>x.id===later.id).visits_left,0)
+ assert.equal(h.outboundRequests.filter(x=>/stripe|quickbooks|payer/.test(x.origin)).length,0,'cash sales and membership transitions create no provider charge or billing handoff')
  await proof({patient,cookie,today,from:dates[0],service,priya})
 }
