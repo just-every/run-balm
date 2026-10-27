@@ -59,7 +59,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"^(?!prior authorization).*public CLI (archive round trip|erasure journals)\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"^(?!(?:prior authorization|booking prepayments)).*public CLI (archive round trip|erasure journals)\" tests/archive.test.mjs"
       ]
     },
     {
@@ -91,7 +91,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-001: public CLI\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-001: public CLI|booking prepayments and fixed\" tests/archive.test.mjs"
       ]
     }
   ],
