@@ -109,6 +109,18 @@ export async function authorizationRequestJourney(h){
  const racedFile=await file(),racedRecord=racedFile.insurance.authorizationRequests.find(r=>r.id===raced.id)
  assert.equal(racedFile.insurance.authorizations.length,racedRecord.status==='approved'?2:1,'only the winning approval creates allowance')
  assert.equal(racedFile.insurance.authorizationRequests.filter(r=>r.id===raced.id&&r.decision).length,1)
+ const unscored=await h.cmd('note.write',{clientId:c.patient.id,episodeId:c.referral.episodeId,template:'pt.evaluation',...chartFixture('evaluation')},c.priya.cookie)
+ const unscoredPlan=await h.cmd('plan.send',{clientId:c.patient.id,noteId:unscored.id,episodeId:c.referral.episodeId,diagnoses:'M25.561',shortTermGoals:'Walk 10 minutes without pain',longTermGoals:'Resume independent community walking',frequencyPerWeek:2,durationWeeks:6,interventions:'Graded strengthening and gait training',startDate:'2026-01-01',physicianName:'Synthetic Physician',physicianEmail:'synthetic-balm-2@example.test',signature:'Priya Shah',credentials:'PT',attest:true},c.priya.cookie)
+ await h.cmd('note.sign',{id:unscored.id,revision:1,signature:'Priya Shah',attest:true},c.priya.cookie)
+ await h.cmd(command+'prepare',{...c.input,planId:unscoredPlan.id},c.biller.cookie,409)
+ await h.cmd(command+'prepare',{...c.input,noteId:unscored.id,planId:unscoredPlan.id},c.biller.cookie,409)
+ const expired=await h.cmd(command+'prepare',c.input)
+ // Historical approved state supplies the elapsed-time fixture; access uses the public doors.
+ await h.db.prepare('INSERT INTO bm_note_release_approvals(release_id,sha256,approved_at,approved_by,expires_at) VALUES(?,?,?,?,?)').bind(expired.id,expired.sha256,'2000-01-01T00:00:00.000Z',h.auth.OWNER_EMAIL,'2000-01-08T00:00:00.000Z').run()
+ assert.equal((await h.send('/api/balm/note-releases/'+expired.id+'.pdf',undefined,c.biller.cookie)).status,403,'expired approved release refuses download')
+ assert.equal((await h.send('/api/balm/insurance/authorization-request/'+expired.id,undefined,c.biller.cookie)).status,403,'the authorization packet cannot bypass expiry')
+ await h.db.prepare('INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)').bind('2000-01-02T00:00:00.000Z','priorbiller@clinic.example','biller','note_release.downloaded',c.patient.id,expired.id,'Historical download before expiry').run()
+ await h.cmd(command+'submit',{...submission,...expired},c.biller.cookie,409)
  assert.equal(h.outboundRequests.filter(r=>!r.origin.includes('resend')).length,0,'manual request flow makes no payer call')
  assert.equal(h.mail.filter(m=>m.attachments?.length).length,0,'no packet is mailed')
  return {...c,request,denied,authorization,original:original.text}
