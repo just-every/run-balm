@@ -5,6 +5,8 @@ import { run } from './harness.mjs'
 import { clinic } from './clinic.mjs'
 import {agentFences, assertMapping, customFields, migrationBrowser} from './migration-agent-journey.mjs'
 
+import { reconciliationInventory } from './movein-reconciliation-journey.mjs'
+
 const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance']
 // The fixtures' booked appointments: two overlapping on the 2nd of the month after next and one on the 1st of the month after that, so they stay upcoming, outside the reminder window and in two months on any date.
 const month = ahead => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + ahead); return d.toISOString().slice(0, 7) }
@@ -18,11 +20,11 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     const input = { provider, files, practitionerId: therapist.id, serviceId: service.id, dateFormat: 'MDY' }
     await h.cmd('movein.preview', input, reception.cookie, 403)
     await h.cmd('movein.prepare', input, reception.cookie, 403)
-    if(provider==='cliniko')await agentFences(h,input)
+    if(provider==='cliniko'){ await reconciliationInventory(h); await agentFences(h,input) }
     const preview = await h.cmd('movein.prepare', input)
     assertMapping(preview)
     assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
-    assert.deepEqual(preview.counts, { patients: 2, appointments: 3, notes: 1, balances: 2, insurance: 2 })
+    assert.deepEqual(preview.counts, { patients: 2, appointments: 3, notes: 1, balances: 2, insurance: 2, invoices: 0, authorizations: 0, claims: 0 })
     assert.deepEqual(preview.reconciliation.source, preview.reconciliation.planned)
     assert.equal(Object.keys(preview.reconciliation.planned.appointmentsByMonth).length, 2)
     assert.equal(Object.values(preview.reconciliation.planned.balancesByPatient).reduce((a, b) => a + b), 16550)

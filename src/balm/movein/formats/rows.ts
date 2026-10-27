@@ -29,7 +29,8 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
   }
   const reportPatients = ['simplepractice', 'jane', 'webpt'].includes(bundle.provider) && file.kind === 'patients' && ((at.get('fullName') ?? -1) >= 0 || (bundle.provider === 'webpt' && keys.includes('name (first)')))
   if (reportPatients) diagnostic('warning', 'report_identity_review', 'Check the first and last names in the preview. If the report has no patient number, Balm uses the name and email or birth date to recognize an unchanged upload. Other report columns are listed below.')
-  const seen = new Set<string>(file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind].map(p => p.sourceId))
+  const inventoryKind = file.kind === 'invoices' || file.kind === 'authorizations' || file.kind === 'claims' ? file.kind : null
+  const seen = new Set<string>(inventoryKind ? bundle.inventory.filter(r => r.kind === inventoryKind).map(r => r.sourceId) : file.kind === 'patients' ? bundle.patients.map(p => p.sourceId) : file.kind === 'balances' ? bundle.balances.map(p => p.patientId) : bundle[file.kind as 'appointments' | 'notes' | 'insurance'].map(p => p.sourceId))
   let nonempty = 0
   for (const { cells, row } of rows.slice(1)) {
     if (!cells.some(c => c.trim())) continue
@@ -75,7 +76,9 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
         const sourceId = required('sourceId', 600), patientId = required('patientId', 600)
         if (seen.has(sourceId)) throw new Error(`Duplicate ${file.kind} source ID.`)
         seen.add(sourceId)
-        if (file.kind === 'appointments') {
+        if (inventoryKind) {
+          bundle.inventory.push({ ...location, kind: inventoryKind, sourceId, patientId, reference: required('reference', 240) })
+        } else if (file.kind === 'appointments') {
           column = 'Start At'; const startAt = timestamp(required('startAt'))
           column = 'End At'; const endAt = timestamp(required('endAt'))
           if (endAt <= startAt) throw new Error('Appointment end must be after its start.')

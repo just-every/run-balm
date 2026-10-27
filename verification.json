@@ -26,7 +26,8 @@
         "node --test --test-concurrency=1 tests/mobile.test.mjs tests/code-sets-browser.mjs",
         "node tests/accounting-browser.mjs",
         "node tests/readiness-browser.mjs",
-        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs"
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-movein\" node tests/agent-migration-browser.mjs"
       ]
     },
     {
