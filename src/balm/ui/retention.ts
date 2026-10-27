@@ -3,7 +3,8 @@ import { destructionGroups } from '../retention/labels'
 
 const inventoryList = (records:Record<string,number>) => `<ul>${destructionGroups(records).map(x=>`<li>${h(x.label)}: ${h(x.count)}</li>`).join('')}</ul>`
 const years = (value: unknown) => value === null ? 'Unresolved' : `${h(value)} years`
-const reasons: Record<string,string> = { state_rule_requires_review:'The applicable state rule is unresolved.', date_of_birth_required:'Add the patient’s date of birth.', last_treatment_unknown:'No treatment date is available.', legal_hold:'A legal hold blocks destruction.', retention_period_not_complete:'The retention period has not ended.' }
+const reasons: Record<string,string> = {
+  unresolved_retail_entitlement:'Unused visits or gift value require resolution before destruction.', state_rule_requires_review:'The applicable state rule is unresolved.', date_of_birth_required:'Add the patient’s date of birth.', last_treatment_unknown:'No treatment date is available.', legal_hold:'A legal hold blocks destruction.', retention_period_not_complete:'The retention period has not ended.' }
 export function retentionPanel(s: any, path = '/app/clinic') {
   const r = s.retention
   if (!r) return ''

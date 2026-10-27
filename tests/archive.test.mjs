@@ -230,6 +230,13 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
   let h
   try{
     const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')
+    h=await harness({root:source,...identity})
+    const historicalSale=crypto.randomUUID()
+    const historicalVisit=await h.db.prepare('SELECT id,service_id FROM bm_appointments WHERE client_id=?').bind(retentionPatient.id).first()
+    await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'membership','Synthetic resolved historical membership',?,1,1000,0,0,'','','synthetic-balm-stale-member','1990-01-02T03:00:00.000Z',?,?)").bind(historicalSale,retentionPatient.id,historicalVisit.service_id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical receipt')).run()
+    await h.db.prepare('INSERT INTO bm_package_uses VALUES(?,?,?,?)').bind(historicalVisit.id,historicalSale,retentionPatient.id,'1990-01-02T04:00:00.000Z').run()
+    await h.db.prepare("INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,'1990-01-02T05:00:00.000Z','1990-01-02T04:00:00.000Z','Specific request in person','Synthetic specific cancellation authorization','Synthetic exhausted cancellation',?,'1990-01-02T05:00:00.000Z',0)").bind(historicalSale,retentionPatient.id,h.auth.OWNER_EMAIL).run()
+    await h.close();h=null
     await command(source,['export','--output',old,'--no-queue'])
         h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
         await command(source,['export','--output',beforeDestruction,'--no-queue'])
@@ -239,6 +246,8 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
         await command(source,['export','--output',later,'--no-queue'])
@@ -252,6 +261,11 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     const proxy=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try { assert.equal((await proxy.env.DB.prepare('SELECT first_name FROM bm_clients WHERE id=?').bind(p.id).first()).first_name,'Erased');assert.equal((await proxy.env.DB.prepare('SELECT COUNT(*) n FROM bm_clients WHERE id=?').bind(retentionPatient.id).first()).n,0,'HIPAA-002 destroyed patient cannot return in a later restored archive') }
     finally { await proxy.dispose() }
+    const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
+    try {
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
+    } finally {await current.dispose()}
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
@@ -586,11 +600,21 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
     const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge()
     h=await harness({root:source,outbound:qbo.outbound})
-    const {service}=await clinic(h)
+    const {service,practitioners:[priya]}=await clinic(h)
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retail archive',dateOfBirth:'1950-01-01'})
     const member=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:2,amountCents:5000,label:'Synthetic finite membership',reference:'synthetic-balm-archive-member',confirm:true})
-    await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state:'paused',reason:'Synthetic pause',consentEvidence:'Synthetic patient authorization',confirm:true})
-    for(const state of ['active','paused'])await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state,reason:'Synthetic patient change',consentEvidence:'Synthetic patient authorization',confirm:true})
+    await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state:'paused',reason:'Synthetic pause',consentEvidence:'Synthetic patient authorization',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Specific request in person',confirm:true})
+    for(const state of ['active','paused'])await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state,reason:'Synthetic patient change',consentEvidence:'Synthetic patient authorization',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Specific request in person',confirm:true})
+    const exhausted=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:1,amountCents:1000,label:'Synthetic exhausted membership',reference:'synthetic-balm-archive-exhausted',confirm:true})
+    const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,8,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+    await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:exhausted.id,appointmentId:visit})
+    await h.cmd('appointment.attend',{id:visit},priya.cookie)
+    const cancellationTerms={clientId:patient.id,saleId:exhausted.id,reason:'Patient requested cancellation after consumption',consentEvidence:'Patient authorized cancelling this exhausted membership',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Specific patient request in person',confirm:true}
+    await h.cmd('pay.retail.cancel',cancellationTerms)
+    const cancellationBefore=await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first()
+    const eventsBefore=(await h.db.prepare('SELECT * FROM bm_membership_events WHERE sale_id=? ORDER BY id').bind(member.id).all()).results
+    const inactive=await h.staff('InactiveRetailDesk','reception')
+    await h.cmd('staff.save',{id:inactive.id,name:'InactiveRetailDesk',email:'inactiveretaildesk@clinic.example',role:'reception',active:false})
     const original=(await h.send(member.receiptUrl,undefined,h.owner)).text
     const base={clientId:patient.id,amountCents:5000,occurredOn:'2026-09-01',evidence:'Owner reviewed synthetic original'}
     await h.cmd('finance.observation.record',{...base,kind:'eft',reference:'synthetic-balm-archive-eft',sourceReference:'synthetic-balm-archive-trace'})
@@ -614,6 +638,17 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const file=(await h.send('/api/balm/clients/'+patient.id,undefined,owner)).value
     assert.equal(file.billing.retail.find(x=>x.id===member.id).membership_state,'paused')
     assert.equal(file.billing.retail.find(x=>x.id===member.id).visits_left,2)
+    assert.equal(file.billing.retail.find(x=>x.id===exhausted.id).membership_state,'cancelled')
+    assert.equal(file.billing.retail.find(x=>x.id===exhausted.id).visits_left,0)
+    assert.deepEqual(await h.db.prepare('SELECT * FROM bm_membership_cancellations WHERE sale_id=?').bind(exhausted.id).first(),cancellationBefore)
+    await h.cmd('pay.retail.cancel',cancellationTerms,owner,409)
+    await h.cmd('pay.retail.membership',{...cancellationTerms,state:'active'},owner,409)
+
+    assert.deepEqual((await h.db.prepare('SELECT * FROM bm_membership_events WHERE sale_id=? ORDER BY id').bind(member.id).all()).results,eventsBefore)
+    await h.cmd('pay.retail.membership',{clientId:patient.id,saleId:member.id,state:'active'},inactive.cookie,401)
+    const restoredStaff=(await h.state(owner)).staff.find(x=>x.id===inactive.id)
+    assert.equal(restoredStaff.active,0)
+    assert.equal(h.outboundRequests.filter(x=>x.origin.includes('stripe')).length,0)
     const finance=await h.cmd('finance.reconcile.prepare',{month:'2026-09'},owner)
     assert.equal(finance.matching.length,2)
     assert.ok(finance.matching.find(x=>x.reference==='synthetic-balm-archive-charge').explanations.some(x=>x.includes('No recorded card settlement')))
