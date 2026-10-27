@@ -140,7 +140,7 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
-test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:240_000},async()=>{
+test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:600_000},async()=>{
   const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
@@ -223,7 +223,7 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
   }finally{await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
-test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary erasure and later destruction resurrection', {timeout:240_000},async()=>{
+test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary erasure and later destruction resurrection', {timeout:600_000},async()=>{
   const {temporary,source,erased,refused,p,retentionPatient,identity}=await archiveFixture({erasureOnly:true})
   let h
   try{

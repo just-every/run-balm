@@ -37,6 +37,7 @@ test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, mo
     assert.equal((await resendEvent(h, 'booking-delivered', delivered)).status, 200, 'COMM-001 signed callback needs no native session or browser Origin')
     assert.equal((await resendEvent(h, 'booking-delivered', delivered)).status, 200, 'COMM-001 exact duplicate is harmless')
     assert.equal((await readFile()).mailHistory[0].state, 'delivered')
+    assert.deepEqual((await h.send('/api/balm/clients/'+client.id+'/communications?communicationChannel=email',undefined,priya.cookie)).value.results.map(r=>[r.channel,r.direction,r.state]),[['email','outgoing','delivered']],'COMM-003 search exposes the verified delivery state, not an inferred receipt')
     assert.equal((await resendEvent(h, 'booking-late-accepted', resendBody(bookingMessageId, 'email.sent', undefined, Date.now() - 1000))).status, 200)
     assert.equal((await readFile()).mailHistory[0].state, 'delivered', 'COMM-001 later acceptance cannot regress terminal delivery')
     assert.equal((await resendEvent(h, 'booking-delivered', { ...delivered, type: 'email.bounced' })).status, 409, 'COMM-001 event identity conflict is refused')
@@ -51,6 +52,7 @@ test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, mo
     assert.equal((await readFile()).mailHistory[0].state, 'delivered', 'COMM-001 older terminal events cannot replace newer terminal facts')
     assert.equal((await resendEvent(h, 'booking-failed', resendBody(bookingMessageId, 'email.failed', undefined, Date.now() - 500))).status, 200)
     assert.equal((await readFile()).mailHistory[0].state, 'failed', 'COMM-001 provider-reported failure is visible on the patient file')
+    assert.deepEqual((await h.send('/api/balm/clients/'+client.id+'/communications?communicationChannel=email',undefined,priya.cookie)).value.results.map(r=>r.state),['failed'],'COMM-003 a later signed failure is reflected in searchable email metadata')
     assert.match((await h.send('/app/clients/' + client.id, undefined, h.owner)).text, /Delivery failed/)
     const beforeOversize = (await readFile()).mailHistory[0].state
     assert.equal((await h.mf.dispatchFetch(h.origin + '/api/balm/mail/events/resend', { method: 'POST', body: ' '.repeat(1024 * 1024 + 1) })).status, 413, 'COMM-001 raw body is bounded at one MiB')

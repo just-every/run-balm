@@ -5358,7 +5358,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "9874f7d2ee9a746ed98406a921b0887f12b678907ab1838011ed8c56e9976cf8",
+      "sha256": "3e3cb8237c61b98b416c8ecd408e2adf985a3e896719ebe46bfda6301eaad7ef",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5454,7 +5454,7 @@
       "executable": false
     },
     "tests/communication-journey.mjs": {
-      "sha256": "b08914c3f64042b8a5fd23ba73f905511f3d419e4b62acf261dd5b5c760a1e1c",
+      "sha256": "12df417cf2ae9998dc804c6c0574a021e6afebc169ea60d375794848001689aa",
       "executable": false
     },
     "tests/communication-worker.ts": {
@@ -5762,7 +5762,7 @@
       "executable": false
     },
     "tests/reminders.test.mjs": {
-      "sha256": "184a0c29ced20f4b180996782d4b57ec099a124d15ccfe3a33f7457f4b2b14f0",
+      "sha256": "3287cec589e8b0315220f238039b9c2976007bf975a63574af8264f8b85ed764",
       "executable": false
     },
     "tests/report.test.mjs": {
