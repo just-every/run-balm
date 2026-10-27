@@ -12,6 +12,7 @@ const stateWord: Record<string, string> = { done: 'Done', waiting: 'Waiting', st
 const cites = (list: any[]) => `<ul class="case-cites">${list.map(c => `<li><a href="${h(c.href)}">${h(c.label)}</a></li>`).join('')}</ul>`
 
 function outcome(r: any, kind: string) {
+  if(kind==='denial.appeal')return 'Appeal approved for external submission; payment still awaited'
   if (r.error) return `Not done: ${r.error}`
   if (r.delivery === 'suppressed') return 'Not sent: email is suppressed on this install'
   if (kind === 'authorization.request') return r.delivery === 'sent' ? `Emailed to ${r.to}${r.attachment ? ` with ${r.attachment}` : ''}` : `Not sent (${String(r.delivery).replace(/_/g, ' ')})`
@@ -31,7 +32,7 @@ function stepCard(c: any, step: any, wording: any, owner: boolean) {
   const approve = step.blocked ? `<p class="notice" role="note">${h(step.blocked)}</p>`
     : form('case.approve', path, ids + words + check('reviewed', 'I reviewed this step and the records it cites.'), step.button)
   const draft = step.draftable && !step.blocked ? wording.ready ? form('case.draft', path, hidden('caseId', c.referral.id) + hidden('key', step.key), 'Draft wording with the AI key', true) : `<p class="help">${h(wording.line)}</p>` : ''
-  return `<div class="case-step"><h4>${h(step.title)}</h4><p>${h(step.why)}</p><p class="help">Records used</p>${cites(step.citations)}${sends}${letter}${approve}${draft}</div>`
+  return `<div class="case-step"><h4>${h(step.title)}</h4><p>${h(step.why)}</p><p class="help">Records used</p>${cites(step.citations)}${sends}${letter}${step.appeal?`<pre class="case-letter">${h(step.appeal.letter)}</pre><p><a href="/api/balm/note-releases/${h(step.appeal.releaseId)}.pdf">Download appeal evidence</a> · <a href="/app/clients/${h(c.client.id)}#payer-releases">Review evidence release</a></p>`:''}${step.prepareAppeal?form('case.appeal.prepare',path,hidden('caseId',c.referral.id)+hidden('claimId',step.prepareAppeal),'Prepare appeal evidence'):''}${approve}${draft}</div>`
 }
 
 /** With nothing to approve, the case still names what moves it on and where. */
@@ -45,8 +46,8 @@ function caseCard(s: any, c: any, wording: any) {
   const r = c.referral
   const track = `<ol class="case-track">${c.stages.map((x: any) => `<li class="case-stage is-${h(x.state)}"><span class="case-dot" aria-hidden="true"></span><span class="case-stage-text"><strong>${h(x.label)}</strong> <span class="case-state">${h(stateWord[x.state])}</span><br>${x.cite ? `<a href="${h(x.cite.href)}">${h(x.text)}</a>` : h(x.text)}${x.next ? `<br><span class="case-todo">Next: <a href="${h(x.next.href)}">${h(x.next.text)}</a></span>` : ''}</span></li>`).join('')}</ol>`
   const next = c.steps.length ? `<section class="case-next"><h3>${c.steps.length === 1 ? 'Next step' : `Next steps (${c.steps.length})`}</h3>${c.steps.map((x: any) => stepCard(c, x, wording, s.actor?.role === 'owner')).join('')}</section>` : nextUp(c)
-  const history = c.history.length ? `<details class="case-history"><summary>Approved steps (${c.history.length})</summary><ul class="plain">${c.history.map((x: any) => `<li><strong>${h(x.title)}</strong><br>Approved by ${h(x.approved_by)} (${h(x.approved_role)}) ${stamp(s, x.approved_at)} · ${h(x.status === 'sending' ? 'in progress' : outcome(x.result, x.kind))}${x.wording ? `<details><summary>Wording sent</summary><p class="secure-body">${h(x.wording)}</p></details>` : ''}</li>`).join('')}</ul></details>` : ''
-  return `<article class="case" id="case-${h(r.id)}"><header class="case-head"><div><h2><a href="/app/clients/${h(c.client.id)}">${h(c.client.name)}</a></h2><p class="help">${h(c.payer ?? 'Self-pay')} · referral from ${h(r.referring_first)} ${h(r.referring_last)}${r.diagnosis ? ` · ${h(r.diagnosis)}` : ''}${r.reason ? ` · ${h(r.reason)}` : ''}</p></div><p class="case-standing is-${h(c.standing.state)}">${h(c.standing.text)}</p></header>${referralLine(s, c)}${authorizationRequestHistory(s,c.authorizationRequests)}${track}${next}${history}</article>`
+  const history = c.history.length ? `<details class="case-history"><summary>Approved steps (${c.history.length})</summary><ul class="plain">${c.history.map((x: any) => `<li><strong>${h(x.title)}</strong><br>Approved by ${h(x.approved_by)} (${h(x.approved_role)}) ${stamp(s, x.approved_at)} · ${h(x.status === 'sending' ? 'in progress' : outcome(x.result, x.kind))}${x.result.releaseId?`<p><a href="/api/balm/note-releases/${h(x.result.releaseId)}.pdf">Download approved appeal evidence</a></p>`:''}${x.wording ? `<details><summary>${x.kind==='denial.appeal'?'Approved appeal letter':'Wording sent'}</summary><p class="secure-body">${h(x.wording)}</p></details>` : ''}</li>`).join('')}</ul></details>` : ''
+  return `<article class="case" id="case-${h(r.id)}"><header class="case-head"><div><h2><a href="/app/clients/${h(c.client.id)}">${h(c.client.name)}</a></h2><p class="help">${h(c.payer ?? 'Self-pay')} · referral from ${h(r.referring_first)} ${h(r.referring_last)}${r.diagnosis ? ` · ${h(r.diagnosis)}` : ''}${r.reason ? ` · ${h(r.reason)}` : ''}</p></div><p class="case-standing is-${h(c.standing.state)}">${h(c.standing.text)}</p></header>${referralLine(s, c)}${authorizationRequestHistory(s,c.authorizationRequests)}${track}${(c.denials??[]).map((d:any)=>`<p class="notice">Appeal ${d.state==='resolved'?'resolved: payment posted':'awaiting payment'} · ${h(d.claimId)}</p>`).join('')}${next}${history}</article>`
 }
 
 const stageWords: Record<string, string> = { received: 'Received, not yet scheduled', scheduled: 'Scheduled', evaluated: 'Evaluated', discharged: 'Discharged', lost: 'Lost' }
@@ -80,7 +81,7 @@ export function casesPage(s: any) {
   return `<div class="cases"><h1>Cases</h1><p>One case per referral, followed from referral to paid claim. Balm works out where each case stands from the clinic’s records and lines up the next step with the records it used. Nothing is sent until a person approves it, and every approval is kept with who gave it.</p>`
     + (wording.ready ? '' : `<p class="notice" role="note">${h(wording.line)}</p>`)
     + `<div class="stats">${counts.map(([label, value]) => `<div class="stat"><span class="label">${h(label)}</span><strong class="value">${h(value)}</strong></div>`).join('')}</div>`
-    + (list.length ? list.map(c => caseCard(s, c, wording)).join('') : panel('Cases', empty('No cases yet. Open one from a referral below.'))) + openForm(s)
+    + (list.length ? list.map(c => caseCard(s, c, wording)).join('') : panel('Cases', empty('No cases yet. Open one from a referral below.'))) + (s.actor?.staffKind==='biller'?'':openForm(s))
     + panel('How a case reaches paid or denied', '<p>A claim leaves Balm as an 837P claim file (or through your clearinghouse when one is connected). The payer answers with an 835, which your clearinghouse or the payer’s portal gives you. Upload it here or on the Insurance page: posting it marks each claim paid or denied, records any patient share, and moves the case on. A 277CA only says the claim was received or rejected.</p>')
     + `<div class="insurance">${payerFileUploads(s.insurance?.payers ?? [], path)}</div></div>`
 }

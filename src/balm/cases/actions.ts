@@ -58,6 +58,7 @@ export async function perform(env: Bindings, who: Actor, f: CaseFacts, step: Ste
       const r = f.referral, claim = await prepareClaim(db, who, { appointmentId: target, policyId: f.policy!.id, ...(r.referring_npi ? { referringFirst: r.referring_first, referringLast: r.referring_last, referringNpi: r.referring_npi } : {}) })
       return { ok: true, result: await sendClaim(env, who, claim) }
     }
+    case 'denial.appeal': throw new Error('appeals_use_guarded_billing_approval')
     case 'denial.fix': {
       const prior = f.claims.find(c => c.id === target)!
       return { ok: true, result: { replaces: prior.id, ...await sendClaim(env, who, await correctClaim(db, who, { id: prior.id, payerControl: prior.payer_control })) } }

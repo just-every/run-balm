@@ -27,7 +27,8 @@
         "node tests/accounting-browser.mjs",
         "node tests/readiness-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-authorization\" node tests/authorization-request-browser.mjs",
-        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs"
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-retail\" node tests/retail-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-denial-resolver\" node tests/denial-resolver-browser.mjs"
       ]
     },
     {

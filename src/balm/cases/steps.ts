@@ -2,6 +2,7 @@
 // the case's records; the AI key only ever rewords a letter's request paragraph.
 // A step's digest covers what it rests on, so an approval given on a page that
 // has since changed is refused instead of acting on facts nobody reviewed.
+import { payerReason } from '../insurance/codes'
 import { dollars, invoiceNumber } from '../domain/invoices'
 import { sha256 } from '../domain/model'
 import { template } from '../charting/templates'
@@ -41,7 +42,7 @@ export function standardRequest(f: CaseFacts, a: any, denied?: any) {
 }
 
 async function digestOf(step: Omit<Step, 'digest'>) {
-  return sha256(JSON.stringify([step.key, step.kind, step.title, step.why, step.citations, step.sends ?? null, step.blocked ?? null]))
+  return sha256(JSON.stringify([step.key, step.kind, step.title, step.why, step.citations, step.sends ?? null, step.blocked ?? null, step.appeal ?? null, step.prepareAppeal ?? null]))
 }
 
 export async function steps(f: CaseFacts): Promise<Step[]> {
@@ -94,10 +95,16 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
     out.push({
       key: `denial.fix:${c.id}`, kind: 'denial.fix', button: 'Correct and resubmit', draftable: false,
       title: `Fix and resubmit the ${c.status === 'rejected' ? 'rejected' : 'denied'} claim for ${usDay(c.service_date, f.zone)}`,
-      why: c.errors.map((e: any) => e.message.trim()).join(' ') || 'The payer did not pay this claim. Review the remittance before resubmitting.',
+      why: c.errors.map((e: any) => /^carc_/.test(e.code) ? payerReason(e.code,e.message).reason : e.message.trim()).join(' ') || 'The payer did not pay this claim. Review the remittance before resubmitting.',
       blocked: needsAuth ? `Record a new payer authorization after this denial on the policy, with a different number covering ${usDay(c.service_date, f.zone)} and its treating practitioner. The authorization on the denied claim was ${c.snapshot.authorization ?? 'not recorded'}; resubmitting it would be denied again.` : undefined,
-      citations: [cite.claim(f, c), ...(c.era_trace ? [cite.era(f, c)] : []), ...(v ? [cite.visit(f, v)] : []), ...(note ? [cite.note(f, note)] : []), ...(auth ? [cite.authorization(f, { ...auth })] : [])],
+      citations: [cite.claim(f, c), ...(c.era_trace ? [cite.era(f, c)] : c.acknowledgment ? [{kind:'acknowledgment' as const,label:`277CA ${JSON.parse(c.acknowledgment.detail).statuses.map((s:any)=>`${s.category}:${s.status}:${s.entity}`).join(', ')}`,href:`/app/clients/${f.client.id}#claim-${c.id}`}] : []), ...(v ? [cite.visit(f, v)] : []), ...(note ? [cite.note(f, note)] : []), ...(auth ? [cite.authorization(f, { ...auth })] : [])],
     })
+    const release=f.releases.find(r=>r.reference===c.id&&JSON.parse(r.appointment_ids).includes(c.appointment_id))
+    const evidence=[cite.claim(f,c),...(c.era_trace?[cite.era(f,c)]:c.acknowledgment?[{kind:'acknowledgment' as const,label:`277CA ${JSON.parse(c.acknowledgment.detail).statuses.map((s:any)=>`${s.category}:${s.status}:${s.entity}`).join(', ')}`,href:`/app/clients/${f.client.id}#claim-${c.id}`}]:[]),...(note?[cite.note(f,note)]:[]),...(auth?[cite.authorization(f,auth)]:[])]
+    const letter=[`Appeal for ${f.policy?.payer_name}`,`Claim: ${c.payer_control||c.id}`,`Service date: ${c.service_date}`,`Member: ${f.policy?.member_id}`,`Reason: ${c.errors.map((e:any)=>/^carc_/.test(e.code)?payerReason(e.code,e.message).reason:e.message).join(' ')}`,`Please reconsider using the attached signed note${auth?` and recorded authorization ${auth.number}, valid ${auth.starts_on} through ${auth.ends_on}`:''}.`,...evidence.map(e=>e.label),release?`Attached signed-note release: ${release.id}, digest ${release.sha256}`:'Signed-note release not yet prepared.','Prepared for billing review. Submit outside Balm; approval does not post payment.'].join('\n')
+    out.push({key:`denial.appeal:${c.id}`,kind:'denial.appeal',title:`Review appeal for ${usDay(c.service_date,f.zone)}`,button:'Approve appeal packet',draftable:false,why:'Review the payer reason and the cited evidence before submitting the appeal outside Balm.',citations:evidence,prepareAppeal:!release||release.revoked_at||Date.parse(release.expires_at??'2099-12-31')<=Date.now()?c.id:undefined,
+      blocked:!note?'Sign the visit note before preparing appeal evidence.':!release?'Prepare the signed-note evidence for owner review.':release.revoked_at||release.approved_digest!==release.sha256||Date.parse(release.expires_at??'')<=Date.now()?'The owner must approve this exact evidence release; revoked or expired releases cannot be used.':undefined,
+      ...(release?{appeal:{claimId:c.id,releaseId:release.id,releaseDigest:release.sha256,letter}}:{})})
   }
 
   const settled = f.claims.some(c => c.status === 'paid' || c.status === 'partial') || !p

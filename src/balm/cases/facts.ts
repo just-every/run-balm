@@ -18,7 +18,7 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
       JOIN bm_staff p ON p.id=a.practitioner_id WHERE a.client_id=? AND a.status IN ('booked','attended') ORDER BY a.start_at`, clientId),
     rows(db, 'SELECT id,appointment_id,template,signed_at,signer_name,signer_credentials,signed_revision FROM bm_notes WHERE client_id=? ORDER BY created_at', clientId),
     rows(db, "SELECT id,number,appointment_id,status,amount_cents FROM bm_invoices WHERE client_id=? AND status<>'void'", clientId),
-    rows(db, `SELECT c.id,c.appointment_id,c.policy_id,c.status,c.errors,c.payer_control,c.service_date,c.amount_cents,c.snapshot,c.updated_at,
+    rows(db, `SELECT c.id,c.appointment_id,c.policy_id,c.status,c.errors,c.payer_control,c.service_date,c.amount_cents,c.snapshot,c.updated_at,c.version,
       r.paid_cents,r.pr_cents,r.adjustments,r.payer_control AS era_control,i.trace AS era_trace,i.imported_at AS era_at,
       (SELECT MAX(a.sequence) FROM bm_audit a WHERE a.client_id=c.client_id AND a.subject_id=c.id AND a.action='insurance.remittance_posted') AS remittance_sequence
       FROM bm_claims c LEFT JOIN bm_remittance_claims r ON r.claim_id=c.id LEFT JOIN bm_insurance_imports i ON i.id=r.import_id
@@ -30,7 +30,9 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
     rows(db, 'SELECT * FROM bm_case_drafts WHERE referral_id=?', referral.id),
     one(db, 'SELECT MIN(received_on) AS on_ FROM bm_referrals WHERE client_id=? AND received_on>? ', clientId, referral.received_on),
   ])
+  const releases=await rows(db,`SELECT r.id,r.sha256,r.appointment_ids,r.reference,a.expires_at,a.sha256 AS approved_digest,v.revoked_at FROM bm_note_releases r LEFT JOIN bm_note_release_approvals a ON a.release_id=r.id LEFT JOIN bm_note_release_revocations v ON v.release_id=r.id WHERE r.client_id=? AND r.payer_id=? AND r.purpose='appeal' ORDER BY r.prepared_at DESC,r.id`,clientId,policy?.payer_id??'')
   for(const claim of claims){
+    claim.acknowledgment=await one(db,"SELECT id,detail,created_at FROM bm_claim_events WHERE claim_id=? AND kind='277CA' ORDER BY created_at DESC,id DESC LIMIT 1",claim.id)
     const manual=await rows(db,`SELECT l.*,b.reference,b.closed_at FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id WHERE l.claim_id=? AND b.status='closed' ORDER BY b.closed_at,l.id`,claim.id)
     if(manual.length){
       claim.paid_cents=Number(claim.paid_cents??0)+manual.reduce((sum,l)=>sum+(l.kind==='recoupment'?-l.amount_cents:l.paid_cents),0)
@@ -46,7 +48,7 @@ export async function caseFacts(db: D1Database, referral: Data): Promise<CaseFac
   const latest = policy ? await one(db, 'SELECT id,service_date,status,created_at,checked_at FROM bm_eligibility WHERE policy_id=? ORDER BY created_at DESC LIMIT 1', policy.id) : null
   return {
     referral, client: client!, policy, eligibility: latest, clinic: clinic!, zone, today: hostDateAt(new Date(), zone),
-    authorizations: policy ? auths.filter(a => a.policy_id === policy.id) : [],
+    releases, authorizations: policy ? auths.filter(a => a.policy_id === policy.id) : [],
     visits: caseVisits, notes: notes.filter(n => ids.has(n.appointment_id)), invoices: invoices.filter(i => ids.has(i.appointment_id)),
     claims: claims.filter(c => ids.has(c.appointment_id) && (!policy || c.policy_id === policy.id)).map(c => ({ ...c, errors: JSON.parse(c.errors), snapshot: (()=>{const s=JSON.parse(c.snapshot);delete s.distinctServices;if(s.coding){delete s.coding.priorContext;s.coding.proposals=(s.coding.proposals??[]).map((p:Data)=>({code:p.code,modifier:p.modifier,version:p.version}))}return s})(), adjustments: c.adjustments ? JSON.parse(c.adjustments) : null })),
     intakeAt: intake?.at as string | null ?? null, balanceCents: money.patientBalanceCents, lastStatementAt: statement?.at as string | null ?? null, done, drafts,

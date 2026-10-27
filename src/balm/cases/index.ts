@@ -1,3 +1,5 @@
+import {releaseCommand} from '../domain/payer-note-releases'
+import {biller} from '../domain/role-access'
 import {authorizationRequestsFor} from '../insurance/authorization-requests'
 // The case agent: one case per referral, followed from referral and intake
 // through eligibility, authorization, visits, signed notes, claims and the ERA
@@ -24,6 +26,7 @@ const deskOnly = (who: Actor) => { human(who); need(who, 'owner', 'reception') }
 async function view(env: Bindings, referral: Data) {
   const f = await caseFacts(env.DB, referral), list = stages(f)
   return { referral, client: { id: f.client.id, name: `${f.client.first_name} ${f.client.last_name}` }, payer: f.policy?.payer_name ?? null, stages: list, standing: standing(list), steps: await steps(f),
+    denials:f.claims.filter(c=>['denied','rejected','partial'].includes(c.status)||f.done.some(d=>d.step_key===`denial.appeal:${c.id}`)).map(c=>({claimId:c.id,state:c.status==='paid'&&Number(c.paid_cents)>0?'resolved':'awaiting_payment',paidCents:Number(c.paid_cents??0)})),
     history: f.done.map(d => ({ ...d, citations: JSON.parse(d.citations), result: JSON.parse(d.result) })), facts: f }
 }
 
@@ -102,6 +105,9 @@ async function draft(env: Bindings, who: Actor, input: Data) {
 /** A person approves the exact step they reviewed; Balm then does it and keeps the record. */
 async function approve(env: Bindings, who: Actor, input: Data) {
   const { c, step } = await caseStep(env, input), db = env.DB
+  if(biller(who))insist(['denial.appeal','denial.fix'].includes(step.kind),'billing_case_step_required',403)
+  if(step.kind==='denial.appeal')return approveAppeal(env,who,c,step,input)
+  if(step.kind==='denial.fix')insist(who.role==='owner'||biller(who),'billing_approval_required',403)
   // A signed note leaves the clinic only on the owner's approval, to the recipient they reviewed.
   insist(who.role === 'owner' || !step.sends?.attachment, 'only_the_owner_sends_a_signed_note', 403)
   insist(input.digest === step.digest, 'The case changed after this page was opened. Review the step again before approving.', 409)
@@ -118,8 +124,28 @@ async function approve(env: Bindings, who: Actor, input: Data) {
   return { id: key, kind: step.kind, approvedBy: who.email, result: outcome.result }
 }
 
+
+async function prepareAppeal(env:Bindings,who:Actor,input:Data){
+ insist(who.role==='owner'||biller(who),'billing_approval_required',403)
+ const {c,step}=await caseStep(env,{...input,key:`denial.appeal:${input.claimId}`})
+ insist(step.prepareAppeal,'appeal_evidence_already_prepared',409)
+ const claim=c.facts.claims.find(x=>x.id===input.claimId)!
+ return releaseCommand(env.DB,who,'note_release.prepare',{clientId:c.client.id,payerId:c.facts.policy!.payer_id,purpose:'appeal',reference:claim.id,appointmentIds:[claim.appointment_id]})
+}
+async function approveAppeal(env:Bindings,who:Actor,c:any,step:any,input:Data){
+ insist(who.role==='owner'||biller(who),'billing_approval_required',403)
+ insist(input.digest===step.digest,'review_the_current_appeal_digest',409)
+ insist(!step.blocked,step.blocked??'appeal_evidence_required',409)
+ const db=env.DB,a=step.appeal,claim=c.facts.claims.find((x:Data)=>x.id===a.claimId),key=id(),at=now()
+ const epoch=(await one(db,'SELECT version FROM bm_retention_epoch WHERE id=1'))!.version
+ const result={claimId:claim.id,releaseId:a.releaseId,releaseDigest:a.releaseDigest,letter:a.letter,status:'approved_not_sent'}
+ await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_retention_epoch WHERE id=1 AND version=?)',epoch),guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',c.client.id),guard(db,"EXISTS(SELECT 1 FROM bm_claims WHERE id=? AND version=? AND status IN ('denied','rejected','partial'))",claim.id,claim.version),guard(db,"EXISTS(SELECT 1 FROM bm_note_release_approvals a JOIN bm_note_releases r ON r.id=a.release_id WHERE r.id=? AND r.sha256=? AND a.sha256=r.sha256 AND a.expires_at>?) AND NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?)",a.releaseId,a.releaseDigest,at,a.releaseId),guard(db,"EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action IN ('note_release.reviewed','note_release.downloaded'))",a.releaseId,who.email),stmt(db,"INSERT INTO bm_case_steps(id,referral_id,step_key,kind,title,digest,citations,wording,approved_by,approved_role,approved_at,status,result,finished_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'done',?,?)",key,c.referral.id,step.key,step.kind,step.title,step.digest,JSON.stringify(step.citations),a.letter,who.email,biller(who)?'biller':who.role,at,JSON.stringify(result),at),audit(db,who,'case.appeal_approved',c.client.id,key)])
+ return {id:key,...result}
+}
+
 export async function caseCommand(env: Bindings, who: Actor, name: string, input: Data) {
   deskOnly(who)
+  if(name==='case.appeal.prepare')return prepareAppeal(env,who,input)
   if (name === 'case.open') return saveReferral(env.DB, who, input)
   if (name === 'case.draft') return draft(env, who, input)
   if (name === 'case.approve') return approve(env, who, input)

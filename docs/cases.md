@@ -1,4 +1,4 @@
-The case agent follows each referral from authorization to paid claim. Open **Cases** (owner and reception) to see every case in one list, where each one stands, and the next step Balm has lined up for a person to approve.
+The case agent follows each referral from authorization to paid claim. Open **Cases** (owner, reception and billing staff) to see every case in one list, where each one stands, and the next step Balm has lined up for a person to approve.
 
 ## Open a case
 
@@ -41,3 +41,12 @@ Nothing is sent until a person at the desk ticks **I reviewed this step and the 
 ## Wording with your AI key
 
 The rules above are plain code: the agent lists cases and next steps with no AI key. The owner’s AI key from **Clinic → Scribe** is used only to word the request paragraph of an authorization letter, from the case’s facts and signed note without the patient’s name, birth date or member ID. Without a key the page says so and Balm uses its standard paragraph. Every paragraph can be edited before it is approved. On RER Managed hosting, which has no outbound connection to AI providers yet, drafted wording is not available.
+
+
+## Denial appeals
+
+A 277CA rejection is shown with its original status and entity codes and a plain explanation, never as payment or an adjudicated denial. Each denied claim offers a corrected claim and an appeal. A missing-authorization correction still requires the newly recorded authorization that covers the visit and practitioner.
+
+For an appeal, choose **Prepare appeal evidence**. Balm prepares the signed visit note through the existing payer note release. The owner opens the exact PDF and approves its digest for seven days. Billing staff download that approved evidence, review the letter citing the claim, payer reason, signed note and available authorization, then choose **Approve appeal packet**. Reception, clinicians and agent keys cannot approve this billing step. A changed digest, expired or revoked release refuses approval. The saved letter, evidence digest and biller identity stay with the case.
+
+Approval prepares the packet for submission outside Balm and sends nothing. Download the approved evidence and use the saved letter in the practice's payer portal. The case continues to show **awaiting payment**. Only posting a paid remittance resolves it; neither a 277CA nor an appeal approval does. A later payment on a zero-payment denial retains both original adjudications and posts the payment once. Clearinghouse transport and enrollment remain INS-006 work.

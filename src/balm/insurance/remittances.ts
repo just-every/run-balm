@@ -48,10 +48,13 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
     insist(stage?.priority!==1||!r.adjustments.some(a=>a.group==='OA'||a.group==='PI'),'primary_remittance_adjustment_group_not_supported')
     insist(open&&r.paidCents+writeoff<=open.cents,'remittance_would_overpost_invoice_import_nothing',409)
     const errors=status==='denied'||status==='partial'?r.adjustments.filter(a=>a.group==='CO').map(a=>({code:'carc_'+a.reason,field:'claim',message:`${adjustmentLabel(a.group,a.reason)}. ${r.remarks.map(remarkLabel).join('; ')} ${denialNextStep(a.reason)}`})):[]
+    // A zero-payment denial may later be paid after appeal. Originals remain in
+    // the immutable adjudications and claim events; the single-row view advances.
+    const appealPayment=claim.status==='denied'&&r.paidCents>0
     statements.push(
       ...adjudicationStatements(db,claim,prior,id(),at,status==='denied'||status==='partial',forwarded),
-      ...(!crossover?[guard(db,'NOT EXISTS(SELECT 1 FROM bm_remittance_claims WHERE claim_id=?)',claim.id),
-      stmt(db,'INSERT INTO bm_remittance_claims(import_id,claim_id,paid_cents,co_cents,pr_cents,payer_control,adjustments) VALUES(?,?,?,?,?,?,?)',key,claim.id,r.paidCents,co,r.prCents,r.control,JSON.stringify({adjustments:r.adjustments,remarks:r.remarks,lines:r.lines}))]:[]),
+      ...(!crossover?[guard(db,'NOT EXISTS(SELECT 1 FROM bm_remittance_claims WHERE claim_id=?) OR (? AND EXISTS(SELECT 1 FROM bm_remittance_claims WHERE claim_id=? AND paid_cents=0 AND pr_cents=0))',claim.id,appealPayment?1:0,claim.id),
+      stmt(db,'INSERT INTO bm_remittance_claims(import_id,claim_id,paid_cents,co_cents,pr_cents,payer_control,adjustments) VALUES(?,?,?,?,?,?,?) ON CONFLICT(claim_id) DO UPDATE SET import_id=excluded.import_id,paid_cents=excluded.paid_cents,co_cents=excluded.co_cents,pr_cents=excluded.pr_cents,payer_control=excluded.payer_control,adjustments=excluded.adjustments',key,claim.id,r.paidCents,co,r.prCents,r.control,JSON.stringify({adjustments:r.adjustments,remarks:r.remarks,lines:r.lines}))]:[]),
       ...(r.paidCents?[stmt(db,'INSERT INTO bm_payments(id,invoice_id,amount_cents,reference,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)',id(),claim.invoice_id,r.paidCents,`era:${payerId}:${parsed.trace}:${claim.id}`,who.email,at)]:[]),
       ...(writeoff?[stmt(db,'INSERT INTO bm_insurance_adjustments(id,invoice_id,amount_cents,reason,remittance_id,recorded_by,recorded_at) VALUES(?,?,?,?,?,?,?)',id(),claim.invoice_id,writeoff,r.adjustments.filter(a=>a.group==='CO').map(a=>adjustmentLabel(a.group,a.reason)).join('; '),key,who.email,at)]:[]),
       guard(db,`(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_payments WHERE invoice_id=?)+(SELECT COALESCE(SUM(amount_cents),0) FROM bm_invoice_adjustments WHERE invoice_id=?)<=(SELECT amount_cents FROM bm_invoices WHERE id=? AND status='approved')`,claim.invoice_id,claim.invoice_id,claim.invoice_id),
