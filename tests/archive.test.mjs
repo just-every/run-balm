@@ -808,6 +808,9 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
  const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  const snapshot=async(db,clientId)=>({
+  quietPolicies:(await db.prepare('SELECT * FROM bm_sms_quiet_policies ORDER BY id').all()).results,
+  quietPolicy:(await db.prepare('SELECT sms_quiet_policy_id FROM bm_settings WHERE id=1').first()).sms_quiet_policy_id,
+  patientZone:(await db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(clientId).first()).sms_time_zone,
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
  })
@@ -818,7 +821,9 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
   h=await harness({root:source,migrate:true,codeSets:false})
   const desk=await h.staff('Rosa','reception')
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody'})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',smsTimeZone:'America/New_York'})
+  await h.cmd('reminders.quiet_hours',{intervals:'21:00-08:00',source:'synthetic-balm-403 earlier reviewed policy',attest:true})
+  const policy=await h.cmd('reminders.quiet_hours',{intervals:'22:00-08:00\n12:00-13:00',source:'synthetic-balm-404 current reviewed policy',attest:true})
   const ids=[]
   for(const [direction,occurredAt,disposition] of [
    ['incoming','2000-01-02T03:00:00Z','synthetic-balm-301 scheduling question'],
@@ -830,6 +835,13 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   assert.deepEqual(new Set(history.results.map(r=>r.id)),new Set(ids))
   const original=await snapshot(h.db,patient.id)
   assert.equal(original.calls.length,2)
+  assert.equal(original.quietPolicy,policy.id)
+  assert.equal(original.patientZone,'America/New_York')
+  assert.deepEqual(original.quietPolicies.map(p=>[p.source,JSON.parse(p.intervals)]).sort(),[
+   ['synthetic-balm-403 earlier reviewed policy',[{start:'21:00',end:'08:00'}]],
+   ['synthetic-balm-404 current reviewed policy',[{start:'22:00',end:'08:00'},{start:'12:00',end:'13:00'}]],
+  ])
+  assert.ok(original.quietPolicies.every(p=>p.recorded_by===h.auth.OWNER_EMAIL&&p.recorded_at))
   assert.deepEqual(original.calls.map(c=>[c.direction,c.occurred_at,c.staff_id,c.staff_name,c.recorded_by,c.disposition]).sort(),[
    ['incoming','2000-01-02T03:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-301 scheduling question'],
    ['outgoing','2000-01-03T04:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-302 appointment confirmed'],
@@ -842,7 +854,7 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   await command(source,['export','--output',archive,'--no-queue'])
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,...identity,codeSets:false})
-  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field and patient custody audit row survives unchanged')
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field, patient zone, recorded quiet policy and patient custody audit row survives unchanged')
   assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')

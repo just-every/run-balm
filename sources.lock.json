@@ -1954,7 +1954,7 @@
       "executable": false
     },
     "src/balm/domain/clients.ts": {
-      "sha256": "d03d5d453f03749e153c24e6b7dccee7360462a5a490ae1d1cd6a80ac5caf83e",
+      "sha256": "5b57a2f1bfc26896f464d14cab20d6975c5576922252154b65caccdbe9558100",
       "executable": false
     },
     "src/balm/domain/clinic.ts": {
@@ -2690,11 +2690,11 @@
       "executable": false
     },
     "src/balm/reminders/scheduler.ts": {
-      "sha256": "d4c88a47144ad8bb635f9ab51bc3eae2cb17be4e953eb46ef21a7344ddf4dc53",
+      "sha256": "03edbdd724ea382a6c9c485cc413a2284b566b6474a5d64b7ac73d329398c731",
       "executable": false
     },
     "src/balm/reminders/settings.ts": {
-      "sha256": "e2882d18713d07275581078e97fcb08a2afa48aedfe104627ae0fb49289426e3",
+      "sha256": "10a0accfe6edf19977fc305c3fd062192c81bff0f9ed0576830b98cee88962b3",
       "executable": false
     },
     "src/balm/reports/access.ts": {
@@ -2930,7 +2930,7 @@
       "executable": false
     },
     "src/balm/ui/clients.ts": {
-      "sha256": "e42608a5c94b1cf62895341d9335ba830d885326907b623605a99de21fe6c19f",
+      "sha256": "48129d58cd0af4d5c3eefeb13122ca896d1e8798ef65120eb3e303dd423dfd62",
       "executable": false
     },
     "src/balm/ui/clinic-identity.ts": {
@@ -3210,7 +3210,7 @@
       "executable": false
     },
     "src/balm/ui/reminders.ts": {
-      "sha256": "e3abe98e4c13db07efc9690e517a1258ebd3cbffa2ad6f00cec3a2af371574df",
+      "sha256": "97008bb3775ce1f4ab37eb8594352200747abd236861d02d6e709d73925b26d8",
       "executable": false
     },
     "src/balm/ui/reports.ts": {
@@ -5394,7 +5394,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "15cdd0b99243ea65bcdf6a34c71869e8a2be9dedfca3ba495370fe8bcf7c38df",
+      "sha256": "1a90742e2fdeae2d1270e2036151dd9646b50a33666d87a89f9cb7491f6e2316",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5802,7 +5802,7 @@
       "executable": false
     },
     "tests/reminders.test.mjs": {
-      "sha256": "3287cec589e8b0315220f238039b9c2976007bf975a63574af8264f8b85ed764",
+      "sha256": "7c3bd977b3dab895d9ff75d8bdc6189e0ad5dca160a972cdbfaef6b419e47590",
       "executable": false
     },
     "tests/report.test.mjs": {

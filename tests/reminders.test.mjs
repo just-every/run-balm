@@ -1,3 +1,4 @@
+import { smsQuietJourney } from './sms-quiet-journey.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,7 +25,8 @@ test('COMM-001: booked visit is reminded on schedule, confirmed in one reply, mo
     await h.finishSetup()
     const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
     const reception = await h.staff('Rosa', 'reception')
-    const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', email: 'ava@client.example', phone: '(555) 010-0199' })
+    const client = await h.cmd('client.save', { firstName: 'Ava', lastName: 'Ng', email: 'ava@client.example', phone: '(555) 010-0199', smsTimeZone: 'Australia/Brisbane' })
+    await h.cmd('reminders.quiet_hours', { intervals: '22:00-08:00', source: 'synthetic-balm-quiet-policy', attest: true })
     await h.cmd('reminders.settings', { leadMinutes: '1440', sms: true })
     await h.cmd('reminders.consent', { clientId: client.id, consent: true })
     const booked = await h.cmd('appointment.book', { clientId: client.id, practitionerId: priya.id, serviceId: service.id, date: '2099-03-02', time: '10:00' })
@@ -456,3 +458,5 @@ test('COMM-003: live authority changes refuse call writes and search reads befor
   assert.ok(!revokedRead.text.includes(c.call.disposition),'session revocation fences clinical search results')
  } finally {await h.close()}
 })
+
+test('COMM-002: patient-local quiet hours defer scheduled texts without an attempt and recheck live authority before once-only delivery', {timeout:120000}, smsQuietJourney)
