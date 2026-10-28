@@ -12,7 +12,9 @@ export function prepareInstruments(input:unknown){
  const list=(input??[]) as Data[];insist(list.length<=5,'too_many_outcome_questionnaires')
  const seen=new Set<string>()
  return list.map(item=>{
-  const kind=text(item?.kind,'outcome_questionnaire',20) as InstrumentKind,spec=instruments[kind];insist(spec&&!seen.has(kind),'invalid_outcome_questionnaire');seen.add(kind)
+  const kind=text(item?.kind,'outcome_questionnaire',20) as InstrumentKind
+  insist(Object.hasOwn(instruments,kind)&&!seen.has(kind),'invalid_outcome_questionnaire');seen.add(kind)
+  const spec=instruments[kind]
   // The practice supplies its authorized item wording, preserving order from
   // the standard instrument. This code supplies scoring, not a licensed text copy.
   insist(Array.isArray(item.items)&&item.items.every((label:unknown)=>typeof label==='string'),'enter_authorized_questionnaire_items')

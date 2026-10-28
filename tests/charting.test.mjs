@@ -445,6 +445,19 @@ test('CHART-005: measures recorded at evaluation and three later visits show the
     notes.push(note)
   }
   const [evaluation, , , progress] = notes
+  // Inherited names must match an unknown name at the signed-in command door.
+  // Compare without putting any response body or binding into failure output.
+  const measureInput = { noteId: progress.id, name: 'Knee flexion', value: '120' }
+  const refusals = []
+  for (const kind of ['unknown', 'constructor', '__proto__', 'hasOwnProperty']) {
+    const response = await h.send('/api/balm/command', { name: 'note.measure', input: { ...measureInput, kind } }, priya.cookie)
+    refusals.push([`measure ${kind}`, response.status, response.value.code === 'unknown_measure_kind', response.text === JSON.stringify({ error: 'Unknown measure kind.', code: 'unknown_measure_kind' })])
+  }
+  for (const name of ['unknown', 'constructor', '__proto__', 'hasOwnProperty']) {
+    const response = await h.send('/api/balm/command', { name, input: {} }, priya.cookie)
+    refusals.push([`command ${name}`, response.status, response.value.code === 'unknown_command', response.text === JSON.stringify({ error: 'Unknown command.', code: 'unknown_command' })])
+  }
+  assert.deepEqual(refusals, refusals.map(([name]) => [name, name.startsWith('measure ') ? 400 : 404, true, true]), 'inherited names return only the unknown-name refusal, with no binding or environment content')
   // Structured fields: graded muscle tests, flowsheets, and per-kind units and bounds.
   const grade = await h.cmd('note.measure', { noteId: progress.id, kind: 'mmt', name: 'Quadriceps', side: 'right', value: '4+' }, priya.cookie)
   assert.equal(grade.value, 4.25)

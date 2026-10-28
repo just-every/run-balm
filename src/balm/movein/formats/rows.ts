@@ -111,7 +111,7 @@ export function normalizeRows(bundle: Bundle, file: BundleFile, rows: CsvRow[], 
           if (endAt <= startAt) throw new Error('Appointment end must be after its start.')
           const raw = required('status').toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ')
           const statuses: Record<string, Bundle['appointments'][number]['status']> = { booked: 'booked', scheduled: 'booked', attended: 'attended', arrived: 'attended', completed: 'attended', canceled: 'cancelled', cancelled: 'cancelled', 'no show': 'no_show', 'did not arrive': 'no_show' }
-          if (!statuses[raw]) throw new Error('Unsupported appointment status; explicitly map to booked, attended, cancelled or no_show.')
+          if (!Object.hasOwn(statuses, raw)) throw new Error('Unsupported appointment status; explicitly map to booked, attended, cancelled or no_show.')
           bundle.appointments.push({ ...location, sourceId, patientId, startAt, endAt, status: statuses[raw] })
         } else if (file.kind === 'notes') {
           const title = required('title', 240), body = get('body'); column = 'Body'

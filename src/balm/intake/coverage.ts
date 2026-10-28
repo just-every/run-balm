@@ -27,11 +27,12 @@ export async function coverageStatements(db: D1Database, appointment: Data, resp
     insist(payer, 'choose_a_clinic_payer')
     const front = photo(get('Front')), back = photo(get('Back'))
     insist(front && back, 'add_both_sides_of_the_insurance_card')
-    const policy = policyRecord(client, { payerId:payer.id,memberId:get('MemberId'),groupNumber:get('Group'),relationship:relationCodes[String(get('Relationship'))],
+    const relationship = String(get('Relationship'))
+    insist(Object.hasOwn(relationCodes, relationship), 'invalid_subscriber_relationship')
+    const policy = policyRecord(client, { payerId:payer.id,memberId:get('MemberId'),groupNumber:get('Group'),relationship:relationCodes[relationship],
       subscriberFirst:get('SubscriberFirst'),subscriberLast:get('SubscriberLast'),subscriberDob:get('SubscriberDob'),subscriberSex:get('SubscriberSex'),
       patientSex:input.insurancePatientSex,address:input.insuranceAddress,city:input.insuranceCity,state:input.insuranceState,postalCode:input.insurancePostalCode,
       startsOn:get('StartsOn'), endsOn:get('EndsOn'),priority:prefix==='insurance'?1:2 })
-    insist(relationCodes[String(get('Relationship'))], 'invalid_subscriber_relationship')
     const request = await eligibilityRequest(db, { ...policy,payer_name:payer.name,payer_code:payer.payer_id,receiver_id:payer.receiver_id }, serviceDate)
     const cardId = id(), frontId=id(), backId=id()
     statements.push(guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=? AND erased_at IS NULL)',client.id,client.version),

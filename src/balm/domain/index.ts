@@ -64,7 +64,7 @@ const handlers: Record<string, (db: D1Database, who: Actor, input: Data) => Prom
 export async function command(db: D1Database, who: Actor, name: string, input: Data) {
   insist(input && typeof input === 'object' && !Array.isArray(input), 'invalid_input')
   if (who.role === 'agent') insist(preparations.includes(name), 'agents_can_only_prepare', 403)
-  const handler = handlers[name]
+  const handler = Object.hasOwn(handlers, name) ? handlers[name] : undefined
   if (!handler) throw new DomainError('unknown_command', 404)
   return handler(db, who, input)
 }

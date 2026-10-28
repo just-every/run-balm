@@ -12,8 +12,9 @@ export async function verifiedCoverage(db: D1Database, who: Actor, row: Data, in
   const client = await clientVisible(db, who, row.client_id)
   const payer = await one(db, 'SELECT * FROM bm_payers WHERE id=?', text(input.payerId, 'payer', 100))
   insist(payer, 'choose_a_clinic_payer')
-  const relationship = String(input.relationship), code = ({ self:'18',spouse:'01',child:'19' } as Record<string,string>)[relationship]
-  insist(code, 'invalid_subscriber_relationship')
+  const relationship = String(input.relationship), codes: Record<string,string> = { self:'18',spouse:'01',child:'19' }
+  insist(Object.hasOwn(codes, relationship), 'invalid_subscriber_relationship')
+  const code = codes[relationship]
   const policy = policyRecord(client, {payerId:payer.id,memberId:input.memberId,groupNumber:input.group,planName:native.plan_name,relationship:code,
     subscriberFirst:input.subscriberFirst,subscriberLast:input.subscriberLast,subscriberDob:input.subscriberDob ?? native.subscriber_dob,
     subscriberSex:input.subscriberSex ?? native.subscriber_sex,patientSex:native.patient_sex,address:native.address,city:native.city,state:native.state,postalCode:native.postal_code,

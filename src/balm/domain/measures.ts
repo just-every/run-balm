@@ -17,8 +17,9 @@ async function ownDraft(db: D1Database, who: Actor, noteId: unknown) {
 
 export async function recordMeasure(db: D1Database, who: Actor, input: Data) {
   const note = await ownDraft(db, who, input.noteId)
-  const kind = text(input.kind, 'measure_kind', 20) as MeasureKind, spec = measureKinds[kind]
-  insist(spec, 'unknown_measure_kind')
+  const kind = text(input.kind, 'measure_kind', 20) as MeasureKind
+  insist(Object.hasOwn(measureKinds, kind), 'unknown_measure_kind')
+  const spec = measureKinds[kind]
   const name = text(input.name, 'measure_name', 80), side = input.side ? text(input.side, 'side', 10) : 'none'
   insist((sides as readonly string[]).includes(side), 'unknown_side')
   const unit = input.unit ? text(input.unit, 'unit', 20) : spec.units[0]

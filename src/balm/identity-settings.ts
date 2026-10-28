@@ -41,7 +41,7 @@ function steps(v: View) {
 }
 
 export async function identitySettingsView(v: View, branding: unknown) {
-  const [text, error] = notices[v.notice] ?? ['', false]
+  const [text, error] = (Object.hasOwn(notices, v.notice) ? notices[v.notice] : undefined) ?? ['', false]
   const note = text ? `<div class="notice${error ? ' error' : ''}" role="${error ? 'alert' : 'status'}">${escape(text)}</div>` : ''
   const linked = v.link?.linked
   const state = linked
