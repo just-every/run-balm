@@ -5,7 +5,7 @@ import { chunks, textChunks } from './batches.ts'
 import { identityText } from './targets.ts'
 import { type BundlePlan, targetId } from './bundle-plan.ts'
 
-const tables = ['bm_clients', 'bm_appointments', 'bm_movein_notes', 'bm_movein_balances', 'bm_movein_insurance'] as const
+const tables = ['bm_clients', 'bm_appointments', 'bm_movein_notes', 'bm_movein_balances', 'bm_movein_insurance', 'bm_movein_invoices'] as const
 export const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"'
 async function schema(db: D1Database) {
   return rows<{ table_name: string; column_name: string }>(db, `SELECT m.name AS table_name,p.name AS column_name FROM sqlite_schema m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name GLOB 'bm_*' ORDER BY m.name,p.cid`)
@@ -21,6 +21,7 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   const notes = await Promise.all(bundle.notes.map(async n => ({ ...n, id: await targetId(bundle.provider, 'note', n.sourceId), clientId: clients.get(n.patientId)! })))
   const balances = await Promise.all(bundle.balances.map(async (b, index) => ({ ...b, sourceId: `${b.patientId}:${index}`, id: await targetId(bundle.provider, 'balance', `${b.patientId}:${index}`), clientId: clients.get(b.patientId)! })))
   const insurance = await Promise.all(bundle.insurance.map(async i => ({ ...i, id: await targetId(bundle.provider, 'insurance', i.sourceId), clientId: clients.get(i.patientId)! })))
+  const invoices = await Promise.all(bundle.carriedInvoices.map(async i => ({ ...i, id: await targetId(bundle.provider, 'invoice', i.sourceId), clientId: clients.get(i.patientId)! })))
   const report = JSON.stringify(reportFor(plan))
   const body = [
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)', plan.settingsVersion),
@@ -61,10 +62,12 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   for (const group of chunks(insurance)) body.push(
     stmt(db, `INSERT INTO bm_movein_insurance(id,job_id,client_id,source_id,payer,member_id,group_number) SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.payer'),json_extract(value,'$.memberId'),json_extract(value,'$.groupNumber') FROM json_each(?)`, jobId, JSON.stringify(group))
   )
+  for (const group of chunks(invoices)) body.push(stmt(db, `INSERT INTO bm_movein_invoices(id,job_id,client_id,source_id,reference,issued_on,billed_cents,balance_cents,imported_at)
+    SELECT json_extract(value,'$.id'),?,json_extract(value,'$.clientId'),json_extract(value,'$.sourceId'),json_extract(value,'$.reference'),json_extract(value,'$.issuedOn'),json_extract(value,'$.billedCents'),json_extract(value,'$.balanceCents'),? FROM json_each(?)`, jobId, at, JSON.stringify(group)))
   body.push(...authorizationCarryStatements(db, who, plan, jobId))
   body.push(...carryClaimStatements(db, who, plan, jobId, at))
-  const sets = [patients, appointments, notes, balances, insurance]
-  const kinds = ['patient', 'appointment', 'note', 'balance', 'insurance']
+  const sets = [patients, appointments, notes, balances, insurance, invoices]
+  const kinds = ['patient', 'appointment', 'note', 'balance', 'insurance', 'invoice']
   const shapes = await schema(db)
   for (let i = 0; i < tables.length; i++) {
     const table = tables[i], shape = shapes.filter(c => c.table_name === table).map(c => c.column_name)
@@ -110,7 +113,7 @@ export async function undoBundle(db: D1Database, who: Actor, jobId: string) {
     stmt(db, "DELETE FROM bm_visit_reminders WHERE appointment_id IN (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table='bm_appointments')", jobId))
   body.push(stmt(db, `DELETE FROM bm_integration_events WHERE appointment_id IN
     (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table='bm_appointments')`, jobId))
-  for (const table of ['bm_movein_notes', 'bm_movein_balances', 'bm_movein_insurance', 'bm_appointments', 'bm_clients']) body.push(stmt(db, `DELETE FROM ${quote(table)} WHERE id IN (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table=?)`, jobId, table))
+  for (const table of ['bm_movein_notes', 'bm_movein_invoices', 'bm_movein_balances', 'bm_movein_insurance', 'bm_appointments', 'bm_clients']) body.push(stmt(db, `DELETE FROM ${quote(table)} WHERE id IN (SELECT target_id FROM bm_movein_records WHERE job_id=? AND target_table=?)`, jobId, table))
   body.push(stmt(db, "UPDATE bm_movein_jobs SET state='undone',undone_at=? WHERE id=?", now(), jobId), audit(db, who, 'movein.undone', null, jobId))
   await commit(db, who, body)
 }

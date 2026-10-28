@@ -1,4 +1,4 @@
-import { cutoverInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
+import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
 import { createHmac, randomBytes } from 'node:crypto'
@@ -108,7 +108,8 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const externalReceipt=(await h.send('/api/balm/receipts/'+external.id+'.pdf',undefined,h.owner)).text
     const csv=await readFile('tests/fixtures/cliniko-patients.csv','utf8'),preview=await h.cmd('import.preview',{csv})
     await h.cmd('import.apply',{csv,fingerprint:preview.fingerprint})
-    const inventoryInput=cutoverInventory(),inventoryPreview=await h.cmd('movein.prepare',inventoryInput)
+    const inventoryInput=archivedInvoiceInventory()
+    const inventoryPreview=await h.cmd('movein.prepare',inventoryInput)
     const moveinInventory=await h.cmd('movein.cutover',{...inventoryInput,fingerprint:inventoryPreview.fingerprint,mappingApproval:inventoryPreview.mappingDigest,cutoverApproval:inventoryPreview.fingerprint,acceptanceReason:'Archive the source inventories and explicit omissions; no invoice, authorization or claim is carried by this inventory.'})
     await h.cmd('disclosure.record',{clientId:maya.id,recipient:'Attorney Archive, records@example.test',purpose:'Patient-directed release',basis:'Written authorization',records:'Signed treatment note and intake',releasedAt:'2001-01-02T12:00:00Z'})
     await h.cmd('client.alert.save',{clientId:maya.id,kind:'precaution',text:'Archive weight-bearing restriction'})
@@ -172,8 +173,10 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       const cookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
       const inventoryJournal=await restoredClinic.cmd('movein.journal',{jobId:moveinInventory.job.id},cookie)
       assert.deepEqual(inventoryJournal.job.report,moveinInventory.job.report,'reviewed inventory counts, omissions, identifiers and references survive CLI restore')
+      const restoredInvoices=(await restoredClinic.send('/api/balm/clients/'+moveinInventory.records.find(r=>r.kind==='patient').target_id,undefined,cookie)).value.imported.invoices
+      assert.deepEqual(restoredInvoices.map(i=>[i.reference,i.issued_on,i.billed_cents,i.balance_cents]),[['Archived historical invoice','2000-01-15',10000,8000]],'historical invoice source facts survive CLI restore without issuing new bills')
       const restoredSource=await restoredClinic.db.prepare('SELECT source_json FROM bm_movein_jobs WHERE id=?').bind(moveinInventory.job.id).first()
-      assert.deepEqual(JSON.parse(restoredSource.source_json).bundle.files,cutoverInventory().files,'original inventory bytes survive CLI restore')
+      assert.deepEqual(JSON.parse(restoredSource.source_json).bundle.files,archivedInvoiceInventory().files,'original inventory bytes survive CLI restore')
       assert.equal((await restoredClinic.send('/api/balm/records/'+recordPackage.packageId+'.json',undefined,cookie)).text,recordOriginal,'reviewed FHIR original survives CLI restore byte-for-byte')
       assert.ok((await restoredClinic.state(cookie)).recordRequests.some(r=>r.id===recordRequest.id&&r.released_at))
       assert.equal((await restoredClinic.state(cookie)).integrations.hooks.length,0,'hook credentials and consent are not transplanted into a restored installation')

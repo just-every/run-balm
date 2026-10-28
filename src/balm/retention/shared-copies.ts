@@ -1,7 +1,7 @@
 import { rows, stmt } from '../domain/model'
 import type { Inventory } from './inventory'
 
-const imported = ['bm_clients','bm_appointments','bm_movein_notes','bm_movein_balances','bm_movein_insurance']
+const imported = ['bm_clients','bm_appointments','bm_movein_notes','bm_movein_balances','bm_movein_insurance','bm_movein_invoices']
 export async function sharedCopies(db: D1Database, found: Inventory, clientId: string) {
   const terms = imported.map(t=>`(r.target_table='${t}' AND r.target_id IN (SELECT id FROM ${t} WHERE rowid IN (SELECT value FROM json_each(?))))`)
   const matches = await rows(db,`SELECT r.rowid rid,r.job_id FROM bm_movein_records r WHERE ${terms.join(' OR ')}`, ...imported.map(t=>JSON.stringify(found[t]??[])))

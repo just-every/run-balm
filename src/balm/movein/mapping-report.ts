@@ -25,7 +25,7 @@ export function mappingReport(bundle: Bundle, diagnostics: BundleDiagnostic[], s
       const target = nativeWebpt ? nativeTargets[headerKey(column)] ?? null : candidates.length === 1 ? candidates[0].key : null
       const examples = target ? [] : body.filter(r => r.cells[index]?.trim()).slice(0, 3).map(r => ({ row: r.row, value: r.cells[index].trim().slice(0, 160) }))
       fields.push({ file: file.name, kind: file.kind, column, target, examples,
-        explanation: (file.kind === 'invoices' || file.kind === 'authorizations' && !headers.some(h => headerKey(h) === 'allowance') || file.kind === 'claims' && !headers.some(h => headerKey(h) === 'billed')) ? 'Retained in the reconciliation inventory only; this field creates no native invoice, claim or usable authorization.' : target ? 'Recognized by the importer’s supported header rules; review the normalized records before approval.' : 'No supported destination field. This column is omitted; retain the original export. Its meaning is not inferred from example values.' })
+        explanation: (file.kind === 'invoices' && !headers.some(h => headerKey(h) === 'billed') || file.kind === 'authorizations' && !headers.some(h => headerKey(h) === 'allowance') || file.kind === 'claims' && !headers.some(h => headerKey(h) === 'billed')) ? 'Retained in the reconciliation inventory only; this field creates no native invoice, claim or usable authorization.' : target ? 'Recognized by the importer’s supported header rules; review the normalized records before approval.' : 'No supported destination field. This column is omitted; retain the original export. Its meaning is not inferred from example values.' })
     })
   }
   const rowKey = (file: string, row: number) => JSON.stringify([file, row])

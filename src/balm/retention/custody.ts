@@ -103,6 +103,7 @@ export const custody = [
   {"table":"bm_messages","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_message_attachments","client":false,"links":[["message_id","bm_messages","id"]]},
   {"table":"bm_message_links","client":true,"links":[["client_id","bm_clients","id"]]},
+  {"table":"bm_movein_invoices","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_movein_balances","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_movein_insurance","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_movein_notes","client":true,"links":[["client_id","bm_clients","id"]]},

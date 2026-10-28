@@ -41,6 +41,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
   ) AS at`,...Array(14).fill(client.id))
   const authorizationDate = await one(db,`SELECT MAX(at) AS at FROM (SELECT prepared_at AS at FROM bm_authorization_requests WHERE client_id=? UNION ALL SELECT s.recorded_at FROM bm_authorization_submissions s JOIN bm_authorization_requests r ON r.id=s.request_id WHERE r.client_id=? UNION ALL SELECT d.recorded_at FROM bm_authorization_decisions d JOIN bm_authorization_requests r ON r.id=d.request_id WHERE r.client_id=?)`,client.id,client.id,client.id)
+  const invoiceDate = await one(db, 'SELECT MAX(at) AS at FROM (SELECT issued_on AS at FROM bm_movein_invoices WHERE client_id=? UNION ALL SELECT imported_at FROM bm_movein_invoices WHERE client_id=?)', client.id, client.id)
   const letterDate = await one(db,'SELECT MAX(updated_at) AS at FROM (SELECT updated_at FROM bm_clinical_letters WHERE client_id=? UNION ALL SELECT delivered_at FROM bm_letter_deliveries WHERE client_id=?)',client.id,client.id)
   const retailDate = await one(db,'SELECT MAX(recorded_at) AS at FROM (SELECT recorded_at FROM bm_retail_sales WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_events WHERE client_id=? UNION ALL SELECT used_at FROM bm_package_uses WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_cancellations WHERE client_id=? UNION ALL SELECT recorded_at FROM bm_membership_settlements WHERE client_id=?)',client.id,client.id,client.id,client.id,client.id)
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
@@ -66,7 +67,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   if (applied && client.date_of_birth && lastTreatment && firstTreatment) {
     const majority = anniversary(client.date_of_birth,applied.majority)
     minor = firstTreatment < majority
-    const base = [lastTreatment,letterDate?.at?.slice(0,10) ?? lastTreatment,later?.at?.slice(0,10) ?? lastTreatment,includeRetail ? retailDate?.at?.slice(0,10) ?? lastTreatment : lastTreatment,authorizationDate?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
+    const base = [lastTreatment,invoiceDate?.at?.slice(0,10) ?? lastTreatment,letterDate?.at?.slice(0,10) ?? lastTreatment,later?.at?.slice(0,10) ?? lastTreatment,includeRetail ? retailDate?.at?.slice(0,10) ?? lastTreatment : lastTreatment,authorizationDate?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
     eligibleAfter = [anniversary(base,applied.adult), anniversary(client.date_of_birth,applied.rule.minimumAge ?? 0), ...(minor ? [anniversary(majority,applied.minor)] : [])].sort().at(-1)!
     const clock = (await one(db,"SELECT date('now') AS today"))!.today
     if (eligibleAfter >= clock) reasons.push('retention_period_not_complete')

@@ -122,3 +122,21 @@ Use the uploaded patient identifier and a configured Balm payer identifier. Sour
 The cutover date is in the clinic time zone, within the authorization dates, and cannot be in the future. Original authorization dates stay intact. Imported historical visits before that date do not consume the allowance again. Visits on or after it use Balm's existing attendance, signed-charge and booking-reservation accounting. The prior source usage baseline and its measurement dimension cannot be edited. Native saves refuse a change between visits and CPT units; a source visit is never reinterpreted as a unit. Reports before the baseline do not reconstruct historical authorization usage. Imported authorizations join the patient's legacy unfiled history; an episode is never guessed.
 
 The owner reviews the policy and authorization counts and exact source facts before approving cutover. Patients, policies, authorizations, originals and saved reconciliation commit together. Invalid coverage, conflicting source policy facts, unknown payers or inactive practitioners stop apply. Changed payer or practitioner mappings require a new preview. Repeating the same bundle preserves subsequent usage. Native policy retention custody prevents undo of the bundle; retain originals and use the existing reviewed retention process. A three-column inventory still carries no usable authorization. Native packages and native invoice carry remain incomplete.
+
+
+## Reviewed historical invoice carry
+
+The **Invoices inventory or carry** upload accepts complete historical invoice facts in a reviewed conversion CSV:
+
+```csv
+Source ID,Patient ID,Reference,Issued On,Billed,Balance
+synthetic-balm-801,synthetic-balm-800,Original invoice 801,2000-01-15,100.00,80.00
+```
+
+Each row keeps the original reference, issue date, billed amount and remaining balance at cutover, including paid invoices with zero remaining balance. Amounts are USD decimals. An invoice cannot have a negative amount or a remaining balance above its billed amount. Account credits must be reconciled against the source before carry; no adjustment is invented.
+
+Upload independent net source aging in the **Source aging balances** field. For every patient with detailed invoices, the sum of their remaining invoice balances must match the aging and the owner's source control exactly. A mismatch, missing aging or unknown patient blocks cutover and cannot be waived by an acceptance reason. Three-column invoice inventories still name records left to carry and do not become invoice records.
+
+The owner sees the original invoice facts and source count beside the Balm count before approving the exact mapping and cutover. The same transaction saves patients, historical invoices, opening balances, original files and the reconciliation. The patient's **Moved-in records** section shows historical invoices to the owner and reception, separately from newly issued invoices. Historical invoices do not issue another bill, initiate collection or add a second debt on top of opening balances. Open insurer receivables still use the reviewed claim carry and the existing run-out door.
+
+Historical invoice facts are immutable, repeat imports add nothing, and new work or changed imported records prevents undo. They join archive custody and reviewed retention destruction; recent import extends retention rather than backdating it to the original invoice. Approved destruction removes source identifiers and references and preserves anonymous dated amount facts. This conversion format does not establish support for complete native vendor packages or their native invoice layouts.

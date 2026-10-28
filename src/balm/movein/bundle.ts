@@ -78,10 +78,11 @@ export async function importedForClient(db: D1Database, who: Actor, clientId: st
   const visible = await one(db, `SELECT id FROM bm_clients c WHERE id=? AND erased_at IS NULL AND (?=1 OR EXISTS(SELECT 1 FROM bm_appointments a WHERE a.client_id=c.id AND a.practitioner_id=?))`, clientId, all ? 1 : 0, own)
   if (!visible) throw new ImportError('client_not_found', 404)
   const clinical = who.role === 'owner' || !!own
-  const [notes, balances, insurance] = await Promise.all([
+  const [notes, balances, insurance, invoices] = await Promise.all([
     clinical ? rows(db, 'SELECT n.*,j.provider FROM bm_movein_notes n JOIN bm_movein_jobs j ON j.id=n.job_id WHERE n.client_id=? ORDER BY n.source_date,n.id', clientId) : Promise.resolve(null),
     all ? rows(db, 'SELECT b.*,j.provider FROM bm_movein_balances b JOIN bm_movein_jobs j ON j.id=b.job_id WHERE b.client_id=?', clientId) : Promise.resolve([]),
     rows(db, 'SELECT i.*,j.provider FROM bm_movein_insurance i JOIN bm_movein_jobs j ON j.id=i.job_id WHERE i.client_id=?', clientId),
+    all ? rows(db, 'SELECT i.*,j.provider FROM bm_movein_invoices i JOIN bm_movein_jobs j ON j.id=i.job_id WHERE i.client_id=? ORDER BY i.issued_on,i.id', clientId) : Promise.resolve([]),
   ])
   await commit(db, who, [
     guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)', clientId),
@@ -89,5 +90,5 @@ export async function importedForClient(db: D1Database, who: Actor, clientId: st
     ...(notes ?? []).map(n => audit(db, who, 'movein.note_read', clientId, n.id)),
     audit(db, who, 'movein.records_read', clientId),
   ])
-  return { notes, balances, insurance }
+  return { notes, balances, insurance, invoices }
 }

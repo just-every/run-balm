@@ -5,7 +5,7 @@ import { run } from './harness.mjs'
 import { clinic } from './clinic.mjs'
 import {agentFences, assertMapping, customFields, migrationBrowser} from './migration-agent-journey.mjs'
 
-import { reconciliationInventory, reconciliationClaimCarry, reconciliationAuthorizationCarry } from './movein-reconciliation-journey.mjs'
+import { reconciliationInventory, reconciliationClaimCarry, reconciliationAuthorizationCarry, reconciliationInvoiceCarry } from './movein-reconciliation-journey.mjs'
 
 const kinds = ['patients', 'appointments', 'notes', 'balances', 'insurance']
 // The fixtures' booked appointments: two overlapping on the 2nd of the month after next and one on the 1st of the month after that, so they stay upcoming, outside the reminder window and in two months on any date.
@@ -101,7 +101,7 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     assert.equal(end.clients.length, 0)
     assert.equal(end.appointments.length, 0)
     assert.equal((await h.cmd('movein.undo', { jobId: applied.job.id })).job.state, 'undone')
-    if(provider==='cliniko'){ await migrationBrowser(h,input); await reconciliationClaimCarry(h,reception); await reconciliationAuthorizationCarry(h,therapist,service,reception) }
+    if(provider==='cliniko'){ await migrationBrowser(h,input); await reconciliationInvoiceCarry(h,reception,therapist); await reconciliationClaimCarry(h,reception); await reconciliationAuthorizationCarry(h,therapist,service,reception) }
   },{browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
 }
 

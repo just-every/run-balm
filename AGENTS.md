@@ -156,3 +156,8 @@ preserving legacy acceptance narratives and homepage claim rows. Regenerate
 ## Lander-Regenerate
 
 COMM-003 evidence and Gap registers are generated from CONTRACT.md without changing acceptance text or homepage copy. Run `node scripts/contract-docs.mjs write COMM-003`, then `node scripts/contract-docs.mjs check`. Regenerate the edition source lock last with `node scripts/edition-authoring/cli.mjs lock`, then run its `check`.
+
+MOVE-006 historical invoice carry uses the same Lander-Regenerate command:
+`node scripts/contract-docs.mjs write MOVE-006`, then
+`node scripts/contract-docs.mjs check MOVE-006`. Regenerate the source lock last
+with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.

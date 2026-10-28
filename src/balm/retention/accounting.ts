@@ -13,6 +13,7 @@ export function preserveRetail(db:D1Database,clientId:string,saleIds?:string[]) 
 export function preserveAccounting(db:D1Database,clientId:string,anonymousGroup:string) {
   return [
     preserveRetail(db,clientId),
+    stmt(db, 'INSERT INTO bm_destroyed_movein_invoices(id,issued_on,billed_cents,balance_cents) SELECT id,issued_on,billed_cents,balance_cents FROM bm_movein_invoices WHERE client_id=?', clientId),
     stmt(db,`INSERT INTO bm_destroyed_invoices(id,anonymous_group,amount_cents,start_at,open_payer,approved_at,voided_at)
       SELECT i.id,?,i.amount_cents,a.start_at,
         (SELECT h.payer FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id),i.approved_at,

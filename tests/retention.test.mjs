@@ -1,3 +1,4 @@
+import { cutoverInvoices } from './movein-reconciliation-journey.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -33,6 +34,16 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   assert.equal((await file(h,callPatient.id)).retention.eligibleAfter,callDeadline.toISOString().slice(0,10),'COMM-003 late entry cannot backdate the retention deadline')
   assert.ok((await file(h,callPatient.id)).retention.reasons.includes('retention_period_not_complete'))
   await h.cmd('retention.preview',{clientId:callPatient.id},h.owner,409)
+  const invoiceInput=cutoverInvoices(),invoicePreview=await h.cmd('movein.prepare',invoiceInput)
+  const invoiceImport=await h.cmd('movein.cutover',{...invoiceInput,fingerprint:invoicePreview.fingerprint,mappingApproval:invoicePreview.mappingDigest,cutoverApproval:invoicePreview.fingerprint,acceptanceReason:'Reviewed historical invoice originals and independent aging.'})
+  const invoiceClient=invoicePreview.patients[0].id
+  const invoiceVisit=await pastVisit(h,invoiceClient,priya,service.id,h.owner,4)
+  await ageVisit(h,invoiceVisit)
+  const invoiceFile=await file(h,invoiceClient)
+  assert.equal(invoiceFile.retention.eligible,false,'recent invoice import cannot backdate billing retention')
+  await h.cmd('retention.preview',{clientId:invoiceClient},h.owner,409)
+  const invoiceIds=invoiceImport.records.filter(r=>r.kind==='invoice').map(r=>r.target_id)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_movein_invoices WHERE id=?').bind(invoiceIds[0]).run(),/imported_records_retained/)
   await h.cmd('retention.save',{...policy,payerYears:70})
   assert.equal((await file(h,patient.id)).retention.eligible,false)
   await h.cmd('retention.save',{...policy,adultYears:70})

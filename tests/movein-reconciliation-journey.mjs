@@ -244,3 +244,62 @@ export async function reconciliationAuthorizationCarry(h, therapist, service, re
   assert.deepEqual((await h.cmd('movein.journal', { jobId: applied.job.id })).job.report.reconciliation, current.reconciliation)
   await h.cmd('movein.undo', { jobId: applied.job.id }, h.owner, 409)
 }
+
+
+export const cutoverInvoices = () => ({ provider: 'cliniko', files: [
+  { kind: 'patients', name: 'invoice-patients.csv', csv: 'Source ID,First Name,Last Name,Date of Birth\nsynthetic-balm-800,Historical,Invoice,1960-01-15' },
+  { kind: 'invoices', name: 'invoices.csv', csv: 'Source ID,Patient ID,Reference,Issued On,Billed,Balance\nsynthetic-balm-801,synthetic-balm-800,Original invoice 801,2000-01-15,100.00,80.00\nsynthetic-balm-802,synthetic-balm-800,Original invoice 802,2000-01-16,50.00,40.00\nsynthetic-balm-803,synthetic-balm-800,Original invoice 803,2000-01-17,75.00,0.00' },
+  { kind: 'balances', name: 'independent-aging.csv', csv: 'Patient ID,Balance\nsynthetic-balm-800,120.00' },
+] })
+
+export function archivedInvoiceInventory() {
+  const input = cutoverInventory()
+  input.files.push({ kind: 'invoices', name: 'historical-invoices.csv', csv: 'Source ID,Patient ID,Reference,Issued On,Billed,Balance\nsynthetic-balm-804,synthetic-balm-600,Archived historical invoice,2000-01-15,100.00,80.00' })
+  input.files.push({ kind: 'balances', name: 'invoice-aging.csv', csv: 'Patient ID,Balance\nsynthetic-balm-600,80.00' })
+  return input
+}
+
+export async function reconciliationInvoiceCarry(h, reception, therapist) {
+  const input = cutoverInvoices(), before = (await h.state()).clients.length
+  const approved = p => ({ fingerprint: p.fingerprint, mappingApproval: p.mappingDigest, cutoverApproval: p.fingerprint, acceptanceReason: 'Reviewed original invoices and independent net aging; no second bill.' })
+  const preview = await h.cmd('movein.prepare', input)
+  assert.equal(preview.canApply, true, JSON.stringify(preview.diagnostics))
+  assert.deepEqual([preview.reconciliation.source.invoices, preview.reconciliation.planned.invoices], [3, 3])
+  assert.deepEqual(preview.reconciliation.mismatches, [])
+  await h.cmd('movein.cutover', { ...input, fingerprint: preview.fingerprint }, h.owner, 409)
+  await h.cmd('movein.cutover', { ...input, ...approved(preview) }, reception.cookie, 403)
+  const bad = structuredClone(input)
+  bad.files[2].csv = bad.files[2].csv.replace('120.00', '121.00')
+  const difference = await h.cmd('movein.prepare', bad)
+  assert.ok(difference.diagnostics.some(d => d.code === 'invoice_balance_mismatch' && d.severity === 'error'))
+  await h.cmd('movein.cutover', { ...bad, ...approved(difference) }, h.owner, 409)
+  const missing = { ...input, files: input.files.filter(f => f.kind !== 'balances') }
+  const incomplete = await h.cmd('movein.prepare', missing)
+  assert.equal(incomplete.canApply, false)
+  await h.cmd('movein.cutover', { ...missing, ...approved(incomplete) }, h.owner, 409)
+  const unknown = structuredClone(input)
+  unknown.files[1].csv = unknown.files[1].csv.replace('synthetic-balm-800,Original', 'synthetic-balm-absent,Original')
+  const invalid = await h.cmd('movein.prepare', unknown)
+  await h.cmd('movein.cutover', { ...unknown, ...approved(invalid) }, h.owner, 409)
+  assert.equal((await h.state()).clients.length, before)
+  const applied = await h.cmd('movein.cutover', { ...input, ...approved(preview) })
+  const clientId = preview.patients[0].id
+  const chart = (await h.send('/api/balm/clients/' + clientId, undefined, h.owner)).value
+  assert.deepEqual(chart.imported.invoices.map(i => [i.reference, i.issued_on, i.billed_cents, i.balance_cents]), [
+    ['Original invoice 801', '2000-01-15', 10000, 8000], ['Original invoice 802', '2000-01-16', 5000, 4000], ['Original invoice 803', '2000-01-17', 7500, 0],
+  ])
+  assert.deepEqual(chart.imported.balances.map(b => b.amount_cents), [12000])
+  assert.equal(chart.invoices.length, 0, 'historical invoices never issue duplicate new bills')
+  assert.deepEqual((await h.send('/api/balm/clients/' + clientId, undefined, reception.cookie)).value.imported.invoices, chart.imported.invoices)
+  await h.send('/api/balm/clients/' + clientId, undefined, therapist.cookie).then(r => assert.equal(r.status, 404))
+  const html = await h.send('/app/clients/' + clientId, undefined, h.owner)
+  assert.match(html.text, /Original invoice 801/)
+  assert.match(html.text, /Remaining at cutover/)
+  assert.equal(applied.records.filter(r => r.kind === 'invoice').length, 3)
+  assert.equal((await h.cmd('movein.apply', { ...input, ...approved(preview) })).job.id, applied.job.id)
+  assert.deepEqual((await h.cmd('movein.journal', { jobId: applied.job.id })).job.report.reconciliation, preview.reconciliation)
+  assert.ok(chart.retention.reasons.includes('retention_period_not_complete') || chart.retention.reasons.includes('last_treatment_unknown'))
+  await h.cmd('client.erase', { id: clientId }, h.owner, 409)
+  await h.cmd('movein.undo', { jobId: applied.job.id })
+  assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM bm_movein_invoices WHERE client_id=?').bind(clientId).first()).n, 0)
+}
