@@ -34,63 +34,67 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
   await stmt(db, "UPDATE bm_visit_reminders SET state='cancelled',outcome='Not sent: the visit has started' WHERE channel='sms' AND state='pending' AND start_at<=?", at).run()
   // A crash after a claim may have reached the provider. Keep this distinct from a definite failure.
   await stmt(db, "UPDATE bm_visit_reminders SET state='uncertain',outcome='Delivery outcome unknown; contact the patient before resending' WHERE state='sending' AND attempted_at<?", new Date(scheduledTime-15*60_000).toISOString()).run()
-  let sent = 0, attempted = 0, cursorDue = '', cursorId = ''
-  // Refused texts remain pending for live policy and patient corrections. Walk past them
-  // in stable pages so they cannot consume every slot ahead of an eligible reminder.
-  while (attempted < 50) {
-    const due = await rows(db, `SELECT r.id,r.channel,r.due_at FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id
-      WHERE r.state='pending' AND r.due_at<=? AND a.start_at>? AND a.start_at=r.start_at AND a.status='booked'
-      AND (r.due_at>? OR (r.due_at=? AND r.id>?)) ORDER BY r.due_at,r.id LIMIT 50`, at, at, cursorDue, cursorDue, cursorId)
-    if (!due.length) break
-    for (const candidate of due) {
-      cursorDue = candidate.due_at; cursorId = candidate.id
-      if (attempted >= 50) break
-      if (candidate.channel === 'sms') {
-        const result = await sendScheduledSms(env, candidate.id, at)
-        if (result !== null) { sent += result; attempted++ }
-        continue
-      }
-      const token = intakeToken(), hash = await sha256(token)
-      const claim = await stmt(db, "UPDATE bm_visit_reminders SET state='sending',attempted_at=? WHERE id=? AND state='pending' RETURNING *", at, candidate.id).first<any>()
-      if (!claim) continue
-      attempted++
-      const visit = await one(db, `SELECT a.*,c.email,c.phone,c.sms_reminder_consent,s.clinic_name,s.time_zone FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id,bm_settings s
-        WHERE a.id=? AND a.status='booked' AND a.start_at=? AND c.erased_at IS NULL`, claim.appointment_id, claim.start_at)
-      if (!visit) { await stmt(db, "UPDATE bm_visit_reminders SET state='cancelled' WHERE id=?", claim.id).run(); continue }
-      await commit(db, null, [guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND start_at=?)", visit.id, visit.start_at), stmt(db, 'INSERT INTO bm_visit_reply_links(reminder_id,token_hash) VALUES(?,?) ON CONFLICT(reminder_id) DO UPDATE SET token_hash=excluded.token_hash,revoked_at=NULL', claim.id, hash)])
-      let state = 'failed', outcome = 'No email address', receipt: string | null = null
-      const link = new URL('/visit/' + token, env.AUTH_ORIGIN).href
-      const text = `Your appointment at ${visit.clinic_name} is on ${localTime(visit.start_at, visit.time_zone)}.\n\nConfirm or ask for a new time in one reply here:\n${link}\n\nThis private link expires when the visit starts. Please do not forward it.`
-      try {
-        if (claim.channel === 'email') {
-          const result = await dispatchPatientMail(env, visit.email, `Appointment reminder from ${visit.clinic_name}`, text,
-            { deliveryId: claim.id, clientId: visit.client_id, appointmentIds: [visit.id], kind: 'reminder' })
-          state = result.state === 'accepted' ? 'sent' : result.state === 'uncertain' || result.state === 'sending' ? 'uncertain' : 'failed'
-          outcome = result.state === 'suppressed' ? (env.AUTH_LOCAL === 'true' ? 'Not sent: Balm on this computer sends no email' : 'Not sent: email is suppressed on this install')
-            : result.state === 'no_email' ? 'No email address' : result.state === 'unavailable' ? 'Mail provider is not configured'
-            : state === 'sent' ? 'Accepted by mail provider; delivery not yet reported' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
-          receipt = result.providerMessageId
-
-        }
-      } catch (error) {
-        // The mail module distinguishes rejected calls from loss of a provider response.
-        state = (error as any)?.outcome === 'rejected' ? 'failed' : 'uncertain'
-        outcome = state === 'failed' ? 'Provider rejected delivery' : 'Provider response unknown; contact the patient before resending'
-      }
-      await commit(db, null, [
-        stmt(db, "UPDATE bm_visit_reminders SET state=?,sent_at=?,outcome=? WHERE id=? AND state='sending'", state, state === 'sent' ? now() : null, outcome + (receipt ? ` (${receipt})` : ''), claim.id),
-        audit(db, system, 'reminder.' + state, visit.client_id, claim.id, claim.channel),
-      ])
-      if (state === 'sent') sent++
+  let sent = 0, attempts = 0
+  for await (const candidate of dueReminders(db, at)) {
+    if (candidate.channel === 'sms') {
+      const result = await sendScheduledSms(env, candidate.id, at)
+      if (result !== null) { sent += result; if (++attempts === 50) break }
+      continue
     }
+    const token = intakeToken(), hash = await sha256(token)
+    const claim = await stmt(db, "UPDATE bm_visit_reminders SET state='sending',attempted_at=? WHERE id=? AND state='pending' RETURNING *", at, candidate.id).first<any>()
+    if (!claim) continue
+    const visit = await one(db, `SELECT a.*,c.email,c.phone,c.sms_reminder_consent,s.clinic_name,s.time_zone FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id,bm_settings s
+      WHERE a.id=? AND a.status='booked' AND a.start_at=? AND c.erased_at IS NULL`, claim.appointment_id, claim.start_at)
+    if (!visit) { await stmt(db, "UPDATE bm_visit_reminders SET state='cancelled' WHERE id=?", claim.id).run(); continue }
+    await commit(db, null, [guard(db, "EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND start_at=?)", visit.id, visit.start_at), stmt(db, 'INSERT INTO bm_visit_reply_links(reminder_id,token_hash) VALUES(?,?) ON CONFLICT(reminder_id) DO UPDATE SET token_hash=excluded.token_hash,revoked_at=NULL', claim.id, hash)])
+    let state = 'failed', outcome = 'No email address', receipt: string | null = null
+    const link = new URL('/visit/' + token, env.AUTH_ORIGIN).href
+    const text = `Your appointment at ${visit.clinic_name} is on ${localTime(visit.start_at, visit.time_zone)}.\n\nConfirm or ask for a new time in one reply here:\n${link}\n\nThis private link expires when the visit starts. Please do not forward it.`
+    try {
+      if (claim.channel === 'email') {
+        const result = await dispatchPatientMail(env, visit.email, `Appointment reminder from ${visit.clinic_name}`, text,
+          { deliveryId: claim.id, clientId: visit.client_id, appointmentIds: [visit.id], kind: 'reminder' })
+        state = result.state === 'accepted' ? 'sent' : result.state === 'uncertain' || result.state === 'sending' ? 'uncertain' : 'failed'
+        outcome = result.state === 'suppressed' ? (env.AUTH_LOCAL === 'true' ? 'Not sent: Balm on this computer sends no email' : 'Not sent: email is suppressed on this install')
+          : result.state === 'no_email' ? 'No email address' : result.state === 'unavailable' ? 'Mail provider is not configured'
+          : state === 'sent' ? 'Accepted by mail provider; delivery not yet reported' : state === 'uncertain' ? 'Provider response unknown; contact the patient before resending' : 'Mail provider did not accept delivery'
+        receipt = result.providerMessageId
+
+      }
+    } catch (error) {
+      // The mail module distinguishes rejected calls from loss of a provider response.
+      state = (error as any)?.outcome === 'rejected' ? 'failed' : 'uncertain'
+      outcome = state === 'failed' ? 'Provider rejected delivery' : 'Provider response unknown; contact the patient before resending'
+    }
+    await commit(db, null, [
+      stmt(db, "UPDATE bm_visit_reminders SET state=?,sent_at=?,outcome=? WHERE id=? AND state='sending'", state, state === 'sent' ? now() : null, outcome + (receipt ? ` (${receipt})` : ''), claim.id),
+      audit(db, system, 'reminder.' + state, visit.client_id, claim.id, claim.channel),
+    ])
+    if (state === 'sent') sent++
+    if (++attempts === 50) break
   }
   await sendDueFollowups(env, scheduledTime)
   await runPaymentSchedules(env, db, at)
   return { sent }
 }
 
+/** Page past refusals without spending the provider-attempt budget or revisiting a row this tick. */
+async function* dueReminders(db: D1Database, at: string) {
+  let dueAt = '', reminderId = ''
+  while (true) {
+    const due = await rows(db, `SELECT r.id,r.channel,r.due_at FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id
+      WHERE r.state='pending' AND r.due_at<=? AND a.start_at>? AND a.start_at=r.start_at AND a.status='booked'
+      AND (r.due_at>? OR (r.due_at=? AND r.id>?)) ORDER BY r.due_at,r.id LIMIT 50`, at, at, dueAt, dueAt, reminderId)
+    if (!due.length) return
+    for (const candidate of due) {
+      dueAt = candidate.due_at; reminderId = candidate.id
+      yield candidate
+    }
+  }
+}
 
-/** Quiet hours precede a provider claim. Null means no attempt and consumes no dispatch slot. */
+/** Quiet hours precede a provider claim. Null means no attempt; a deferred row has no attempted_at. */
 async function sendScheduledSms(env: Bindings, reminderId: string, at: string) {
   const db = env.DB
   const context = () => one(db, `SELECT r.*,a.client_id,a.status,a.start_at AS visit_start,c.erased_at,c.phone,c.sms_reminder_consent,c.sms_time_zone AS patient_zone,c.version AS client_version,

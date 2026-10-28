@@ -109,10 +109,36 @@ export async function smsQuietJourney() {
   await h.cmd('reminders.quiet_hours',quietPolicy)
   await tick('2030-11-11T13:01:00Z');await tick('2030-11-11T13:20:00Z')
   assert.equal(edge.texts.length,5,'an uncertain HTTP attempt is never replayed after a policy change')
+
+  await h.cmd('reminders.quiet_hours',{...quietPolicy,intervals:'22:00-08:00\n12:00-13:00'})
+  const midday=await book('2030-11-14','16:30')
+  for(const at of ['2030-11-13T17:00:00Z','2030-11-13T17:59:00Z']){
+   await tick(at);assert.match((await noAttempt(midday,5)).outcome,/Deferred/)
+  }
+  await tick('2030-11-13T18:00:00Z');await tick('2030-11-13T18:01:00Z')
+  assert.equal(edge.texts.length,6,'a second daily quiet interval blocks at its start and ends with exactly one eligible attempt')
+
+  const missingZone=await h.cmd('client.save',{...c.fields,lastName:'Missing zone queue'})
+  await h.cmd('reminders.consent',{clientId:missingZone.id,consent:true})
+  const shortVisit=await h.cmd('service.save',{name:'Synthetic queue visit',durationMinutes:15,priceCents:1000})
+  for(let index=0;index<50;index++){
+   const minute=60+index*15,time=String(Math.floor(minute/60)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0')
+   await h.cmd('appointment.book',{clientId:missingZone.id,practitionerId:c.priya.id,serviceId:shortVisit.id,date:'2031-01-10',time})
+  }
+  const later=await book('2031-01-10')
+  await tick('2031-01-09T13:00:00Z');await tick('2031-01-09T13:01:00Z')
+  assert.equal(edge.texts.length,7,'50 older missing-zone reminders cannot starve an eligible same-day reminder')
+  assert.equal((await history(later.appointmentId)).state,'sent')
+  const refused=(await h.send('/api/balm/clients/'+missingZone.id,undefined,h.owner)).value.reminderHistory.filter(r=>r.channel==='sms')
+  assert.equal(refused.length,50)
+  assert.ok(refused.every(r=>r.state==='pending'&&r.attempted_at===null&&r.sent_at===null),'skipped reminders remain deferred without a provider attempt')
+  assert.ok(refused.every(r=>/IANA time zone/.test(r.outcome)))
+  await tick('2031-01-09T13:02:00Z')
+  assert.equal(edge.texts.length,7,'paging past deferred rows preserves once-only delivery')
   const original=(await h.state()).reminders.sms_quiet_policy_id
   await h.cmd('reminders.quiet_hours',quietPolicy,h.owner,409,{'x-synthetic-revoke':h.auth.OWNER_EMAIL})
   assert.equal((await h.state(await h.signIn(h.auth.OWNER_EMAIL))).reminders.sms_quiet_policy_id,original,'live owner revocation rolls back the complete policy write')
-  assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action='sms.quiet_policy_recorded'").first()).n,4)
+  assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action='sms.quiet_policy_recorded'").first()).n,5)
  } finally {await h.close()}
 }
 

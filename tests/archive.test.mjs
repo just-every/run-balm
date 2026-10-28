@@ -1,3 +1,4 @@
+import { smsAuth } from './sms-quiet-journey.mjs'
 import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
@@ -809,10 +810,17 @@ test('prior authorization signed packets and recorded payer decisions survive a 
 // installations start from the real migrations; only public CLI transfer moves data.
 test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, waitlist preferences and custody in an empty install', {timeout:180000},async()=>{
  const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
- let h
+ const edge=fakeProviders()
+ let h,loseResponse=true
+ const outbound=async request=>{
+  const response=await edge.handler(request)
+  if(loseResponse&&new URL(request.url).hostname==='api.twilio.com')throw Error('synthetic-balm-405 lost reminder response')
+  return response
+ }
  const snapshot=async(db,clientId)=>({
   quietPolicies:(await db.prepare('SELECT * FROM bm_sms_quiet_policies ORDER BY id').all()).results,
   quietPolicy:(await db.prepare('SELECT sms_quiet_policy_id FROM bm_settings WHERE id=1').first()).sms_quiet_policy_id,
+  reminders:(await db.prepare("SELECT r.* FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id WHERE a.client_id=? AND r.channel='sms' ORDER BY r.id").bind(clientId).all()).results,
   patientZone:(await db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(clientId).first()).sms_time_zone,
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   waitlist:(await db.prepare('SELECT * FROM bm_waitlist WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
@@ -825,9 +833,9 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   // Build an unclaimed, empty installation without spawning Wrangler for each
   // migration. The CLI still checks the ledger and enforces empty-target restore.
   h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
-  h=await harness({root:source,migrate:true,codeSets:false})
+  h=await harness({root:source,migrate:true,codeSets:false,auth:smsAuth,outbound})
   const desk=await h.staff('Rosa','reception')
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@'),smsTimeZone:'America/New_York'})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@'),phone:'+13125550199',smsTimeZone:'America/New_York'})
   await h.cmd('reminders.quiet_hours',{intervals:'21:00-08:00',source:'synthetic-balm-403 earlier reviewed policy',attest:true})
   const policy=await h.cmd('reminders.quiet_hours',{intervals:'22:00-08:00\n12:00-13:00',source:'synthetic-balm-404 current reviewed policy',attest:true})
   const ids=[]
@@ -855,7 +863,20 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const openOfferPath=new URL(h.mail.findLast(m=>m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
   assert.match((await h.send(openOfferPath)).text,/A time opened up/)
   const bearerHashes=(await h.db.prepare('SELECT offer_token_hash FROM bm_offer_recipients').all()).results.map(r=>r.offer_token_hash)
+  await h.cmd('reminders.settings',{leadMinutes:'1440',sms:true})
+  await h.cmd('reminders.consent',{clientId:patient.id,consent:true})
+  const smsVisits=[]
+  for(const date of ['2099-03-04','2099-03-05'])smsVisits.push((await h.cmd('appointment.book',{clientId:patient.id,practitionerId:priya.id,serviceId:service.id,date,time:'15:30'})).appointmentId)
+  const tick=async at=>(await h.mf.getWorker()).scheduled({scheduledTime:Date.parse(at),cron:'* * * * *'})
+  await tick('2099-03-03T13:00:00Z')
+  assert.equal(edge.texts.length,1)
+  await tick('2099-03-04T05:30:00Z')
+  const reminderLink=new URL(edge.texts[0].body.Body.match(/https?:\/\/\S+\/visit\/[\w-]+/)[0]).pathname
   const original=await snapshot(h.db,patient.id)
+  const attempted=original.reminders.find(r=>r.appointment_id===smsVisits[0]),deferred=original.reminders.find(r=>r.appointment_id===smsVisits[1])
+  assert.equal(attempted.state,'uncertain');assert.equal(attempted.attempted_at,'2099-03-03T13:00:00.000Z');assert.equal(attempted.sent_at,null)
+  assert.equal(deferred.state,'pending');assert.equal(deferred.attempted_at,null);assert.match(deferred.outcome,/Deferred/)
+  assert.ok([attempted,deferred].every(r=>r.sms_quiet_policy_id===policy.id&&r.sms_time_zone==='America/New_York'))
   assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
   assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
   assert.equal(original.recipients.filter(r=>r.outcome===null).length,1)
@@ -880,8 +901,8 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const archiveText=await readFile(archive,'utf8')
   for(const hash of bearerHashes)assert.ok(!archiveText.includes(hash),'offer capability hashes never enter the archive')
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
-  h=await harness({root:restored,...identity,codeSets:false})
-  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field, patient zone, recorded quiet policy, waitlist preference, offer outcome and patient custody audit row survives unchanged')
+  h=await harness({root:restored,...identity,codeSets:false,outbound})
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every reminder attempt, call field, patient zone, recorded quiet policy, waitlist preference, offer outcome and patient custody audit row survives unchanged')
   assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
   for(const stale of [offerPath,openOfferPath]){
    assert.equal((await h.send(stale)).status,404,'archive does not revive an offer bearer')
@@ -892,6 +913,15 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   await assert.rejects(h.db.prepare('UPDATE bm_calls SET disposition=? WHERE id=?').bind('Changed original',ids[0]).run(),/calls_are_health_records/)
   await assert.rejects(h.db.prepare('DELETE FROM bm_calls WHERE id=?').bind(ids[0]).run(),/calls_are_health_records/)
   await h.cmd('client.erase',{id:patient.id},cookie,409)
+  assert.equal((await h.send(reminderLink)).status,404,'archive cannot revive a private reminder capability')
+  loseResponse=false
+  await tick('2099-03-04T05:31:00Z')
+  assert.equal(edge.texts.length,1,'restored quiet reminders do not attempt delivery and uncertain attempts are not replayed')
+  await tick('2099-03-04T13:00:00Z');await tick('2099-03-04T13:01:00Z')
+  assert.equal(edge.texts.length,2,'only the deferred reminder becomes eligible after restore, once')
+  const after=await snapshot(h.db,patient.id)
+  assert.deepEqual(after.reminders.find(r=>r.id===attempted.id),attempted,'unknown provider outcome survives restore without any retry')
+  assert.equal(after.reminders.find(r=>r.id===deferred.id).state,'sent')
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
