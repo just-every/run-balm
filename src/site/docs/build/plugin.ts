@@ -18,6 +18,8 @@ export function docsSite(): Plugin {
       if (id !== resolvedId) return
       const site = buildDocs(root)
       for (const file of site.files) this.addWatchFile(file)
+      this.addWatchFile(`${root}/src/site/run.json`)
+      this.addWatchFile(`${root}/src/base/run-pricing.ts`)
       return `export const sections = ${JSON.stringify(site.sections)};\nexport const bodies = ${JSON.stringify(site.bodies)};\n`
     },
   }
