@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "7d5a5d027d0ee52d9451f2a914b75fe197da3c2531b2a99cbdf1d8bd071a9ac3",
+      "sha256": "79b476cae6cc35544aa199954656d80b242b1ef5d72c31d24d932544d32ca8e7",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "3fd3b560ad8592e788d17cfb550106d835a9d7d5c392b22453d06f27b518e162",
+      "sha256": "6832f874417a318a87c16eba1484a4ee74436f483acba1700668bed3f4964dca",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "6cde75a0685e82bdeb3b0fda3b3b6f9ab073b75dc89a2d06285f803e1f467576",
+      "sha256": "1e0a7bef35881193badb0522e4dec41e79d2605931145eb3c4e7667c36e9bf3e",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -807,6 +807,10 @@
     },
     "migrations/core/0123_balm_gift_membership_settlement.sql": {
       "sha256": "a11fe71171c40c0891e0c901961f9b149976761be0db383f2888286462b54c83",
+      "executable": false
+    },
+    "migrations/core/0124_balm_movein_invoices.sql": {
+      "sha256": "11fb7f6d8b529a4d486cd50634f8241d3185235a233b423f0dc5bea2857bc0c7",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -3110,7 +3114,7 @@
       "executable": false
     },
     "src/balm/ui/movein-bundle.ts": {
-      "sha256": "72b758ee503674ef919fab4dfbf15c28a1aee0392430f6481d596e6e152e9483",
+      "sha256": "809013f698c69c74686bdeed97db31f2f817aa9e1061c395498557b0f6015717",
       "executable": false
     },
     "src/balm/ui/movein-guide.ts": {
@@ -5382,7 +5386,7 @@
       "executable": false
     },
     "tests/agent-migration-browser.mjs": {
-      "sha256": "4208c156f307e9e87ba8c6c26f793e4c60839756bffb0526ef4668cc36a2e57d",
+      "sha256": "f40a8d6e3507c4dea7b458a19990d0c84187f3715f4fef76b6532f772738ea5d",
       "executable": false
     },
     "tests/alerts.test.mjs": {
@@ -5826,7 +5830,7 @@
       "executable": false
     },
     "tests/retention.test.mjs": {
-      "sha256": "37f2038ddf4991b0871878dec6cf236e71768b76b6bc06ea898f979014529001",
+      "sha256": "6e13dfdb9688e106ce2b4ffd730d546d1dc7ec18bc40095db8b5530661e9220e",
       "executable": false
     },
     "tests/runtime.mjs": {

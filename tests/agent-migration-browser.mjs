@@ -3,7 +3,7 @@ import { harness } from './harness.mjs'
 import { viewportProof } from './viewport-proof.mjs'
 import { clinic } from './clinic.mjs'
 import { customFields } from './migration-agent-journey.mjs'
-import { cutoverInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
+import { cutoverInventory, cutoverClaims, cutoverAuthorizations, cutoverInvoices } from './movein-reconciliation-journey.mjs'
 
 const h = await harness({ browserHttps: true })
 try {
@@ -101,6 +101,45 @@ try {
     await page.getByRole('button', { name: 'Apply move-in', exact: true }).click()
     await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
     if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Carried authorizations', { exact: true }) }).locator('td').allTextContents(), ['Carried authorizations', '3', '3'])
+  } }])
+  const invoices = cutoverInvoices()
+  const uploadInvoices = async page => {
+    await page.goto(h.origin + '/app/import')
+    for (const file of invoices.files) await page.locator('input[name=' + file.kind + ']').setInputFiles({ name: file.name, mimeType: 'text/csv', buffer: Buffer.from(file.csv) })
+    await page.getByRole('button', { name: 'Preview move-in', exact: true }).click()
+    await page.getByRole('heading', { name: 'Proposed field mapping', exact: true }).waitFor()
+  }
+  await viewportProof(h, [{ name: 'migration-invoices-preview', path: '/app/import', cookie: h.owner, selector: 'h3:text-is("Historical invoices to carry")', interact: async ({ page, width }) => {
+    await uploadInvoices(page)
+    if (width === 1440) {
+      assert.equal(await page.locator('tr').filter({ has: page.getByText('Historical invoice carried', { exact: true }) }).count(), 3)
+      assert.deepEqual(await page.locator('tr').filter({ has: page.locator('input[name=expectedInvoices]') }).locator('td').last().textContent(), '3')
+      assert.ok((await page.locator('section.movein-preview').textContent()).includes('$80.00'))
+      await page.locator('input[name="balance_synthetic-balm-800"]').fill('121.00')
+      await page.getByRole('button', { name: 'Check totals again', exact: true }).click()
+      await page.getByText('Carried invoice balances must match independent net aging and the source control exactly; reconcile credits and missing invoices before cutover.').waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Apply move-in', exact: true }).count(), 0)
+      await uploadInvoices(page)
+    }
+  } }])
+  await viewportProof(h, [{ name: 'migration-invoices-saved', path: '/app/import', cookie: h.owner, selector: 'section:has(> h2:text-is("Saved reconciliation"))', interact: async ({ page, width }) => {
+    await uploadInvoices(page)
+    await page.locator('input[name=mappingApproval]').check()
+    await page.locator('input[name=cutoverApproval]').check()
+    await page.locator('textarea[name=acceptanceReason]').fill('Checked original invoice references, amounts and independent source aging; no second bill.')
+    await page.getByRole('button', { name: 'Apply move-in', exact: true }).click()
+    await page.getByRole('heading', { name: 'Saved reconciliation', exact: true }).waitFor()
+    if (width === 1440) assert.deepEqual(await page.locator('section:has(> h2:text-is("Saved reconciliation")) tr').filter({ has: page.getByText('Invoices', { exact: true }) }).locator('td').allTextContents(), ['Invoices', '3', '3'])
+  } }])
+  const invoicePreview = await h.cmd('movein.preview', invoices)
+  await viewportProof(h, [{ name: 'migration-invoices-patient', path: '/app/clients/' + invoicePreview.patients[0].id, cookie: h.owner, selector: 'h3:text-is("Historical invoices")', interact: async ({ page, width }) => {
+    if (width === 1440) {
+      const historical = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Moved-in records', exact: true }) })
+      for (const reference of ['Original invoice 801', 'Original invoice 802', 'Original invoice 803']) assert.ok((await historical.textContent()).includes(reference))
+      assert.ok((await historical.textContent()).includes('not new bills or a second charge'))
+      const small = await historical.locator('*').evaluateAll(elements => elements.filter(el => el.getClientRects().length && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(el).fontSize) < 13).map(el => ({ text: el.textContent, size: getComputedStyle(el).fontSize })))
+      assert.deepEqual(small, [])
+    }
   } }])
   await viewportProof(h, [{ name: 'migration-key-scope', path: '/app/agent', cookie: h.owner, selector: 'select[name=scopes]', interact: async ({page}) => { await page.locator('select[name=scopes]').selectOption('migration.prepare') } }])
   console.log('PASS migration mapping, explicit owner approval and saved cutover at 1440 and 390')
