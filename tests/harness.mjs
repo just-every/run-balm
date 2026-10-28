@@ -87,6 +87,7 @@ export async function harness(options = {}) {
     }
     const signIn = async email => { const response = await send('/auth/magic-link', {email}); assert.equal(response.status,202,response.text); return confirmMail(email) }
     const h = { db, mf, origin, owner, auth, mail, outboundRequests, send, cmd, state, staff, finishSetup, form, confirmMail, signIn, codeSets, codeSetsInstalled: false, provisioningRequests: [], close: async () => { await mf.dispose(); if (!options.root) await rm(dir, { recursive: true, force: true }) } }
+    if (bootstrap && options.autoMfa !== false && options.patientMode !== false) await cmd('hosting.mode',{mode:'demo',reason:'Synthetic test data only',attest:true})
     if (bootstrap && options.autoMfa !== false && options.readiness !== false) await readinessFixture(h)
     if (bootstrap && options.autoMfa !== false && options.codeSets !== false) {
       await installCodeSetFixtures(h, codeSets)

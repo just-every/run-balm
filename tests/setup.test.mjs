@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
-import { bookOnline } from './clinic.mjs'
+import { bookOnline, clinic, slots } from './clinic.mjs'
+import { hostingProfile, hostingFixture, patientMode, readinessFixture } from './readiness-fixture.mjs'
 
 const zone = 'America/Chicago'
 const localDate = t => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t))
@@ -158,3 +159,76 @@ test('HIPAA-001: owner records readiness facts and BAAs; SMS stays off without a
   for(const action of ['readiness.recorded','readiness.baa_recorded','readiness.baa_revoked','readiness.exported'])assert.ok(audits.includes(action),action)
   assert.equal(h.outboundRequests.filter(r=>r.origin==='https://api.twilio.com').length,1)
 }, { outbound:async request=>{assert.equal(new URL(request.url).hostname,'api.twilio.com');return Response.json({sid:'synthetic-balm-913',status:'queued'},{status:201})},readiness:false,auth:{SMS_PROVIDER:'twilio',TWILIO_ACCOUNT_SID:'synthetic-balm-908',TWILIO_AUTH_TOKEN:'synthetic-balm-909',TWILIO_FROM:'+15125550100'} }))
+
+
+test('HIPAA-005: hosting qualification fences patient creation, incomplete R2 coverage, revocation and inactive authority', () => run(async h => {
+ const {service,practitioners:[practitioner]}=await clinic(h)
+ const slot=(await slots(h,service.id,practitioner.id))[0]
+ const patient={firstName:'Synthetic',lastName:'Hosting',dateOfBirth:'1980-01-01'}
+ const before=()=>h.db.prepare('SELECT (SELECT COUNT(*) FROM bm_clients) AS patients,(SELECT COUNT(*) FROM bm_booking_payments) AS reservations,(SELECT COUNT(*) FROM bm_card_payments) AS payments').first()
+ const empty=await before(),egress=h.outboundRequests.length
+ const refuse=async()=>{
+  assert.equal((await h.cmd('client.save',patient,h.owner,409)).code,'hosting_readiness_required')
+  assert.equal((await bookOnline(h,service.id,practitioner.id,slot)).status,409)
+  assert.deepEqual(await before(),empty)
+  assert.equal(h.outboundRequests.length,egress,'refusal has no provider effect')
+ }
+ await refuse()
+ const incomplete=await hostingFixture(h,{coveredServices:['workers','d1']})
+ await h.cmd('hosting.mode',patientMode('real',incomplete.id),h.owner,409)
+ await readinessFixture(h)
+ await h.cmd('hosting.mode',patientMode('real',incomplete.id),h.owner,409)
+ for(const change of [{account:'synthetic-balm-other'},{deployment:'synthetic-balm-other'}, {services:['workers','d1']},{serviceEvidence:{workers:'synthetic-balm-928',d1:'synthetic-balm-929'}},{provider:'aws'}]){
+  const wrong=await hostingFixture(h,change)
+  await h.cmd('hosting.mode',patientMode('real',wrong.id),h.owner,409)
+ }
+ const valid=await hostingFixture(h)
+ // A complete hosting record still cannot substitute for the practice readiness review.
+ await h.db.prepare("UPDATE bm_readiness SET risk_analysis='' WHERE id=1").run()
+ await h.cmd('hosting.mode',patientMode('real',valid.id),h.owner,409)
+ await readinessFixture(h)
+ const desk=await h.staff('HostingDesk','reception')
+ for(const name of ['hosting.record','hosting.mode','hosting.revoke'])await h.cmd(name,{...valid.facts,...patientMode('real',valid.id)},desk.cookie,403)
+ await h.cmd('hosting.mode',patientMode('real',valid.id))
+ const created=await h.cmd('client.save',patient)
+ assert.ok((await h.state()).clients.some(c=>c.id===created.id))
+ const modeAudit=await h.db.prepare("SELECT detail,subject_id,actor_role FROM bm_audit WHERE action='hosting.mode_changed' AND subject_id=?").bind(valid.id).first()
+ assert.equal(modeAudit.actor_role,'owner');assert.equal(modeAudit.subject_id,valid.id);assert.match(modeAudit.detail,/^real:/)
+ // Force revocation after the authority read but before the patient transaction's hosting fence.
+ await h.db.prepare("CREATE TRIGGER synthetic_hosting_race BEFORE INSERT ON bm_assert BEGIN UPDATE bm_baa_records SET revoked_at='2026-10-01T00:00:00Z' WHERE id='"+valid.baaId+"'; END").run()
+ const count=(await before()).patients
+ await h.cmd('client.save',{...patient,lastName:'Race'},h.owner,409)
+ assert.equal((await before()).patients,count)
+ await h.db.prepare('DROP TRIGGER synthetic_hosting_race').run()
+ const kit=await hostingFixture(h)
+ await h.cmd('hosting.mode',patientMode('real',kit.id))
+ const csv='ID,First Name,Last Name,Date of Birth,Email,Mobile\nsynthetic-balm-931,Synthetic,KitRace,1980-01-01,,'
+ const preview=await h.cmd('import.preview',{csv})
+ await h.db.prepare("CREATE TRIGGER synthetic_hosting_kit_race BEFORE INSERT ON ik_d1_assertions BEGIN UPDATE bm_baa_records SET revoked_at='2026-10-01T00:00:00Z' WHERE id='"+kit.baaId+"'; END").run()
+ await h.cmd('import.apply',{csv,fingerprint:preview.fingerprint},h.owner,409)
+ assert.equal((await before()).patients,count,'kit transaction refuses revocation after preview and preflight')
+ await h.db.prepare('DROP TRIGGER synthetic_hosting_kit_race').run()
+ await h.cmd('hosting.mode',patientMode('real',valid.id))
+ await h.cmd('readiness.baa.revoke',{id:valid.baaId})
+ await h.cmd('client.save',{...patient,lastName:'Revoked'},h.owner,409)
+ assert.equal((await bookOnline(h,service.id,practitioner.id,slot)).status,409)
+ const fresh=await hostingFixture(h)
+ await h.cmd('hosting.mode',patientMode('real',fresh.id))
+ await h.cmd('hosting.revoke',{id:fresh.id})
+ await h.cmd('client.save',{...patient,lastName:'RevokedHosting'},h.owner,409)
+ const current=await hostingFixture(h)
+ await h.cmd('hosting.mode',patientMode('real',current.id))
+ const operator=await h.db.prepare("SELECT id FROM oa_operators WHERE role='owner'").first()
+ await h.db.prepare("INSERT INTO oa_operators(id,email,display_name,role,status,created_at) SELECT 'synthetic-balm-930',replace(email,'owner','synthetic-balm-930'),display_name,role,status,created_at FROM oa_operators WHERE id=?").bind(operator.id).run()
+ await h.db.prepare("UPDATE oa_operators SET status='inactive' WHERE id=?").bind(operator.id).run()
+ assert.equal((await h.send('/api/balm/command',{name:'hosting.mode',input:patientMode('demo')},h.owner)).status,401)
+ assert.equal((await bookOnline(h,service.id,practitioner.id,slot)).status,409,'inactive activation owner cannot admit patients')
+ await h.db.prepare("UPDATE oa_operators SET status='active' WHERE id=?").bind(operator.id).run()
+ const renewed=await h.signIn(h.auth.OWNER_EMAIL)
+ await h.cmd('hosting.mode',patientMode('demo'),renewed)
+ assert.ok((await h.cmd('client.save',{...patient,lastName:'Demo'},renewed)).id,'explicit demo mode remains usable for synthetic data')
+ await h.cmd('hosting.mode',patientMode('blocked'),renewed)
+ const now=await before()
+ await h.cmd('client.save',{...patient,lastName:'Blocked'},renewed,409)
+ assert.deepEqual(await before(),now)
+}, {patientMode:false,readiness:false,auth:{BALM_HOSTING_PROFILE:JSON.stringify(hostingProfile)}}))

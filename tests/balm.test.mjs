@@ -287,6 +287,25 @@ test('Cliniko patient CSV: preview, exact-review apply, journal with the origina
   await h.cmd('import.undo', { jobId: job.id })
   const after = (await h.state()).clients.map(c => c.last_name).sort()
   assert.deepEqual(after, ['Brown-Smith', 'Wilson'])
+  // A preview and a paused import supply no authority after patient mode changes.
+  const more='ID,First Name,Last Name,Date of Birth,Email,Mobile\n'+Array.from({length:24},(_,i)=>`${9000+i},Synthetic${i},Hosting,1980-01-01,,`).join('\n')
+  const planned=await h.cmd('import.preview',{csv:more})
+  await h.cmd('hosting.mode',{mode:'blocked',reason:'Synthetic readiness changed',attest:true})
+  await h.cmd('import.apply',{csv:more,fingerprint:planned.fingerprint},h.owner,409)
+  assert.equal((await h.state()).clients.length,2)
+  await h.cmd('hosting.mode',{mode:'demo',reason:'Synthetic data only',attest:true})
+  let resumed=(await h.cmd('import.apply',{csv:more,fingerprint:planned.fingerprint})).job
+  assert.equal(resumed.state,'applying')
+  const paused=(await h.state()).clients.length
+  await h.cmd('hosting.mode',{mode:'blocked',reason:'Synthetic readiness changed',attest:true})
+  await h.cmd('import.resume',{jobId:resumed.id},h.owner,409)
+  assert.equal((await h.state()).clients.length,paused)
+  await h.cmd('hosting.mode',{mode:'demo',reason:'Synthetic data only',attest:true})
+  while(resumed.state==='applying')resumed=(await h.cmd('import.resume',{jobId:resumed.id})).job
+  assert.equal((await h.state()).clients.length,26)
+  let reversal=(await h.cmd('import.undo',{jobId:resumed.id})).job
+  while(reversal.state!=='undone')reversal=(await h.cmd('import.undo',{jobId:resumed.id})).job
+  assert.deepEqual((await h.state()).clients.map(c=>c.last_name).sort(),after)
 }))
 
 test('erasure removes an unused client, fences re-entry and import, and retains clients with health records', () => run(async h => {

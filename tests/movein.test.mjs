@@ -59,6 +59,10 @@ for (const provider of ['cliniko', 'webpt', 'simplepractice', 'jane']) {
     await h.cmd('movein.cutover',{...invalid,fingerprint:invalidReport.fingerprint,mappingApproval:invalidReport.mappingDigest,cutoverApproval:invalidReport.fingerprint,acceptanceReason:'Cannot override invalid references.'},h.owner,409)
     assert.equal((await h.state()).clients.length,0)
     const accepted = { ...input, fingerprint: preview.fingerprint, mappingApproval:preview.mappingDigest,cutoverApproval:preview.fingerprint, acceptanceReason: 'Checked converted reports and omitted custom fields; retained original chart packages separately.' }
+    await h.cmd('hosting.mode',{mode:'blocked',reason:'Synthetic readiness changed after review',attest:true})
+    await h.cmd('movein.cutover',accepted,h.owner,409)
+    assert.equal((await h.state()).clients.length,0)
+    await h.cmd('hosting.mode',{mode:'demo',reason:'Synthetic cutover data only',attest:true})
     const applied = await h.cmd('movein.cutover', accepted)
     assert.equal(applied.job.state, 'applied')
     assert.equal(applied.records.length, 10)

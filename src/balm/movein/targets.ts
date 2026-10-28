@@ -1,3 +1,5 @@
+import type { Bindings } from '../../auth.server'
+import { patientCreationSql } from '../domain/hosting'
 // Client target adapter after Strap's member adapter (src/strap/movein/{snapshots,targets}.ts,
 // just-every/run-strap @ 92c3892). A client with any clinic work, or edited after
 // import, is retained by undo; the kit records why.
@@ -98,4 +100,12 @@ export async function nativeConflicts(db: Pick<D1Database, 'prepare'>, values: R
     const reason = erasedHashes.has(sha256(identity)) ? 'erased_identity' : ids.has(value.id) || people.has(identity) ? 'existing_client_requires_review' : null
     return reason ? [{ clientId: value.id as string, reason }] : []
   })
+}
+
+/** Resumed kit batches recheck hosting in the same transaction as their patient writes. */
+export function hostingClientTargets(env?: Bindings): D1TargetAdapter {
+  return { ...clientTargets, write(row) {
+    const p = patientCreationSql(env)
+    return [sql('INSERT INTO ik_d1_assertions(ok) SELECT CASE WHEN ('+p.sql+') THEN 1 ELSE 0 END',...p.params),...clientTargets.write(row)]
+  } }
 }

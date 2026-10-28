@@ -1,3 +1,5 @@
+import type { Bindings } from '../../auth.server'
+import { patientCreationFence } from '../domain/hosting'
 // Adapted from Strap's move-in transport (src/strap/movein/index.ts, just-every/run-strap @ 92c3892).
 import {
   planD1Import, createD1ImportJob, applyD1ImportBatches, undoD1Import, resumeD1Import,
@@ -5,15 +7,15 @@ import {
 } from '../../modules/import-kit/src/d1/index.ts'
 import type { D1ImportContext, D1Database as KitDatabase, ImportMapping, ImportPlan } from '../../modules/import-kit/src/d1/index.ts'
 import { dateFormat, formatName, namespace, patientSource } from './csv.ts'
-import { destination, mappingVersion, clientTargets, nativeConflicts } from './targets.ts'
+import { destination, mappingVersion, hostingClientTargets, nativeConflicts } from './targets.ts'
 import { ImportError, requiredText } from './errors.ts'
 export { ImportError } from './errors.ts'
 export type ImportActor = { id: string; email: string; role: string }
 
-export function importContext(db: D1Database, actor: ImportActor): D1ImportContext {
+export function importContext(db: D1Database, actor: ImportActor, env?: Bindings): D1ImportContext {
   if (actor.role !== 'owner') throw new ImportError('owner_required', 403)
   return {
-    destination, namespace, mappingVersion, storage: { database: db as unknown as KitDatabase, targets: clientTargets },
+    destination, namespace, mappingVersion, storage: { database: db as unknown as KitDatabase, targets: hostingClientTargets(env) },
     batchSize: 10, maxBatches: 1, reversalPolicy: 'preserve-conflicts',
     authorization: { principalId: actor.id, predicate: () => ({
       sql: "EXISTS(SELECT 1 FROM oa_operators WHERE id=? AND lower(email)=? AND role='owner' AND status='active')",
@@ -34,11 +36,12 @@ const clientValues = (plan: ImportPlan) => plan.entries.flatMap(entry => entry.e
 
 /** The transport authenticates a human session and checks request origin.
  * Current owner authority is also fenced inside every kit transaction. */
-export async function importCommand(db: D1Database, actor: ImportActor, name: string, input: Record<string, unknown>): Promise<unknown> {
-  const context = d1RequestContext(importContext(db, actor))
+export async function importCommand(db: D1Database, actor: ImportActor, name: string, input: Record<string, unknown>, env?: Bindings): Promise<unknown> {
+  const context = d1RequestContext(importContext(db, actor, env))
   const owner = await db.prepare("SELECT 1 FROM oa_operators WHERE id=? AND lower(email)=? AND role='owner' AND status='active'")
     .bind(actor.id, actor.email.toLowerCase()).first()
   if (!owner) throw new ImportError('owner_required', 403)
+  if (name === 'import.apply' || name === 'import.resume') await patientCreationFence(db,env)
   try {
     if (name === 'import.preview' || name === 'import.apply') {
       const format = dateFormat(input.dateFormat), plan = await planD1Import(patientSource(input.csv, format), mapping, context)

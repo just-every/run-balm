@@ -1,3 +1,4 @@
+import type { Bindings } from '../../auth.server'
 import { audit, commit, guard, one, rows, type Actor } from '../domain/model.ts'
 import { ImportError, requiredText } from './errors.ts'
 import { planBundle, isError } from './bundle-plan.ts'
@@ -30,7 +31,7 @@ async function journal(db: D1Database, jobId: string) {
 }
 
 /** All writes use one guarded D1 batch; no partial apply/resume state exists. */
-export async function bundleCommand(db: D1Database, who: Actor, name: string, input: Record<string, unknown>) {
+export async function bundleCommand(db: D1Database, who: Actor, name: string, input: Record<string, unknown>, env?: Bindings) {
   if (who.role === 'agent' && name === 'movein.prepare') {
     requireScope(who, 'migration.prepare')
     if (Array.isArray(input.files) && input.files.some(f => f?.kind === 'notes')) throw new ImportError('clinical_access_denied', 403)
@@ -66,7 +67,7 @@ export async function bundleCommand(db: D1Database, who: Actor, name: string, in
   if (plan.diagnostics.some(isError)) throw new ImportError('movein_validation_failed', 409, 'Resolve every error in the preview before applying.')
   const acceptanceReason = typeof input.acceptanceReason === 'string' ? input.acceptanceReason.trim() : ''
   if (plan.requiresAcceptance && (!acceptanceReason || acceptanceReason.length > 2000)) throw new ImportError('movein_acceptance_required', 409, 'Accept the reconciliation differences and unmapped records with a reason, or fix the source and preview again.')
-  const jobId = await applyBundle(db, who, plan, acceptanceReason, approvedMapping)
+  const jobId = await applyBundle(db, who, plan, acceptanceReason, approvedMapping, env)
   return journal(db, jobId)
 }
 

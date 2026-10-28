@@ -1,3 +1,4 @@
+import { patientCreationFence } from '../domain/hosting'
 import type { Bindings } from '../../auth.server'
 import { appointmentStatements, intakeToken, placementGuards } from '../domain/booking'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, type Data } from '../domain/model'
@@ -41,14 +42,16 @@ export async function reserveBooking(env:Bindings,db:D1Database,service:Data,vis
 
 /** Reserve before the provider write. Retries use the exact frozen payload and key. */
 async function startCheckout(env:Bindings,db:D1Database,b:Data,authority:D1PreparedStatement[]=[]){
+ const hosting=await patientCreationFence(db,env)
  const p=(await one(db,'SELECT * FROM bm_card_payments WHERE id=?',b.payment_id))!
- if(b.checkout_url){await commit(db,null,authority);return b.checkout_url as string}
+ if(b.checkout_url){await commit(db,null,[...authority,hosting]);return b.checkout_url as string}
  insist(b.state==='reserved'&&(b.attempted_at||Date.parse(b.expires_at)>Date.now()),'booking_reservation_expired',409)
  insist(!b.attempted_at||Date.now()-Date.parse(b.attempted_at)<23*3600_000,'payment_outcome_needs_clinic_review',409)
  const {settings,key}=await stripeReady(env,db)
+ await commit(db,null,[...authority,hosting])
  // Customer creation has its own durable idempotency key. A concurrent caller uses the same customer.
  const customer=p.stripe_customer_id??await customerFor(db,key,settings.account_id as string,b.client_id)
- await commit(db,null,[...authority,
+ await commit(db,null,[...authority,hosting,
   guard(db,'EXISTS(SELECT 1 FROM bm_stripe WHERE id=1 AND account_id=? AND connected_at=?)',settings.account_id,settings.connected_at),
   guard(db,"EXISTS(SELECT 1 FROM bm_booking_payments WHERE id=? AND state='reserved' AND (expires_at>? OR attempted_at IS NOT NULL))",b.id,now()),
   guard(db,'NOT EXISTS(SELECT 1 FROM bm_card_payments WHERE id=? AND stripe_account_id IS NOT NULL AND stripe_account_id<>?)',p.id,settings.account_id),
