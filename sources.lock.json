@@ -2938,7 +2938,7 @@
       "executable": false
     },
     "src/balm/ui/control-tooltip.ts": {
-      "sha256": "c91d79b61ad997274c97e6a4d5d6377dd8faa9243db2a53c4739d257cddb8b24",
+      "sha256": "a774345cd39f3a281d193bb3129a6a53086553370eab561b7cbdc3f962228441",
       "executable": false
     },
     "src/balm/ui/daily-close.ts": {

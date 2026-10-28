@@ -4,6 +4,7 @@ import {h} from './shared'
 export const controlTooltipStyle = `
 .control-tip{position:relative;overflow:visible}
 .control-tip [role=tooltip]{position:absolute;top:calc(100% + 8px);left:0;z-index:30;width:max-content;max-width:160px;padding:5px 8px;border-radius:6px;background:#263c34;color:#fff;font-size:13px;line-height:1.4;pointer-events:none;visibility:hidden;opacity:0;transition:visibility 0s,opacity 0s}
+.more.control-tip [role=tooltip],.go.control-tip [role=tooltip]{left:auto;right:0}
 .control-tip:hover [role=tooltip]{visibility:visible;opacity:1;transition-delay:300ms}
 .control-tip:focus [role=tooltip]{visibility:visible;opacity:1;transition-delay:0s}
 `
