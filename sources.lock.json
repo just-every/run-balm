@@ -5710,7 +5710,7 @@
       "executable": false
     },
     "tests/booking-prepayment-journey.mjs": {
-      "sha256": "2a5e63bdbffaac47a0e251c24e0954cec277d2f5be8ef0adfc248ce7b5044a49",
+      "sha256": "85cf1d0a9a540ffcbcfb091115d206c62d288e7c71f308c776eff696ba0956d3",
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
