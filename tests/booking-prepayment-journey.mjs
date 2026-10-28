@@ -36,7 +36,8 @@ export async function bookingPrepaymentJourney(h,stripe,hooks={}){
  const foreign=await h.cmd('client.save',{firstName:'Foreign',lastName:'Patient',email:'foreign@patient.example'})
  const foreignCookie=await portalLogin(h,'foreign@patient.example')
  const beforeShared=await h.state()
- const shared=await h.form('/book',await fields(starts[4],{firstName:'Synthetic',lastName:'Shared',email:beforeShared.clients.find(c=>c.id===foreign.id).email}))
+ const sharedEmail=(await h.send('/api/balm/clients/'+foreign.id,undefined,h.owner)).value.client.email
+ const shared=await h.form('/book',await fields(starts[4],{firstName:'Synthetic',lastName:'Shared',email:sharedEmail}))
  assert.equal(shared.status,409,'a different patient sharing an existing sign-in must contact the clinic before money is requested')
  assert.equal((await h.state()).clients.length,beforeShared.clients.length)
  assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM bm_booking_payments').first()).n,1)
