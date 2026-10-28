@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "bf6d1b7c1a38a13a314632ffe90a0551d5bb6ac2a2d37d167305ed523ab82dce",
+      "sha256": "a262c57aeccf934906d07160321b50d1d84949cfad8b816783f519a3dc1e0a62",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "6092059780337ed0c831bff71fdd2cb0ec48fa75ba6a583b17855f3de5f04d42",
+      "sha256": "aeb73505125f69284312e8cc39eeeefbcf8426593b195d6d3c72aa3c00f5c79e",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "0fcdd65e700f68d91d04a067bee7fdd916aac9c175db540e7803a1c2a9ed1fc7",
+      "sha256": "74d71b4d5150ebcd530d8fe1cab77c6333af02902518f32c0b586bac953ac7fb",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -5418,7 +5418,7 @@
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
-      "sha256": "185d0772b48be15b1728a6e1dbaafb285cbd779804db690f83331a4f363fb07f",
+      "sha256": "ba7578e5125fdb59cdd0a0c6e9a2c22482889b2e82f7cdaca5891c1b22e6f5a7",
       "executable": false
     },
     "tests/card-payments-journey.mjs": {

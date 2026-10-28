@@ -134,7 +134,17 @@ try{
  console.log(JSON.stringify({account:result.payment.stripe_account_id,intakeSetup:result.setup.id,intakeIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.setup.card_id).first()).setup_intent,portalSetup:result.portalSetup.id,portalIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.portalSetup.card_id).first()).setup_intent,originalCharge:result.refund.charge_id,charge:result.payment.payment_intent,refund:result.refund.provider_refund_id,reader:result.terminal.reader_id,terminalIntent:result.terminal.payment_intent,terminalReceipt:result.terminal.receipt_number}))
  const responsibility=await checkInResponsibilityJourney({h,stripe,service,priya,reception},{screen,collectResponsibility,locationId,saveResponsibilityCard:async(started,path,declined)=>checkout(started,path,declined?'4000000000000341':'4242424242424242')})
  const collections=await h.db.prepare("SELECT id,collection_purpose,amount_cents,payment_intent,receipt_number FROM bm_card_payments WHERE client_id=? AND status='succeeded' ORDER BY created_at,id").bind(responsibility.patient.id).all()
- console.log(JSON.stringify({proof:'live-checkin-responsibility',collections:collections.results,patientBalanceCents:0}))
+ assert.deepEqual(collections.results.map(row=>[row.collection_purpose,row.amount_cents]).sort((a,b)=>a[0].localeCompare(b[0])||a[1]-b[1]),[['balance',200],['balance',400],['coinsurance',400],['coinsurance',1600]])
+ const verified=[]
+ for(const row of collections.results){
+  const response=await provider(new Request('https://api.stripe.com/v1/payment_intents/'+encodeURIComponent(row.payment_intent),{headers:{authorization:'Bearer '+process.env.STRIPE_SECRET_KEY,'stripe-version':'2026-09-30.endive'}}))
+  assert.equal(response.status,200)
+  const intent=await response.json()
+  assert.equal(intent.status,'succeeded');assert.equal(intent.livemode,false);assert.equal(intent.currency,'usd')
+  assert.equal(intent.amount,row.amount_cents);assert.equal(intent.amount_received,row.amount_cents);assert.equal(intent.metadata.balm_payment,row.id)
+  verified.push({...row,requestId:response.headers.get('request-id')})
+ }
+ console.log(JSON.stringify({proof:'live-checkin-responsibility',collections:verified,patientBalanceCents:0}))
  console.log('PASS PAY-002 live Stripe test mode: coinsurance and balance by saved card and simulated Terminal, exact cents, decline, replay, reservations, ledger and report parity, patient-only fixed receipts, and native screens at 1440 and 390. Physical reader operation remains unproved.')
  }
 }catch(error){if(page)await page.screenshot({path:output+'/failed.png',fullPage:true}).catch(()=>{});throw error}finally{await browser?.close();await h.close()}
