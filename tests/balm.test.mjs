@@ -291,8 +291,10 @@ test('Cliniko patient CSV: preview, exact-review apply, journal with the origina
 
 test('erasure removes an unused client, fences re-entry and import, and retains clients with health records', () => run(async h => {
   const { service, practitioners: [priya] } = await clinic(h)
-  const unused = await h.cmd('client.save', { firstName: 'Olivia', lastName: 'Brown', dateOfBirth: '1985-03-14', email: 'olivia@client.example' })
+  const unused = await h.cmd('client.save', { firstName: 'Olivia', lastName: 'Brown', dateOfBirth: '1985-03-14', email: 'olivia@client.example', smsTimeZone: 'America/New_York' })
   await h.cmd('client.erase', { id: unused.id })
+  assert.equal((await h.db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(unused.id).first()).sms_time_zone,null,'erasure clears the newly captured patient zone')
+  assert.equal((await h.send('/api/balm/clients/'+unused.id,undefined,h.owner)).status,404)
   assert.ok(!JSON.stringify(await h.state()).includes('olivia@client.example'))
   await h.cmd('client.save', { firstName: 'Olivia', lastName: 'Brown', dateOfBirth: '1985-03-14' }, h.owner, 409)
   const csv = await readFile('tests/fixtures/cliniko-patients.csv', 'utf8')

@@ -1,3 +1,4 @@
+import { patientSmsZone } from '../sms/quiet-hours'
 import { templateCatalog } from '../charting/template-catalog'
 import { supervisorReadSql, supervisionPlans } from './supervision'
 import { phoneNumber } from './us-clinic'
@@ -49,15 +50,15 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
   need(who, 'owner', 'reception'); human(who)
   const previous = input.id ? await clientVisible(db, who, input.id) : null
   const values = { first: text(input.firstName, 'first_name', 80), last: text(input.lastName, 'last_name', 80),
-    dob: input.dateOfBirth ? day(input.dateOfBirth, 'date_of_birth') : null, email: input.email ? email(input.email) : null, phone: phoneNumber(input.phone) }
+    dob: input.dateOfBirth ? day(input.dateOfBirth, 'date_of_birth') : null, email: input.email ? email(input.email) : null, phone: phoneNumber(input.phone), smsZone: input.smsTimeZone === undefined ? previous?.sms_time_zone ?? null : patientSmsZone(input.smsTimeZone) }
   const clientId = previous?.id as string ?? id()
   const identity = await clientIdentity(values.first, values.last, values.dob)
   await commit(db, who, [
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=?)', clientId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))]
       : [guard(db, 'NOT EXISTS(SELECT 1 FROM bm_erasure_journal WHERE identity_hash=?)', identity)]),
-    stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,?,?,?,'staff')
-      ON CONFLICT(id) DO UPDATE SET first_name=excluded.first_name,last_name=excluded.last_name,date_of_birth=excluded.date_of_birth,email=excluded.email,phone=excluded.phone,version=bm_clients.version+1`,
-    clientId, values.first, values.last, values.dob, values.email, values.phone, now()),
+    stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,sms_time_zone,created_at,created_via) VALUES(?,?,?,?,?,?,?,?,'staff')
+      ON CONFLICT(id) DO UPDATE SET first_name=excluded.first_name,last_name=excluded.last_name,date_of_birth=excluded.date_of_birth,email=excluded.email,phone=excluded.phone,sms_time_zone=excluded.sms_time_zone,version=bm_clients.version+1`,
+    clientId, values.first, values.last, values.dob, values.email, values.phone, values.smsZone, now()),
     audit(db, who, previous ? 'client.updated' : 'client.created', clientId, clientId),
   ])
   return { id: clientId }
@@ -162,7 +163,7 @@ export async function eraseClient(db: D1Database, who: Actor, input: Data) {
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_account_entries WHERE client_id=?) AND NOT EXISTS(SELECT 1 FROM bm_estimate_requests WHERE client_id=?)', client.id, client.id),
     ...await portability.redactionStatements(), ...await portability.invalidateTransfersStatements(),
     stmt(db, 'INSERT INTO bm_erasure_journal(identity_hash,kind,erased_at) VALUES(?,?,?)', await clientIdentity(client.first_name as string, client.last_name as string, client.date_of_birth as string | null), 'client', at),
-    stmt(db, "UPDATE bm_clients SET first_name='Erased',last_name='client',date_of_birth=NULL,email=NULL,phone=NULL,version=version+1,erased_at=? WHERE id=?", at, client.id),
+    stmt(db, "UPDATE bm_clients SET first_name='Erased',last_name='client',date_of_birth=NULL,email=NULL,phone=NULL,sms_time_zone=NULL,version=version+1,erased_at=? WHERE id=?", at, client.id),
     audit(db, who, 'client.erased', client.id as string, client.id as string),
   ])
   return { id: client.id, erased: true }

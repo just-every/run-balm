@@ -54,6 +54,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   const cutoff = tomorrow.toISOString()
   const results = await db.batch<Data>([
     stmt(db, `SELECT a.id,a.client_id,a.practitioner_id,a.start_at,a.status,a.checked_in_at,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='visit' AND record_id=a.id),'') AS episodeId,
+      EXISTS(SELECT 1 FROM bm_episode_records r JOIN bm_episodes e ON e.id=r.episode_id WHERE r.record_kind='visit' AND r.record_id=a.id AND e.closed_at IS NOT NULL) AS episode_closed,
       c.first_name||' '||c.last_name AS client,c.copay_cents,p.name AS practitioner,
       EXISTS(SELECT 1 FROM bm_notes n WHERE n.appointment_id=a.id AND n.signed_at IS NOT NULL AND julianday(n.signed_at)<julianday(?)) AS signed_note,
       EXISTS(SELECT 1 FROM bm_intake_responses r WHERE r.client_id=a.client_id AND r.form_id=(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1) AND julianday(r.submitted_at)<julianday(?)) AS current_intake
@@ -68,7 +69,9 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       json_extract(p.content,'$.startDate') AS start_date,json_extract(p.content,'$.certifiedThrough') AS certified_through,
       c.first_name||' '||c.last_name AS client,s.name AS practitioner
       FROM bm_plans_of_care p JOIN bm_clients c ON c.id=p.client_id JOIN bm_staff s ON s.id=p.author_id
-      WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=p.id) AND json_extract(p.content,'$.startDate')<=? AND julianday(p.created_at)<julianday(?)
+      WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=p.id)
+      AND NOT (p.status='certified' AND EXISTS(SELECT 1 FROM bm_episode_records r JOIN bm_episodes e ON e.id=r.episode_id WHERE r.record_kind='plan' AND r.record_id=p.id AND e.closed_at IS NOT NULL))
+      AND json_extract(p.content,'$.startDate')<=? AND julianday(p.created_at)<julianday(?)
       ORDER BY json_extract(p.content,'$.startDate') DESC,p.created_at DESC,p.id DESC`, date, cutoff),
     stmt(db, `SELECT i.id,i.appointment_id,i.client_id,i.status,i.amount_cents,a.start_at,c.first_name||' '||c.last_name AS client,
       EXISTS(SELECT 1 FROM bm_claims q WHERE q.invoice_id=i.id AND q.status<>'corrected' AND julianday(q.created_at)<julianday(?)) AS has_claim,
@@ -106,8 +109,11 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   for (const visit of throughToday) {
     const visitInvoices = invoicesByVisit.get(visit.id) ?? []
     if (visit.status === 'attended') {
-      const pair = JSON.stringify([visit.client_id, visit.practitioner_id, visit.episodeId]), treatments = attendedByPair.get(pair) ?? []
-      treatments.push(visit); attendedByPair.set(pair, treatments)
+      // Closed treatment episodes retain their records without new recertification work.
+      if (!visit.episode_closed) {
+        const pair = JSON.stringify([visit.client_id, visit.practitioner_id, visit.episodeId]), treatments = attendedByPair.get(pair) ?? []
+        treatments.push(visit); attendedByPair.set(pair, treatments)
+      }
       // A separate unsigned draft remains listed even when this visit has a signed note.
       if (!visit.signed_note && !unsignedVisits.has(visit.id)) result.notes.push(item(visit, 'missing_signed_note', `Attended visit has no signed treatment note · ${displayDate(visit.local_date)} · ${visit.practitioner}`, `visit-${visit.id}`))
       // Attendance-created draft invoices are real charges awaiting review.
