@@ -17,7 +17,7 @@ try{
   await context.route('**/fonts/inter/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))
   const page=await context.newPage()
   await denialJourney(h,{capture:async(state,c,packet)=>{
-   const value=state==='rejected'?h.owner:c.biller.cookie,[name,...parts]=value.split('=')
+   const value=c.biller.cookie,[name,...parts]=value.split('=')
    await context.clearCookies();await context.addCookies([{name,value:parts.join('='),url:h.origin,secure:true}])
    await page.setViewportSize({width:1440,height:1000});await page.goto(h.origin+'/app/cases');await page.reload()
    const card=page.locator('#case-'+c.referral.id)
@@ -27,7 +27,12 @@ try{
     assert.match(await appeal.innerText(),/synthetic-balm-2/)
     assert.match(await appeal.innerText(),state==='paid'?/Resolved after payment/:state==='approved'?/Approved, not sent · awaiting payment/:/Prepared · awaiting payment/)
     assert.equal(await appeal.getByRole('link',{name:'Download appeal evidence',exact:true}).count(),1)
-   }else assert.match(await card.innerText(),/A3:21/)
+   }else {
+    assert.match(await card.innerText(),/Required information is missing or invalid for the billing provider/)
+    const acknowledgment=card.getByRole('link',{name:'277CA A3:21:85',exact:true})
+    assert.equal(await acknowledgment.getAttribute('href'),'/app/clients/'+c.patient.id+'#claim-'+c.claim.id)
+   }
+   assert.equal(await page.getByRole('button',{name:'Open case',exact:true}).count(),0,'a biller sees only permitted case actions')
    for(const width of [1440,390]){
     await page.setViewportSize({width,height:1000})
     await (packet?page.locator('#appeal-'+packet.id):card).scrollIntoViewIfNeeded()
