@@ -1,8 +1,12 @@
 import type { Bindings } from '../../auth.server'
 import { bookedIntake } from '../domain/intake-requests'
-import { offerFreedSlots, recordDelivery } from '../domain/waitlist'
+import { advanceOffers, offerFreedSlots, recordDelivery } from '../domain/waitlist'
 import { sendVisitChange } from '../mail/changes'
 import { sendBooked, sendCanceled, sendIntake, sendOffer } from '../mail-out'
+
+export async function progressWaitlistOffers(env: Bindings) {
+  for (const offer of await advanceOffers(env.DB)) await recordDelivery(env.DB,offer.offerId,offer.entryId,'delivery',await sendOffer(env,offer))
+}
 
 export async function freedVisitOffers(env: Bindings, ids: string[]) {
   const offers = await offerFreedSlots(env.DB, ids)

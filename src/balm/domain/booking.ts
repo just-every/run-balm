@@ -1,4 +1,5 @@
 import { patientCreationFence } from './hosting'
+import { waitlistHoldGuard, waitlistHolds } from '../scheduling/waitlist-holds'
 import type { Bindings } from '../../auth.server'
 import { reserveBooking, bookingHoldGuard } from '../payments/booking-prepayment'
 import { ruleChecker, serviceGuards } from '../scheduling/service-rules'
@@ -53,12 +54,13 @@ async function engineInput(db: D1Database, practitioner: string, duration: numbe
     rows(db, 'SELECT weekday,start_minute AS startMinute,end_minute AS endMinute FROM bm_hours WHERE practitioner_id=?', practitioner),
     rows(db, `SELECT id,start_at AS startAt,end_at AS endAt FROM bm_appointments WHERE practitioner_id=? AND ${live} AND end_at>?`, practitioner, new Date(Date.now() - 86400_000).toISOString()),
   ])
+  const waitlist=await waitlistHolds(db,practitioner)
   const holds=await rows(db,"SELECT id,start_at AS startAt,end_at AS endAt FROM bm_booking_payments WHERE practitioner_id=? AND state='reserved' AND (expires_at>? OR attempted_at IS NOT NULL)",practitioner,now())
   return {
     hostTimeZone: zone, recurringWindows: hours as any[], overrides: [...(rule?.practitionerOverrides ?? []), ...(rule?.location?.time_zone ? [] : JSON.parse(String((await settings(db)).holidays))).map((h: { date: string }) => ({ hostDate: h.date, mode: 'closed' as const, windows: [] }))],
     constraints: { ...onlineRules, minimumNoticeMinutes, durationMinutes: duration, ...(staff ? { enforceMinimumNotice: false, enforceHorizon: false, slotIncrementMinutes: 1 } : {}) },
     // Where overlap is allowed (staff placement, or an online double-booking service) capacity decides instead (SCHED-010).
-    internalClaims: [...holds.map(c=>({startAt:c.startAt,endAt:c.endAt,hostDate:hostDateAt(new Date(c.startAt),zone)})),...claims.filter(c => !overlapAllowed && !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) }))], calendarBusy: [],
+    internalClaims: [...waitlist.map(c=>({startAt:c.start_at,endAt:c.end_at,hostDate:hostDateAt(new Date(c.start_at),zone)})),...holds.map(c=>({startAt:c.startAt,endAt:c.endAt,hostDate:hostDateAt(new Date(c.startAt),zone)})),...claims.filter(c => !overlapAllowed && !exclude.includes(c.id)).map(c => ({ startAt: c.startAt, endAt: c.endAt, hostDate: hostDateAt(new Date(c.startAt), zone) }))], calendarBusy: [],
   }
 }
 
@@ -102,8 +104,8 @@ function instant(value: unknown) {
 /** Live visits holding a moved visit's room or equipment (SCHED-002); patient doors never offer or take those times. */
 export async function resourceBusy(db: D1Database, row: Data, from: string, to: string) {
   if (!row.room_id && !row.equipment_id) return []
-  return rows(db, `SELECT start_at,end_at FROM bm_appointments WHERE id<>? AND ${live} AND start_at<? AND end_at>? AND ((room_id IS NOT NULL AND room_id=?) OR (equipment_id IS NOT NULL AND equipment_id=?))`,
-    row.id, to, from, row.room_id ?? null, row.equipment_id ?? null)
+  return [...(await waitlistHolds(db,null,row.room_id??null)).filter(h=>h.start_at<to&&h.end_at>from),...await rows(db, `SELECT start_at,end_at FROM bm_appointments WHERE id<>? AND ${live} AND start_at<? AND end_at>? AND ((room_id IS NOT NULL AND room_id=?) OR (equipment_id IS NOT NULL AND equipment_id=?))`,
+    row.id, to, from, row.room_id ?? null, row.equipment_id ?? null)]
 }
 /** Patient moves use the online slot engine, excluding only their existing appointment. */
 export async function patientPlacement(db: D1Database, row: Data, input: Data) {
@@ -120,9 +122,10 @@ export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
 /** Same-batch fences: neither the practitioner, the room nor the equipment holds another live visit then. */
-export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string; reservationId?: string }) {
+export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string; reservationId?: string; offerId?: string }) {
   return [
     bookingHoldGuard(db,v),
+    waitlistHoldGuard(db,v),
     guard(db, "NOT EXISTS(SELECT 1 FROM bm_settings,json_each(bm_settings.holidays) h WHERE json_extract(h.value,'$.startAt')<? AND json_extract(h.value,'$.endAt')>?)", v.endAt, v.startAt),
     ...await serviceGuards(db,v),
     capacityGuard(db, v),
@@ -158,7 +161,7 @@ export function clockMinute(value: unknown) {
 }
 export type Placement = { start?: Date; end?: Date; problem?: string; clash?: Data }
 /** Where a staff-placed visit would land and, if it cannot, why: the same checks booking and moving refuse on. */
-export async function placeVisit(db: D1Database, zone: string, v: { practitionerId: string; serviceId: string; durationMinutes: number; date: string; minute: number; roomId: string | null; equipmentId?: string | null; exclude?: string[] }): Promise<Placement> {
+export async function placeVisit(db: D1Database, zone: string, v: { practitionerId: string; serviceId: string; durationMinutes: number; date: string; minute: number; roomId: string | null; equipmentId?: string | null; exclude?: string[]; offerId?: string }): Promise<Placement> {
   let selected:Awaited<ReturnType<typeof ruleChecker>>
   try{selected=await ruleChecker(db,v)}catch(error){if(error instanceof DomainError)return {problem:error.code};throw error}
   const candidates = wallClockInstants(v.date, v.minute, zone)
@@ -185,6 +188,7 @@ export async function placeVisit(db: D1Database, zone: string, v: { practitioner
     const clash = await overlapping('equipment_id', v.equipmentId)
     if (clash) return { start, end, problem: 'equipment_in_use', clash }
   }
+  if ((await waitlistHolds(db,v.practitionerId,v.roomId,v.offerId)).some(h=>h.start_at<end.toISOString()&&h.end_at>start.toISOString())) return {start,end,problem:'waitlist_time_held'}
   return { start, end }
 }
 export function intakeToken() {

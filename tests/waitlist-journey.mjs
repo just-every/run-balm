@@ -10,6 +10,9 @@ export async function waitlistPreferencesJourney(h) {
  await h.cmd('hours.save',{practitionerId:p.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
  const patient=async n=>h.cmd('client.save',{firstName:'Synthetic',lastName:'Waitlist '+n,dateOfBirth:'1990-01-01',email:['synthetic-balm-'+n,'patient.example'].join('@')})
  const [source,match,wrongDay,lateStart,earlyEnd,removed]=await Promise.all([501,502,503,504,505,506].map(patient))
+ await h.cmd('capacity.save',{practitionerId:p.id,capacity:2})
+ await h.cmd('capacity.save',{serviceId:service.id,capacity:2})
+ await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-11-08',time:'09:00'})
  const input=clientId=>({clientId,practitionerId:p.id,serviceId:service.id,earliestDate:'2099-03-01',latestDate:'2099-11-08',weekdays:[0],timeFrom:'09:00',timeUntil:'09:45'})
  for(const invalid of [{weekdays:[]},{weekdays:[7]},{weekdays:['']},{weekdays:[true]},{timeFrom:'9:00'},{timeUntil:'24:01'},{timeFrom:'10:00'},{timeFrom:'09:45',timeUntil:'09:45'}]){
   await h.cmd('waitlist.add',{...input(match.id),...invalid},h.owner,400)
@@ -36,6 +39,7 @@ export async function waitlistPreferencesJourney(h) {
   assert.match((await h.send(link)).text,/A time opened up/)
   assert.ok((await h.state()).waitlist.offers.some(o=>o.start_at===utc),'offers follow the clinic zone across DST')
  }
+ await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE start_at='2099-03-08T13:00:00.000Z'").bind(new Date(Date.now()-60000).toISOString()).run()
  assert.equal((await cancel('2099-03-08','08:59')).length,0,'a start before the preferred window never matches')
  assert.equal((await cancel('2099-03-08','09:01')).length,0,'a visit ending after the preferred window never matches')
  const count=async()=> (await h.state()).appointments.filter(a=>a.client_id===match.id&&a.status==='booked').length
@@ -53,6 +57,10 @@ export async function waitlistPreferencesJourney(h) {
  await h.cmd('service.save',{id:service.id,name:'Waitlist follow-up',durationMinutes:60,priceCents:9500})
  await refuse()
  await h.cmd('service.save',{id:service.id,name:'Waitlist follow-up',durationMinutes:45,priceCents:9500})
+ // The original recipient must not lose an active hold to a staff booking.
+ await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-03-01',time:'09:00'},h.owner,409)
+ await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE start_at='2099-03-01T14:00:00.000Z'").bind(new Date(Date.now()-60000).toISOString()).run()
+ await h.cmd('capacity.save',{practitionerId:p.id,capacity:1})
  const competitor=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-03-01',time:'09:00'})
  await refuse()
  await h.cmd('appointment.cancel',{id:competitor.appointmentId,reason:'Synthetic opening restored'})
@@ -70,7 +78,7 @@ export async function waitlistPreferencesJourney(h) {
  await h.cmd('capacity.save',{practitionerId:p.id,capacity:2})
  await h.cmd('capacity.save',{serviceId:service.id,capacity:2})
  await h.cmd('insurance.policy.save',policyInput(source.id))
- await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-11-08',time:'09:00',acknowledgeInsurance:'on'})
+ // A pre-existing overlapping visit became Medicare-covered after delivery.
  await refuse(links[3])
  // A delivered link cannot revive an entry removed by staff.
  await h.cmd('waitlist.remove',{id:added.id})

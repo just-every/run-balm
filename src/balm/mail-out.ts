@@ -48,7 +48,7 @@ export async function sendBooked(env: Bindings, clientId: string, startAt: strin
 export async function sendOffer(env: Bindings, offer: OfferMail): Promise<Delivery> {
   const clinic = await clinicRow(env)
   return send(env, offer.email, `A time opened up at ${clinic!.clinic_name}`,
-    `Hello ${offer.firstName},\n\nYou are on ${clinic!.clinic_name}'s waitlist, and a time has opened up: ${offer.service} with ${offer.practitioner} on ${localTime(offer.startAt, clinic!.time_zone)}.\n\nWe offered it to everyone waiting for it. The first person to accept gets it:\n${link(env, '/offer/' + offer.token)}\n\nIf someone else accepts first, we will tell you, and you stay on the waitlist.\n`)
+    `Hello ${offer.firstName},\n\nYou are on ${clinic!.clinic_name}'s waitlist, and a time has opened up: ${offer.service} with ${offer.practitioner} on ${localTime(offer.startAt, clinic!.time_zone)}.\n\n${offer.expiresAt ? 'This time is held for you until ' + localTime(offer.expiresAt, clinic!.time_zone) + '. After that, the next matching patient gets a turn.' : 'The first person to accept gets it:'}\n${link(env, '/offer/' + offer.token)}\n\nIf your turn expires, you stay on the waitlist. We will tell you when this opening is taken.\n`)
 }
 
 export async function sendTaken(env: Bindings, row: { email: string; first_name: string; start_at: string; service: string }): Promise<Delivery> {
