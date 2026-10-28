@@ -3242,7 +3242,7 @@
       "executable": false
     },
     "src/balm/ui/readiness.ts": {
-      "sha256": "9bb12890458c0de3c025985fb82d134d1985be8b303017056628646fc504e77c",
+      "sha256": "7391fbf30e477f6f9dcd500c56bc22cac98280f107868b8fb2006220c1cdd568",
       "executable": false
     },
     "src/balm/ui/reminders.ts": {
@@ -5830,7 +5830,7 @@
       "executable": false
     },
     "tests/readiness-browser.mjs": {
-      "sha256": "1c99338503e896dd69dffb64e41478a943fb5c2756698c11e42d0445ba0f9b0d",
+      "sha256": "f38995bf12c96f9d19115438e4d4da2d2dac0b00bce2242cdca4a62d6dac0b7b",
       "executable": false
     },
     "tests/readiness-fixture.mjs": {

@@ -29,7 +29,37 @@ try {
    await page.screenshot({path:directory+'/'+name+'-tail-'+width+'.png'})
   }
  }
+ async function captureHosting(name){
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:1000})
+   await page.locator('#hosting').screenshot({path:directory+'/'+name+'-'+width+'.png'})
+  }
+  await page.setViewportSize({width:1440,height:1000})
+ }
+ async function changeMode(mode,id='',proof=''){
+  const details=page.locator('#hosting details').filter({has:page.locator('form[action*="hosting.mode"]')})
+  if(!await details.getAttribute('open'))await details.locator('summary').click()
+  const form=page.locator('form[action*="hosting.mode"]')
+  await form.locator('[name=mode]').selectOption(mode)
+  await form.locator('[name=id]').selectOption(id)
+  await form.locator('[name=reason]').fill('Synthetic native form journey only')
+  await form.locator('[name=attest]').check()
+  if(proof)await captureHosting(proof)
+  await form.getByRole('button',{name:'Save patient mode',exact:true}).click()
+ }
  await page.goto(h.origin+'/app/clinic')
+ assert.equal((await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting.records.length,0)
+ await changeMode('demo','','hosting-demo-without-records-form')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/Patient mode: demo.*permitted/,'a fresh owner can save Demo without hosting evidence')
+ assert.equal((await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting.mode,'demo')
+ await captureHosting('hosting-demo-without-records')
+ await changeMode('real')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/Patient mode: demo/,'missing hosting evidence cannot activate real patients')
+ assert.ok(await page.locator('[role=alert]').count(),'real-patient activation explains the missing hosting record')
+ await changeMode('blocked')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/Patient mode: blocked.*blocked/,'blocking patient creation also needs no hosting evidence')
+ const modes=(await h.db.prepare("SELECT detail FROM bm_audit WHERE action='hosting.mode_changed' ORDER BY rowid").all()).results
+ assert.deepEqual(modes.map(row=>row.detail.split(':')[0]),['demo','blocked'],'only completed mode changes are audited')
  await assert.equal(await page.locator('#readiness [role=status]').textContent(),'Integration readiness is incomplete.')
  await capture('readiness-incomplete')
  await page.locator('#readiness summary').filter({hasText:'Record readiness review'}).click()
@@ -60,14 +90,22 @@ try {
  const hostBaa=await recordTestBaa(h,'hosting'),backupBaa=await recordTestBaa(h,'backups')
  await page.setViewportSize({width:1440,height:1000})
  await page.goto(h.origin+'/app/clinic')
- async function captureHosting(name){
-  for(const width of [1440,390]){
-   await page.setViewportSize({width,height:1000})
-   await page.locator('#hosting').screenshot({path:directory+'/'+name+'-'+width+'.png'})
-  }
-  await page.setViewportSize({width:1440,height:1000})
- }
  assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
+ assert.equal((await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting.records.length,0)
+ await changeMode('demo')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/demo.*permitted/)
+ const demoState=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting
+ assert.equal(demoState.mode,'demo')
+ assert.equal(demoState.permitted,true)
+ assert.equal(demoState.records.length,0,'synthetic demo mode needs no hosting evidence')
+ await captureHosting('hosting-demo-without-evidence')
+ await changeMode('blocked')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
+ assert.equal((await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting.permitted,false)
+ await captureHosting('hosting-blocked-without-evidence')
+ await changeMode('real')
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
+ assert.equal((await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting.permitted,false,'real patients still require hosting evidence')
  await page.locator('#hosting summary').filter({hasText:'Record hosting evidence'}).click()
  const hosting=page.locator('form[action*="hosting.record"]')
  await hosting.locator('[name=provider]').selectOption('cloudflare')
@@ -79,16 +117,6 @@ try {
  await hosting.getByRole('button',{name:'Record hosting evidence',exact:true}).click()
  let hostState=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting
  const omitted=hostState.records[0].id
- async function changeMode(mode,id=''){
-  const details=page.locator('#hosting details').filter({has:page.locator('form[action*="hosting.mode"]')})
-  if(!await details.getAttribute('open'))await details.locator('summary').click()
-  const form=page.locator('form[action*="hosting.mode"]')
-  await form.locator('[name=mode]').selectOption(mode)
-  await form.locator('[name=id]').selectOption(id)
-  await form.locator('[name=reason]').fill('Synthetic native form journey only')
-  await form.locator('[name=attest]').check()
-  await form.getByRole('button',{name:'Save patient mode',exact:true}).click()
- }
  await changeMode('real',omitted)
  assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
  assert.match(await page.locator('body').textContent(),/owner must review Hosting and patient mode/)
