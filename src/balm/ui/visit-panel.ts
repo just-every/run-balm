@@ -1,3 +1,4 @@
+import { controlLink } from './control-tooltip'
 import { alertBadges } from './alerts'
 // The day view's patient panel for the selected visit, as the owner-picked screen
 // lays it out: who and how they pay, then authorization, eligibility, copay and
@@ -60,7 +61,7 @@ function denial(s: any, sum: any, a: any) {
     ? `<div class="fix"><strong>Proposed fix</strong><p>${h(step.title)}.${next ? ` ${h(next)}` : ''}</p>${step.blocked ? `<p class="help">${h(step.blocked)}</p>`
       : `<form method="post" action="/app/action?name=case.approve&amp;returnTo=${encodeURIComponent(back)}">${hidden('caseId', sum.case.referral.id) + hidden('key', step.key) + hidden('digest', step.digest) + check('reviewed', 'I reviewed this step and the records it cites.')}<div class="fix-actions"><button type="submit">${h(step.button)}</button><span class="approval">Needs your approval</span></div></form>`}</div>`
     : `<div class="fix"><strong>Next step</strong><p>${h(c.nextStep ?? 'Review the payer reason, then correct and resubmit or draft an appeal.')}</p><a href="${h(file)}#claim-${h(c.id)}">Open the claim to correct or draft an appeal</a></div>`
-  return `<section class="claim-alert" aria-label="${h(word)}"><header>${icon('warning')}<div><strong>${h(word)}${code ? ` <small class="code">${h(code)}</small>` : ''}</strong><p class="why">${h(reason)}</p><p>${h(a.client)}${lines ? ` · ${h(lines)}` : ''} · ${h(money(c.amount_cents))}</p></div><a class="go" href="${h(file)}#claim-${h(c.id)}" aria-label="Open the claim in the patient file">${icon('chevron')}</a></header>${trail}${fix}</section>`
+  return `<section class="claim-alert" aria-label="${h(word)}"><header>${icon('warning')}<div><strong>${h(word)}${code ? ` <small class="code">${h(code)}</small>` : ''}</strong><p class="why">${h(reason)}</p><p>${h(a.client)}${lines ? ` · ${h(lines)}` : ''} · ${h(money(c.amount_cents))}</p></div>${controlLink('visit-claim-tip',file+'#claim-'+c.id,'Open claim',icon('chevron'),'go')}</header>${trail}${fix}</section>`
 }
 
 /** The case agent: where the case stands, the records it cited, and the next step a person approves. */
@@ -68,16 +69,16 @@ function agentStrip(s: any, sum: any) {
   const k = sum?.case
   if (!k) return ''
   const done = k.stages.filter((x: any) => x.cite && (x.state === 'done' || x.state === 'stalled') && ['eligibility', 'era', 'outcome'].includes(x.id)).slice(-3)
-  const rows = done.map((x: any) => `<li>${`<span class="disc ${x.state === 'stalled' ? 'coral' : 'sage'}">${icon(x.state === 'stalled' ? 'warning' : 'check')}</span>`}<div><strong>${h(x.label)}</strong><p>${h(x.text)} <a href="${h(x.cite.href)}" title="${h(x.cite.label)}">${icon('external', 'small')}<span class="sr-only">${h(x.cite.label)}</span></a></p></div></li>`).join('')
+  const rows = done.map((x: any) => `<li>${`<span class="disc ${x.state === 'stalled' ? 'coral' : 'sage'}">${icon(x.state === 'stalled' ? 'warning' : 'check')}</span>`}<div><strong>${h(x.label)}</strong><p>${h(x.text)} ${controlLink('visit-source-tip-'+x.id,x.cite.href,'View source',icon('external','small'),'')}</p></div></li>`).join('')
   const next = k.steps[0] ? `<li><span class="disc ink">${icon('arrow')}</span><div><strong>Next step</strong><p>${h(k.steps[0].title)} (${k.steps[0].blocked ? 'blocked until the record is fixed' : 'waits for a person’s approval'})</p></div></li>` : ''
-  return `<section class="agent" aria-label="Case agent"><header>${icon('leaf', 'leaf')}<strong>Case agent</strong><span class="standing">${status(k.standing.state === 'stalled' ? 'Needs a person' : k.standing.state === 'done' ? 'Reconciled' : 'Waiting')}</span><a class="go" href="/app/cases#case-${h(k.referral.id)}" aria-label="Open the case">${icon('chevron')}</a></header><ul>${rows}${next}</ul><p class="agent-note">Nothing is sent until a person approves it.</p></section>`
+  return `<section class="agent" aria-label="Case agent"><header>${icon('leaf', 'leaf')}<strong>Case agent</strong><span class="standing">${status(k.standing.state === 'stalled' ? 'Needs a person' : k.standing.state === 'done' ? 'Reconciled' : 'Waiting')}</span>${controlLink('visit-case-tip','/app/cases#case-'+k.referral.id,'Open case',icon('chevron'),'go')}</header><ul>${rows}${next}</ul><p class="agent-note">Nothing is sent until a person approves it.</p></section>`
 }
 
 export function patientPanel(s: any, c: any, a: any, body: { visit: string; primary: string; actions: string }) {
   const sum = c.summary, file = `/app/clients/${a.client_id}`, age = ageOn(a.date_of_birth, c.today)
   const payer = sum?.insurance ? (sum.insurance.policies[0]?.payer_name ?? 'Self-pay') : a.payer ?? null
   const tabs = [['Overview', ''], ['Notes', '#notes'], ['Billing', '#billing'], ['Messages', '#messages']]
-  return `<section class="patient" id="visit" aria-label="Selected visit"><header class="profile">${avatar(a.client, 'lg')}<div><h2>${h(a.client)}</h2><p>${[age !== null ? String(age) : '', payer ?? ''].filter(Boolean).map(h).join(' · ')}</p></div><a class="more" href="${h(file)}" aria-label="Open client file" title="Open client file">${icon('chevron')}</a></header>`
+  return `<section class="patient" id="visit" aria-label="Selected visit"><header class="profile">${avatar(a.client, 'lg')}<div><h2>${h(a.client)}</h2><p>${[age !== null ? String(age) : '', payer ?? ''].filter(Boolean).map(h).join(' · ')}</p></div>${controlLink('visit-file-tip',file,'Open client file',icon('chevron'),'more')}</header>`
     + `<nav class="tabs" aria-label="Patient file">${tabs.map(([label, anchor]) => anchor ? `<a href="${h(file + anchor)}">${label}</a>` : `<span aria-current="true">${label}</span>`).join('')}</nav>`
     + alertBadges(a.alerts) + body.visit + facts(s, a, sum, c.today) + body.primary + denial(s, sum, a) + body.actions + agentStrip(s, sum) + '</section>'
 }

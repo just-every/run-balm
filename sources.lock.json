@@ -2938,7 +2938,7 @@
       "executable": false
     },
     "src/balm/ui/control-tooltip.ts": {
-      "sha256": "f0bfa6121ec2854f5ca5c631c4439580c01117595fbcd6152547cc013e34a6d7",
+      "sha256": "c91d79b61ad997274c97e6a4d5d6377dd8faa9243db2a53c4739d257cddb8b24",
       "executable": false
     },
     "src/balm/ui/daily-close.ts": {
@@ -3258,7 +3258,7 @@
       "executable": false
     },
     "src/balm/ui/visit-panel.ts": {
-      "sha256": "882ebd6068cb2a6e61f3af4e5f0cffe1c764e36f6707aaa5543d9e1110f2ed68",
+      "sha256": "e100af840adf4a5704949ed1835ce76faf1050c552b302e795c10f3f925bf997",
       "executable": false
     },
     "src/balm/ui/visit-policy.ts": {
@@ -5758,7 +5758,7 @@
       "executable": false
     },
     "tests/payments.test.mjs": {
-      "sha256": "97c04284a7bdc83b85df5251b29f0b81f42e3aa9b49dd3e6b037f6aed3080008",
+      "sha256": "2cbca52e671fa99947a08779432544e589f32ef81ef4f573196398a5fc871be7",
       "executable": false
     },
     "tests/portal-billing.mjs": {
