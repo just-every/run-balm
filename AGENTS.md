@@ -165,3 +165,7 @@ with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
 CHART-003 uses `node scripts/contract-docs.mjs write CHART-003`, then
 `node scripts/contract-docs.mjs check CHART-003`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+SCHED-005 preference evidence uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write SCHED-005`, then
+`node scripts/contract-docs.mjs check SCHED-005`. The default check retains this adopted projection.

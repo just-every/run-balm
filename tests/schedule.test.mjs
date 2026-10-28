@@ -5,6 +5,7 @@ import { fakeProviders } from './fakes/stripe.mjs'
 import { bookOnline, clinic, pastVisit, visitDate, slots } from './clinic.mjs'
 import { portalLogin } from './portal-billing.mjs'
 import { readFile } from 'node:fs/promises'
+import { waitlistPreferencesJourney } from './waitlist-journey.mjs'
 
 const brisbane = t => new Date(t + 10 * 3600_000).toISOString() // Australia/Brisbane has no daylight saving.
 const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay()
@@ -138,8 +139,8 @@ test('INTAKE-001: a canceled visit is offered to the waitlist by email; the firs
   const local = brisbane(Math.floor((Date.now() + 3 * 86400_000) / 3600_000) * 3600_000), date = local.slice(0, 10)
   const visit = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, date, time: '10:00' })
   const until = brisbane(Date.now() + 10 * 86400_000).slice(0, 10)
-  await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until })
-  await h.cmd('waitlist.add', { clientId: cara.id, serviceId: service.id, latestDate: until, note: 'Any practitioner' })
+  await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until, weekdays: [weekday(date)], timeFrom: '10:00', timeUntil: '10:45' })
+  await h.cmd('waitlist.add', { clientId: cara.id, serviceId: service.id, latestDate: until, note: 'Any practitioner', weekdays: [weekday(date)], timeFrom: '09:00', timeUntil: '14:00' })
   await h.cmd('waitlist.add', { clientId: dev.id, practitionerId: sam.id, serviceId: service.id, latestDate: until })
   await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until }, h.owner, 409)
   const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId, reason: 'Patient requested cancellation' }, h.owner)
@@ -207,6 +208,7 @@ test('INTAKE-001: a canceled visit is offered to the waitlist by email; the firs
   assert.equal((await h.form(renewal.location.split('?')[0],{formId:published.id,q_update:'Improved'})).status,303)
   const versions=(await h.send('/api/balm/clients/'+winnerId,undefined,h.owner)).value.intake
   assert.equal(versions.length,2);assert.equal(versions.find(i=>i.formNumber===1).answers.reason,'Follow-up')
+  await waitlistPreferencesJourney(h)
 
 }))
 
