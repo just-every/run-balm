@@ -98,3 +98,29 @@ recipient before storing any event. Unknown or racing attempts return a
 retryable refusal. Duplicate retries are harmless, and older events cannot
 regress terminal delivery states. No clinical message content is sent in these
 appointment emails or returned by the callback.
+
+
+## Scheduled text reminder quiet hours
+
+Before enabling scheduled appointment texts, record the signed SMS BAA and the
+clinic's authorized sender configuration. The clinic owner must also record
+reviewed daily quiet intervals and their source under **Text reminder quiet
+hours** on the Clinic settings page. Balm supplies no legal-policy default.
+Enter each interval on its own line, such as `22:00-08:00`; an earlier end time
+continues overnight. The start is quiet and the end is eligible. Multiple
+intervals can cover an additional daytime quiet period.
+
+On each patient's **Edit details** form, enter the IANA time zone the patient
+provided, such as `America/New_York`, and record their text-reminder consent.
+The clinic time zone and the patient's phone number do not supply a patient zone.
+A missing zone or policy refuses delivery without a provider attempt. During
+quiet hours, the patient file shows a deferred reminder. Each later dispatch
+checks current consent, the active recorded BAA, the current policy and the
+still-upcoming visit. Canceled or started visits receive no deferred text.
+
+An uncertain provider response is retained for staff review and never retried
+automatically, including after archive restore. Quiet intervals here cover
+scheduled appointment reminders only. Inbound replies, including STOP and HELP,
+remain unavailable; use the existing private visit link
+for confirmation or a request for a new time. Provider acceptance is not proof
+of delivery.

@@ -1,5 +1,5 @@
 import { smsAuth } from './sms-quiet-journey.mjs'
-import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
+import { hostingProfile, hostingFixture, patientMode, recordTestBaa } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
@@ -917,8 +917,18 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   loseResponse=false
   await tick('2099-03-04T05:31:00Z')
   assert.equal(edge.texts.length,1,'restored quiet reminders do not attempt delivery and uncertain attempts are not replayed')
-  await tick('2099-03-04T13:00:00Z');await tick('2099-03-04T13:01:00Z')
-  assert.equal(edge.texts.length,2,'only the deferred reminder becomes eligible after restore, once')
+  const restoredReminder=async()=>(await h.send('/api/balm/clients/'+patient.id,undefined,cookie)).value.reminderHistory.find(r=>r.id===deferred.id)
+  const baa=(await h.state(cookie)).readiness.baas.find(b=>b.processor==='sms'&&!b.revoked_at)
+  await h.cmd('readiness.baa.revoke',{id:baa.id},cookie)
+  await tick('2099-03-04T13:00:00Z')
+  assert.equal(edge.texts.length,1);assert.equal((await restoredReminder()).attempted_at,null);assert.match((await restoredReminder()).outcome,/BAA/)
+  await h.cmd('reminders.consent',{clientId:patient.id,consent:false},cookie)
+  await recordTestBaa({cmd:(name,input)=>h.cmd(name,input,cookie)},'sms')
+  await tick('2099-03-04T13:01:00Z')
+  assert.equal(edge.texts.length,1);assert.equal((await restoredReminder()).attempted_at,null);assert.match((await restoredReminder()).outcome,/not consented/)
+  await h.cmd('reminders.consent',{clientId:patient.id,consent:true},cookie)
+  await tick('2099-03-04T13:02:00Z');await tick('2099-03-04T13:03:00Z')
+  assert.equal(edge.texts.length,2,'only the deferred reminder becomes eligible after restore and renewed authority, once')
   const after=await snapshot(h.db,patient.id)
   assert.deepEqual(after.reminders.find(r=>r.id===attempted.id),attempted,'unknown provider outcome survives restore without any retry')
   assert.equal(after.reminders.find(r=>r.id===deferred.id).state,'sent')
