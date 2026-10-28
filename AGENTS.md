@@ -161,3 +161,7 @@ MOVE-006 historical invoice carry uses the same Lander-Regenerate command:
 `node scripts/contract-docs.mjs write MOVE-006`, then
 `node scripts/contract-docs.mjs check MOVE-006`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+CHART-003 uses `node scripts/contract-docs.mjs write CHART-003`, then
+`node scripts/contract-docs.mjs check CHART-003`. Regenerate the source lock last
+with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.

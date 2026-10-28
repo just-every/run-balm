@@ -105,6 +105,8 @@ export async function assignEpisode(db: D1Database, who: Actor, input: Data) {
   const record = await one(db, recordOwner[kind], recordId)
   insist(record, 'record_not_found', 404)
   const client = await manager(db, who, record.client_id)
+  if(kind==='plan'||kind==='document')insist(!await one(db,`SELECT 1 FROM bm_plan_certifications WHERE ${kind==='plan'?'plan_id':'document_id'}=?`,recordId),'certified_plan_episode_is_fixed',409)
+  if(kind==='plan')insist(!await one(db,'SELECT 1 FROM bm_plan_replacements WHERE predecessor_id=? OR successor_id=?',recordId,recordId),'replacement_plan_episode_is_fixed',409)
   if(kind==='document')insist(!await one(db,'SELECT 1 FROM bm_letter_deliveries WHERE document_id=?',recordId),'delivered_letter_episode_is_fixed',409)
   if (who.role !== 'owner') {
     if (who.staffRole === 'reception') insist(kind === 'visit' || kind === 'authorization', 'clinical_access_required', 403)

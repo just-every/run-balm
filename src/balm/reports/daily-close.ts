@@ -68,7 +68,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       json_extract(p.content,'$.startDate') AS start_date,json_extract(p.content,'$.certifiedThrough') AS certified_through,
       c.first_name||' '||c.last_name AS client,s.name AS practitioner
       FROM bm_plans_of_care p JOIN bm_clients c ON c.id=p.client_id JOIN bm_staff s ON s.id=p.author_id
-      WHERE json_extract(p.content,'$.startDate')<=? AND julianday(p.created_at)<julianday(?)
+      WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=p.id) AND json_extract(p.content,'$.startDate')<=? AND julianday(p.created_at)<julianday(?)
       ORDER BY json_extract(p.content,'$.startDate') DESC,p.created_at DESC,p.id DESC`, date, cutoff),
     stmt(db, `SELECT i.id,i.appointment_id,i.client_id,i.status,i.amount_cents,a.start_at,c.first_name||' '||c.last_name AS client,
       EXISTS(SELECT 1 FROM bm_claims q WHERE q.invoice_id=i.id AND q.status<>'corrected' AND julianday(q.created_at)<julianday(?)) AS has_claim,

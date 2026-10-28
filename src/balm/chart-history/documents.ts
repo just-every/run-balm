@@ -49,8 +49,8 @@ export async function uploadDocument(db: D1Database, who: Actor, input: Data) {
 /** Search reads metadata and entered text, never the original file's bytes. */
 export async function documentsFor(db: D1Database, who: Actor, clientId: string) {
   await documentReader(db, who, clientId)
-  return rows(db, `SELECT f.id,f.title,CASE WHEN EXISTS(SELECT 1 FROM bm_letter_deliveries d WHERE d.document_id=f.id) THEN 'progress_letter' ELSE f.document_type END AS document_type,f.document_date,f.search_text,f.filename,f.mime,f.byte_length,f.sha256,f.created_at,f.created_by
-    FROM bm_chart_documents f WHERE f.client_id=? ORDER BY f.document_date DESC,f.id`, clientId)
+  return rows(db, `SELECT f.id,f.title,CASE WHEN EXISTS(SELECT 1 FROM bm_letter_deliveries d WHERE d.document_id=f.id) THEN 'progress_letter' ELSE f.document_type END AS document_type,f.document_date,f.search_text,f.filename,f.mime,f.byte_length,f.sha256,f.created_at,f.created_by,cert.plan_id,cert.episode_id AS certification_episode,cert.signature_date,cert.certification_date,cert.filed_at,cert.filed_by
+    FROM bm_chart_documents f LEFT JOIN bm_plan_certifications cert ON cert.document_id=f.id WHERE f.client_id=? ORDER BY f.document_date DESC,f.id`, clientId)
 }
 
 export async function downloadDocument(db: D1Database, who: Actor, key: string) {
