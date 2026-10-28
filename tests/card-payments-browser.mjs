@@ -44,7 +44,7 @@ try{
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' fits '+width+' '+JSON.stringify(await page.locator('body *').evaluateAll(items=>items.filter(el=>el.getBoundingClientRect().right>innerWidth+1&&el.getClientRects().length).slice(-8).map(el=>({tag:el.tagName,cls:el.className,text:el.textContent?.slice(0,70)})))))
    const controls=await page.locator('button,a,[role=button]').evaluateAll(items=>items.filter(el=>{if(!el.getClientRects().length)return false;const clone=el.cloneNode(true);clone.querySelectorAll('[role=tooltip]').forEach(t=>t.remove());return !/[\p{L}\p{N}]/u.test(clone.textContent??'')}).map(el=>({label:el.getAttribute('aria-label'),tooltip:!!el.querySelector('[role=tooltip]')})))
    assert.ok(controls.every(c=>c.label&&c.tooltip),name+' named tooltips '+JSON.stringify(controls))
-   if(name==='terminal-pending'||name==='responsibility-pending'){
+   if(name==='terminal-pending'||name==='responsibility-pending'||name==='responsibility-overdue-schedule'){
     const control=page.getByRole('link',{name:'Previous day',exact:true}),tip=control.getByRole('tooltip')
     await page.mouse.move(0,0);await control.blur()
     await control.evaluate(el=>{window.tooltipObservation=new Promise(resolve=>el.addEventListener('pointerenter',()=>{const values=[],tip=el.querySelector('[role=tooltip]');setTimeout(()=>values.push(getComputedStyle(tip).opacity),100);setTimeout(()=>{values.push(getComputedStyle(tip).opacity);resolve(values)},450)},{once:true}))})
@@ -60,6 +60,11 @@ try{
    const form=page.locator(selector);await form.locator('[name=attest]').check();await submit(form)
   }
   if(name==='terminal-pending')await submit(page.locator(selector))
+  if(name==='responsibility-overdue-file'){
+   const recovery=page.locator(selector).first(),form=recovery.locator('form').filter({has:page.getByRole('button',{name:'Check Stripe status',exact:true})})
+   await submit(form)
+   assert.ok(await page.locator(selector).count(),'original pending payment remains recoverable after a status check')
+  }
   if(name==='refund-portal'||name==='terminal-portal'){
    const receipt=page.locator(name==='refund-portal'?'a[href^="/portal/refund-receipts/"]':'a[href^="/portal/receipts/"]').first()
    await Promise.all([page.waitForEvent('download'),receipt.click()])

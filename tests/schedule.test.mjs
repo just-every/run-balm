@@ -685,7 +685,27 @@ test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation 
   await h.send(a.location)
   assert.equal((await h.db.prepare('SELECT state FROM bm_booking_payments WHERE id=?').bind(b.id).first()).state,'closed')
   assert.equal((await h.db.prepare('SELECT status FROM bm_card_payments WHERE id=?').bind(b.payment_id).first()).status,'expired')
+  assert.ok(!(await h.send('/api/balm/clients/'+b.client_id,undefined,h.owner)).value.retention.reasons.includes('booking_payment_review_or_credit_pending'),'an expired unpaid Checkout has no credit to retain')
   assert.equal(stripe.refunds.size,0)
+  // An abandoned lost response is reconciled by the signed expiry alone, without a create retry.
+  const lost=await h.form('/book',fields(times[4],3));assert.equal(lost.status,303,lost.text)
+  lose=true;assert.equal((await h.form(lost.location,{})).status,200)
+  const lostRow=await h.db.prepare('SELECT * FROM bm_booking_payments WHERE id<>?').bind(b.id).first()
+  assert.equal((await h.db.prepare('SELECT checkout_session FROM bm_card_payments WHERE id=?').bind(lostRow.payment_id).first()).checkout_session,null)
+  const lostSession=[...stripe.sessions.values()].find(s=>s.metadata.balm_payment===lostRow.payment_id)
+  const creates=stripe.calls.filter(c=>c.path==='/checkout/sessions').length
+  lostSession.status='expired'
+  const expiry=stripe.event('checkout.session.expired',lostSession)
+  for(let i=0;i<2;i++){
+   const response=await h.mf.dispatchFetch(h.origin+'/api/balm/stripe/webhook',{method:'POST',body:expiry.body,headers:{'stripe-signature':expiry.signature}})
+   assert.equal(response.status,200,await response.text())
+  }
+  const expired=await h.db.prepare('SELECT * FROM bm_card_payments WHERE id=?').bind(lostRow.payment_id).first()
+  assert.equal(expired.checkout_session,lostSession.id);assert.equal(expired.status,'expired')
+  assert.equal((await h.db.prepare('SELECT state FROM bm_booking_payments WHERE id=?').bind(lostRow.id).first()).state,'closed')
+  assert.equal(stripe.calls.filter(c=>c.path==='/checkout/sessions').length,creates,'expiry recovery only reads the original provider session')
+  assert.ok((await slots(h,service.id,priya.id)).includes(times[4]),'provider-confirmed expiry releases the abandoned slot')
+  assert.ok(!(await h.send('/api/balm/clients/'+lostRow.client_id,undefined,h.owner)).value.retention.reasons.includes('booking_payment_review_or_credit_pending'))
   const replacement=await h.form('/book',fields(times[0],2));assert.equal(replacement.status,303,replacement.text)
   const checkout=await h.form(replacement.location,{})
   // Current authority can close booking while the patient's provider-hosted page is open.
@@ -711,5 +731,13 @@ test('PAY-003: declined, abandoned and uncertain Checkout keeps one reservation 
   assert.equal((await h.send(replacement.location)).status,410)
   assert.equal((await h.form(replacement.location,{})).status,410)
   assert.equal((await h.send('/portal/receipts/'+payment.id+'.pdf',undefined,cookie)).status,200)
+  assert.ok((await h.send('/api/balm/clients/'+review.client_id,undefined,h.owner)).value.retention.reasons.includes('booking_payment_review_or_credit_pending'),'received money awaiting clinic review still retains custody')
+  await h.cmd('settings.save',{clinicName:'Riverside Physio',timeZone:'Australia/Brisbane',bookingOpen:true})
+  // Both public modes count the same pending reservations and visits.
+  for(const index of [12,16,20])assert.equal((await h.form('/book',fields(times[index],4))).status,303)
+  assert.equal((await h.form('/book',{...fields(times[24],4),coverageChoice:'insured_claim'})).status,429,'three prepaid reservations also block an ordinary fourth booking')
+  assert.equal((await h.form('/book',{...fields(times[28],5),coverageChoice:'insured_claim'})).status,303)
+  for(const index of [32,36])assert.equal((await h.form('/book',fields(times[index],5))).status,303)
+  assert.equal((await h.form('/book',fields(times[40],5))).status,429,'an ordinary visit and two reservations also block another prepaid booking')
  }finally{await h.close()}
 })

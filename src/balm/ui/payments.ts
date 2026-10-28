@@ -1,5 +1,5 @@
 import { retailPanel } from './retail'
-import { terminalSettings, terminalCheckIn, responsibilityCheckIn } from './card-terminal'
+import { terminalSettings, terminalCheckIn, responsibilityCheckIn, collectionRecovery } from './card-terminal'
 import { cardRefundsPanel } from './card-refunds'
 import { patientCyclePanel } from './statement-cycles'
 import { periodSuperbillForm } from './superbill-period'
@@ -35,7 +35,7 @@ export function checkInActions(s: any, a: any, back: string) {
 }
 function savedCardCheckIn(s: any, a: any, back: string) {
   const v = s.payments?.visits?.[a.id]
-  if (!v || a.status !== 'booked' && !v.checkedInAt) return ''
+  if (!v || v.canCollect === false || a.status !== 'booked' && !v.checkedInAt) return ''
   const block = s.payments.stripe?.block, chargeable = desk(s) && !block && v.card && v.copayCents > 0
   const copayLabel = chargeable ? `${money(v.copayCents)} copay to ${card(v.card)}` : ''
   if (v.checkedInAt) {
@@ -91,12 +91,13 @@ export function billingPanels(s: any, f: any, notice: any) {
     + `<details><summary>Remove this card</summary>${form('pay.card.remove', path, hidden('clientId', f.client.id) + '<label class="check"><input type="checkbox" required><span>Remove the card from Balm and the clinic’s Stripe account.</span></label>', 'Remove card', true)}</details>`
     : '<p>No card on file.</p>'
   const charge = b.card && !blocked ? b.open.map((i: any) => `<p>Invoice INV-${String(i.number).padStart(6, '0')} · ${card(b.card)}</p>` + form('pay.invoice.charge', path, hidden('invoiceId', i.id), `Charge ${money(i.open_cents)} to saved card`, true)).join('') : ''
+  const recovery = b.pendingCollections?.length ? panel('Unresolved check-in collections', b.pendingCollections.map((p:any)=>collectionRecovery(p,path)).join('')) : ''
   const payments = b.payments.length ? `<ul class="plain">${b.payments.map((p: any) => `<li>${money(p.amount_cents)} · ${h(p.booking_mode ? (p.booking_mode==='full'?'booking prepayment':'booking deposit') : p.kind === 'copay' ? 'copay' : p.kind === 'link' ? 'paid from link' : 'card charge')} · ${p.card_brand ? card({ brand: p.card_brand, last4: p.card_last4 }) + ' · ' : ''}${status(p.status.replace('_', ' '))} ${stamp(s, p.succeeded_at ?? p.created_at)}`
     + (p.status === 'succeeded' ? ` · <a href="/api/balm/receipts/${h(p.id)}.pdf">Receipt ${h(receipt(p.receipt_number))}</a>${p.receipt_delivery === 'sent' && !s.local ? ' (emailed)' : ''}` : '') + (p.failure && p.status !== 'succeeded' ? `<br><span class="help">${h(p.failure)}</span>` : '') + '</li>').join('')}</ul>` : ''
   const links = b.links.length ? `<details><summary>Patient links (${b.links.length})</summary><ul class="plain">${b.links.map((x: any) => `<li>${h(x.purpose === 'card' ? 'Card form' : 'Statement and pay')} · ${h(x.delivery === 'shown' ? 'opened at the desk' : `${x.delivery}: ${x.delivery_result}`)} · ${stamp(s, x.created_at)}${x.opened_at ? ` · opened ${stamp(s, x.opened_at)}` : ''}</li>`).join('')}</ul></details>` : ''
   const superbills = b.superbills.length ? `<ul class="plain">${b.superbills.map((x: any) => `<li>INV-${String(x.number).padStart(6, '0')} · ${h(x.serviceDate)}<br>${x.missing.length ? `<span class="help">Needs ${h(x.missing.join(', '))}.</span>` : `<a href="/api/balm/superbills/${h(x.invoiceId)}.pdf">Superbill (PDF)</a>`}</li>`).join('')}</ul>` : empty('Superbills appear once a visit’s invoice is approved.')
   const copay = form('pay.copay.save', path, hidden('clientId', f.client.id) + field('copay', 'Copay per visit ($)', dollarsField(b.copayCents), 'text', 'inputmode="decimal" maxlength="10" placeholder="30.00"'), 'Save copay', true)
-  return `${linkResult(s, notice)}` + panel('Billing and payments', `${periodSuperbillForm('/api/balm/period-superbills/' + f.client.id + '.pdf')}${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
+  return recovery + `${linkResult(s, notice)}` + panel('Billing and payments', `${periodSuperbillForm('/api/balm/period-superbills/' + f.client.id + '.pdf')}${balance}${lines}${blocked ? `<p class="help">${h(blocked)}</p>` : ''}${l.patientBalanceCents > 0 ? `<h3>Collect the balance</h3>${charge}${send('balance', `a ${money(l.patientBalanceCents)} pay link`)}` : ''}${payments ? `<h3>Card payments</h3>${payments}` : ''}${links}`, 'full', 'billing')
     + panel('Card on file and copay', `${cardBlock}${blocked ? '' : `<h3>${b.card ? 'Replace the card' : 'Save a card'}</h3><p class="help">The patient enters the card themselves and accepts the clinic’s authorization to charge copays and balances.</p>${send('card', 'a card form')}`}<h3>Copay</h3>${copay}`)
     + panel('Superbills', `<p>Per visit or inclusive date range, with CPT and ICD-10 codes, practice and rendering NPIs, fees, payments and the clinic’s tax ID, for the patient to submit to their insurer.</p>${superbills}`)
     + retailPanel(s, f) + codesPanel(s, f, path) + patientCyclePanel(s, f) + cardRefundsPanel(s, f)

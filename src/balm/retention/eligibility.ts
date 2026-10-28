@@ -46,7 +46,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const lastTreatment = dates?.last_at?.slice(0,10) ?? null
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
-  if(await one(db,"SELECT 1 FROM bm_booking_payments WHERE client_id=? AND (state IN ('reserved','review') OR EXISTS(SELECT 1 FROM bm_card_payments p WHERE p.id=payment_id AND p.applied_cents<p.amount_cents-p.refunded_cents))",client.id))reasons.push('booking_payment_review_or_credit_pending')
+  if(await one(db,"SELECT 1 FROM bm_booking_payments WHERE client_id=? AND (state='review' OR (state='reserved' AND (expires_at>? OR attempted_at IS NOT NULL)) OR EXISTS(SELECT 1 FROM bm_card_payments p WHERE p.id=payment_id AND p.status='succeeded' AND p.applied_cents<p.amount_cents-p.refunded_cents))",client.id,new Date().toISOString()))reasons.push('booking_payment_review_or_credit_pending')
   if(await one(db,`SELECT s.id FROM bm_retail_sales s WHERE s.client_id=? AND (
     (s.kind IN ('package','membership') AND s.units>(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)+COALESCE((SELECT units FROM bm_membership_settlements z WHERE z.sale_id=s.id),0)) OR
     (s.kind='gift_card' AND s.amount_cents>COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0))) LIMIT 1`,client.id))reasons.push('unresolved_retail_entitlement')

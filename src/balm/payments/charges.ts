@@ -89,9 +89,10 @@ export async function startLinkPayment(env: Bindings, db: D1Database, link: Data
 }
 
 /** Read a Checkout Session back from Stripe and record what it says; safe to repeat. */
-export async function syncCheckout(env: Bindings, db: D1Database, sessionId: string) {
+export async function syncCheckout(env: Bindings, db: D1Database, sessionId: string, paymentId?: string) {
   const row = await one(db, 'SELECT * FROM bm_card_payments WHERE checkout_session=?', sessionId)
-  if (row && await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',row.id))return syncBookingCheckout(env,db,row.id)
+    ?? (paymentId ? await one(db,'SELECT p.* FROM bm_card_payments p JOIN bm_booking_payments b ON b.payment_id=p.id WHERE p.id=?',paymentId) : null)
+  if (row && await one(db,'SELECT 1 FROM bm_booking_payments WHERE payment_id=?',row.id))return syncBookingCheckout(env,db,row.id,undefined,sessionId)
   if (!row || DONE.includes(row.status as string)) return row
   const { key } = await stripeReady(env, db)
   const session = await stripeCall(key, 'GET', `/checkout/sessions/${encodeURIComponent(sessionId)}`, { expand: ['payment_intent.latest_charge'] })

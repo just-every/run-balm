@@ -209,8 +209,8 @@ export async function bookingClient(db: D1Database, who: Actor, key: unknown) {
   return { client, guards: await bookingScope(db, who, client.id as string) }
 }
 
-/** Upcoming visits booked online with one email, counting files that hold the address back. Binds email, email, now. */
-const upcomingOnline = `(SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE (lower(c.email)=? OR (a.booked_via='online' AND a.created_by=?)) AND a.status='booked' AND a.start_at>?)`
+/** Pending visits and active payment reservations share one email cap. Binds email, email, now, email, now. */
+const upcomingOnline = `((SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE (lower(c.email)=? OR (a.booked_via='online' AND a.created_by=?)) AND a.status='booked' AND a.start_at>?)+(SELECT COUNT(*) FROM bm_booking_payments b JOIN bm_card_payments p ON p.id=b.payment_id WHERE p.created_by=? AND b.state='reserved' AND (b.expires_at>? OR b.attempted_at IS NOT NULL)))`
 /** A new online file takes an email or mobile number only when no other file, or guardian, signs in with it: nobody has proven
  * it, and a second file would end that portal sign-in. The booking reads the same either way. Binds email x3, phone x2. */
 const unproven = `CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL) OR EXISTS(SELECT 1 FROM bm_guardian_grants WHERE email=? AND revoked_at IS NULL) THEN NULL ELSE ? END,
@@ -232,12 +232,15 @@ export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
   insist(verdict.valid, 'slot_unavailable', 409)
   const client = { firstName: text(input.firstName, 'first_name', 80), lastName: text(input.lastName, 'last_name', 80), dateOfBirth: day(input.dateOfBirth, 'date_of_birth'), email: email(input.email), phone: phoneNumber(input.phone) }
   insist(input.privacy === true || input.privacy === 'on' || input.privacy === 'yes', 'privacy_acknowledgement_required')
-  const pending = await one<{ n: number }>(db, `SELECT ${upcomingOnline} AS n`, client.email, client.email, now())
+  const pending = await one<{ n: number }>(db, `SELECT ${upcomingOnline} AS n`, client.email, client.email, now(), client.email, now())
   insist((pending?.n ?? 0) < 3, 'too_many_online_bookings', 429)
   // An exact match on name, birth date and email continues that client's file.
   const matches = await rows(db, 'SELECT id FROM bm_clients WHERE erased_at IS NULL AND lower(first_name)=lower(?) AND lower(last_name)=lower(?) AND date_of_birth=? AND lower(email)=? LIMIT 2', client.firstName, client.lastName, client.dateOfBirth, client.email)
   insist(matches.length <= 1, 'contact_clinic_about_matching_patient_files', 409)
   const existing = matches[0]
+  const prepaid = service.prepay_mode!=='none'&&['self_pay','uninsured'].includes(input.coverageChoice)
+  // Payment receipts must remain reachable through one authenticated patient file.
+  if(prepaid)insist(!await one(db,`SELECT 1 WHERE EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL AND id<>?) OR EXISTS(SELECT 1 FROM bm_guardian_grants WHERE email=? AND revoked_at IS NULL)`,client.email,existing?.id??'',client.email),'contact_clinic_before_booking_payment',409)
   // A returning patient adds a practitioner from the patient portal, where their email is proven.
   if (existing) insist(await one(db, 'SELECT 1 WHERE ' + inCare, existing.id, practitioner.id, existing.id), 'book_a_new_practitioner_from_the_patient_portal', 409)
   if (double) insist(await patientFits(db, existing?.id as string ?? null, practitioner.id as string, service.id as string, start.toISOString(), end.toISOString()), 'slot_unavailable', 409)
@@ -246,7 +249,7 @@ export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
   const visit={ id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }
   const writes=[
     unchanged, ...eligibility.guards,
-    guard(db, `${upcomingOnline}<3`, client.email, client.email, now()),
+    guard(db, `${upcomingOnline}<3`, client.email, client.email, now(), client.email, now()),
     ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
       stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,${unproven},?,'online')`,
         clientId, client.firstName, client.lastName, client.dateOfBirth, client.email, client.email, client.email, client.phone, client.phone, now()),
@@ -255,7 +258,7 @@ export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
   ]
   const result={ appointmentId, clientId, token, startAt: start.toISOString(), practitioner: practitioner.name, service: service.name, timeZone: clinic.time_zone, email: client.email, firstName: client.firstName }
   if(service.prepay_mode!=='none')insist(visit.coverageChoice!=='unknown','choose_your_payment_coverage_before_booking',409)
-  if(service.prepay_mode!=='none'&&['self_pay','uninsured'].includes(visit.coverageChoice)){
+  if(prepaid){
     insist(env,'booking_payment_unavailable',409)
     return {...result,paymentToken:await reserveBooking(env,db,service,visit,input,visitor,writes)}
   }

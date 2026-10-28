@@ -60,7 +60,7 @@ async function stripeWebhook(request: Request, env: Bindings) {
   if (!await verifySignature(await unseal(env, settings.webhook_secret_sealed as string), request.headers.get('stripe-signature') ?? '', body)) return Response.json({ error: 'Invalid signature' }, { status: 400, headers: noStore })
   const event = JSON.parse(body), object = event.data?.object ?? {}
   if (await one(db, 'SELECT 1 FROM bm_stripe_events WHERE id=?', event.id)) return Response.json({ received: true, duplicate: true }, { headers: noStore })
-  if (String(event.type).startsWith('checkout.session.')) object.mode === 'setup' ? await syncCardSetup(env, db, object.id) : await syncCheckout(env, db, object.id)
+  if (String(event.type).startsWith('checkout.session.')) object.mode === 'setup' ? await syncCardSetup(env, db, object.id) : await syncCheckout(env, db, object.id, object.metadata?.balm_payment)
   else if (String(event.type).startsWith('payment_intent.')) await syncIntent(env, db, object.id, object.metadata?.balm_payment)
   // Recorded after handling, so a delivery that failed part-way is handled again on Stripe's retry.
   await db.prepare('INSERT INTO bm_stripe_events(id,type,received_at) VALUES(?,?,?) ON CONFLICT DO NOTHING').bind(event.id, event.type, new Date().toISOString()).run()

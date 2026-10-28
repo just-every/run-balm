@@ -23,6 +23,10 @@ import { createLink } from './links'
 import { balanceReview, clientPlans, planCommand } from './plans'
 
 const deskRole = (who: Actor) => who.role === 'owner' || who.staffRole === 'reception'
+const pendingCollectionRows = (db: D1Database, clientId?: string) => rows(db, `SELECT p.id,p.client_id,p.appointment_id,p.invoice_id,p.collection_purpose,p.kind,p.amount_cents,p.status,p.receipt_number,p.failure,p.payment_intent,t.payment_id AS terminal_payment,t.livemode,t.state AS terminal_state
+  FROM bm_card_payments p JOIN bm_clients c ON c.id=p.client_id LEFT JOIN bm_terminal_payments t ON t.payment_id=p.id
+  WHERE c.erased_at IS NULL AND (p.collection_purpose IS NOT NULL OR t.payment_id IS NOT NULL) AND p.status NOT IN ('succeeded','failed','expired')
+  AND (? IS NULL OR p.client_id=?) ORDER BY p.created_at`, clientId ?? null, clientId ?? null)
 const clinicName = async (db: D1Database) => (await one(db, 'SELECT clinic_name FROM bm_settings WHERE id=1'))!.clinic_name as string
 
 async function saveCopay(db: D1Database, who: Actor, input: Data) {
@@ -125,14 +129,15 @@ export async function paymentCommand(env: SmsEnv, db: D1Database, who: Actor, na
 export async function paymentsState(env: SmsEnv, db: D1Database, who: Actor) {
   if (who.role === 'agent') return {}
   const desk = deskRole(who), stripe = await stripeView(env, db)
-  const today = await rows(db, `SELECT a.id,a.client_id,a.checked_in_at,c.copay_cents,cd.brand,cd.last4,
+  const pending = desk ? await pendingCollectionRows(db) : []
+  const today = await rows(db, `SELECT a.id,a.client_id,a.start_at,a.checked_in_at,c.copay_cents,cd.brand,cd.last4,
     (SELECT json_object('id',p.id,'status',p.status,'amount',p.amount_cents,'receipt',p.receipt_number,'failure',p.failure) FROM bm_card_payments p WHERE p.appointment_id=a.id AND p.kind='copay' ORDER BY p.created_at DESC LIMIT 1) AS copay
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id LEFT JOIN bm_cards cd ON cd.client_id=a.client_id AND cd.removed_at IS NULL
-    WHERE a.start_at BETWEEN ? AND ? AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
+    WHERE (a.start_at BETWEEN ? AND ? OR a.id IN (SELECT appointment_id FROM bm_card_payments WHERE status NOT IN ('succeeded','failed','expired') AND (collection_purpose IS NOT NULL OR id IN (SELECT payment_id FROM bm_terminal_payments)))) AND c.erased_at IS NULL AND (? OR a.practitioner_id=?)`, new Date(Date.now() - 12 * 3600_000).toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString(), desk ? 1 : 0, who.staffId ?? '')
   const collectionOptions = new Map<string, Data[]>()
   if(desk)for(const v of today)if(!collectionOptions.has(v.client_id))collectionOptions.set(v.client_id,await checkInCollections(db,v.client_id))
   const collectionPayments=desk?await rows(db,"SELECT id,appointment_id,invoice_id,collection_purpose,amount_cents,status,receipt_number,failure FROM bm_card_payments WHERE collection_purpose IS NOT NULL AND client_id IN (SELECT client_id FROM bm_appointments WHERE start_at BETWEEN ? AND ?) ORDER BY created_at DESC",new Date(Date.now()-12*3600_000).toISOString(),new Date(Date.now()+12*3600_000).toISOString()):[]
-  const visits = Object.fromEntries(today.map(v => [v.id, { checkedInAt: v.checked_in_at, ...(desk ? { collectionPayments:collectionPayments.filter(p=>p.appointment_id===v.id), collections: collectionOptions.get(v.client_id), copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
+  const visits = Object.fromEntries(today.map(v => [v.id, { canCollect: Math.abs(Date.parse(v.start_at)-Date.now()) < 12*3600_000, checkedInAt: v.checked_in_at, ...(desk ? { pendingCollections:pending.filter(p=>p.appointment_id===v.id), collectionPayments:collectionPayments.filter(p=>p.appointment_id===v.id && !pending.some(r=>r.id===p.id)), collections: collectionOptions.get(v.client_id), copayCents: v.copay_cents, card: v.brand ? { brand: v.brand, last4: v.last4 } : null, copay: v.copay ? JSON.parse(v.copay as string) : null } : {}) }]))
   const npis = who.role === 'owner' ? await rows(db, "SELECT id,name,npi FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL ORDER BY name") : []
   return { payments: { terminal: await terminalState(db, who), stripe: desk ? stripe : { block: stripe.block }, smsBlock: (await smsBlock(env)), visits, npis, ...(desk ? { bookingReview: await rows(db,"SELECT id,client_id,amount_cents,start_at,review_reason FROM bm_booking_payments WHERE state='review' OR (state='reserved' AND attempted_at IS NOT NULL) ORDER BY created_at"), cycles: await statementCycleState(db), review: await balanceReview(db) } : {}) } }
 }
@@ -145,6 +150,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
   const invoices = await rows(db, "SELECT id FROM bm_invoices WHERE client_id=? AND status='approved' ORDER BY number DESC LIMIT 24", clientId)
   const superbills = await Promise.all(invoices.map(async i => { const f = await superbillFacts(db, i.id as string); return { invoiceId: i.id, number: f.invoice.number, serviceDate: f.v.serviceDate, missing: f.missing } }))
   return {
+    pendingCollections: await pendingCollectionRows(db, clientId),
     cardRefunds: await cardRefundsFor(db, clientId),
     retail: await retailFor(db,clientId), cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,

@@ -30,7 +30,7 @@ export async function reserveBooking(env:Bindings,db:D1Database,service:Data,vis
  await commit(db,null,[...writes,...await placementGuards(db,visit as any),
   guard(db,'EXISTS(SELECT 1 FROM bm_stripe WHERE id=1 AND account_id=? AND connected_at=?)',connected.settings.account_id,connected.settings.connected_at),
   guard(db,'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND version=? AND active=1)',service.id,service.version),
-  guard(db,`(SELECT COUNT(*) FROM bm_booking_payments b JOIN bm_card_payments p ON p.id=b.payment_id WHERE p.created_by=? AND b.state='reserved' AND (b.expires_at>? OR b.attempted_at IS NOT NULL))+(SELECT COUNT(*) FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE (lower(c.email)=? OR a.created_by=?) AND a.booked_via='online' AND a.status='booked' AND a.start_at>?)<3`,visitor.email,at,visitor.email,visitor.email,at),
+  guard(db,`EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND lower(email)=? AND erased_at IS NULL) AND (SELECT COUNT(*) FROM bm_clients WHERE lower(email)=? AND erased_at IS NULL)=1 AND NOT EXISTS(SELECT 1 FROM bm_guardian_grants WHERE email=? AND revoked_at IS NULL)`,visit.clientId,visitor.email,visitor.email,visitor.email),
   stmt(db,`INSERT INTO bm_card_payments(id,client_id,kind,amount_cents,status,created_by,created_at,updated_at) VALUES(?,?,'charge',?,'open',?,?,?)`,paymentId,visit.clientId,amount,visitor.email,at,at),
   stmt(db,`INSERT INTO bm_booking_payments(id,client_id,payment_id,appointment_id,practitioner_id,service_id,room_id,start_at,end_at,price_cents,amount_cents,mode,visit_json,receipt_facts,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,reservationId,visit.clientId,paymentId,visit.id,visit.practitionerId,visit.serviceId,visit.roomId,visit.startAt,visit.endAt,service.price_cents,amount,service.prepay_mode,JSON.stringify(frozenVisit),JSON.stringify({clinic,patient:patientName}),at,expires),
   stmt(db,'INSERT INTO bm_booking_payment_tokens(id,token_hash) VALUES(?,?)',reservationId,await sha256(token)),
@@ -68,16 +68,23 @@ async function startCheckout(env:Bindings,db:D1Database,b:Data,authority:D1Prepa
  return session.url as string
 }
 
-/** Callback values are ignored; only the stored session and authenticated provider reads count. */
-export async function syncBookingCheckout(env:Bindings,db:D1Database,paymentId:string,intentId?:string):Promise<Data|null>{
+/** A signed event can locate a lost session; authenticated provider facts bind it to the reservation. */
+export async function syncBookingCheckout(env:Bindings,db:D1Database,paymentId:string,intentId?:string,checkoutSessionId?:string):Promise<Data|null>{
  const b=await one(db,'SELECT * FROM bm_booking_payments WHERE payment_id=?',paymentId),p=await one(db,'SELECT * FROM bm_card_payments WHERE id=?',paymentId)
  if(!b||!p||p.status==='succeeded')return p
  const {settings,key}=await stripeReady(env,db)
  insist(p.stripe_account_id===settings.account_id,'original_stripe_account_must_be_connected',409)
  let intent:Data|null=null
- if(p.checkout_session){
-  const session=await stripeCall(key,'GET',`/checkout/sessions/${encodeURIComponent(p.checkout_session)}`,{expand:['payment_intent.latest_charge']})
-  insist(session.id===p.checkout_session&&session.customer===p.stripe_customer_id&&session.metadata?.balm_payment===p.id,'booking_checkout_mismatch',409)
+ const sessionId=p.checkout_session??checkoutSessionId
+ if(sessionId){
+  insist(b.attempted_at&&(!checkoutSessionId||checkoutSessionId===sessionId),'booking_checkout_mismatch',409)
+  const session=await stripeCall(key,'GET',`/checkout/sessions/${encodeURIComponent(sessionId)}`,{expand:['payment_intent.latest_charge']})
+  insist(session.id===sessionId&&session.mode==='payment'&&session.customer===p.stripe_customer_id&&session.metadata?.balm_payment===p.id&&session.metadata?.balm_client===b.client_id,'booking_checkout_mismatch',409)
+  await commit(db,null,[
+   guard(db,'EXISTS(SELECT 1 FROM bm_stripe WHERE id=1 AND account_id=? AND connected_at=?)',settings.account_id,settings.connected_at),
+   guard(db,'EXISTS(SELECT 1 FROM bm_card_payments WHERE id=? AND stripe_account_id=? AND stripe_customer_id=? AND (checkout_session IS NULL OR checkout_session=?))',p.id,settings.account_id,p.stripe_customer_id,sessionId),
+   stmt(db,'UPDATE bm_card_payments SET checkout_session=? WHERE id=? AND checkout_session IS NULL',sessionId,p.id),
+  ])
   if(session.status==='expired'){
    await commit(db,null,[guard(db,"EXISTS(SELECT 1 FROM bm_card_payments WHERE id=? AND status<>'succeeded')",p.id),stmt(db,"UPDATE bm_card_payments SET status='expired',updated_at=? WHERE id=?",now(),p.id),stmt(db,"UPDATE bm_booking_payments SET state='closed' WHERE id=? AND state='reserved'",b.id),audit(db,actor,'booking.payment_expired',b.client_id,b.id)])
    return one(db,'SELECT * FROM bm_card_payments WHERE id=?',p.id)

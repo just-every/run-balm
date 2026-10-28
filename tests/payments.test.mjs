@@ -497,7 +497,7 @@ test('PAY-002: intake and portal authorize hosted card setup, approved original 
 
 test('PAY-002: a lost refund response stays reserved until the original Stripe refund is reconciled without another send', {timeout:120_000}, async()=>{
  const stripe=fakeProviders();let lose=true
- const fixture=await connected({stripe,outbound:async request=>{
+ const fixture=await connected({stripe,origin:undefined,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,outbound:async request=>{
   const refund=request.method==='POST'&&new URL(request.url).pathname==='/v1/refunds'
   const response=await stripe.handler(request)
   if(refund&&lose){lose=false;return Response.json({error:{message:'Response lost after acceptance'}},{status:503})}
@@ -505,6 +505,7 @@ test('PAY-002: a lost refund response stays reserved until the original Stripe r
  }})
  const {h,reception,client,service,priya}=fixture
  try{
+  await h.finishSetup()
   const saved=await saveCard(h,stripe,reception,client.id);await h.send('/pay/'+saved.token+'?setup='+saved.session)
   await h.cmd('pay.copay.save',{clientId:client.id,copay:'30.00'},reception.cookie)
   const visit=await pastVisit(h,client.id,priya,service.id,reception.cookie,0)
@@ -568,7 +569,43 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
   assert.equal(repeated.payment_intent,uncertain.payment_intent)
   assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,1)
   assert.equal(stripe.calls.filter(c=>c.path.endsWith('/process_payment_intent')).length,1)
+  const visitTimes=await h.db.prepare('SELECT start_at,end_at FROM bm_appointments WHERE id=?').bind(visit).first()
+  const historical=async()=>h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('2000-01-03T00:00:00Z','2000-01-03T00:45:00Z',visit).run()
+  const restoreVisit=async()=>h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind(visitTimes.start_at,visitTimes.end_at,visit).run()
+  const recoveryForms=async(id,command)=>{
+   const pending=(await h.state(reception.cookie)).payments.visits[visit]
+   assert.equal(pending.canCollect,false)
+   assert.ok(pending.pendingCollections.some(p=>p.id===id),'historical visit retains original unresolved identity')
+   for(const path of ['/app?date=2000-01-03','/app/clients/'+client.id]){
+    const page=await h.send(path,undefined,reception.cookie)
+    assert.equal(page.status,200)
+    assert.ok(page.text.includes('data-payment-id="'+id+'"'),'recovery action remains visible at '+path)
+    assert.match(page.text,new RegExp('action="[^" ]*'+command.replaceAll('.','\\.')+'[^" ]*"'),'the recovery form uses the original command')
+   }
+   assert.equal((await h.send('/api/balm/clients/'+client.id,undefined,priya.cookie)).value.billing.pendingCollections,undefined,'clinical readers do not receive payment recovery state')
+   if(process.env.BALM_UI_SCREENSHOTS){
+    const {viewportProof}=await import('./viewport-proof.mjs'),selector='.collection-recovery[data-payment-id="'+id+'"]'
+    await viewportProof(h,[
+     {name:command==='pay.terminal.sync'?'overdue-terminal-schedule':'overdue-card-schedule',path:'/app?date=2000-01-03&appt='+visit,cookie:reception.cookie,selector,tooltips:['Previous day','Next day']},
+     {name:command==='pay.terminal.sync'?'overdue-terminal-file':'overdue-card-file',path:'/app/clients/'+client.id,cookie:reception.cookie,selector,interact:async({page,width})=>{
+      const recovery=page.locator(selector).first(),form=recovery.locator('form').filter({has:page.getByRole('button',{name:'Check Stripe status',exact:true})})
+      assert.equal(await form.locator('[name=paymentId]').inputValue(),id)
+      await form.getByRole('button',{name:'Check Stripe status',exact:true}).focus()
+      const sizes=await recovery.locator('p,button,label,summary').evaluateAll(nodes=>nodes.filter(el=>el.getClientRects().length).map(el=>Number.parseFloat(getComputedStyle(el).fontSize)))
+      assert.ok(sizes.every(size=>size>=13),'recovery text is readable at '+width)
+      if(width===390&&command==='pay.terminal.sync'){
+       await Promise.all([page.waitForNavigation(),form.getByRole('button',{name:'Check Stripe status',exact:true}).click()])
+       assert.ok(await page.locator(selector).count(),'checking the original pending payment keeps recovery available')
+      }
+     }},
+    ])
+   }
+  }
+  await historical();await recoveryForms(paymentId,'pay.terminal.sync')
+  const synced=await h.cmd('pay.terminal.sync',{paymentId},reception.cookie)
+  assert.equal(synced.payment_intent,uncertain.payment_intent)
   const paid=await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
+  await restoreVisit()
   assert.equal(paid.status,'succeeded');assert.equal(paid.state,'succeeded')
   await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
   const f=(await h.send('/api/balm/clients/'+client.id,undefined,h.owner)).value
@@ -581,7 +618,9 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
   assert.equal(reserved.status,'processing');assert.equal(reserved.payment_intent,null)
   await h.cmd('pay.terminal.collect',{...cardInput,paymentId:crypto.randomUUID()},reception.cookie,409)
   const postCount=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
+  await historical();await recoveryForms(cardInput.paymentId,'pay.checkin.collect')
   const recovered=await h.cmd('pay.checkin.collect',cardInput,reception.cookie)
+  await restoreVisit()
   assert.equal(recovered.status,'succeeded');assert.equal(recovered.id,cardInput.paymentId);assert.equal(recovered.amount_cents,6500)
   await h.cmd('pay.checkin.collect',cardInput,reception.cookie)
   assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,postCount)

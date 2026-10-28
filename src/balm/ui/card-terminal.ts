@@ -21,7 +21,7 @@ export function terminalCheckIn(s: any, visit: any, back: string) {
   const terminal = s.payments?.terminal, info = s.payments?.visits?.[visit.id]
   if (!desk(s) || !terminal || !info) return ''
   const payment = terminal.payments.find((p: any) => p.appointment_id === visit.id && !p.collection_purpose)
-  if (payment && payment.state !== 'canceled') {
+  if (payment && payment.state !== 'canceled' && info.canCollect !== false) {
     const fields = hidden('paymentId', payment.id)
     if (payment.status === 'succeeded') return `<p>${status(`Terminal copay ${money(payment.amount_cents)} paid`)} <a href="/api/balm/receipts/${h(payment.id)}.pdf">Receipt R-${h(String(payment.receipt_number).padStart(6, '0'))}</a></p>`
     return `<div class="entry"><p>${status('Terminal payment pending')} · ${money(payment.amount_cents)}${payment.action_status ? ` · ${status(payment.action_status)}` : ''}</p>
@@ -32,7 +32,7 @@ export function terminalCheckIn(s: any, visit: any, back: string) {
       ${!payment.payment_intent ? `<details><summary>Locate an uncertain payment</summary><p class="help">Find the original intent in the clinic’s Stripe account using Balm payment ID ${h(payment.id)}. Balm checks its amount and patient reference before linking it.</p>${form('pay.terminal.sync', back, fields + field('intentId', 'Original Stripe PaymentIntent ID', '', 'text', 'required placeholder="pi_…"'), 'Read original intent', true)}</details>` : ''}
     </div>`
   }
-  if (!terminal.reader || s.payments.stripe?.block || Number(info.copayCents) < 50 || !['booked', 'attended'].includes(visit.status)
+  if (info.canCollect === false || !terminal.reader || s.payments.stripe?.block || Number(info.copayCents) < 50 || !['booked', 'attended'].includes(visit.status)
     || info.copay && !['failed', 'expired'].includes(info.copay.status)) return ''
   const amount = money(info.copayCents)
   return form('pay.terminal.collect', back, hidden('appointmentId', visit.id) + hidden('paymentId', crypto.randomUUID())
@@ -42,17 +42,13 @@ export function terminalCheckIn(s: any, visit: any, back: string) {
 /** Invoice-specific collection is separate from the visit's configured copay. */
 export function responsibilityCheckIn(s: any, visit: any, back: string) {
  const info=s.payments?.visits?.[visit.id],terminal=s.payments?.terminal
- if(!desk(s)||!info||!['booked','attended'].includes(visit.status)||s.payments.stripe?.block)return ''
- const records=(info.collectionPayments??[]).map((p:any)=>{
-  const label=p.collection_purpose==='coinsurance'?'Coinsurance':'Patient balance',fields=hidden('paymentId',p.id)
+ if(!desk(s)||!info)return ''
+ const records=(info.pendingCollections??[]).filter((p:any)=>p.collection_purpose || info.canCollect === false).map((p:any)=>collectionRecovery(p,back)+(p.terminal_payment && !p.livemode && terminal?.reader?.device_type?.startsWith('simulated') ? form('pay.terminal.simulate',back,hidden('paymentId',p.id),'Present test card in Stripe',true):'')).join('')+(info.collectionPayments??[]).map((p:any)=>{
+  const label=p.collection_purpose==='coinsurance'?'Coinsurance':'Patient balance'
   if(p.status==='succeeded')return `<p>${status(label+' '+money(p.amount_cents)+' paid')} · <a href="/api/balm/receipts/${h(p.id)}.pdf">Receipt R-${h(String(p.receipt_number).padStart(6,'0'))}</a></p>`
-  if(['failed','expired'].includes(p.status))return `<p>${status(label+' '+p.status)} ${h(p.failure??'')}</p>`
-  const reader=terminal?.payments.find((t:any)=>t.id===p.id)
-  return `<div class="entry"><p>${status(label+' pending')} · ${money(p.amount_cents)}. Check the original Stripe payment before collecting again.</p>`+
-   (reader?form('pay.terminal.sync',back,fields,'Check Stripe status',true)+(!reader.livemode?form('pay.terminal.simulate',back,fields,'Present test card in Stripe',true):'')+form('pay.terminal.cancel',back,fields+check('confirm','Cancel the original payment before collecting again.'),'Cancel terminal payment',true)
-   :form('pay.checkin.collect',back,fields+hidden('appointmentId',visit.id)+hidden('invoiceId',p.invoice_id)+hidden('purpose',p.collection_purpose)+hidden('amount',dollarsField(p.amount_cents)),'Check Stripe status',true))+'</div>'
+  return `<p>${status(label+' '+p.status)} ${h(p.failure??'')}</p>`
  }).join('')
- if(!info.checkedInAt)return records
+ if(!info.checkedInAt || info.canCollect === false || !['booked','attended'].includes(visit.status) || s.payments.stripe?.block)return records
  const choices=(info.collections??[]).map((i:any)=>{
   const fields=()=>hidden('appointmentId',visit.id)+hidden('invoiceId',i.id)+hidden('paymentId',crypto.randomUUID())
    +`<label>Collection<select name="purpose"><option value="balance">Outstanding patient responsibility</option>${i.coinsurance_cents>=50?'<option value="coinsurance">Adjudicated coinsurance</option>':''}</select></label>`
@@ -63,4 +59,16 @@ export function responsibilityCheckIn(s: any, visit: any, back: string) {
    +(terminal?.reader?form('pay.terminal.collect',back,fields(),'Collect on terminal',true):'')+'</details>'
  }).join('')
  return records+choices
+}
+
+/** Persistent recovery reads the original payment; it never creates a new charge. */
+export function collectionRecovery(p: any, back: string) {
+ const label=p.collection_purpose==='coinsurance'?'Coinsurance':p.kind==='copay'?'Terminal copay':'Patient balance'
+ const fields=hidden('paymentId',p.id)
+ const actions=p.terminal_payment
+  ?form('pay.terminal.sync',back,fields,'Check Stripe status',true)
+   +form('pay.terminal.cancel',back,fields+check('confirm','Cancel the original payment before collecting again.'),'Cancel terminal payment',true)
+   +(!p.payment_intent?`<details><summary>Locate an uncertain payment</summary>${form('pay.terminal.sync',back,fields+field('intentId','Original Stripe PaymentIntent ID','','text','required'), 'Read original intent',true)}</details>`:'')
+  :form('pay.checkin.collect',back,fields+hidden('appointmentId',p.appointment_id)+hidden('invoiceId',p.invoice_id)+hidden('purpose',p.collection_purpose)+hidden('amount',dollarsField(p.amount_cents)),'Check Stripe status',true)
+ return `<div class="entry collection-recovery" data-payment-id="${h(p.id)}"><p>${status(label+' pending')} · ${money(p.amount_cents)}. Check the original Stripe payment before collecting again.</p>${actions}</div>`
 }
