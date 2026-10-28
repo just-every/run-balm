@@ -1,13 +1,18 @@
 import { stmt, type Data } from '../domain/model'
 
-/** Preserve dated business arithmetic without patient, clinician, clinical content or payment credentials. */
-export function preserveAccounting(db:D1Database,clientId:string,anonymousGroup:string) {
-  return [
-    stmt(db,`INSERT INTO bm_destroyed_retail(id,kind,units,amount_cents,tax_cents,gift_id,recorded_at,used_times,membership_states,cancelled_at,renewal_of,facts_complete,settlement)
+/** Preserve only anonymous retail arithmetic for the exact approved sales. */
+export function preserveRetail(db:D1Database,clientId:string,saleIds?:string[]) {
+  return stmt(db,`INSERT INTO bm_destroyed_retail(id,kind,units,amount_cents,tax_cents,gift_id,recorded_at,used_times,membership_states,cancelled_at,renewal_of,facts_complete,settlement)
       SELECT s.id,s.kind,s.units,s.amount_cents,s.tax_cents,s.gift_id,s.recorded_at,
         (SELECT json_group_array(used_at) FROM bm_package_uses WHERE sale_id=s.id),
         (SELECT json_group_array(json_object('state',state,'recorded_at',recorded_at)) FROM (SELECT state,recorded_at FROM bm_membership_events WHERE sale_id=s.id ORDER BY rowid)),
-        (SELECT recorded_at FROM bm_membership_cancellations WHERE sale_id=s.id),s.renewal_of,1,(SELECT json_object('units',units,'amount_cents',amount_cents,'recorded_at',recorded_at) FROM bm_membership_settlements WHERE sale_id=s.id) FROM bm_retail_sales s WHERE s.client_id=?`,clientId),
+        (SELECT recorded_at FROM bm_membership_cancellations WHERE sale_id=s.id),s.renewal_of,1,(SELECT json_object('units',units,'amount_cents',amount_cents,'recorded_at',recorded_at) FROM bm_membership_settlements WHERE sale_id=s.id) FROM bm_retail_sales s WHERE s.client_id=? AND (? IS NULL OR s.id IN (SELECT value FROM json_each(?)))`,clientId,saleIds ? JSON.stringify(saleIds) : null,saleIds ? JSON.stringify(saleIds) : null)
+}
+
+/** Preserve dated business arithmetic without patient, clinician, clinical content or payment credentials. */
+export function preserveAccounting(db:D1Database,clientId:string,anonymousGroup:string) {
+  return [
+    preserveRetail(db,clientId),
     stmt(db,`INSERT INTO bm_destroyed_invoices(id,anonymous_group,amount_cents,start_at,open_payer,approved_at,voided_at)
       SELECT i.id,?,i.amount_cents,a.start_at,
         (SELECT h.payer FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id),i.approved_at,

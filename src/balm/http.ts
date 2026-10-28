@@ -1,3 +1,4 @@
+import { previewRetailDestruction, destroyRetailRecords } from './retention/retail'
 import { prepareLetter, editLetter, deliverLetter, lettersFor, previewLetter } from './charting/letters'
 import { readinessCommand, readinessState } from './domain/readiness'
 import { bookingPaymentResponse } from './payments/booking-prepayment'
@@ -175,6 +176,8 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'booking.embed.save') return saveBookingEmbed(env.DB, who, input, env.AUTH_LOCAL === 'true' && env.RER_DEMO !== '1')
   if (name === 'retention.save') return saveRetention(env.DB, who, input)
   if (name === 'retention.hold') return holdRecords(env.DB, who, input)
+  if (name === 'retention.retail.preview') return previewRetailDestruction(env.DB, who, input)
+  if (name === 'retention.retail.destroy') return destroyRetailRecords(env.DB, who, input)
   if (name === 'retention.preview') return previewDestruction(env.DB, who, input)
   if (name === 'retention.destroy') return destroyRecords(env.DB, who, input)
   if (name === 'visit_policy.save') return saveVisitPolicy(env.DB, who, input)
@@ -669,7 +672,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })
         // A refresh must read the result, never repeat the change. Results shown
         // once (an import review or journal, a new key, a booking's intake link) render directly.
-        if (!['retention.preview', 'movein.preview', 'movein.prepare', 'movein.cutover', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
+        if (!['retention.preview', 'retention.retail.preview', 'movein.preview', 'movein.prepare', 'movein.cutover', 'movein.journal', 'movein.apply', 'movein.undo', 'import.preview', 'import.journal', 'agent.create', 'integration.hook.create', 'calendar.feed.create', 'appointment.book', 'series.preview', 'series.book', 'pay.link.create', 'message.link', 'message.send', 'plan.send', 'plan.resend', 'consent.request', 'scribe.check', 'insurance.batch.submit', 'insurance.eligibility.submit', 'insurance.denial.appeal', 'codes.update', 'codes.update.continue', 'codes.cpt.import', 'codes.search', 'codes.synonym.save'].includes(name)) {
           // An invitation says who it went to, and how, once the page reloads.
           if (name === 'staff.invite') return redirect(`/app/clinic?invited=${encodeURIComponent(String(input.id ?? ''))}`)
           const offered = (result as any)?.waitlist?.people

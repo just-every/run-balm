@@ -16,7 +16,7 @@ export function appliedPolicy(policy: Data | null) {
     minor: Math.max(rule.minorYears ?? 0, rule.adultYears ?? 0, policy.minor_years, policy.adult_years, policy.payer_years),
     majority: Math.max(rule.majorityAge ?? 21, policy.majority_age) }
 }
-export async function eligibility(db: D1Database, client: Data, policy: Data | null) {
+export async function eligibility(db: D1Database, client: Data, policy: Data | null, includeRetail = true) {
   const applied = appliedPolicy(policy), holds = await rows(db,'SELECT reason,set_at,set_by FROM bm_retention_holds WHERE client_id=?', client.id)
   const dates = await one(db, `SELECT MIN(at) AS first_at,MAX(at) AS last_at FROM (
     SELECT end_at AS at FROM bm_appointments WHERE client_id=? AND status<>'cancelled'
@@ -47,7 +47,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   const firstTreatment = dates?.first_at?.slice(0,10) ?? null
   const reasons: string[] = []
   if(await one(db,"SELECT 1 FROM bm_booking_payments WHERE client_id=? AND (state='review' OR (state='reserved' AND (expires_at>? OR attempted_at IS NOT NULL)) OR EXISTS(SELECT 1 FROM bm_card_payments p WHERE p.id=payment_id AND p.status='succeeded' AND p.applied_cents<p.amount_cents-p.refunded_cents))",client.id,new Date().toISOString()))reasons.push('booking_payment_review_or_credit_pending')
-  if(await one(db,`SELECT s.id FROM bm_retail_sales s WHERE s.client_id=? AND (
+  if(includeRetail && await one(db,`SELECT s.id FROM bm_retail_sales s WHERE s.client_id=? AND (
     (s.kind IN ('package','membership') AND s.units>(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)+COALESCE((SELECT units FROM bm_membership_settlements z WHERE z.sale_id=s.id),0)) OR
     (s.kind='gift_card' AND s.amount_cents>COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0))) LIMIT 1`,client.id))reasons.push('unresolved_retail_entitlement')
   if(await one(db,"SELECT id FROM bm_card_refunds WHERE client_id=? AND status IN ('approved','attempted','uncertain')",client.id))reasons.push('stripe_refund_outcome_pending')
@@ -66,7 +66,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
   if (applied && client.date_of_birth && lastTreatment && firstTreatment) {
     const majority = anniversary(client.date_of_birth,applied.majority)
     minor = firstTreatment < majority
-    const base = [lastTreatment,letterDate?.at?.slice(0,10) ?? lastTreatment,later?.at?.slice(0,10) ?? lastTreatment,retailDate?.at?.slice(0,10) ?? lastTreatment,authorizationDate?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
+    const base = [lastTreatment,letterDate?.at?.slice(0,10) ?? lastTreatment,later?.at?.slice(0,10) ?? lastTreatment,includeRetail ? retailDate?.at?.slice(0,10) ?? lastTreatment : lastTreatment,authorizationDate?.at?.slice(0,10) ?? lastTreatment].sort().at(-1)!
     eligibleAfter = [anniversary(base,applied.adult), anniversary(client.date_of_birth,applied.rule.minimumAge ?? 0), ...(minor ? [anniversary(majority,applied.minor)] : [])].sort().at(-1)!
     const clock = (await one(db,"SELECT date('now') AS today"))!.today
     if (eligibleAfter >= clock) reasons.push('retention_period_not_complete')

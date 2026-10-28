@@ -39,6 +39,7 @@ export async function destroyRecords(db: D1Database, who: Actor, input: Data) {
   const previewId = text(input.previewId,'preview_id',100), digest = text(input.digest,'digest',64)
   const preview = await one(db,'SELECT * FROM bm_retention_previews WHERE id=? AND digest=? AND created_by=?',previewId,digest,who.id)
   insist(preview,'destruction_preview_changed',409)
+  insist(!JSON.parse(preview.inventory).scope,'full_destruction_preview_required',409)
   const client = await clientVisible(db,who,preview.client_id), policy = await one(db,'SELECT * FROM bm_retention_policy WHERE id=1')
   const review = await eligibility(db,client,policy)
   insist(review.eligible,'records_not_eligible_for_destruction',409)

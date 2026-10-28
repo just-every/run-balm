@@ -1,3 +1,4 @@
+import { retailRetention } from './retail'
 import { clientVisible } from '../domain/clients'
 import { audit, commit, guard, human, insist, integer, need, now, one, optional, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { appliedPolicy, eligibility } from './eligibility'
@@ -13,7 +14,8 @@ export async function retentionState(db: D1Database, who: Actor) {
 export async function retentionClient(db: D1Database, who: Actor, clientId: string) {
   need(who,'owner'); human(who)
   const client = await clientVisible(db,who,clientId)
-  return eligibility(db,client,await one(db,'SELECT * FROM bm_retention_policy WHERE id=1'))
+  const policy=await one(db,'SELECT * FROM bm_retention_policy WHERE id=1')
+  return {...await eligibility(db,client,policy),retail:await retailRetention(db,client,policy)}
 }
 export async function saveRetention(db: D1Database, who: Actor, input: Data) {
   need(who,'owner'); human(who)

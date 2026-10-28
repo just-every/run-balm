@@ -84,6 +84,7 @@ export async function retailJourney(h,proof=async()=>{}){
  await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:membership.id,appointmentId:memberVisit})
  const change={clientId:patient.id,saleId:membership.id,state:'paused',reason:'Patient requested a pause',consentEvidence:'Patient authorized reversible pause; all unused visits retained',effectiveAt:new Date().toISOString(),authorizedAt:new Date(Date.now()-120000).toISOString(),authorizationMethod:'Patient request received in person',confirm:true}
  await h.cmd('pay.retail.membership',change,reception.cookie,403)
+ await h.cmd('pay.retail.membership',{...change,authorizerKind:'guardian'},h.owner,403)
  await h.cmd('pay.retail.membership',{...change,confirm:false},h.owner,400)
  for(const missing of ['effectiveAt','authorizedAt','authorizationMethod','consentEvidence'])await h.cmd('pay.retail.membership',{...change,[missing]:undefined},h.owner,400)
  for(const authorizedAt of ['2020-99-99T03:04:00Z','2020-02-30T03:04:00Z','2020-01-02T25:04:00Z','2020-01-02T03:99:00Z'])await h.cmd('pay.retail.membership',{...change,authorizedAt},h.owner,400)
@@ -113,6 +114,7 @@ export async function retailJourney(h,proof=async()=>{}){
  await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:membership.id,appointmentId:exhausted},h.owner,409)
  await h.cmd('pay.retail.cancel',{...resume,effectiveAt:new Date().toISOString()},reception.cookie,403)
  await h.cmd('pay.retail.cancel',{...resume,clientId:other.id},h.owner,404)
+ await h.cmd('pay.retail.cancel',{...resume,authorizerKind:'guardian'},h.owner,403)
  const cancellation=await h.cmd('pay.retail.cancel',{...resume,effectiveAt:new Date().toISOString(),consentEvidence:'Patient specifically authorized cancellation after the final visit'})
  assert.deepEqual(cancellation,{state:'cancelled',visitsLeft:0,providerCharge:false,externalBillingChanged:false})
  await h.cmd('pay.retail.cancel',{...resume,effectiveAt:new Date().toISOString()},h.owner,409)

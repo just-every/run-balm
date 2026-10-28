@@ -376,3 +376,8 @@ test('PAY-002 PAY-004 HIPAA-002: Stripe and external refunds retain totals witho
   assert.equal((await h.send('/api/balm/receipts/'+credit.id+'.pdf',undefined,h.owner)).status,404)
 },{outbound})
 })
+
+test('PAY-008: eligible retail groups retire independently without losing patient value, clinical records or dated totals',()=>run(async h=>{
+ const {retailRetentionJourney}=await import('./retail-retention-journey.mjs')
+ await retailRetentionJourney(h)
+}))

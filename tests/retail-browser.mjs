@@ -4,6 +4,7 @@ import {chromium} from '@playwright/test'
 import {clinic,pastVisit} from './clinic.mjs'
 import {harness} from './harness.mjs'
 import {retailJourney} from './retail-journey.mjs'
+import {retailRetentionJourney} from './retail-retention-journey.mjs'
 const output=process.env.BALM_UI_SCREENSHOTS
 assert.ok(output);await mkdir(output,{recursive:true})
 const h=await harness({browserHttps:true})
@@ -122,6 +123,17 @@ try{
    }
   }
  })
+ await retailRetentionJourney(h,{screen:async patient=>{
+  const [key,...value]=h.owner.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
+  for(const width of [1440,390]) {
+   await page.setViewportSize({width,height:1000});await page.goto(h.origin+'/app/clients/'+patient.id)
+   await page.getByRole('button',{name:'Review eligible retail originals',exact:true}).click()
+   await page.locator('#retention-review').waitFor()
+   if(width===1440)assert.ok(await page.locator('#retention-review').getByText('Retail receipts and visit entitlements: 3',{exact:true}).count())
+   await page.locator('#retention-review').scrollIntoViewIfNeeded()
+   await page.screenshot({path:output+'/retail-scoped-destruction-'+width+'.png'})
+  }
+ }})
  // Render the digest-bound retail destruction inventory through its native form.
  const {service,practitioners:[priya]}=await clinic(h,['RetentionProof'])
  const aged=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retained retail',dateOfBirth:'1950-01-01'})

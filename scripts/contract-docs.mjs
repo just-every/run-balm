@@ -9,7 +9,7 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode='check',...requested]=process.argv.slice(2)
-const ids=[...new Set(['REPORT-003','PAY-003','PAY-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
+const ids=[...new Set(['REPORT-003','PAY-003','PAY-002','PAY-008',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
@@ -20,6 +20,11 @@ for(const [label,selected] of [['Published',rows.filter(r=>r[3]==='published')],
  contract=contract.replace(new RegExp('^\\| '+label+' \\|.*$','m'),'| '+label+' | '+[...values,selected.length].join(' | ')+' |')
 }
 let acceptance=readFileSync('ACCEPTANCE.md','utf8')
+const riderTitle='## PAY-008 and AGENT-005 adopted-default riders'
+const riderStart=source.indexOf(riderTitle),riderEnd=source.indexOf('\n## ',riderStart+1)
+const projectionStart=acceptance.indexOf(riderTitle),projectionEnd=acceptance.indexOf('\n## ',projectionStart+1)
+assert.ok(riderStart>=0&&riderEnd>riderStart&&projectionStart>=0&&projectionEnd>projectionStart,'Adopted rider section is missing')
+acceptance=acceptance.slice(0,projectionStart)+source.slice(riderStart,riderEnd)+acceptance.slice(projectionEnd)
 const all=counts(rows)
 acceptance=acceptance.replace(/Its current counts are: \d+ done, \d+ partial and \d+ missing of \d+ clauses\./,`Its current counts are: ${all[0]} done, ${all[1]} partial and ${all[2]} missing of ${rows.length} clauses.`)
 for(const row of rows)acceptance=acceptance.replace(new RegExp('(^- \\*\\*'+row[1]+' — .*?\\*\\* \\()\\w+(\\)\\.)','m'),'$1'+row[4]+'$2')

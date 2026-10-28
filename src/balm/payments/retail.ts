@@ -1,9 +1,10 @@
-import { audit, commit, guard, human, id, insist, integer, now, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
+import { audit, commit, guard, human, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { clientVisible } from '../domain/clients'
 import { dollars } from '../domain/invoices'
 import { pdf } from './pdf'
 
 function authorization(input: Data) {
+  insist(!input.authorizerKind || input.authorizerKind==='patient', 'representative_authority_not_established', 403)
   const instant = (name: string) => {
     const value = text(input[name], name, 30)
     insist(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(value) && Number.isFinite(Date.parse(value)), 'invalid_'+name)
@@ -51,7 +52,7 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
         const amount=integer(input.settlementAmountCents,'settlement_amount',1)
         insist(amount===Math.round(Number(sale.amount_cents)*left / Number(sale.units)),'refund_must_match_unused_purchase_value',409)
         const reference=text(input.settlementReference,'settlement_reference',120),evidence=text(input.settlementEvidence,'settlement_evidence',500)
-        await commit(db,who,[notCancelled(),guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_settlements WHERE sale_id=?)',sale.id),
+        await commit(db,who,[guard(db,"NOT EXISTS(SELECT 1 FROM bm_retired_retail_references WHERE kind='settlement' AND digest=?)",await sha256(reference)),notCancelled(),guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_settlements WHERE sale_id=?)',sale.id),
           guard(db,'(SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) FROM bm_retail_sales s WHERE id=?)=?',sale.id,left),
           guard(db,"NOT EXISTS(SELECT 1 FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id),
           stmt(db,'INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by) VALUES(?,?,?,?,?,?,?,?)',sale.id,client.id,left,amount,reference,evidence,now(),who.email),
@@ -108,7 +109,7 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
   const clinic=(await one(db,'SELECT clinic_name FROM bm_settings WHERE id=1'))!
   const bytes=pdf({header:clinic.clinic_name,title:'Cash sale receipt',blocks:[{kind:'facts',rows:[['Patient',client.first_name+' '+client.last_name],['Item',label],['Kind',kind],['Amount',dollars(amount)],['Sales tax',dollars(tax)],['Total',dollars(amount+tax)],['Payment',gift?'Patient gift value redeemed':'Cash received outside Balm'],['Reference',reference],['Date',at],...(renewal?[['Renewal of receipt',renewal.id] as [string,string],['Patient authorization',renewalAuthorization!.authorizedAt] as [string,string]]:[]),...(units?[['Visits included',String(units)] as [string,string]]:[])]},{kind:'notes',lines:['No automatic renewal, expiry, transfer, refund or insurance billing. Product tax is the owner recorded rate; Balm does not determine tax law.']}]})
   const encoded=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''))
-  await commit(db,who,[...(renewal?[
+  await commit(db,who,[guard(db,"NOT EXISTS(SELECT 1 FROM bm_retired_retail_references WHERE kind='sale' AND digest=?)",await sha256(reference)),...(renewal?[
     guard(db,"EXISTS(SELECT 1 FROM bm_retail_sales s WHERE s.id=? AND s.client_id=? AND s.kind='membership' AND s.service_id=? AND s.units=(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)) AND NOT EXISTS(SELECT 1 FROM bm_retail_sales WHERE renewal_of=?) AND NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)",renewal.id,client.id,service!.id,renewal.id,renewal.id)
   ]:[]),...(gift?[guard(db,`(SELECT amount_cents FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='gift_card')-COALESCE((SELECT SUM(amount_cents+tax_cents) FROM bm_retail_sales WHERE gift_id=?),0)>=?`,gift.id,client.id,gift.id,amount+tax)]:[]),
     stmt(db,'INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64,renewal_of,renewal_authorization) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,client.id,kind,label,service?.id??null,units,amount,tax,rate,state,evidence,gift?.id??null,reference,at,who.email,encoded,renewal?.id??null,renewalAuthorization?JSON.stringify({...renewalAuthorization,reason:text(input.reason,'reason',500)}):null),audit(db,who,renewal?'retail.renewed':'retail.sold',client.id,key,kind)])
