@@ -28,7 +28,7 @@ export async function dailyCloseClinic(h){
  await h.cmd('invoice.void',{id:auto.id,reason:'Rebuild this visit charge after documentation review'})
  const book=async clientId=>{const at=local((await slots(h,service.id,priya.id))[0]);return h.cmd('appointment.book',{clientId,practitionerId:priya.id,serviceId:service.id,date:at.slice(0,10),time:at.slice(11,16),acknowledgeInsurance:true})}
  await book(late.id);await book(pending.id);await book(future.id)
- const plan=async(clientId,startDate)=>h.cmd('plan.send',{clientId,diagnoses:'M25.561',shortTermGoals:'Walk comfortably',longTermGoals:'Return to community walking',frequencyPerWeek:2,durationWeeks:12,interventions:'Therapeutic exercise',startDate,physicianName:'Dr Anika Patel',physicianEmail:'physician@clinic.example',signature:'Priya Shah',credentials:'PT',attest:true},priya.cookie)
+ const plan=async(clientId,startDate,extra={})=>h.cmd('plan.send',{clientId,diagnoses:'M25.561',shortTermGoals:'Walk comfortably',longTermGoals:'Return to community walking',frequencyPerWeek:2,durationWeeks:12,interventions:'Therapeutic exercise',startDate,physicianName:'Dr Anika Patel',physicianEmail:'physician@clinic.example',signature:'Priya Shah',credentials:'PT',attest:true,...extra},priya.cookie)
  const certify=async p=>{assert.equal((await h.form('/plan/'+p.token,{name:'Anika Patel',credentials:'MD',npi:'1234567893',attest:'on'})).status,303)}
  await certify(await plan(patient.id,await visitDate(h,visit)));await certify(await plan(noCharge.id,await visitDate(h,otherVisit)))
  const latePlan=await plan(late.id,shift(today,-35)),pendingPlan=await plan(pending.id,today)

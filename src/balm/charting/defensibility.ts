@@ -36,7 +36,7 @@ async function context(db: D1Database, noteId: string, who: Actor) {
   const plans = await rows(db, `SELECT p.id,p.content,p.status FROM bm_plans_of_care p
     LEFT JOIN bm_episode_records pr ON pr.record_kind='plan' AND pr.record_id=p.id
     LEFT JOIN bm_episode_records vr ON vr.record_kind='visit' AND vr.record_id=?
-    WHERE p.client_id=? AND p.author_id=? AND pr.episode_id IS vr.episode_id
+    WHERE p.client_id=? AND p.author_id=? AND NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=p.id) AND pr.episode_id IS vr.episode_id
     AND json_extract(p.content,'$.startDate')<=? ORDER BY p.created_at DESC,p.id DESC LIMIT 1`, visit.id, note.client_id, note.author_id, date)
   const plan = plans[0] ?? null
   const rules = payer?.medicare ? [...cmsRules] : payers.some(p=>p.medicare) ? cmsRules.map(rule=>({...rule,rule:rule.rule+' Applies only to these Medicare policies: '+payers.filter(p=>p.medicare).map(p=>`${p.name} (priority ${p.priority}, policy ${p.policy_id})`).join('; ')+'.'})) : []

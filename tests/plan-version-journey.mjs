@@ -9,7 +9,7 @@ export async function planVersionFixture(h,existing={}){
  const priya=existing.priya??c.practitioners[0],service=c.service
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
  const patient=existing.patient??await h.cmd('client.save',{firstName:'Synthetic',lastName:'Plan patient',dateOfBirth:'1980-01-01'})
- const visit=await pastVisit(h,patient.id,priya,service.id)
+ const visit=existing.visit??await pastVisit(h,patient.id,priya,service.id)
  const episode=existing.episode??await h.cmd('episode.open',{clientId:patient.id,title:'Synthetic knee recovery',start:'direct_access'})
  const input={clientId:patient.id,episodeId:episode.id,diagnoses:'M25.561',shortTermGoals:'Walk ten minutes comfortably',longTermGoals:'Resume community walking',frequencyPerWeek:2,durationWeeks:6,interventions:'Graded therapeutic exercise',startDate:existing.startDate??'2000-01-01',physicianName:'Synthetic Physician',physicianEmail:['synthetic-balm-physician','example.test'].join('@'),signature:'Priya Shah',credentials:'PT',attest:true}
  const file=async(cookie=priya.cookie)=>(await h.send('/api/balm/clients/'+patient.id,undefined,cookie)).value
@@ -73,6 +73,12 @@ export async function planVersionJourney(h){
  assert.equal((await h.form('/plan/'+latest.token,{name:'Synthetic Physician',credentials:'MD',attest:'on'})).status,303)
  const latestPlan=(await file()).plans.find(p=>p.id===latest.id)
  await h.cmd('plan.certification.file',scanInput(latestPlan,patient,episode.id),priya.cookie,409,'link certification refuses a second scan')
+ const closedPlan=await h.cmd('plan.send',{...input,episodeId:wrongEpisode.id},priya.cookie)
+ await h.cmd('episode.close',{id:wrongEpisode.id,reason:'Treatment completed before return of the original'},priya.cookie)
+ const closedVersion=(await file()).plans.find(p=>p.id===closedPlan.id)
+ const closedReceipt=await h.cmd('plan.certification.file',scanInput(closedVersion,patient,wrongEpisode.id),priya.cookie)
+ const closedHistory=await h.send('/api/balm/clients/'+patient.id+'/history?historyType=signed_plan&historyEpisode='+wrongEpisode.id,undefined,priya.cookie)
+ assert.deepEqual(closedHistory.value.entries.map(r=>r.id),[closedReceipt.documentId],'a returned original retains its closed episode without reopening it')
  const audit=(await h.db.prepare('SELECT action,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['plan.replaced','plan.scan_certified','chart.history_searched','chart.document_read','chart.document_downloaded'])assert.ok(audit.some(a=>a.action===action),action)
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:false})

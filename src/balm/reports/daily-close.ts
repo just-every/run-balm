@@ -64,7 +64,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       FROM bm_notes n JOIN bm_clients c ON c.id=n.client_id JOIN bm_staff p ON p.id=n.author_id LEFT JOIN bm_appointments a ON a.id=n.appointment_id
       WHERE n.signed_at IS NULL AND julianday(n.created_at)<julianday(?)
       AND (a.id IS NULL OR julianday(a.start_at)<julianday(?)) ORDER BY n.created_at,n.id`, cutoff, cutoff),
-    stmt(db, `SELECT p.id,p.client_id,p.author_id,p.note_id,p.status,p.created_at,
+    stmt(db, `SELECT p.id,p.client_id,p.author_id,p.note_id,p.status,p.created_at,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='plan' AND record_id=p.id),'') AS episodeId,
       json_extract(p.content,'$.startDate') AS start_date,json_extract(p.content,'$.certifiedThrough') AS certified_through,
       c.first_name||' '||c.last_name AS client,s.name AS practitioner
       FROM bm_plans_of_care p JOIN bm_clients c ON c.id=p.client_id JOIN bm_staff s ON s.id=p.author_id
@@ -96,7 +96,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   const copayByVisit = new Map(copayPayments.map(p => [p.appointment_id, Number(p.cents)]))
   const intakeClients = new Set<string>(), latestPlans = new Map<string, Data>()
   for (const plan of plans) {
-    const key = JSON.stringify([plan.client_id, plan.author_id])
+    const key = JSON.stringify([plan.client_id, plan.author_id, plan.episodeId])
     if (!latestPlans.has(key)) latestPlans.set(key, plan)
   }
 
@@ -106,7 +106,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
   for (const visit of throughToday) {
     const visitInvoices = invoicesByVisit.get(visit.id) ?? []
     if (visit.status === 'attended') {
-      const pair = JSON.stringify([visit.client_id, visit.practitioner_id]), treatments = attendedByPair.get(pair) ?? []
+      const pair = JSON.stringify([visit.client_id, visit.practitioner_id, visit.episodeId]), treatments = attendedByPair.get(pair) ?? []
       treatments.push(visit); attendedByPair.set(pair, treatments)
       // A separate unsigned draft remains listed even when this visit has a signed note.
       if (!visit.signed_note && !unsignedVisits.has(visit.id)) result.notes.push(item(visit, 'missing_signed_note', `Attended visit has no signed treatment note · ${displayDate(visit.local_date)} · ${visit.practitioner}`, `visit-${visit.id}`))

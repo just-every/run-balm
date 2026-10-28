@@ -19,7 +19,7 @@ export function chartHistoryPanel(s: any, f: any) {
     + '<button type="submit">Search history</button></form>'
   const pager=(n:number,label:string)=>`<a href="${h(path+'?'+new URLSearchParams({...filters,historyPage:String(n)})+'#chart-history')}">${label}</a>`
   const list=history.entries.map((r:any)=>`<article class="entry"><h3>${h(r.title)}</h3><p>${h(historyTypes.find(([key])=>key===r.type)?.[1]??r.type)} · ${h(r.date?usDate(r.date,zone):'Date not recorded')}`
-    + `${r.filename?`<br>${h(r.filename)} · ${h(r.byteLength)} bytes${r.filedBy?`<br>Filed by ${h(r.filedBy)}`:''}`:''}<br>${episodeLabel(f,r.episodeId)}</p><a href="${h(r.url)}">${h(r.action)}</a>${filedAlone[r.type]&&!f.careAccess?.teamOnly?assignForm(f,filedAlone[r.type],r.id,r.episodeId,path):''}</article>`).join('')
+    + `${r.filename?`<br>${h(r.filename)} · ${h(r.byteLength)} bytes${r.filedBy?`<br>Filed by ${h(r.filedBy)}`:''}`:''}<br>${episodeLabel(f,r.episodeId)}</p><a href="${h(r.url)}">${h(r.action)}</a>${r.planId?`<p>Written signature ${h(usDate(r.signatureDate,zone))} · certified ${h(usDate(r.certificationDate,zone))}</p><a href="#plan-${h(r.planId)}">Open matched plan version</a>`:''}${!r.planId&&filedAlone[r.type]&&!f.careAccess?.teamOnly?assignForm(f,filedAlone[r.type],r.id,r.episodeId,path):''}</article>`).join('')
   const upload=form('chart.document.upload',path,hidden('clientId',f.client.id)+episodeField(f)+field('title','Document title','','text','required maxlength="160"')
     + select('documentType','Type of document',documentTypes.map(([key,label])=>[key,label]),'other')
     + field('documentDate','Document date',hostDateAt(new Date(),zone),'date','required')

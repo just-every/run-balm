@@ -1,3 +1,4 @@
+import {scanInput} from './plan-version-journey.mjs'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {run} from './harness.mjs'
@@ -71,6 +72,20 @@ test('REPORT-004: missing and expired plans, an unattached draft and expired aut
  assert.ok((await close()).plans.some(i=>i.clientId===c.future.id&&i.kind==='expired_plan'))
  await c.certify(await c.plan(c.future.id,c.today))
  assert.ok(!(await close()).plans.some(i=>i.clientId===c.future.id))
+ // Replacements remove only the superseded plan from pending and expired work.
+ const expiredVersion=await c.plan(c.pending.id,shift(-110));await c.certify(expiredVersion)
+ const previous=(await h.send('/api/balm/clients/'+c.pending.id,undefined,c.priya.cookie)).value.plans.find(p=>p.id===expiredVersion.id)
+ const replacement=await h.cmd('plan.send',{clientId:c.pending.id,predecessorId:previous.id,predecessorSha256:previous.sha256,episodeId:'none',diagnoses:'M25.561',shortTermGoals:'Walk comfortably',longTermGoals:'Return to community walking',frequencyPerWeek:2,durationWeeks:12,interventions:'Therapeutic exercise',startDate:c.today,physicianName:'Synthetic Physician',physicianEmail:['synthetic-balm-physician','example.test'].join('@'),signature:'Priya Shah',credentials:'PT',attest:true},c.priya.cookie)
+ assert.ok((await close()).plans.some(i=>i.id===replacement.id&&i.kind==='pending_plan'))
+ assert.ok(!(await close()).plans.some(i=>i.id===previous.id),'superseded expired work clears')
+ const replacementPlan=(await h.send('/api/balm/clients/'+c.pending.id,undefined,c.priya.cookie)).value.plans.find(p=>p.id===replacement.id)
+ await h.cmd('plan.certification.file',scanInput(replacementPlan,c.pending),c.priya.cookie)
+ assert.ok(!(await close()).plans.some(i=>i.clientId===c.pending.id),'filed original clears pending work')
+ const lateVersion=(await h.send('/api/balm/clients/'+c.late.id,undefined,c.priya.cookie)).value.plans.find(p=>p.id===c.latePlan.id)
+ const expiredScan=await c.plan(c.late.id,shift(-120),{predecessorId:lateVersion.id,predecessorSha256:lateVersion.sha256,episodeId:'none'})
+ const expiredScanPlan=(await h.send('/api/balm/clients/'+c.late.id,undefined,c.priya.cookie)).value.plans.find(p=>p.id===expiredScan.id)
+ await h.cmd('plan.certification.file',scanInput(expiredScanPlan,c.late),c.priya.cookie)
+ assert.ok((await close()).plans.some(i=>i.id===expiredScan.id&&i.kind==='expired_plan'),'filing an expired certification retains recertification work')
  const draft=await h.cmd('note.write',{clientId:c.noCharge.id,body:'Unattached private treatment draft'},c.priya.cookie)
  assert.ok((await close()).notes.some(i=>i.id===draft.id))
  assert.ok(!JSON.stringify(await close()).includes('Unattached private treatment draft'))

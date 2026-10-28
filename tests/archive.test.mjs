@@ -1,3 +1,5 @@
+import {historicalPlanCustody} from './plan-custody-fixture.mjs'
+import {planVersionFixture,scanInput,signedPlanBytes} from './plan-version-journey.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
@@ -47,6 +49,7 @@ async function historicalErasurePatient(h,priya,service) {
   const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,12)
   await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',visit).run()
   await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'incoming','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:00:00Z','Historical archived call','practitioner',?)").bind(crypto.randomUUID(),patient.id,priya.id,priya.email,priya.id).run()
+  patient.planCustody=await historicalPlanCustody(h,{patient,priya})
   return patient
 }
 async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
@@ -115,6 +118,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     await h.cmd('client.alert.save',{clientId:maya.id,kind:'precaution',text:'Archive weight-bearing restriction'})
     await h.cmd('holiday.save',{date:'2099-11-26',name:'Thanksgiving clinic closure'})
     const chartDocument=await h.cmd('chart.document.upload',mriUpload(maya.id,'2026-10-01'))
+    const versionClinic=await planVersionFixture(h,{priya,service,patient:maya,visit:(await h.db.prepare('SELECT id FROM bm_appointments WHERE client_id=? AND practitioner_id=? LIMIT 1').bind(maya.id,priya.id).first()).id})
+    const planReplacement=await h.cmd('plan.send',{...versionClinic.input,predecessorId:versionClinic.initial.id,predecessorSha256:versionClinic.first.sha256,longTermGoals:'Synthetic archived replacement recovery'},priya.cookie)
+    const planVersion=(await versionClinic.file()).plans.find(p=>p.id===planReplacement.id)
+    const planCertification=await h.cmd('plan.certification.file',scanInput(planVersion,maya,versionClinic.episode.id),priya.cookie)
+    const planCustody={first:versionClinic.initial.id,current:planReplacement.id,certification:planCertification,episodeId:versionClinic.episode.id,plans:(await versionClinic.file()).plans}
+
     const injuryPatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Carrier archive',dateOfBirth:'1980-01-01'})
     const injuryPolicy=await h.cmd('insurance.policy.save',{clientId:injuryPatient.id,payerId:payer.id,memberId:'synthetic-balm-260',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2026-01-01'})
     await h.cmd('insurance.injury.save',{policyId:injuryPolicy.id,kind:'workers_comp',claimNumber:'synthetic-balm-261',adjuster:'Synthetic Adjuster',adjusterEmail:'adjuster@example.test',employerAttorney:'Synthetic Employer',billingRequirements:'Carrier claim number',authorizationRequirements:'Carrier authorization',reportRequirements:'Progress report',source:'synthetic-balm-262 original carrier instructions'})
@@ -139,12 +148,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,planCustody,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:600_000},async()=>{
-  const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,planCustody,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -183,6 +192,14 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
       const restoredLibrary=await restoredClinic.send('/api/balm/exercises?q=Archive%20practice',undefined,cookie)
       assert.equal(restoredLibrary.value.total,1,'practice library originals travel in CLI archives')
       const chartBeforeEdit=(await restoredClinic.send('/api/balm/clients/'+maya.id,undefined,cookie)).value
+      assert.deepEqual(chartBeforeEdit.plans,planCustody.plans,'all plan versions, sends, signatures and certification metadata survive CLI restore')
+      const planHistory=await restoredClinic.send('/api/balm/clients/'+maya.id+'/history?historyType=signed_plan&historyEpisode='+planCustody.episodeId,undefined,cookie)
+      assert.deepEqual(planHistory.value.entries.map(r=>[r.id,r.planId,r.episodeId]),[[planCustody.certification.documentId,planCustody.current,planCustody.episodeId]])
+      const planOriginal=await restoredClinic.mf.dispatchFetch(restoredClinic.origin+'/api/balm/chart-documents/'+planCustody.certification.documentId,{headers:{cookie}})
+      assert.equal(planOriginal.status,200);assert.deepEqual(Buffer.from(await planOriginal.arrayBuffer()),signedPlanBytes)
+      const restoredPlanClinician=await restoredClinic.signIn(priya.email)
+      await restoredClinic.cmd('plan.certification.file',scanInput(chartBeforeEdit.plans.find(p=>p.id===planCustody.current),maya,planCustody.episodeId),restoredPlanClinician,409)
+
       assert.ok(chartBeforeEdit.homeExercises.some(e=>e.libraryId==='balm-cc0-004'&&e.sourceNoteId===checkedNote.id&&e.license==='CC0-1.0'))
       assert.ok(chartBeforeEdit.portalProfileChanges.some(r=>r.payload.memberId==='ARCHIVE-PROFILE'))
       assert.ok((await restoredClinic.db.prepare('SELECT id FROM bm_guardian_grants WHERE email=?').bind('archive-parent@family.example').all()).results.length)
@@ -265,7 +282,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},ownerCookie,409)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_plan_replacements','bm_plan_sends','bm_plan_certifications'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
         assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
@@ -282,7 +299,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_plan_replacements','bm_plan_sends','bm_plan_certifications'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
       assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
       assert.equal(await current.env.DB.prepare('SELECT id FROM bm_retail_sales WHERE id=?').bind(scopedSale).first(),null)
       assert.equal((await current.env.DB.prepare('SELECT id FROM bm_clients WHERE id=?').bind(scopedPatient.id).first()).id,scopedPatient.id)
@@ -291,6 +308,11 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     } finally {await current.dispose()}
     h=await harness({root:erased,...identity})
     const restoredOwner=await h.signIn(h.auth.OWNER_EMAIL)
+    assert.equal((await h.send('/plan/'+retentionPatient.planCustody.token)).status,404,'a destroyed certification link cannot return after restore')
+    assert.equal((await h.send('/api/balm/chart-documents/'+retentionPatient.planCustody.documentId,undefined,restoredOwner)).status,404)
+    const restoredClinician=await h.signIn(['priya','clinic.example'].join('@'))
+    await h.cmd('plan.certification.file',{id:retentionPatient.planCustody.current,clientId:retentionPatient.id},restoredClinician,404)
+
     await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},restoredOwner,409)
     assert.equal((await h.send('/api/balm/receipts/'+scopedSale+'.pdf',undefined,restoredOwner)).status,404)
     assert.equal((await h.send('/api/balm/receipts/'+retainedGift.id+'.pdf',undefined,restoredOwner)).status,200)

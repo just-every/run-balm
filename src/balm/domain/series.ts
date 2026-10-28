@@ -43,7 +43,7 @@ async function basis(db: D1Database, who: Actor, input: Data) {
   const { practitioner, service } = await bookable(db, input.practitionerId, input.serviceId)
   insist(who.role === 'owner' || who.staffRole === 'reception' || practitionerId(who) === practitioner.id, 'practitioners_book_their_own_diary', 403)
   const { client, guards } = await bookingClient(db, who, input.clientId)
-  const plan = input.planId ? await one(db, 'SELECT id,content,content_sha256 FROM bm_plans_of_care WHERE id=? AND client_id=? AND author_id=?', text(input.planId, 'plan', 100), client.id, practitioner.id) : null
+  const plan = input.planId ? await one(db, 'SELECT id,content,content_sha256 FROM bm_plans_of_care WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=bm_plans_of_care.id) AND id=? AND client_id=? AND author_id=?', text(input.planId, 'plan', 100), client.id, practitioner.id) : null
   if (input.planId) {
     insist(who.role === 'owner' || !!practitionerId(who), 'plans_are_clinical', 403)
     insist(plan, 'plan_of_care_not_found', 404)
