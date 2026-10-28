@@ -497,7 +497,7 @@ test('PAY-002: intake and portal authorize hosted card setup, approved original 
 
 test('PAY-002: a lost refund response stays reserved until the original Stripe refund is reconciled without another send', {timeout:120_000}, async()=>{
  const stripe=fakeProviders();let lose=true
- const fixture=await connected({stripe,origin:undefined,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,outbound:async request=>{
+ const fixture=await connected({stripe,outbound:async request=>{
   const refund=request.method==='POST'&&new URL(request.url).pathname==='/v1/refunds'
   const response=await stripe.handler(request)
   if(refund&&lose){lose=false;return Response.json({error:{message:'Response lost after acceptance'}},{status:503})}
@@ -544,7 +544,7 @@ test('PAY-002: a lost refund response stays reserved until the original Stripe r
 
 test('PAY-002: an uncertain Terminal send is reconciled on its original intent without another collection', {timeout:120_000}, async()=>{
  const stripe=fakeProviders();let lose=true,loseCard=true,revokeDuringRead=false
- const fixture=await connected({stripe,outbound:async request=>{
+ const fixture=await connected({stripe,origin:undefined,browserHttps:!!process.env.BALM_UI_SCREENSHOTS,outbound:async request=>{
   const body=request.method==='POST'?await request.clone().text():''
   const saved=request.method==='POST'&&new URL(request.url).pathname==='/v1/payment_intents'&&body.includes('off_session=true')
   const processing=request.method==='POST'&&new URL(request.url).pathname.endsWith('/process_payment_intent')

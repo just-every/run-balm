@@ -5758,7 +5758,7 @@
       "executable": false
     },
     "tests/payments.test.mjs": {
-      "sha256": "3f60a393a6069b1703e511066123dba79ac1e8ce21c37f7ab46f7619dc39debc",
+      "sha256": "97c04284a7bdc83b85df5251b29f0b81f42e3aa9b49dd3e6b037f6aed3080008",
       "executable": false
     },
     "tests/portal-billing.mjs": {
