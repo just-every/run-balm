@@ -372,7 +372,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
       assert.equal(bucket.log.length, 0, 'Managed never contacts storage')
     } finally { await managed.close() }
     for (const path of [source, scratch, refused]) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 4e6 })
+    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 16e6 })
     h = await harness({ root: source, outbound: bucket.fetchHandler })
     await clinic(h, []); await h.finishSetup()
     const tick = async at => (await h.mf.getWorker()).scheduled({ scheduledTime: at, cron: '* * * * *' })
@@ -510,7 +510,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
  let h
  try {
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const {service,practitioners:[priya]}=await clinic(h)
   const student=await h.staff('ArchiveStudent','student',{discipline:'pt',supervisorId:priya.id,credentials:'SPT'})
@@ -625,7 +625,7 @@ test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches,
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null
@@ -649,7 +649,7 @@ test('retail and finance originals, paused entitlements and preparation authorit
   let h
   try {
     await checkout(source);await checkout(restored)
-    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
     const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge(),stripe=fakeProviders()
     h=await harness({root:source,outbound:r=>new URL(r.url).hostname==='api.stripe.com'?stripe.handler(r):qbo.outbound(r)})
     const {service,practitioners:[priya]}=await clinic(h)
@@ -786,7 +786,7 @@ test('prior authorization signed packets and recorded payer decisions survive a 
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const {authorizationRequestFixture,approveAuthorizationRelease}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
   await c.sign()

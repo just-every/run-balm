@@ -58,7 +58,7 @@ export async function releaseCommand(db:D1Database,who:Actor,name:string,input:D
   const current=await snapshot(db,row.client_id,JSON.parse(row.appointment_ids),row.payer_id,row.purpose,row.reference)
   insist(await sha256(JSON.stringify(current))===row.sha256,'notes_changed_prepare_a_new_release',409)
  }
- const at=now(),expiresAt=new Date(Date.now()+7*86400000).toISOString()
+ const at=now(),expiresAt=new Date(Date.parse(at)+7*86400000).toISOString()
  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_retention_epoch WHERE id=1 AND version=?)',epoch),guard(db,"EXISTS(SELECT 1 FROM bm_audit WHERE subject_id=? AND actor_email=? AND action='note_release.reviewed')",row.id,who.email),guard(db,'NOT EXISTS(SELECT 1 FROM bm_note_release_revocations WHERE release_id=?)',row.id),stmt(db,'INSERT INTO bm_note_release_approvals(release_id,sha256,approved_at,approved_by,expires_at) VALUES(?,?,?,?,?)',row.id,row.sha256,at,who.email,expiresAt),audit(db,who,'note_release.approved',row.client_id,row.id)])
  return {approved:true,expiresAt}
 }
