@@ -130,11 +130,11 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "e9d0b376070d724b9a080fb13fe55920d57b7aa1ee13922374620540d08c150a",
+      "sha256": "6d26740cf3b6f5500bb454a766cdde5c85415fc2561b331604586dd1b9e73833",
       "executable": false
     },
     "AGENTS.md": {
-      "sha256": "004235e1f27f614a813a5caf4eb08f75d191f32cb6d3f19eb5637caa49f85b57",
+      "sha256": "09a32280d026644febbe88c02a152058e251a1e60d1abfa278c8aa835854fdaf",
       "executable": false
     },
     "base-copies.json": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "bee59178c04dac2a042860fa195024ead85ece949b90b07ba558f0de0b1d6eb9",
+      "sha256": "159e039cdb0998c337ba872f52225abb3c15cf387854a046bc20d7f1fc1dbff0",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "d855a08bbfc055fd9d63b704b0a13eb8afb3e5a5ff87d09d2e1b144ed0784a7c",
+      "sha256": "d1bc3fa525033d71b56b776c25f7d2e7c8617c6a8938acabec5bc639a17b1981",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -1462,7 +1462,7 @@
       "executable": false
     },
     "scripts/contract-docs.mjs": {
-      "sha256": "ae218aed41f41617d2a9c394a0503f7090ec3c59e25a0ac54cd86b6aa59ecf23",
+      "sha256": "094d7a1389336d7f7dd7f0d30dbf75114e0fb01ac12c1da05683a8b14c5614fd",
       "executable": false
     },
     "scripts/delivery/base/artifact.mjs": {
@@ -3226,7 +3226,7 @@
       "executable": false
     },
     "src/balm/ui/reminders.ts": {
-      "sha256": "97008bb3775ce1f4ab37eb8594352200747abd236861d02d6e709d73925b26d8",
+      "sha256": "7a2310eb52fa133fb36497fb55b206d100df98a1f89203c677731f37de8aa83b",
       "executable": false
     },
     "src/balm/ui/reports.ts": {
@@ -5430,7 +5430,7 @@
       "executable": false
     },
     "tests/balm.test.mjs": {
-      "sha256": "7e52da3f26714528cefa814b384a063cf8dca5f38171382f1ac55833629a5932",
+      "sha256": "d164ec092b00ea5b32ad3dabc1f1981e3ff5a3b46e32a932094cac27f9755fbe",
       "executable": false
     },
     "tests/booking-prepayment-journey.mjs": {
@@ -5506,7 +5506,7 @@
       "executable": false
     },
     "tests/communication-browser.mjs": {
-      "sha256": "ac6e98586d07d00d4ef7006af6ca98480b428ddd5d7d9c7b718c321aed17fdd5",
+      "sha256": "61339363d823d4f45805ef750be54899bb34fe25fbd1b2715e4545832cd8b275",
       "executable": false
     },
     "tests/communication-journey.mjs": {
@@ -5882,7 +5882,7 @@
       "executable": false
     },
     "tests/sms-quiet-journey.mjs": {
-      "sha256": "bcfb3957e0e2d9e30c5269cc094114021f76cce267533b588e31e8bbb7736002",
+      "sha256": "58247e1bd6ec27d2bf538f31c370b6bc278ce04ea7c60a21af831b00face3547",
       "executable": false
     },
     "tests/sms-quiet-worker.ts": {

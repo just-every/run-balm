@@ -7,7 +7,7 @@ export function reminderSettingsPanel(s: any) {
   if (!r) return ''
   const quiet = s.actor.role === 'owner' ? panel('Text reminder quiet hours', '<p>Record the practice’s reviewed quiet intervals for scheduled appointment texts, in each patient’s recorded time zone. Balm supplies no legal policy. Other text purposes are not covered by this setting.</p>'
     + (r.sms_quiet_policy_id ? `<p>Current policy: ${h(r.source)}<br>Recorded ${stamp(s, r.recorded_at)} by ${h(r.recorded_by)}.</p>` : '<p class="notice">No policy recorded. Scheduled text reminders will not send.</p>')
-    + form('reminders.quiet_hours', '/app/clinic#sms-quiet-hours', textarea('intervals', 'Daily quiet intervals (one per line)', r.intervals ? JSON.parse(r.intervals).map((v: any) => v.start + '-' + v.end).join('\n') : '', 'required rows="3" maxlength="1000"')
+    + form('reminders.quiet_hours', '/app/clinic', textarea('intervals', 'Daily quiet intervals (one per line)', r.intervals ? JSON.parse(r.intervals).map((v: any) => v.start + '-' + v.end).join('\n') : '', 'required rows="3" maxlength="1000"')
       + '<p class="help">Use 24-hour clock times separated by a hyphen. An end earlier than the start continues overnight. The start is quiet; the end is eligible. All intervals apply every day, including daylight-saving changes. A deferred reminder is rechecked each minute and never sent after the visit starts.</p>'
       + field('source', 'Reviewed policy source', r.source ?? '', 'text', 'required maxlength="1000"')
       + '<label class="check"><input type="checkbox" name="attest" required><span>I have reviewed and recorded these quiet intervals for appointment text reminders.</span></label>', 'Record quiet hours'), '', 'sms-quiet-hours') : ''
