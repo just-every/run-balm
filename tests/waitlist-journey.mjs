@@ -86,4 +86,47 @@ export async function waitlistPreferencesJourney(h) {
  assert.match((await h.send(links[1])).text,/has been taken/)
  const history=(await h.state()).waitlist.entries.find(e=>e.id===added.id)
  assert.deepEqual([history.status,JSON.parse(history.preferred_weekdays),history.preferred_start_minute,history.preferred_end_minute],['removed',[0],540,585])
+ await waitlistTurnCompatibility(h,p,source)
+}
+
+// Retain the original competing-recipient guarantee for pre-migration links,
+// while new turns skip a removed recipient through the native scheduler.
+async function waitlistTurnCompatibility(h,p,source) {
+ const service=await h.cmd('service.save',{name:'Synthetic legacy follow-up',durationMinutes:45,priceCents:9500})
+ const people=[]
+ for(const n of [530,531])people.push(await h.cmd('client.save',{firstName:'Synthetic',lastName:'Turn '+n,email:['synthetic-balm-'+n,'patient.example'].join('@')}))
+ for(const person of people)await h.cmd('waitlist.add',{clientId:person.id,practitionerId:p.id,serviceId:service.id,earliestDate:'2099-12-01',latestDate:'2099-12-31'})
+ const sourceVisit=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-12-01',time:'14:00'})
+ await h.cmd('appointment.cancel',{id:sourceVisit.appointmentId,reason:'Synthetic migration opening'})
+ const first=offerPath(h.mail.findLast(m=>m.subject.startsWith('A time opened up')))
+ const offer=(await h.state()).waitlist.offers.find(o=>o.source_appointment_id===sourceVisit.appointmentId)
+ const recipient=await h.db.prepare('SELECT r.entry_id FROM bm_offer_recipients r JOIN bm_waitlist w ON w.id=r.entry_id WHERE r.offer_id=? AND w.client_id=?').bind(offer.id,people[1].id).first()
+ // Model an already-delivered simultaneous offer from the older schema.
+ const token=crypto.randomUUID().replaceAll('-','')
+ const digest=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex')
+ await h.db.prepare('UPDATE bm_offers SET ordered=0 WHERE id=?').bind(offer.id).run()
+ await h.db.prepare("UPDATE bm_offer_recipients SET offer_token_hash=?,delivery='sent' WHERE offer_id=? AND entry_id=?").bind(digest,offer.id,recipient.entry_id).run()
+ const links=[first,'/offer/'+token]
+ const answers=await Promise.all(links.map(path=>h.form(path,{})))
+ assert.deepEqual(answers.map(r=>r.status).sort(),[303,409],'legacy recipients still race for exactly one booking')
+ assert.match(answers.find(r=>r.status===409).text,/This time has been taken/)
+ const winner=answers.findIndex(r=>r.status===303)
+ assert.match((await h.send(links[winner])).text,/You're booked/)
+ assert.match((await h.send(links[1-winner])).text,/has been taken/)
+ assert.ok(h.mail.some(m=>m.to.includes(['synthetic-balm-'+(530+1-winner),'patient.example'].join('@'))&&m.subject.includes('has been taken')))
+ assert.equal((await h.state()).appointments.filter(a=>a.service_id===service.id&&a.start_at===offer.start_at&&a.status==='booked').length,1)
+ // A removed active turn releases the reservation and never receives another message.
+ for(const entry of (await h.state()).waitlist.entries.filter(e=>e.service_id===service.id&&e.status==='waiting'))await h.cmd('waitlist.remove',{id:entry.id})
+ const nextService=await h.cmd('service.save',{name:'Synthetic removed-turn follow-up',durationMinutes:45,priceCents:9500})
+ const entries=[]
+ for(const person of people)entries.push(await h.cmd('waitlist.add',{clientId:person.id,practitionerId:p.id,serviceId:nextService.id,earliestDate:'2099-12-01',latestDate:'2099-12-31'}))
+ const opening=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:nextService.id,date:'2099-12-02',time:'14:00'})
+ await h.cmd('appointment.cancel',{id:opening.appointmentId,reason:'Synthetic removal opening'})
+ const old=offerPath(h.mail.findLast(m=>m.subject.startsWith('A time opened up')))
+ await h.cmd('waitlist.remove',{id:entries[0].id})
+ const before=h.mail.length
+ for(let i=0;i<2;i++)await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'* * * * *'})
+ const advanced=h.mail.slice(before).filter(m=>m.subject.startsWith('A time opened up'))
+ assert.deepEqual(advanced.map(m=>m.to[0]),[['synthetic-balm-531','patient.example'].join('@')],'removal advances once to the next eligible patient')
+ assert.equal((await h.form(old,{})).status,409,'a removed turn cannot accept the successor hold')
 }

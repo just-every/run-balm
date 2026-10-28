@@ -3326,7 +3326,7 @@
       "executable": false
     },
     "src/balm/ui/waitlist.ts": {
-      "sha256": "f0af9cd9063eb6850f1f4a28e745b5aa27bdfcfa4886f469a13bd2b849212bad",
+      "sha256": "4e6f4d239afb0a86ae48c5e5eda4181f8986dc13b3f642d054a52c2b2ec5f717",
       "executable": false
     },
     "src/balm/visit-summary.ts": {
@@ -5938,7 +5938,7 @@
       "executable": false
     },
     "tests/waitlist-journey.mjs": {
-      "sha256": "cc2b1c1bb311d3090581f078c3dcc296e8fde92e279d853fdb782e583bf5df2c",
+      "sha256": "26628fd7eb841edc79a31cf0aa923717c063d0e8f5deba12fed90c9540d38cf9",
       "executable": false
     },
     "tests/worker.ts": {
