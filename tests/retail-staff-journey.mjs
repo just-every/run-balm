@@ -55,6 +55,10 @@ export async function retailStaffJourney(h,{screen=async()=>{}}={}) {
  const second={...sale,reference:'synthetic-balm-revoked-delegate-sale'}
  await h.cmd('pay.retail.sell',second,desk.cookie,403)
  await h.cmd('pay.retail.assign',{clientId:patient.id,saleId:member.id,appointmentId:visit},desk.cookie,403)
+ const staffEmail=(await h.db.prepare('SELECT email FROM bm_staff WHERE id=?').bind(biller.id).first()).email
+ await h.cmd('staff.save',{id:biller.id,name:'RetailSalesBiller',email:staffEmail,role:'biller',active:true})
+ await h.cmd('pay.retail.sell',second,biller.cookie,403)
+ await h.cmd('pay.retail.authorize',grant(biller.id))
  await h.db.prepare("UPDATE bm_retail_staff_grants SET expires_at='1990-01-01T00:00:00Z' WHERE staff_id=?").bind(biller.id).run()
  await h.cmd('pay.retail.sell',second,biller.cookie,403)
  await h.cmd('pay.retail.authorize',grant(biller.id))

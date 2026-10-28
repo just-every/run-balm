@@ -690,10 +690,10 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await command(restored,['import','--input',archive,'--yes','--no-queue'])
     h=await harness({root:restored,...identity})
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
-    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_retail_staff_grants').first()).n,0,'a historical archive cannot restore sale authority')
     assert.equal((await h.db.prepare('SELECT id FROM bm_retail_staff_approvals WHERE id=?').bind(saleAuthority.approvalId).first()).id,saleAuthority.approvalId,'historical approval stays evidence without restored execution authority')
     const seller=await h.signIn((await h.db.prepare('SELECT email FROM bm_staff WHERE id=?').bind(retailSeller.id).first()).email)
     await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'gift_card',amountCents:1000,label:'synthetic-balm-refused-restored-sale',reference:'synthetic-balm-refused-restored-sale',confirm:true},seller,403)
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_retail_staff_grants').first()).n,0,'a historical archive cannot restore sale authority')
     assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,seller)).value.billing.retailSalesAllowed,false)
     const moneyAfter=(await h.db.prepare('SELECT id,invoice_id,appointment_id,collection_purpose,amount_cents,payment_intent,stripe_account_id,stripe_customer_id,status FROM bm_card_payments WHERE client_id=? ORDER BY id').bind(responsibility.patient.id).all()).results
     assert.deepEqual(moneyAfter,moneyBefore)

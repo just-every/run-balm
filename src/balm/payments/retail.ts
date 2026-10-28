@@ -21,13 +21,13 @@ const owner = (who: Actor) => { human(who); insist(who.role === 'owner', 'only_t
 const grantPredicate=`EXISTS(SELECT 1 FROM bm_retail_staff_grants g JOIN oa_operators o ON o.id=g.owner_id
   JOIN bm_staff s ON s.id=g.staff_id LEFT JOIN bm_staff_access a ON a.staff_id=s.id
   WHERE g.staff_id=? AND g.staff_version=s.version AND s.version=? AND s.active=1 AND s.erased_at IS NULL
-  AND COALESCE(a.kind,s.role) IN ('reception','biller') AND g.expires_at>?
+  AND COALESCE(a.kind,s.role) IN ('reception','biller') AND g.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')
   AND o.status='active' AND o.role='owner' AND o.version=g.owner_version)`
 
 export async function retailSalesAllowed(db:D1Database,who:Actor) {
   if(who.role==='owner')return true
   if(who.role==='agent'||!['reception','biller'].includes(who.staffKind??'')||!who.staffId)return false
-  return !!await one(db,'SELECT 1 WHERE '+grantPredicate,who.staffId,who.staffVersion,now())
+  return !!await one(db,'SELECT 1 WHERE '+grantPredicate,who.staffId,who.staffVersion)
 }
 
 export async function retailTaxRules(db:D1Database,who:Actor) {
@@ -51,6 +51,7 @@ async function authorizeRetailStaff(db:D1Database,who:Actor,input:Data) {
   insist(Number.isFinite(Date.parse(expiry))&&Date.parse(expiry)>Date.now()&&Date.parse(expiry)<=Date.now()+7*86400_000,'retail_grant_expires_within_seven_days')
   insist(input.taxRules===undefined||Array.isArray(input.taxRules)&&input.taxRules.length<=51,'invalid_owner_tax_rules')
   const taxRules=(input.taxRules??[]).map((rule:Data)=>{
+    insist(rule&&typeof rule==='object'&&!Array.isArray(rule),'invalid_owner_tax_rule')
     const state=text(rule.state,'tax_state',2)
     insist(/^[A-Z]{2}$/.test(state),'enter_state_abbreviation')
     return {state,rate:integer(rule.rate,'tax_rate',0,10000),evidence:text(rule.evidence,'tax_basis',500)}
@@ -88,7 +89,7 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
     human(who);insist(await retailSalesAllowed(db,who),'retail_sale_authority_required',403)
     if(who.role!=='owner'){
       staffApproval=(await one(db,'SELECT approval_id FROM bm_retail_staff_grants WHERE staff_id=?',who.staffId))!.approval_id
-      saleGuards.push(guard(db,grantPredicate,who.staffId,who.staffVersion,now()),guard(db,'EXISTS(SELECT 1 FROM bm_retail_staff_grants WHERE staff_id=? AND approval_id=?)',who.staffId,staffApproval))
+      saleGuards.push(guard(db,grantPredicate,who.staffId,who.staffVersion),guard(db,'EXISTS(SELECT 1 FROM bm_retail_staff_grants WHERE staff_id=? AND approval_id=?)',who.staffId,staffApproval))
     }
   }else owner(who)
   const client = await clientVisible(db, who, input.clientId)
