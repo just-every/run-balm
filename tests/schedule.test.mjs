@@ -138,7 +138,8 @@ test('INTAKE-001 SCHED-005: ordered email holds expire to the next patient, book
   const [ava, ben, cara, dev] = [await add('Ava', 'ava@client.example'), await add('Ben', 'ben@client.example'), await add('Cara', 'cara@client.example'), await add('Dev', 'dev@client.example')]
   const third=await add('Synthetic', ['synthetic-balm-520','patient.example'].join('@'))
   const local = brisbane(Math.floor((Date.now() + 3 * 86400_000) / 3600_000) * 3600_000), date = local.slice(0, 10)
-  const visit = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, date, time: '10:00' })
+  const room=await h.cmd('room.save',{name:'Synthetic waitlist room'})
+  const visit = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, roomId:room.id, date, time: '10:00' })
   const until = brisbane(Date.now() + 10 * 86400_000).slice(0, 10)
   await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until, weekdays: [weekday(date)], timeFrom: '10:00', timeUntil: '10:45' })
   await h.cmd('waitlist.add', { clientId: cara.id, serviceId: service.id, latestDate: until, note: 'Any practitioner', weekdays: [weekday(date)], timeFrom: '09:00', timeUntil: '14:00' })
@@ -162,6 +163,14 @@ test('INTAKE-001 SCHED-005: ordered email holds expire to the next patient, book
   assert.equal(available.status,200)
   const start=(await h.state()).appointments.find(a=>a.id===visit.appointmentId).start_at
   assert.ok(!available.text.includes('start='+encodeURIComponent(start)),'public slots omit the held time')
+  await h.cmd('appointment.book',{clientId:ava.id,practitionerId:sam.id,serviceId:service.id,roomId:room.id,date,time:'10:00'},h.owner,409)
+  const countBefore=(await h.state()).clients.length
+  assert.equal((await bookOnline(h,service.id,priya.id,start,{firstName:'Synthetic',lastName:'Held opening',email:['synthetic-balm-521','patient.example'].join('@')})).status,409)
+  assert.equal((await h.state()).clients.length,countBefore,'a held public booking creates no patient')
+  const pattern={clientId:ava.id,practitionerId:priya.id,serviceId:service.id,firstDate:date,weekdays:[weekday(date)],weeks:1,time:'10:00'}
+  const preview=await h.cmd('series.preview',pattern)
+  assert.equal(preview.occurrences[0].problem,'waitlist_time_held')
+  await h.cmd('series.book',{...pattern,occurrences:[{date,time:'10:00'}]},h.owner,409)
   // Expire only the fixture clock. The production scheduled door advances the queue.
   const expired=new Date(Date.now()-60000).toISOString()
   await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE status='open'").bind(expired).run()

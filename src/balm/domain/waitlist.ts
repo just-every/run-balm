@@ -94,7 +94,7 @@ export async function waitlistFor(db: D1Database, who: Actor) {
     JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id LEFT JOIN bm_staff p ON p.id=w.practitioner_id
     WHERE (? OR w.practitioner_id=?) ORDER BY w.status='waiting' DESC,w.created_at DESC LIMIT 300`, desk ? 1 : 0, own)
   const offers = await rows(db, `SELECT o.*,p.name AS practitioner,(SELECT json_group_array(json_object('entryId',r.entry_id,'delivery',r.delivery,'outcome',r.outcome,'takenNotice',r.taken_notice,'expiresAt',r.expires_at,'position',r.position))
-    FROM bm_offer_recipients r WHERE r.offer_id=o.id) AS recipients FROM bm_offers o JOIN bm_staff p ON p.id=o.practitioner_id
+    FROM (SELECT * FROM bm_offer_recipients WHERE offer_id=o.id ORDER BY position) r) AS recipients FROM bm_offers o JOIN bm_staff p ON p.id=o.practitioner_id
     WHERE (? OR o.practitioner_id=?) ORDER BY o.created_at DESC LIMIT 100`, desk ? 1 : 0, own)
   return { entries, offers: offers.map(o => ({ ...o, recipients: JSON.parse(o.recipients as string) })) }
 }

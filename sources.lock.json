@@ -833,6 +833,10 @@
       "sha256": "89d9ca256918443e1276b3caa9f6b4e710a6e21ad25b9cc01f9998c91e4f8b90",
       "executable": false
     },
+    "migrations/core/0129_balm_waitlist_holds.sql": {
+      "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
+      "executable": false
+    },
     "ONBOARDING.md": {
       "sha256": "5d20f1bd0c24def0cd6c1165d1a58d0472ad0f02f2b60047014bda962eaf4274",
       "executable": false
@@ -2066,7 +2070,7 @@
       "executable": false
     },
     "src/balm/domain/waitlist.ts": {
-      "sha256": "015513636ca938eea41695f3f73d9c56de474a5e1ac7b8b38dae084099981533",
+      "sha256": "83e2b52df462938170d21cc4d4e6bb29aab29aa1c7b78882de4c46436d0167d5",
       "executable": false
     },
     "src/balm/episodes/index.ts": {
@@ -2833,6 +2837,10 @@
       "sha256": "218e8a80f242286237ef947b6c7cbd8463fc80955d6771b5886d70970ce47581",
       "executable": false
     },
+    "src/balm/scheduling/waitlist-holds.ts": {
+      "sha256": "f7c139df93d838da832194815226fbf2ce408d1e06284b036efac6dfc4ce0e09",
+      "executable": false
+    },
     "src/balm/scribe/index.ts": {
       "sha256": "587c34eec2dc79559076ec88ed691709d31499f3c53517533904047c5db0146b",
       "executable": false
@@ -3318,7 +3326,7 @@
       "executable": false
     },
     "src/balm/ui/waitlist.ts": {
-      "sha256": "7fba182bffd3492008bb7e1104b2ed9ee707c0f76b1580c9653feda6c45d899a",
+      "sha256": "f0af9cd9063eb6850f1f4a28e745b5aa27bdfcfa4886f469a13bd2b849212bad",
       "executable": false
     },
     "src/balm/visit-summary.ts": {
@@ -5866,7 +5874,7 @@
       "executable": false
     },
     "tests/schedule.test.mjs": {
-      "sha256": "bcf013169708b0c8b49f31bede4a01803b1c41867c58c563952cc0b05ba9250f",
+      "sha256": "e6bf2520ca85d46ad17cbd8ac76b9722f7b4e83a8e7c483320e24f357ae01156",
       "executable": false
     },
     "tests/security-clinic.mjs": {
@@ -5926,7 +5934,7 @@
       "executable": false
     },
     "tests/waitlist-browser.mjs": {
-      "sha256": "7c7a922707757f7068f5888a83739514dee7a5f3b0a440d56c27547b7c62b641",
+      "sha256": "0ffa5ee84efa76e39f66ce059a740bcc27c967110486df41ef224e85fa8ec9a9",
       "executable": false
     },
     "tests/waitlist-journey.mjs": {
