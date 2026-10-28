@@ -18,7 +18,7 @@ export const calendarStyle = placement + `
 .cal-nav{display:inline-flex;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--rer-surface)}
 .seg{display:inline-flex;align-items:center;min-height:32px;padding:0 13px;border-radius:9px;color:var(--body);font-size:13.5px;font-weight:500;text-decoration:none}.seg:hover{background:var(--hover);color:var(--ink)}
 .seg.on{background:var(--sage-tint);color:var(--ink);font-weight:600}
-.cal-filter{display:flex;gap:8px;align-items:flex-end}.cal-filter label{font-size:12.5px;color:var(--soft);font-weight:500}.cal-filter select{min-height:38px;min-width:170px}.cal-filter button{min-height:38px}
+.cal-filter{display:flex;gap:8px;align-items:flex-end}.cal-filter label{font-size:13px;color:var(--soft);font-weight:500}.cal-filter select{min-height:38px;min-width:170px}.cal-filter button{min-height:38px}
 .cal-wrap{overflow-x:auto;background:var(--rer-surface);border:1px solid var(--line);border-radius:var(--radius-card);box-shadow:var(--shadow-card)}
 .cal{display:grid;grid-template-rows:60px;grid-auto-rows:19px;position:relative;min-width:100%}
 .cal-track{display:grid;grid-template-columns:minmax(min-content,1fr);grid-template-rows:subgrid}
@@ -42,19 +42,19 @@ export const calendarStyle = placement + `
 .appt .mark{width:17px;height:17px;margin-top:1px;color:var(--glyph)}
 .appt .go{width:14px;height:14px;align-self:center;margin-left:auto;color:var(--soft)}
 .appt-copy{display:flex;flex-direction:column;min-width:0;flex:1}
-.appt-time{font-size:11.5px;line-height:14px;color:var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}.appt-time .t-from{font-weight:500;color:var(--ink)}
+.appt-time{font-size:13px;line-height:14px;color:var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}.appt-time .t-from{font-weight:500;color:var(--ink)}
 .appt strong{font-size:13.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appt-tags{display:flex;flex-wrap:wrap;gap:4px 5px;height:16px;margin-top:1px;min-width:0;overflow:hidden}
 /* A chip that does not fit its card's one chip row wraps out of sight whole, never cut: the zero-width lead item lets even
    the first chip wrap to the hidden second line. */
 .appt-tags::before{content:'';flex:none;width:0;height:100%;margin-right:-5px}
-.appt .tag{display:inline-block;flex:none;max-width:none;white-space:nowrap;background:var(--chip);color:var(--body);font-size:11px;line-height:16px;padding:0 5px;border-radius:5px}
+.appt .tag{display:inline-block;flex:none;max-width:none;white-space:nowrap;background:var(--chip);color:var(--body);font-size:13px;line-height:16px;padding:0 5px;border-radius:5px}
 .appt .tag.coral{background:var(--coral-tint);color:var(--coral-ink)}.appt .tag.sage{background:var(--sage-tint);color:var(--sage-ink)}.appt .tag.honey{background:var(--honey-tint);color:var(--honey-ink)}
 .appt .tag.k3{display:none}.appt .tag .brief{display:none}
 @container (max-width:185px){.appt .go{display:none}}
 @container (max-width:215px){.appt .mark{display:none}.appt.size1 .t-to,.appt.size2 .t-to{display:none}}
 .appt.size1{padding:2px 8px;align-items:center}.appt.size1 .appt-copy{flex-direction:row;gap:6px;align-items:baseline}.appt.size1 .appt-tags,.appt.size1 .mark{display:none}
-.appt.size2{padding:1px 8px}.appt.size2 strong{line-height:16px}.appt.size2 .appt-tags{height:14px}.appt.size2 .tag{line-height:14px;font-size:11px}.appt.size2 .appt-copy{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'time name' 'tags tags';column-gap:6px;align-items:baseline}.appt.size2 strong{grid-area:name}.appt.size2 .appt-time{grid-area:time}.appt.size2 .appt-tags{grid-area:tags;margin:1px 0 0}.appt.size2 .mark{display:none}
+.appt.size2{padding:1px 8px}.appt.size2 strong{line-height:16px}.appt.size2 .appt-tags{height:14px}.appt.size2 .tag{line-height:14px;font-size:13px}.appt.size2 .appt-copy{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'time name' 'tags tags';column-gap:6px;align-items:baseline}.appt.size2 strong{grid-area:name}.appt.size2 .appt-time{grid-area:time}.appt.size2 .appt-tags{grid-area:tags;margin:1px 0 0}.appt.size2 .mark{display:none}
 /* A narrow half-hour card keeps its start time and the whole name: time and the first chip on one line, the name under them.
    Its flag chip takes its short form so the note state still fits beside it. */
 @container (max-width:215px){.appt.size2 .appt-copy{grid-template-areas:'time tags' 'name name'}.appt.size2 .appt-tags{margin:0;align-self:center}.appt.size2 .tag .full{display:none}.appt.size2 .tag .brief{display:inline}}
@@ -68,7 +68,7 @@ export const calendarStyle = placement + `
 .openslot{position:relative;z-index:1;display:flex;align-items:flex-start;gap:8px;margin:2px 7px 2px;padding:4px 10px;border:1px dashed color-mix(in srgb,var(--sky) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--sky-wash) 70%,var(--rer-surface));color:var(--sky-ink);text-decoration:none;overflow:hidden}
 .openslot:hover{border-style:solid;background:var(--sky-wash)}
 .openslot .icon{width:17px;height:17px;margin-top:1px}.openslot span{min-width:0}
-.openslot.compact{align-items:center;padding-top:2px;padding-bottom:2px}.openslot.compact span{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;height:18px;overflow:hidden}.openslot strong{display:block;font-size:13px;line-height:17px;font-weight:500;color:var(--ink)}.openslot small{display:block;font-size:11.5px;line-height:16px;color:var(--body);white-space:nowrap}
+.openslot.compact{align-items:center;padding-top:2px;padding-bottom:2px}.openslot.compact span{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;height:18px;overflow:hidden}.openslot strong{display:block;font-size:13px;line-height:17px;font-weight:500;color:var(--ink)}.openslot small{display:block;font-size:13px;line-height:16px;color:var(--body);white-space:nowrap}
 
 /* The phone agenda (agenda.ts): the grid's cards in time order, one column at a time. */
 .agenda{display:none}
@@ -82,11 +82,11 @@ export const calendarStyle = placement + `
 .ag-col{display:none}.ag-col.only{display:block}
 ${range(0, 39).map(i => `.agenda:has(#ag-${i}:checked) .ag-${i}{display:block}`).join('')}
 .ag-col,.ag-day{padding:12px;background:var(--rer-surface);border:1px solid var(--line);border-radius:var(--radius-card);box-shadow:var(--shadow-card)}.ag-day{margin:0 0 10px}.ag-day.is-today{border-color:var(--sage-tint)}
-.ag-col h3,.ag-day h3{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:15px;font-weight:600;line-height:1.3}.ag-col h3 small,.ag-day h3 small{display:block;font-size:12.5px;font-weight:400;color:var(--soft)}.ag-day h3 small{margin-left:auto}.ag-day h3 a{color:var(--ink);text-decoration:none}
+.ag-col h3,.ag-day h3{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:15px;font-weight:600;line-height:1.3}.ag-col h3 small,.ag-day h3 small{display:block;font-size:13px;font-weight:400;color:var(--soft)}.ag-day h3 small{margin-left:auto}.ag-day h3 a{color:var(--ink);text-decoration:none}
 .ag-today{padding:0 7px;border-radius:6px;background:var(--sage-tint);color:var(--sage-ink);font-size:13px;font-weight:600}
-.ag-empty{display:flex;justify-content:space-between;gap:10px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--rer-surface);font-size:14px}.ag-empty a{color:var(--ink);text-decoration:none;font-weight:500}.ag-empty small{font-size:12.5px;color:var(--soft)}
+.ag-empty{display:flex;justify-content:space-between;gap:10px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--rer-surface);font-size:14px}.ag-empty a{color:var(--ink);text-decoration:none;font-weight:500}.ag-empty small{font-size:13px;color:var(--soft)}
 .ag-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.ag-none{margin:0;color:var(--soft);font-size:13.5px}
-.appt.ag{margin:0;padding:8px 10px}.appt.ag .appt-time{font-size:12.5px;line-height:16px}.appt.ag strong{font-size:14.5px;line-height:20px;white-space:normal}
+.appt.ag{margin:0;padding:8px 10px}.appt.ag .appt-time{font-size:13px;line-height:16px}.appt.ag strong{font-size:14.5px;line-height:20px;white-space:normal}
 .appt.ag .appt-tags{height:auto;flex-wrap:wrap;margin-top:4px}.appt.ag .tag{max-width:100%;white-space:normal}.appt.ag .tag.k3{display:inline-block}.appt.ag .mark{display:block}
 .agenda .openslot{margin:0;padding:8px 10px}.agenda .openslot small{white-space:normal}
 }
