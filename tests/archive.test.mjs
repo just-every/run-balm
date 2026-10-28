@@ -808,6 +808,9 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
  const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  const snapshot=async(db,clientId)=>({
+  quietPolicies:(await db.prepare('SELECT * FROM bm_sms_quiet_policies ORDER BY id').all()).results,
+  quietPolicy:(await db.prepare('SELECT sms_quiet_policy_id FROM bm_settings WHERE id=1').first()).sms_quiet_policy_id,
+  patientZone:(await db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(clientId).first()).sms_time_zone,
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   waitlist:(await db.prepare('SELECT * FROM bm_waitlist WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   offers:(await db.prepare('SELECT * FROM bm_offers ORDER BY id').all()).results,
@@ -821,7 +824,9 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
   h=await harness({root:source,migrate:true,codeSets:false})
   const desk=await h.staff('Rosa','reception')
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@')})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@'),smsTimeZone:'America/New_York'})
+  await h.cmd('reminders.quiet_hours',{intervals:'21:00-08:00',source:'synthetic-balm-403 earlier reviewed policy',attest:true})
+  const policy=await h.cmd('reminders.quiet_hours',{intervals:'22:00-08:00\n12:00-13:00',source:'synthetic-balm-404 current reviewed policy',attest:true})
   const ids=[]
   for(const [direction,occurredAt,disposition] of [
    ['incoming','2000-01-02T03:00:00Z','synthetic-balm-301 scheduling question'],
@@ -852,6 +857,13 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
   assert.equal(original.recipients.filter(r=>r.outcome===null).length,1)
   assert.equal(original.calls.length,2)
+  assert.equal(original.quietPolicy,policy.id)
+  assert.equal(original.patientZone,'America/New_York')
+  assert.deepEqual(original.quietPolicies.map(p=>[p.source,JSON.parse(p.intervals)]).sort(),[
+   ['synthetic-balm-403 earlier reviewed policy',[{start:'21:00',end:'08:00'}]],
+   ['synthetic-balm-404 current reviewed policy',[{start:'22:00',end:'08:00'},{start:'12:00',end:'13:00'}]],
+  ])
+  assert.ok(original.quietPolicies.every(p=>p.recorded_by===h.auth.OWNER_EMAIL&&p.recorded_at))
   assert.deepEqual(original.calls.map(c=>[c.direction,c.occurred_at,c.staff_id,c.staff_name,c.recorded_by,c.disposition]).sort(),[
    ['incoming','2000-01-02T03:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-301 scheduling question'],
    ['outgoing','2000-01-03T04:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-302 appointment confirmed'],
@@ -866,7 +878,7 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   for(const hash of bearerHashes)assert.ok(!archiveText.includes(hash),'offer capability hashes never enter the archive')
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,...identity,codeSets:false})
-  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call, waitlist preference, offer outcome and patient custody audit row survives unchanged')
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field, patient zone, recorded quiet policy, waitlist preference, offer outcome and patient custody audit row survives unchanged')
   assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
   for(const stale of [offerPath,openOfferPath]){
    assert.equal((await h.send(stale)).status,404,'archive does not revive an offer bearer')

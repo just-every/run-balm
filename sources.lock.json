@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "2be25ab83b781d4fc74ffe0b3fc196c0fb0138195ef5e3f297bf501daeca5580",
+      "sha256": "e9d0b376070d724b9a080fb13fe55920d57b7aa1ee13922374620540d08c150a",
       "executable": false
     },
     "AGENTS.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "54ff8de649f4528ca9445ab9b852a65270a4a123c4d51792c237ed1fdabb7174",
+      "sha256": "d855a08bbfc055fd9d63b704b0a13eb8afb3e5a5ff87d09d2e1b144ed0784a7c",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -819,6 +819,10 @@
     },
     "migrations/core/0126_balm_offer_restore_authority.sql": {
       "sha256": "9fa8ba16b3402889bde67ee0662a1881de91dbf075b217b8e3ec7702ea68651e",
+      "executable": false
+    },
+    "migrations/core/0127_balm_sms_quiet_hours.sql": {
+      "sha256": "154edabbb24ac1383e3668bdfda6da37be08199813e90a6608b2d5801775388b",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -1962,7 +1966,7 @@
       "executable": false
     },
     "src/balm/domain/clients.ts": {
-      "sha256": "d03d5d453f03749e153c24e6b7dccee7360462a5a490ae1d1cd6a80ac5caf83e",
+      "sha256": "5b57a2f1bfc26896f464d14cab20d6975c5576922252154b65caccdbe9558100",
       "executable": false
     },
     "src/balm/domain/clinic.ts": {
@@ -2698,11 +2702,11 @@
       "executable": false
     },
     "src/balm/reminders/scheduler.ts": {
-      "sha256": "d4c88a47144ad8bb635f9ab51bc3eae2cb17be4e953eb46ef21a7344ddf4dc53",
+      "sha256": "03edbdd724ea382a6c9c485cc413a2284b566b6474a5d64b7ac73d329398c731",
       "executable": false
     },
     "src/balm/reminders/settings.ts": {
-      "sha256": "e2882d18713d07275581078e97fcb08a2afa48aedfe104627ae0fb49289426e3",
+      "sha256": "10a0accfe6edf19977fc305c3fd062192c81bff0f9ed0576830b98cee88962b3",
       "executable": false
     },
     "src/balm/reports/access.ts": {
@@ -2849,6 +2853,10 @@
       "sha256": "97ac4ea9c1d7988b28ab7d74b1e3a930bd66b786a94ab9cc6f1cad075fd21a11",
       "executable": false
     },
+    "src/balm/sms/quiet-hours.ts": {
+      "sha256": "36af64e58fb07bf9686ed2d8af2ec41ffac0baa2fd9aa9a8d58db9b5441a4b40",
+      "executable": false
+    },
     "src/balm/sms/twilio.ts": {
       "sha256": "d328d05d56d35b503bd506c113c5da1dee18b913063ec3a0bcdb6bec5d44a474",
       "executable": false
@@ -2938,7 +2946,7 @@
       "executable": false
     },
     "src/balm/ui/clients.ts": {
-      "sha256": "e42608a5c94b1cf62895341d9335ba830d885326907b623605a99de21fe6c19f",
+      "sha256": "48129d58cd0af4d5c3eefeb13122ca896d1e8798ef65120eb3e303dd423dfd62",
       "executable": false
     },
     "src/balm/ui/clinic-identity.ts": {
@@ -3218,7 +3226,7 @@
       "executable": false
     },
     "src/balm/ui/reminders.ts": {
-      "sha256": "e3abe98e4c13db07efc9690e517a1258ebd3cbffa2ad6f00cec3a2af371574df",
+      "sha256": "97008bb3775ce1f4ab37eb8594352200747abd236861d02d6e709d73925b26d8",
       "executable": false
     },
     "src/balm/ui/reports.ts": {
@@ -5402,7 +5410,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "3a7cf13b9aae3bb1591520d2eba59b23205e597390fdcc946b4dc9052ffaf87a",
+      "sha256": "0c788d7435e8a7fe332ca826e7e038b01595ed13ef4d836471c01cca7e7c1cdb",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5810,7 +5818,7 @@
       "executable": false
     },
     "tests/reminders.test.mjs": {
-      "sha256": "3287cec589e8b0315220f238039b9c2976007bf975a63574af8264f8b85ed764",
+      "sha256": "7c3bd977b3dab895d9ff75d8bdc6189e0ad5dca160a972cdbfaef6b419e47590",
       "executable": false
     },
     "tests/report.test.mjs": {
@@ -5871,6 +5879,14 @@
     },
     "tests/setup.test.mjs": {
       "sha256": "780e57217971d07577789fdd8da5cc655980e400c7530f354590c716906c34b5",
+      "executable": false
+    },
+    "tests/sms-quiet-journey.mjs": {
+      "sha256": "bcfb3957e0e2d9e30c5269cc094114021f76cce267533b588e31e8bbb7736002",
+      "executable": false
+    },
+    "tests/sms-quiet-worker.ts": {
+      "sha256": "b4838cedb35bc7334e03e66c0aa76c1da035ec6133edcca5756303634e93caee",
       "executable": false
     },
     "tests/staff-second-step.mjs": {

@@ -35,6 +35,8 @@ import { check, cancelForm, clientName, desk, dollarsField, empty, entry, field,
 
 const clientFields = (c?: any) => `<div class="pair">${field('firstName', 'First name', c?.first_name, 'text', 'required maxlength="80"')}${field('lastName', 'Last name', c?.last_name, 'text', 'required maxlength="80"')}</div>`
   + `<div class="pair">${field('dateOfBirth', 'Date of birth', c?.date_of_birth ?? '', 'date')}${field('phone', 'Mobile', c?.phone ?? '', 'tel', 'maxlength="40" placeholder="+1 (312) 555-0100"')}</div>${field('email', 'Email', c?.email ?? '', 'email', 'maxlength="254"')}`
+  + field('smsTimeZone', 'Patient time zone for text reminders', c?.sms_time_zone ?? '', 'text', 'maxlength="100" placeholder="America/Chicago"')
+  + '<p class="help">Record the IANA zone the patient gives you. Leave blank if unknown; scheduled texts will wait. This is separate from text consent.</p>'
 
 export function clientList(s: any) {
   const list = rows(s, 'clients').map(c => `<li>${avatar(clientName(c))}<a href="/app/clients/${h(c.id)}">${h(clientName(c))}</a>${c.date_of_birth ? ` <span class="help">born ${h(usDate(c.date_of_birth, zoneOf(s)))}</span>` : ''} ${c.created_via === 'import' ? status('Imported') : ''}</li>`).join('')

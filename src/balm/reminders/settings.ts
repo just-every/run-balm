@@ -1,14 +1,26 @@
+import { quietIntervals } from '../sms/quiet-hours'
 import type { Bindings } from '../../auth.server'
 import { clientVisible } from '../domain/clients'
-import { audit, commit, human, insist, integer, need, one, rows, stmt, type Actor, type Data } from '../domain/model'
+import { audit, commit, human, insist, guard, id, integer, need, now, one, rows, stmt, text, type Actor, type Data } from '../domain/model'
 import { smsBlock } from '../sms'
 
 export async function reminderSettings(env: Bindings, who: Actor) {
   if (who.role === 'agent') return null
-  return { ...await one(env.DB, 'SELECT reminder_leads,reminder_sms FROM bm_settings WHERE id=1'), smsBlocked: (await smsBlock(env)) }
+  return { ...await one(env.DB, 'SELECT s.reminder_leads,s.reminder_sms,s.sms_quiet_policy_id,p.intervals,p.source,p.recorded_at,p.recorded_by FROM bm_settings s LEFT JOIN bm_sms_quiet_policies p ON p.id=s.sms_quiet_policy_id WHERE s.id=1'), smsBlocked: (await smsBlock(env)) }
 }
 export async function reminderCommand(env: Bindings, who: Actor, name: string, input: Data) {
   human(who)
+  if (name === 'reminders.quiet_hours') {
+    need(who, 'owner')
+    const key = id(), intervals = JSON.stringify(quietIntervals(input.intervals)), source = text(input.source, 'quiet_policy_source', 1000)
+    insist(input.attest === true || input.attest === 'on', 'confirm_owner_recorded_quiet_policy')
+    await commit(env.DB, who, [
+      stmt(env.DB, 'INSERT INTO bm_sms_quiet_policies(id,intervals,source,recorded_at,recorded_by) VALUES(?,?,?,?,?)', key, intervals, source, now(), who.email),
+      stmt(env.DB, 'UPDATE bm_settings SET sms_quiet_policy_id=?,version=version+1 WHERE id=1', key),
+      audit(env.DB, who, 'sms.quiet_policy_recorded', null, key),
+    ])
+    return { id: key }
+  }
   if (name === 'reminders.settings') {
     need(who, 'owner')
     const leads = [...new Set(String(input.leadMinutes ?? '').split(',').filter(x => x.trim()).map(x => integer(x.trim(), 'lead_minutes', 1, 43_200)))].sort((a,b) => b-a)
@@ -26,12 +38,12 @@ export async function reminderCommand(env: Bindings, who: Actor, name: string, i
     need(who, 'owner', 'reception')
     const client = await clientVisible(env.DB, who, input.clientId)
     const consent = input.consent === true || input.consent === 'on'
-    await commit(env.DB, who, [stmt(env.DB, 'UPDATE bm_clients SET sms_reminder_consent=?,version=version+1 WHERE id=?', consent ? 1 : 0, client.id), audit(env.DB, who, consent ? 'sms.consent_recorded' : 'sms.consent_removed', client.id)])
+    await commit(env.DB, who, [guard(env.DB, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)', client.id), stmt(env.DB, 'UPDATE bm_clients SET sms_reminder_consent=?,version=version+1 WHERE id=?', consent ? 1 : 0, client.id), audit(env.DB, who, consent ? 'sms.consent_recorded' : 'sms.consent_removed', client.id)])
     return { saved: true }
   }
   insist(false, 'unknown_command', 404)
 }
 export async function reminderHistory(db: D1Database, appointmentIds: string[]) {
   if (!appointmentIds.length) return []
-  return rows(db, `SELECT id,appointment_id,start_at,lead_minutes,channel,due_at,state,attempted_at,sent_at,outcome FROM bm_visit_reminders WHERE appointment_id IN (SELECT value FROM json_each(?)) ORDER BY due_at DESC LIMIT 200`, JSON.stringify(appointmentIds))
+  return rows(db, `SELECT id,appointment_id,start_at,lead_minutes,channel,due_at,state,attempted_at,sent_at,outcome,sms_quiet_policy_id,sms_time_zone FROM bm_visit_reminders WHERE appointment_id IN (SELECT value FROM json_each(?)) ORDER BY due_at DESC LIMIT 200`, JSON.stringify(appointmentIds))
 }
