@@ -593,12 +593,18 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
       await form.getByRole('button',{name:'Check Stripe status',exact:true}).focus()
       const sizes=await recovery.locator('p,button,label,summary').evaluateAll(nodes=>nodes.filter(el=>el.getClientRects().length).map(el=>Number.parseFloat(getComputedStyle(el).fontSize)))
       assert.ok(sizes.every(size=>size>=13),'recovery text is readable at '+width)
-      if(width===390){
+      if(width===390&&command==='pay.terminal.sync'){
        await Promise.all([page.waitForNavigation(),form.getByRole('button',{name:'Check Stripe status',exact:true}).click()])
-       if(command==='pay.terminal.sync')assert.ok(await page.locator(selector).count(),'checking the original pending payment keeps recovery available')
-       else assert.ok(await page.locator('a[href="/api/balm/receipts/'+id+'.pdf"]').count(),'the saved-card recovery action exposes its original receipt')
+       assert.ok(await page.locator(selector).count(),'checking the original pending payment keeps recovery available')
       }
      }},
+     ...(command==='pay.checkin.collect'?[{name:'overdue-card-reconciled',path:'/app/clients/'+client.id,cookie:reception.cookie,selector:'a[href="/api/balm/receipts/'+id+'.pdf"]',interact:async({page,width})=>{
+      if(width===1440){
+       const form=page.locator(selector).first().locator('form')
+       await Promise.all([page.waitForNavigation(),form.getByRole('button',{name:'Check Stripe status',exact:true}).click()])
+      }
+      assert.ok(await page.locator('a[href="/api/balm/receipts/'+id+'.pdf"]').count(),'the saved-card recovery action exposes its original receipt')
+     }}]:[]),
     ])
    }
   }

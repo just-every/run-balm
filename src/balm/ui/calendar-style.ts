@@ -27,10 +27,10 @@ export const calendarStyle = placement + `
 .overlap .appt{margin-left:3px;margin-right:3px;pointer-events:auto}
 .cal-head{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;min-width:0;padding:8px 14px;background:var(--rer-surface);border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
 .cal-head.cs1{left:0;z-index:4;border-left:0;color:var(--soft);font-size:13px}
-.cal-head span{min-width:0}.cal-head strong{display:block;font-size:13.5px;font-weight:600;line-height:1.3;color:var(--ink)}.cred{white-space:nowrap}.cal-head small{display:block;font-size:12px;line-height:1.3;color:var(--soft)}
+.cal-head span{min-width:0}.cal-head strong{display:block;font-size:13.5px;font-weight:600;line-height:1.3;color:var(--ink)}.cred{white-space:nowrap}.cal-head small{display:block;font-size:13px;line-height:1.3;color:var(--soft)}
 .cal-head a{text-decoration:none}.cal-head.is-today{background:var(--sage-wash)}
 .cal-head .avatar{width:40px;height:40px}
-.cal-time{position:sticky;left:0;z-index:2;padding:6px 6px 0 18px;font-size:12px;line-height:1.2;white-space:nowrap;color:var(--soft);background:var(--rer-surface);border-top:1px dashed var(--line);font-variant-numeric:tabular-nums}
+.cal-time{position:sticky;left:0;z-index:2;padding:6px 6px 0 18px;font-size:13px;line-height:1.2;white-space:nowrap;color:var(--soft);background:var(--rer-surface);border-top:1px dashed var(--line);font-variant-numeric:tabular-nums}
 .cell{min-width:0;border-left:1px solid var(--line)}.cell.hour,.cell.half{border-top:1px dashed var(--line)}
 .cell[data-book]{cursor:pointer}.cell[data-book]:hover{background:var(--sky-wash)}
 .cell.off{background:repeating-linear-gradient(135deg,var(--row) 0 5px,transparent 5px 11px)}
@@ -77,13 +77,13 @@ export const calendarStyle = placement + `
 .ag-pick{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:2px}
 .ag-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 .ag-pick label{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:36px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--rer-surface);color:var(--body);font-size:13.5px;font-weight:500;cursor:pointer}
-.ag-pick label small{font-size:12px;color:var(--soft);font-variant-numeric:tabular-nums}
+.ag-pick label small{font-size:13px;color:var(--soft);font-variant-numeric:tabular-nums}
 .ag-radio:checked+label{background:var(--sage-tint);border-color:var(--sage-tint);color:var(--ink);font-weight:600}.ag-radio:focus-visible+label{outline:3px solid var(--rer-focus);outline-offset:2px}
 .ag-col{display:none}.ag-col.only{display:block}
 ${range(0, 39).map(i => `.agenda:has(#ag-${i}:checked) .ag-${i}{display:block}`).join('')}
 .ag-col,.ag-day{padding:12px;background:var(--rer-surface);border:1px solid var(--line);border-radius:var(--radius-card);box-shadow:var(--shadow-card)}.ag-day{margin:0 0 10px}.ag-day.is-today{border-color:var(--sage-tint)}
 .ag-col h3,.ag-day h3{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:15px;font-weight:600;line-height:1.3}.ag-col h3 small,.ag-day h3 small{display:block;font-size:12.5px;font-weight:400;color:var(--soft)}.ag-day h3 small{margin-left:auto}.ag-day h3 a{color:var(--ink);text-decoration:none}
-.ag-today{padding:0 7px;border-radius:6px;background:var(--sage-tint);color:var(--sage-ink);font-size:12px;font-weight:600}
+.ag-today{padding:0 7px;border-radius:6px;background:var(--sage-tint);color:var(--sage-ink);font-size:13px;font-weight:600}
 .ag-empty{display:flex;justify-content:space-between;gap:10px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--rer-surface);font-size:14px}.ag-empty a{color:var(--ink);text-decoration:none;font-weight:500}.ag-empty small{font-size:12.5px;color:var(--soft)}
 .ag-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.ag-none{margin:0;color:var(--soft);font-size:13.5px}
 .appt.ag{margin:0;padding:8px 10px}.appt.ag .appt-time{font-size:12.5px;line-height:16px}.appt.ag strong{font-size:14.5px;line-height:20px;white-space:normal}
