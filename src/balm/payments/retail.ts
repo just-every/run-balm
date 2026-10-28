@@ -18,12 +18,60 @@ function authorization(input: Data) {
   return {effectiveAt,authorizedAt,method:text(input.authorizationMethod,'authorization_method',200),evidence:text(input.consentEvidence,'patient_authorization_evidence',500)}
 }
 const owner = (who: Actor) => { human(who); insist(who.role === 'owner', 'only_the_owner_records_retail', 403) }
+const grantPredicate=`EXISTS(SELECT 1 FROM bm_retail_staff_grants g JOIN oa_operators o ON o.id=g.owner_id
+  JOIN bm_staff s ON s.id=g.staff_id LEFT JOIN bm_staff_access a ON a.staff_id=s.id
+  WHERE g.staff_id=? AND g.staff_version=s.version AND s.version=? AND s.active=1 AND s.erased_at IS NULL
+  AND COALESCE(a.kind,s.role) IN ('reception','biller') AND g.expires_at>?
+  AND o.status='active' AND o.role='owner' AND o.version=g.owner_version)`
+
+export async function retailSalesAllowed(db:D1Database,who:Actor) {
+  if(who.role==='owner')return true
+  if(who.role==='agent'||!['reception','biller'].includes(who.staffKind??'')||!who.staffId)return false
+  return !!await one(db,'SELECT 1 WHERE '+grantPredicate,who.staffId,who.staffVersion,now())
+}
+
+export async function retailTaxRules(db:D1Database,who:Actor) {
+  if(who.role==='owner'||!await retailSalesAllowed(db,who))return []
+  return JSON.parse((await one(db,'SELECT tax_rules FROM bm_retail_staff_grants WHERE staff_id=?',who.staffId))!.tax_rules) as {state:string;rate:number;evidence:string}[]
+}
+
+async function authorizeRetailStaff(db:D1Database,who:Actor,input:Data) {
+  owner(who)
+  const staff=await one(db,`SELECT s.id,s.version,s.active,s.erased_at,COALESCE(a.kind,s.role) AS kind
+    FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=?`,text(input.staffId,'staff',100))
+  insist(staff,'staff_not_found',404)
+  if(input.revoke===true||input.revoke==='on') {
+    const previous=await one(db,'SELECT approval_id FROM bm_retail_staff_grants WHERE staff_id=?',staff.id)
+    await commit(db,who,[stmt(db,'DELETE FROM bm_retail_staff_grants WHERE staff_id=?',staff.id),audit(db,who,'retail.staff_authority_revoked',null,staff.id,previous?.approval_id??'')])
+    return {authorized:false}
+  }
+  insist(staff.active&&!staff.erased_at&&['reception','biller'].includes(staff.kind),'retail_grant_requires_active_billing_or_reception_staff',403)
+  insist(input.confirm===true||input.confirm==='on','confirm_retail_sale_authority')
+  const expiry=text(input.expiresAt,'expiry',30)
+  insist(Number.isFinite(Date.parse(expiry))&&Date.parse(expiry)>Date.now()&&Date.parse(expiry)<=Date.now()+7*86400_000,'retail_grant_expires_within_seven_days')
+  insist(input.taxRules===undefined||Array.isArray(input.taxRules)&&input.taxRules.length<=51,'invalid_owner_tax_rules')
+  const taxRules=(input.taxRules??[]).map((rule:Data)=>{
+    const state=text(rule.state,'tax_state',2)
+    insist(/^[A-Z]{2}$/.test(state),'enter_state_abbreviation')
+    return {state,rate:integer(rule.rate,'tax_rate',0,10000),evidence:text(rule.evidence,'tax_basis',500)}
+  })
+  insist(new Set(taxRules.map((r:{state:string})=>r.state)).size===taxRules.length,'duplicate_owner_tax_state')
+  const expiresAt=new Date(expiry).toISOString(),reason=text(input.reason,'reason',500),approvalId=id(),grantedAt=now()
+  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=? AND active=1 AND erased_at IS NULL)',staff.id,staff.version),
+    stmt(db,'INSERT INTO bm_retail_staff_approvals(id,staff_id,staff_version,owner_id,owner_version,granted_at,expires_at,reason,tax_rules) VALUES(?,?,?,?,?,?,?,?,?)',approvalId,staff.id,staff.version,who.id,who.operatorVersion,grantedAt,expiresAt,reason,JSON.stringify(taxRules)),
+    stmt(db,`INSERT INTO bm_retail_staff_grants(staff_id,approval_id,staff_version,owner_id,owner_version,granted_at,expires_at,reason,tax_rules) VALUES(?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(staff_id) DO UPDATE SET approval_id=excluded.approval_id,staff_version=excluded.staff_version,owner_id=excluded.owner_id,owner_version=excluded.owner_version,granted_at=excluded.granted_at,expires_at=excluded.expires_at,reason=excluded.reason,tax_rules=excluded.tax_rules`,staff.id,approvalId,staff.version,who.id,who.operatorVersion,grantedAt,expiresAt,reason,JSON.stringify(taxRules)),
+    audit(db,who,'retail.staff_authorized',null,staff.id,approvalId)])
+  return {authorized:true,staffId:staff.id,expiresAt,approvalId}
+}
+
 export async function retailFor(db: D1Database, clientId: string) {
   return rows(db, `SELECT s.id,s.kind,s.label,s.service_id,s.units,s.amount_cents,s.tax_cents,s.gift_id,s.recorded_at,s.renewal_of,
     CASE WHEN EXISTS(SELECT 1 FROM bm_membership_cancellations c WHERE c.sale_id=s.id) THEN 'cancelled' ELSE COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=s.id AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active') END AS membership_state,
     s.units-(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)-COALESCE((SELECT units FROM bm_membership_settlements z WHERE z.sale_id=s.id),0) AS visits_left,
-    COALESCE((SELECT amount_cents FROM bm_membership_settlements z WHERE z.sale_id=s.id),0) AS settled_cents,
-    CASE WHEN s.kind='gift_card' THEN s.amount_cents-COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0) ELSE 0 END AS gift_left_cents
+    COALESCE((SELECT amount_cents FROM bm_membership_settlements z WHERE z.sale_id=s.id AND z.tender='cash'),0) AS settled_cents,
+    COALESCE((SELECT amount_cents FROM bm_membership_settlements z WHERE z.sale_id=s.id AND z.tender='gift'),0) AS restored_gift_cents,
+    CASE WHEN s.kind='gift_card' THEN s.amount_cents-COALESCE((SELECT SUM(x.amount_cents+x.tax_cents) FROM bm_retail_sales x WHERE x.gift_id=s.id),0)+COALESCE((SELECT SUM(z.amount_cents) FROM bm_membership_settlements z WHERE z.gift_id=s.id AND z.tender='gift'),0) ELSE 0 END AS gift_left_cents
     FROM bm_retail_sales s WHERE s.client_id=? ORDER BY s.recorded_at,s.id`, clientId)
 }
 export async function retailReceipt(db: D1Database, key: string) {
@@ -32,9 +80,19 @@ export async function retailReceipt(db: D1Database, key: string) {
   return { name: 'receipt-'+key+'.pdf', bytes: Uint8Array.from(atob(sale.receipt_base64), c=>c.charCodeAt(0)) }
 }
 export async function retailCommand(db: D1Database, who: Actor, name: string, input: Data) {
-  owner(who)
+  if(name==='pay.retail.authorize')return authorizeRetailStaff(db,who,input)
+  const saleAction=name==='pay.retail.sell'||name==='pay.retail.assign'
+  const saleGuards:D1PreparedStatement[]=[]
+  let staffApproval:string|null=null
+  if(saleAction){
+    human(who);insist(await retailSalesAllowed(db,who),'retail_sale_authority_required',403)
+    if(who.role!=='owner'){
+      staffApproval=(await one(db,'SELECT approval_id FROM bm_retail_staff_grants WHERE staff_id=?',who.staffId))!.approval_id
+      saleGuards.push(guard(db,grantPredicate,who.staffId,who.staffVersion,now()),guard(db,'EXISTS(SELECT 1 FROM bm_retail_staff_grants WHERE staff_id=? AND approval_id=?)',who.staffId,staffApproval))
+    }
+  }else owner(who)
   const client = await clientVisible(db, who, input.clientId)
-  if(name==='pay.retail.membership'||name==='pay.retail.cancel'||name==='pay.retail.settle') {
+  if(name==='pay.retail.membership'||name==='pay.retail.cancel'||name==='pay.retail.settle'||name==='pay.retail.gift_settle') {
     const sale=await one(db,"SELECT id,recorded_at,units,amount_cents,gift_id FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='membership'",text(input.saleId,'membership',100),client.id)
     insist(sale,'membership_not_found',404)
     const auth=authorization(input)
@@ -42,25 +100,25 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
     insist(auth.effectiveAt>=(latest?.at??sale.recorded_at),'membership_effective_time_precedes_latest_event',409)
     const left=(await one(db,'SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) AS n FROM bm_retail_sales s WHERE id=?',sale.id))!.n
     const notCancelled=()=>guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)',sale.id)
-    if(name==='pay.retail.cancel'||name==='pay.retail.settle') {
-      const settling=name==='pay.retail.settle'
+    if(name==='pay.retail.cancel'||name==='pay.retail.settle'||name==='pay.retail.gift_settle') {
+      const settling=name!=='pay.retail.cancel',giftReturn=name==='pay.retail.gift_settle'
       if(settling) {
         insist(left>0,'membership_has_no_unused_visits',409)
-        insist(!sale.gift_id,'gift_funded_settlement_requires_review',409)
+        insist(giftReturn?!!sale.gift_id:!sale.gift_id,giftReturn?'gift_settlement_requires_original_gift_funding':'gift_funded_settlement_requires_review',409)
         insist(!input.authorizerKind||input.authorizerKind==='patient','representative_authority_not_established',403)
-        insist(input.cashReturned===true||input.cashReturned==='on','confirm_cash_refund_already_completed')
+        insist(giftReturn?(input.restoreGift===true||input.restoreGift==='on'):(input.cashReturned===true||input.cashReturned==='on'),giftReturn?'confirm_restore_value_to_original_gift':'confirm_cash_refund_already_completed')
         const amount=integer(input.settlementAmountCents,'settlement_amount',1)
         insist(amount===Math.round(Number(sale.amount_cents)*left / Number(sale.units)),'refund_must_match_unused_purchase_value',409)
         const reference=text(input.settlementReference,'settlement_reference',120),evidence=text(input.settlementEvidence,'settlement_evidence',500)
         await commit(db,who,[guard(db,"NOT EXISTS(SELECT 1 FROM bm_retired_retail_references WHERE kind='settlement' AND digest=?)",await sha256(reference)),notCancelled(),guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_settlements WHERE sale_id=?)',sale.id),
           guard(db,'(SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) FROM bm_retail_sales s WHERE id=?)=?',sale.id,left),
           guard(db,"NOT EXISTS(SELECT 1 FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id),
-          stmt(db,'INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by) VALUES(?,?,?,?,?,?,?,?)',sale.id,client.id,left,amount,reference,evidence,now(),who.email),
-          stmt(db,'INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,?,?,?,?,?,?,?,0)',sale.id,client.id,auth.effectiveAt,auth.authorizedAt,auth.method,auth.evidence,text(input.reason,'reason',500),who.email,now()),audit(db,who,'retail.unused_visits_settled',client.id,sale.id)])
-        return {state:'cancelled',visitsLeft:0,settledVisits:left,refundedCents:amount,providerRefund:false}
+          stmt(db,'INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by,tender,gift_id) VALUES(?,?,?,?,?,?,?,?,?,?)',sale.id,client.id,left,amount,reference,evidence,now(),who.email,giftReturn?'gift':'cash',giftReturn?sale.gift_id:null),
+          stmt(db,'INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,?,?,?,?,?,?,?,0)',sale.id,client.id,auth.effectiveAt,auth.authorizedAt,auth.method,auth.evidence,text(input.reason,'reason',500),who.email,now()),audit(db,who,giftReturn?'retail.gift_value_restored':'retail.unused_visits_settled',client.id,sale.id)])
+        return {state:'cancelled',visitsLeft:0,settledVisits:left,...(giftReturn?{restoredGiftCents:amount}:{refundedCents:amount}),providerRefund:false}
       }
       insist(left===0,'resolve_unused_visits_before_cancellation',409)
-      await commit(db,who,[notCancelled(),guard(db,'(SELECT units FROM bm_retail_sales WHERE id=?)=(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)',sale.id,sale.id),
+      await commit(db,who,[...saleGuards,notCancelled(),guard(db,'(SELECT units FROM bm_retail_sales WHERE id=?)=(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)',sale.id,sale.id),
         stmt(db,'INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,?,?,?,?,?,?,?,0)',sale.id,client.id,auth.effectiveAt,auth.authorizedAt,auth.method,auth.evidence,text(input.reason,'reason',500),who.email,now()),audit(db,who,'retail.membership_cancelled',client.id,sale.id)])
       return {state:'cancelled',visitsLeft:0,providerCharge:false,externalBillingChanged:false}
     }
@@ -69,7 +127,7 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
     insist(['active','paused'].includes(state),'invalid_membership_state')
     insist(state!==(current?.state??'active'),'membership_state_unchanged',409)
     const key=id()
-    await commit(db,who,[notCancelled(),guard(db,"COALESCE((SELECT e.id FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'')=?",sale.id,current?.id??''),
+    await commit(db,who,[...saleGuards,notCancelled(),guard(db,"COALESCE((SELECT e.id FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'')=?",sale.id,current?.id??''),
       guard(db,'(SELECT units-(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=s.id) FROM bm_retail_sales s WHERE id=?)=?',sale.id,left),stmt(db,'INSERT INTO bm_membership_events(id,sale_id,client_id,state,previous_id,reason,consent_evidence,recorded_by,recorded_at,effective_at,authorized_at,authorization_method,visits_left) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',key,sale.id,client.id,state,current?.id??null,text(input.reason,'reason',500),auth.evidence,who.email,now(),auth.effectiveAt,auth.authorizedAt,auth.method,left),audit(db,who,'retail.membership_'+state,client.id,sale.id)])
     return {id:key,state,providerCharge:false}
   }
@@ -77,7 +135,7 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
     const sale = await one(db, "SELECT * FROM bm_retail_sales WHERE id=? AND client_id=? AND kind IN ('package','membership')", text(input.saleId,'sale',100), client.id)
     const visit = await one(db, "SELECT * FROM bm_appointments WHERE id=? AND client_id=? AND status='booked' AND coverage_choice IN ('self_pay','uninsured')", text(input.appointmentId,'visit',100), client.id)
     insist(sale && visit && visit.service_id===sale.service_id, 'cash_pay_package_and_service_must_match',409)
-    await commit(db,who,[guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)',sale.id),guard(db,"(SELECT units FROM bm_retail_sales WHERE id=?)>(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)+(SELECT COUNT(*) FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id,sale.id,sale.id),guard(db,"COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active')='active'",sale.id),guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND client_id=? AND service_id=? AND coverage_choice IN ('self_pay','uninsured'))",visit.id,client.id,sale.service_id),
+    await commit(db,who,[...saleGuards,guard(db,'NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)',sale.id),guard(db,"(SELECT units FROM bm_retail_sales WHERE id=?)>(SELECT COUNT(*) FROM bm_package_uses WHERE sale_id=?)+(SELECT COUNT(*) FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.sale_id=? AND a.status='booked')",sale.id,sale.id,sale.id),guard(db,"COALESCE((SELECT e.state FROM bm_membership_events e WHERE e.sale_id=? AND NOT EXISTS(SELECT 1 FROM bm_membership_events n WHERE n.sale_id=e.sale_id AND n.previous_id=e.id)),'active')='active'",sale.id),guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND status='booked' AND client_id=? AND service_id=? AND coverage_choice IN ('self_pay','uninsured'))",visit.id,client.id,sale.service_id),
       stmt(db,'INSERT INTO bm_package_assignments(appointment_id,sale_id,client_id,assigned_by,assigned_at) VALUES(?,?,?,?,?)',visit.id,sale.id,client.id,who.email,now()),audit(db,who,'retail.package_assigned',client.id,visit.id)])
     return {assigned:true}
   }
@@ -100,6 +158,13 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
   const state=kind==='product'?text(input.taxState,'tax_state',2):''
   insist(kind!=='product'||/^[A-Z]{2}$/.test(state),'enter_state_abbreviation')
   const evidence=kind==='product'?text(input.taxEvidence,'tax_basis',500):''
+  if(kind==='product'&&who.role!=='owner') {
+    const rules=await retailTaxRules(db,who)
+    insist(rules.some(r=>r.state===state&&r.rate===rate&&r.evidence===evidence),'product_tax_requires_current_owner_recorded_basis',403)
+    saleGuards.push(guard(db,`EXISTS(SELECT 1 FROM bm_retail_staff_grants g,json_each(g.tax_rules) r WHERE g.staff_id=?
+      AND json_extract(r.value,'$.state')=? AND json_extract(r.value,'$.rate')=? AND json_extract(r.value,'$.evidence')=?)`,who.staffId,state,rate,evidence))
+  }
+
   const tax=Math.round(amount*rate/10000),units=['package','membership'].includes(kind)?integer(input.units,'visits',1,1000):0
   const service=units?await one(db,'SELECT id FROM bm_services WHERE id=?',text(input.serviceId,'service',100)):null
   insist(!units||service,'service_not_found',404)
@@ -109,10 +174,10 @@ export async function retailCommand(db: D1Database, who: Actor, name: string, in
   const clinic=(await one(db,'SELECT clinic_name FROM bm_settings WHERE id=1'))!
   const bytes=pdf({header:clinic.clinic_name,title:'Cash sale receipt',blocks:[{kind:'facts',rows:[['Patient',client.first_name+' '+client.last_name],['Item',label],['Kind',kind],['Amount',dollars(amount)],['Sales tax',dollars(tax)],['Total',dollars(amount+tax)],['Payment',gift?'Patient gift value redeemed':'Cash received outside Balm'],['Reference',reference],['Date',at],...(renewal?[['Renewal of receipt',renewal.id] as [string,string],['Patient authorization',renewalAuthorization!.authorizedAt] as [string,string]]:[]),...(units?[['Visits included',String(units)] as [string,string]]:[])]},{kind:'notes',lines:['No automatic renewal, expiry, transfer, refund or insurance billing. Product tax is the owner recorded rate; Balm does not determine tax law.']}]})
   const encoded=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''))
-  await commit(db,who,[guard(db,"NOT EXISTS(SELECT 1 FROM bm_retired_retail_references WHERE kind='sale' AND digest=?)",await sha256(reference)),...(renewal?[
+  await commit(db,who,[...saleGuards,guard(db,"NOT EXISTS(SELECT 1 FROM bm_retired_retail_references WHERE kind='sale' AND digest=?)",await sha256(reference)),...(renewal?[
     guard(db,"EXISTS(SELECT 1 FROM bm_retail_sales s WHERE s.id=? AND s.client_id=? AND s.kind='membership' AND s.service_id=? AND s.units=(SELECT COUNT(*) FROM bm_package_uses u WHERE u.sale_id=s.id)) AND NOT EXISTS(SELECT 1 FROM bm_retail_sales WHERE renewal_of=?) AND NOT EXISTS(SELECT 1 FROM bm_membership_cancellations WHERE sale_id=?)",renewal.id,client.id,service!.id,renewal.id,renewal.id)
-  ]:[]),...(gift?[guard(db,`(SELECT amount_cents FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='gift_card')-COALESCE((SELECT SUM(amount_cents+tax_cents) FROM bm_retail_sales WHERE gift_id=?),0)>=?`,gift.id,client.id,gift.id,amount+tax)]:[]),
-    stmt(db,'INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64,renewal_of,renewal_authorization) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,client.id,kind,label,service?.id??null,units,amount,tax,rate,state,evidence,gift?.id??null,reference,at,who.email,encoded,renewal?.id??null,renewalAuthorization?JSON.stringify({...renewalAuthorization,reason:text(input.reason,'reason',500)}):null),audit(db,who,renewal?'retail.renewed':'retail.sold',client.id,key,kind)])
+  ]:[]),...(gift?[guard(db,`(SELECT amount_cents FROM bm_retail_sales WHERE id=? AND client_id=? AND kind='gift_card')-COALESCE((SELECT SUM(amount_cents+tax_cents) FROM bm_retail_sales WHERE gift_id=?),0)+COALESCE((SELECT SUM(amount_cents) FROM bm_membership_settlements WHERE gift_id=? AND tender='gift'),0)>=?`,gift.id,client.id,gift.id,gift.id,amount+tax)]:[]),
+    stmt(db,'INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,gift_id,reference,recorded_at,recorded_by,receipt_base64,renewal_of,renewal_authorization,staff_approval_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,client.id,kind,label,service?.id??null,units,amount,tax,rate,state,evidence,gift?.id??null,reference,at,who.email,encoded,renewal?.id??null,renewalAuthorization?JSON.stringify({...renewalAuthorization,reason:text(input.reason,'reason',500)}):null,staffApproval),audit(db,who,renewal?'retail.renewed':'retail.sold',client.id,key,kind)])
   return {id:key,totalCents:amount+tax,receiptUrl:'/api/balm/receipts/'+key+'.pdf'}
 }
 export async function packageAttendance(db: D1Database, who: Actor, visit: Data) {
@@ -129,6 +194,6 @@ export async function retailNotices(db:D1Database,clientId:string) {
   const sales=await retailFor(db,clientId)
   const events=await rows(db,`SELECT sale_id,state,COALESCE(effective_at,recorded_at) AS effective_at,visits_left FROM bm_membership_events WHERE client_id=?
     UNION ALL SELECT sale_id,'cancelled',effective_at,visits_left FROM bm_membership_cancellations WHERE client_id=? ORDER BY effective_at`,clientId,clientId)
-  return sales.filter(s=>['package','membership','gift_card'].includes(s.kind)).map(s=>({id:s.id,label:s.label,kind:s.kind,units:s.units,visitsLeft:s.visits_left,giftLeftCents:s.gift_left_cents,settledCents:s.settled_cents,state:s.membership_state,renewalOf:s.renewal_of,
+  return sales.filter(s=>['package','membership','gift_card'].includes(s.kind)).map(s=>({id:s.id,label:s.label,kind:s.kind,units:s.units,visitsLeft:s.visits_left,giftLeftCents:s.gift_left_cents,settledCents:s.settled_cents,restoredGiftCents:s.restored_gift_cents,state:s.membership_state,renewalOf:s.renewal_of,
     history:[{state:s.renewal_of?'renewed purchase':'purchased',effective_at:s.recorded_at,visits_left:s.units},...events.filter(e=>e.sale_id===s.id).map(({state,effective_at,visits_left})=>({state,effective_at,visits_left}))]}))
 }

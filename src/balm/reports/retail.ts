@@ -6,7 +6,7 @@ export async function retailObligations(db:D1Database,end:string) {
   UNION ALL SELECT id,kind,units,amount_cents,tax_cents,gift_id,recorded_at,renewal_of,used_times,membership_states,cancelled_at,facts_complete,settlement FROM bm_destroyed_retail`)
  const uses=await rows(db,'SELECT sale_id,used_at FROM bm_package_uses')
  const events=await rows(db,'SELECT rowid AS sequence,sale_id,state,recorded_at FROM bm_membership_events ORDER BY rowid')
- const settlements=await rows(db,'SELECT sale_id,units,amount_cents,recorded_at FROM bm_membership_settlements')
+ const settlements=await rows(db,'SELECT sale_id,units,amount_cents,recorded_at,tender,gift_id FROM bm_membership_settlements')
  const cancellations=await rows(db,'SELECT sale_id,recorded_at FROM bm_membership_cancellations')
  const before=(at:string)=>Date.parse(at)<Date.parse(end)
  const selected=sales.filter(s=>before(s.recorded_at))
@@ -24,6 +24,7 @@ export async function retailObligations(db:D1Database,end:string) {
   row.purchases++;row.visitsSold+=Number(sale.units);row.visitsUsed+=used;row.visitsSettled+=settled;row.visitsLeft+=left
   row.unearnedCents+=Math.round(Number(sale.amount_cents)*left / Number(sale.units));row.renewals+=sale.renewal_of?1:0
  }
- const giftLiabilityCents=selected.filter(s=>s.kind==='gift_card').reduce((sum,s)=>sum+Number(s.amount_cents)-selected.filter(x=>x.gift_id===s.id).reduce((n,x)=>n+Number(x.amount_cents)+Number(x.tax_cents??0),0),0)
+ const giftReturns=[...settlements.filter(z=>z.tender==='gift'),...selected.map(s=>JSON.parse(s.settlement??'null')).filter(z=>z?.tender==='gift')].filter(z=>before(z.recorded_at))
+ const giftLiabilityCents=selected.filter(s=>s.kind==='gift_card').reduce((sum,s)=>sum+Number(s.amount_cents)-selected.filter(x=>x.gift_id===s.id).reduce((n,x)=>n+Number(x.amount_cents)+Number(x.tax_cents??0),0)+giftReturns.filter(z=>z.gift_id===s.id).reduce((n,z)=>n+Number(z.amount_cents),0),0)
  return {rows:summary,incompleteHistory,giftLiabilityCents,unearnedCents:summary.reduce((n,r)=>n+r.unearnedCents,0),visitsLeft:summary.reduce((n,r)=>n+r.visitsLeft,0)}
 }

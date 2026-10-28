@@ -18,7 +18,7 @@ export async function retailRetention(db:D1Database,client:Data,policy:Data|null
     UNION ALL SELECT sale_id,recorded_at FROM bm_membership_settlements WHERE client_id=?`,...Array(4).fill(client.id))
   const booked=await rows(db,"SELECT x.sale_id FROM bm_package_assignments x JOIN bm_appointments a ON a.id=x.appointment_id WHERE x.client_id=? AND a.status='booked'",client.id)
   const usage=await rows(db,'SELECT sale_id,COUNT(*) AS n FROM bm_package_uses WHERE client_id=? GROUP BY sale_id',client.id)
-  const settled=await rows(db,'SELECT sale_id,units FROM bm_membership_settlements WHERE client_id=?',client.id)
+  const settled=await rows(db,'SELECT sale_id,units,tender,gift_id,amount_cents FROM bm_membership_settlements WHERE client_id=?',client.id)
   const pending=new Set(sales.map(s=>s.id)),groups:Data[]=[]
   const today=(await one(db,"SELECT date('now') AS today"))!.today
   while(pending.size) {
@@ -37,7 +37,7 @@ export async function retailRetention(db:D1Database,client:Data,policy:Data|null
     const reasons=review.reasons.filter(r=>r!=='retention_period_not_complete')
     if(!eligibleAfter || eligibleAfter>=today)reasons.push('retention_period_not_complete')
     if(selected.some(s=>s.kind==='gift_card'
-      ? Number(s.amount_cents)>sales.filter(x=>x.gift_id===s.id).reduce((n,x)=>n+Number(x.amount_cents)+Number(x.tax_cents),0)
+      ? Number(s.amount_cents)>sales.filter(x=>x.gift_id===s.id).reduce((n,x)=>n+Number(x.amount_cents)+Number(x.tax_cents),0)-settled.filter(z=>z.tender==='gift'&&z.gift_id===s.id).reduce((n,z)=>n+Number(z.amount_cents),0)
       : ['package','membership'].includes(s.kind)&&Number(s.units)>Number(usage.find(u=>u.sale_id===s.id)?.n??0)+Number(settled.find(z=>z.sale_id===s.id)?.units??0)))reasons.push('unresolved_retail_entitlement')
     if(booked.some(x=>connected.has(x.sale_id)))reasons.push('booked_retail_assignment')
     groups.push({saleIds:selected.map(s=>s.id).sort(),eligibleAfter,eligible:!reasons.length,reasons:[...new Set(reasons)]})

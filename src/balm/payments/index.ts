@@ -1,6 +1,6 @@
 import { terminalCommand, terminalState } from './terminal'
 import { approveCardRefund, prepareCardRefund, reconcileCardRefund, cardRefundsFor } from './refunds'
-import { retailCommand, retailFor } from './retail'
+import { retailCommand, retailFor, retailSalesAllowed, retailTaxRules } from './retail'
 import { statementCycleCommand, statementCycleState, cyclePatient } from './statement-cycles'
 import {manager,locationWrite} from '../domain/role-access'
 import { seesBalances } from '../domain/model'
@@ -152,7 +152,7 @@ export async function clientBilling(env: SmsEnv, db: D1Database, who: Actor, cli
   return {
     pendingCollections: await pendingCollectionRows(db, clientId),
     cardRefunds: await cardRefundsFor(db, clientId),
-    retail: await retailFor(db,clientId), cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
+    retail: await retailFor(db,clientId), retailSalesAllowed: await retailSalesAllowed(db,who), retailTaxRules: await retailTaxRules(db,who), cycle: await cyclePatient(db, clientId), codes, copayCents: client?.copay_cents ?? null, hasEmail: !!client?.email, hasPhone: !!client?.phone,
     card: await liveCard(db, clientId), ledger: await ledger(db, clientId), open: await openInvoices(db, clientId), superbills,
     ...await clientPlans(db, clientId),
     account: await accountEntriesFor(db, clientId),

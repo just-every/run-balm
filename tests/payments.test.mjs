@@ -704,3 +704,13 @@ test('PAY-003: deposit and full booking payments reserve slots, confirm exact ce
  const stripe=fakeProviders(),h=await harness({outbound:stripe.handler,browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
  try{const {bookingPrepaymentJourney}=await import('./booking-prepayment-journey.mjs');const {viewportProof}=await import('./viewport-proof.mjs');await bookingPrepaymentJourney(h,stripe,{screen:async(name,path,selector,cookie)=>viewportProof(h,[{name,path,selector,cookie,openSelector:name==='booking-settings'?'details:has([name=prepayMode]) > summary:text-is("Edit service")':undefined,interact:async({page,width})=>{if(width===1440&&name==='booking-amount')assert.equal(await page.locator('[name=confirmedAmountCents]').inputValue(),'3000')}}])})}finally{await h.close()}
 })
+
+test('PAY-008: named staff sales require finite owner grants, revoke immediately and preserve lifecycle authority',()=>run(async h=>{
+ const {retailStaffJourney}=await import('./retail-staff-journey.mjs')
+ await retailStaffJourney(h)
+}))
+
+test('PAY-008: unused gift-funded visits return exact value once to the original patient gift without a cash refund',()=>run(async h=>{
+ const {giftSettlementJourney}=await import('./retail-gift-settlement-journey.mjs')
+ await giftSettlementJourney(h)
+}))

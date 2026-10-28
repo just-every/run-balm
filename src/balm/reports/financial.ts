@@ -46,8 +46,8 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
       payments.push({invoice_id:sale.id,amount_cents:total,reference:'retail:'+sale.id,recorded_at:sale.recorded_at,account_entry_id:sale.id,retail:true})
     }
   }
-  const retailSettlements=await db.prepare(`SELECT sale_id,amount_cents,recorded_at,reference FROM bm_membership_settlements
-    UNION ALL SELECT id,json_extract(settlement,'$.amount_cents'),json_extract(settlement,'$.recorded_at'),'Destroyed cash refund' FROM bm_destroyed_retail WHERE settlement IS NOT NULL`).all<Data>()
+  const retailSettlements=await db.prepare(`SELECT sale_id,amount_cents,recorded_at,reference,tender,gift_id FROM bm_membership_settlements
+    UNION ALL SELECT id,json_extract(settlement,'$.amount_cents'),json_extract(settlement,'$.recorded_at'),'Destroyed settlement',COALESCE(json_extract(settlement,'$.tender'),'cash'),json_extract(settlement,'$.gift_id') FROM bm_destroyed_retail WHERE settlement IS NOT NULL`).all<Data>()
   for(const z of retailSettlements.results) {
     payments.push({invoice_id:z.sale_id,amount_cents:-Number(z.amount_cents),recorded_at:z.recorded_at,account_entry_id:z.sale_id,retail:true,reference:z.reference})
     adjustments.push({invoice_id:z.sale_id,amount_cents:Number(z.amount_cents),recorded_at:z.recorded_at,reason:'Unused membership settlement'})
@@ -125,10 +125,10 @@ export async function financialReports(db: D1Database, who: Actor, input: Data) 
   }
   for(const sale of retail.results.filter(s=>inRange(s.recorded_at)&&!s.gift_id)){
     const amount=Number(sale.amount_cents)+Number(sale.tax_cents),gift=sale.kind==='gift_card'
-    const redeemed=retail.results.filter(s=>s.gift_id===sale.id&&before(s.recorded_at)).reduce((t,s)=>t+Number(s.amount_cents)+Number(s.tax_cents),0)
+    const redeemed=retail.results.filter(s=>s.gift_id===sale.id&&before(s.recorded_at)).reduce((t,s)=>t+Number(s.amount_cents)+Number(s.tax_cents),0)-retailSettlements.results.filter(z=>z.tender==='gift'&&z.gift_id===sale.id&&before(z.recorded_at)).reduce((n,z)=>n+Number(z.amount_cents),0)
     deposits.push({date:local(sale.recorded_at),source:gift?'Gift value purchased':'Cash sale',reference:sale.reference,receivedCents:amount,postedCents:gift?redeemed:amount,creditCents:gift?amount-redeemed:0,unpostedCents:0,refundedCents:0})
   }
-  for(const z of retailSettlements.results.filter(z=>inRange(z.recorded_at)))deposits.push({date:local(z.recorded_at),source:'Membership cash refund recorded outside Balm',reference:z.sale_id,receivedCents:-Number(z.amount_cents),postedCents:-Number(z.amount_cents),creditCents:0,unpostedCents:0,refundedCents:Number(z.amount_cents)})
+  for(const z of retailSettlements.results.filter(z=>z.tender!=='gift'&&inRange(z.recorded_at)))deposits.push({date:local(z.recorded_at),source:'Membership cash refund recorded outside Balm',reference:z.sale_id,receivedCents:-Number(z.amount_cents),postedCents:-Number(z.amount_cents),creditCents:0,unpostedCents:0,refundedCents:Number(z.amount_cents)})
   deposits.sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source))
 
   if (named.size) await commit(db, who, [...named].map(clientId => audit(db, who, 'report.financial_read', clientId)))

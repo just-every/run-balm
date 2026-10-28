@@ -233,9 +233,18 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     h=await harness({root:source,...identity})
     const historicalSale=crypto.randomUUID()
     const historicalVisit=await h.db.prepare('SELECT id,service_id FROM bm_appointments WHERE client_id=?').bind(retentionPatient.id).first()
-    await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'membership','Synthetic resolved historical membership',?,1,1000,0,0,'','','synthetic-balm-stale-member','1990-01-02T03:00:00.000Z',?,?)").bind(historicalSale,retentionPatient.id,historicalVisit.service_id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical receipt')).run()
+    await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'membership','Synthetic resolved historical membership',?,2,2000,0,0,'','','synthetic-balm-stale-member','1990-01-02T03:00:00.000Z',?,?)").bind(historicalSale,retentionPatient.id,historicalVisit.service_id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical receipt')).run()
     await h.db.prepare('INSERT INTO bm_package_uses VALUES(?,?,?,?)').bind(historicalVisit.id,historicalSale,retentionPatient.id,'1990-01-02T04:00:00.000Z').run()
     await h.db.prepare("INSERT INTO bm_membership_cancellations(sale_id,client_id,effective_at,authorized_at,authorization_method,consent_evidence,reason,recorded_by,recorded_at,visits_left) VALUES(?,?,'1990-01-02T05:00:00.000Z','1990-01-02T04:00:00.000Z','Specific request in person','Synthetic specific cancellation authorization','Synthetic exhausted cancellation',?,'1990-01-02T05:00:00.000Z',0)").bind(historicalSale,retentionPatient.id,h.auth.OWNER_EMAIL).run()
+    const scopedPatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Scoped retail archive',dateOfBirth:'1950-01-01'})
+    const scopedVisit=crypto.randomUUID()
+    const originalVisit=await h.db.prepare('SELECT * FROM bm_appointments WHERE id=?').bind(historicalVisit.id).first()
+    await h.db.prepare("INSERT INTO bm_appointments(id,client_id,service_id,practitioner_id,start_at,end_at,status,booked_via,created_by,created_at,coverage_choice) VALUES(?,?,?,?, '1989-01-02T02:00:00.000Z','1989-01-02T02:45:00.000Z','cancelled','staff',?,'1989-01-02T02:00:00.000Z','self_pay')").bind(scopedVisit,scopedPatient.id,originalVisit.service_id,originalVisit.practitioner_id,h.auth.OWNER_EMAIL).run()
+    await h.db.prepare("UPDATE bm_appointments SET status='attended' WHERE id=?").bind(scopedVisit).run()
+    const scopedSale=crypto.randomUUID()
+    await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'product','synthetic-balm-expired-private-receipt',0,1200,0,0,'TX','synthetic-balm-tax-evidence','synthetic-balm-retired-archive-sale','1990-01-02T03:00:00.000Z',?,?)").bind(scopedSale,scopedPatient.id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 synthetic-balm-expired-private-receipt')).run()
+    const retainedGift=await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'gift_card',label:'synthetic-balm-unresolved-gift',amountCents:700,reference:'synthetic-balm-scoped-archive-gift',confirm:true})
+    await h.db.prepare("INSERT INTO bm_membership_settlements(sale_id,client_id,units,amount_cents,reference,evidence,recorded_at,recorded_by) VALUES(?,?,1,1000,'synthetic-balm-stale-settlement','synthetic-balm-private-settlement','1990-01-02T05:00:00.000Z',?)").bind(historicalSale,retentionPatient.id,h.auth.OWNER_EMAIL).run()
     await h.close();h=null
     await command(source,['export','--output',old,'--no-queue'])
         h=await harness({root:source,...identity});await h.cmd('client.erase',{id:p.id},await h.signIn(h.auth.OWNER_EMAIL));await h.close();h=null
@@ -244,10 +253,17 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
         await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
+        const scopedPreview=await h.cmd('retention.retail.preview',{clientId:scopedPatient.id},ownerCookie)
+        assert.deepEqual(scopedPreview.saleIds,[scopedSale])
+        await h.cmd('retention.retail.destroy',{...scopedPreview,confirm:true},ownerCookie)
+        const scopedFile=(await h.send('/api/balm/clients/'+scopedPatient.id,undefined,ownerCookie)).value
+        assert.equal(scopedFile.client.first_name,'Synthetic')
+        assert.deepEqual(scopedFile.billing.retail.map(x=>x.id),[retainedGift.id])
+        await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},ownerCookie,409)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
-        assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
         await command(source,['export','--output',later,'--no-queue'])
@@ -263,9 +279,20 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
-      assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,1000)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
+      assert.equal(await current.env.DB.prepare('SELECT id FROM bm_retail_sales WHERE id=?').bind(scopedSale).first(),null)
+      assert.equal((await current.env.DB.prepare('SELECT id FROM bm_clients WHERE id=?').bind(scopedPatient.id).first()).id,scopedPatient.id)
+      assert.equal((await current.env.DB.prepare('SELECT id FROM bm_retail_sales WHERE id=?').bind(retainedGift.id).first()).id,retainedGift.id)
+      assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM bm_retired_retail_references').first()).n,1)
     } finally {await current.dispose()}
+    h=await harness({root:erased,...identity})
+    const restoredOwner=await h.signIn(h.auth.OWNER_EMAIL)
+    await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},restoredOwner,409)
+    assert.equal((await h.send('/api/balm/receipts/'+scopedSale+'.pdf',undefined,restoredOwner)).status,404)
+    assert.equal((await h.send('/api/balm/receipts/'+retainedGift.id+'.pdf',undefined,restoredOwner)).status,200)
+    await h.cmd('pay.retail.settle',{clientId:retentionPatient.id,saleId:historicalSale,confirm:true},restoredOwner,404)
+    await h.cmd('pay.retail.membership',{clientId:retentionPatient.id,saleId:historicalSale,state:'active',confirm:true},restoredOwner,404)
   }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
 
@@ -628,12 +655,16 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await h.cmd('finance.source.record',{...base,kind:'charge',reference:'synthetic-balm-archive-charge',sourceReference:'synthetic-balm-archive-original',confirm:true})
     const review=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).findings[0]
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
+    const {giftSettlementJourney}=await import('./retail-gift-settlement-journey.mjs')
+    const giftSettlement=await giftSettlementJourney(h)
+    const giftOriginal=(await h.send('/portal/receipts/'+giftSettlement.member.id+'.pdf',undefined,await portalLogin(h,h.auth.OWNER_EMAIL))).text
     await h.cmd('accounting.connect',{realmId:'123',clientId:'synthetic-balm-8',clientSecret:'synthetic-balm-9',refreshToken:'synthetic-balm-10',environment:'sandbox',confirm:true})
     await h.cmd('accounting.mapping',{mappings:accountingMappings,confirm:true})
     const settlementDay=new Date(Date.parse(settlementBefore.recorded_at)+10*3600000).toISOString().slice(0,10)
     const accounting=await h.cmd('accounting.prepare',{day:settlementDay})
     const accountingSources=JSON.parse((await h.db.prepare('SELECT sources FROM bm_accounting_batches WHERE id=?').bind(accounting.id).first()).sources)
     assert.deepEqual(accountingSources.find(s=>s.id==='membership-settlement:'+renewed.id),{id:'membership-settlement:'+renewed.id,kind:'refund',method:'cash',cents:3000,debit:'income',credit:'cash'})
+    assert.deepEqual(accountingSources.find(s=>s.id==='membership-settlement:'+giftSettlement.member.id),{id:'membership-settlement:'+giftSettlement.member.id,kind:'refund',method:'gift',cents:3001,debit:'income',credit:'liability'})
     const key=await h.cmd('agent.create',{label:'Synthetic excluded finance grant',scopes:['finance.reconcile.prepare']})
     const payer=await h.cmd('insurance.payer.save',{name:'Synthetic archive carry payer',payerId:'ARCHIVE'})
     const claimCarryInput=cutoverClaims(payer.id),claimCarryPreview=await h.cmd('movein.prepare',claimCarryInput)
@@ -647,6 +678,9 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const reception=await h.staff('Rosa','reception')
     const responsibility=await checkInResponsibilityJourney({h,stripe,service,priya,reception})
     const moneyBefore=(await h.db.prepare('SELECT id,invoice_id,appointment_id,collection_purpose,amount_cents,payment_intent,stripe_account_id,stripe_customer_id,status FROM bm_card_payments WHERE client_id=? ORDER BY id').bind(responsibility.patient.id).all()).results
+    const retailSeller=await h.staff('ArchiveRetailSeller','reception')
+    const saleAuthority=await h.cmd('pay.retail.authorize',{staffId:retailSeller.id,expiresAt:new Date(Date.now()+3600_000).toISOString(),reason:'synthetic-balm-archive-sale-authority',confirm:true})
+    assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,retailSeller.cookie)).value.billing.retailSalesAllowed,true)
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
     const archive=join(temporary,'retail.rer')
@@ -656,6 +690,11 @@ test('retail and finance originals, paused entitlements and preparation authorit
     await command(restored,['import','--input',archive,'--yes','--no-queue'])
     h=await harness({root:restored,...identity})
     const owner=await h.signIn(h.auth.OWNER_EMAIL)
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_retail_staff_grants').first()).n,0,'a historical archive cannot restore sale authority')
+    assert.equal((await h.db.prepare('SELECT id FROM bm_retail_staff_approvals WHERE id=?').bind(saleAuthority.approvalId).first()).id,saleAuthority.approvalId,'historical approval stays evidence without restored execution authority')
+    const seller=await h.signIn((await h.db.prepare('SELECT email FROM bm_staff WHERE id=?').bind(retailSeller.id).first()).email)
+    await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'gift_card',amountCents:1000,label:'synthetic-balm-refused-restored-sale',reference:'synthetic-balm-refused-restored-sale',confirm:true},seller,403)
+    assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,seller)).value.billing.retailSalesAllowed,false)
     const moneyAfter=(await h.db.prepare('SELECT id,invoice_id,appointment_id,collection_purpose,amount_cents,payment_intent,stripe_account_id,stripe_customer_id,status FROM bm_card_payments WHERE client_id=? ORDER BY id').bind(responsibility.patient.id).all()).results
     assert.deepEqual(moneyAfter,moneyBefore)
     const patientSession=await portalLogin(h,'responsibility@patient.example')
@@ -675,6 +714,13 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.deepEqual((await h.cmd('movein.journal',{jobId:moveinAuthorizations.job.id},owner)).job.report,moveinAuthorizations.job.report)
     await h.cmd('movein.undo',{jobId:moveinAuthorizations.job.id},owner,409)
     assert.equal((await h.state(owner)).accounting.connection,null,'restored clinic must explicitly reconnect its accounting provider')
+    const restoredGiftCookie=await portalLogin(h,h.auth.OWNER_EMAIL)
+    assert.equal((await h.send('/portal/receipts/'+giftSettlement.member.id+'.pdf',undefined,restoredGiftCookie)).text,giftOriginal)
+    assert.ok((await h.send('/portal/home',undefined,restoredGiftCookie)).text.includes('Unused membership value returned to your original gift: $30.01.'))
+    const restoredGift=(await h.send('/api/balm/clients/'+giftSettlement.patient.id,undefined,owner)).value.billing.retail
+    assert.equal(restoredGift.find(s=>s.id===giftSettlement.gift.id).gift_left_cents,0)
+    assert.equal(restoredGift.find(s=>s.id===giftSettlement.member.id).restored_gift_cents,3001)
+    await h.cmd('pay.retail.gift_settle',giftSettlement.input,owner,409)
     assert.equal((await h.send(member.receiptUrl,undefined,owner)).text,original)
     const file=(await h.send('/api/balm/clients/'+patient.id,undefined,owner)).value
     assert.equal(file.billing.retail.find(x=>x.id===member.id).membership_state,'paused')

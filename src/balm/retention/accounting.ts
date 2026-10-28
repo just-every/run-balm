@@ -6,7 +6,7 @@ export function preserveRetail(db:D1Database,clientId:string,saleIds?:string[]) 
       SELECT s.id,s.kind,s.units,s.amount_cents,s.tax_cents,s.gift_id,s.recorded_at,
         (SELECT json_group_array(used_at) FROM bm_package_uses WHERE sale_id=s.id),
         (SELECT json_group_array(json_object('state',state,'recorded_at',recorded_at)) FROM (SELECT state,recorded_at FROM bm_membership_events WHERE sale_id=s.id ORDER BY rowid)),
-        (SELECT recorded_at FROM bm_membership_cancellations WHERE sale_id=s.id),s.renewal_of,1,(SELECT json_object('units',units,'amount_cents',amount_cents,'recorded_at',recorded_at) FROM bm_membership_settlements WHERE sale_id=s.id) FROM bm_retail_sales s WHERE s.client_id=? AND (? IS NULL OR s.id IN (SELECT value FROM json_each(?)))`,clientId,saleIds ? JSON.stringify(saleIds) : null,saleIds ? JSON.stringify(saleIds) : null)
+        (SELECT recorded_at FROM bm_membership_cancellations WHERE sale_id=s.id),s.renewal_of,1,(SELECT json_object('units',units,'amount_cents',amount_cents,'recorded_at',recorded_at,'tender',tender,'gift_id',gift_id) FROM bm_membership_settlements WHERE sale_id=s.id) FROM bm_retail_sales s WHERE s.client_id=? AND (? IS NULL OR s.id IN (SELECT value FROM json_each(?)))`,clientId,saleIds ? JSON.stringify(saleIds) : null,saleIds ? JSON.stringify(saleIds) : null)
 }
 
 /** Preserve dated business arithmetic without patient, clinician, clinical content or payment credentials. */

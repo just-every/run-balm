@@ -225,5 +225,20 @@ export async function retailJourney(h,proof=async()=>{}){
  assert.ok((await h.db.prepare("SELECT action FROM bm_audit WHERE subject_id=? AND action='retail.renewed'").bind(renewed.id).all()).results.length===1)
  await assert.rejects(h.db.prepare("UPDATE bm_retail_sales SET renewal_of=NULL WHERE id=?").bind(renewed.id).run(),/original_record_is_immutable/)
  assert.equal(h.outboundRequests.filter(x=>/stripe|quickbooks|payer/.test(x.origin)).length,0,'cash sales and membership transitions create no provider charge or billing handoff')
+ // A revoked owner device cannot reuse any captured retail command or read its originals.
+ const revoked=await h.signIn(h.auth.OWNER_EMAIL)
+ const device=(await h.send('/auth/security',undefined,revoked,{accept:'application/json'})).value.currentSessionId
+ assert.ok(device)
+ assert.equal((await h.send('/auth/security/revoke',{sessionId:device},h.owner)).status,200)
+ const beforeRevoked=JSON.stringify((await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.billing.retail)
+ const captured=[['pay.retail.sell',sale],['pay.retail.assign',{clientId:patient.id,saleId:packageSale.id,appointmentId:memberVisit}],['pay.retail.membership',resume],['pay.retail.cancel',resume],['pay.retail.renew',renewalTerms],['pay.retail.settle',settlementTerms]]
+ const key=await h.cmd('agent.create',{label:'synthetic-balm-refused-retail-grant',scopes:['finance.reconcile.prepare']})
+ for(const [name,input] of captured) {
+  await h.cmd(name,input,revoked,401)
+  assert.equal((await h.send('/api/balm/agent/command',{name,input},'',{authorization:'Bearer '+key.token})).status,403)
+ }
+ assert.equal((await h.send('/api/balm/receipts/'+brace.id+'.pdf',undefined,revoked)).status,401)
+ assert.equal((await h.send('/api/balm/clients/'+patient.id,undefined,revoked)).status,401)
+ assert.equal(JSON.stringify((await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.billing.retail),beforeRevoked)
  await proof({patient,cookie,today,from:dates[0],service,priya})
 }

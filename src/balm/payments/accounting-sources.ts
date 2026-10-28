@@ -118,9 +118,9 @@ export async function accountingSources(db: D1Database, date: string): Promise<A
         AND recorded_at>=? AND recorded_at<?`),
     timed(`SELECT 'adjustment:'||id AS id,'adjustment' AS kind,'adjustment' AS method,amount_cents AS cents,
         'adjustments' AS debit,'receivable' AS credit FROM bm_destroyed_adjustments WHERE recorded_at>=? AND recorded_at<?`),
-    timed(`SELECT 'membership-settlement:'||sale_id AS id,'refund' AS kind,'cash' AS method,amount_cents AS cents,'income' AS debit,'cash' AS credit FROM
-      (SELECT sale_id,amount_cents,recorded_at FROM bm_membership_settlements
-       UNION ALL SELECT id,json_extract(settlement,'$.amount_cents'),json_extract(settlement,'$.recorded_at') FROM bm_destroyed_retail WHERE settlement IS NOT NULL)
+    timed(`SELECT 'membership-settlement:'||sale_id AS id,'refund' AS kind,tender AS method,amount_cents AS cents,'income' AS debit,CASE WHEN tender='gift' THEN 'liability' ELSE 'cash' END AS credit FROM
+      (SELECT sale_id,amount_cents,recorded_at,tender FROM bm_membership_settlements
+       UNION ALL SELECT id,json_extract(settlement,'$.amount_cents'),json_extract(settlement,'$.recorded_at'),COALESCE(json_extract(settlement,'$.tender'),'cash') FROM bm_destroyed_retail WHERE settlement IS NOT NULL)
       WHERE recorded_at>=? AND recorded_at<?`),
   ])
   for (const result of results.slice(0, 3)) {

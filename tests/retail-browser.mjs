@@ -5,6 +5,8 @@ import {clinic,pastVisit} from './clinic.mjs'
 import {harness} from './harness.mjs'
 import {retailJourney} from './retail-journey.mjs'
 import {retailRetentionJourney} from './retail-retention-journey.mjs'
+import {retailStaffJourney} from './retail-staff-journey.mjs'
+import {giftSettlementJourney} from './retail-gift-settlement-journey.mjs'
 const output=process.env.BALM_UI_SCREENSHOTS
 assert.ok(output);await mkdir(output,{recursive:true})
 const h=await harness({browserHttps:true})
@@ -129,9 +131,30 @@ try{
    await page.setViewportSize({width,height:1000});await page.goto(h.origin+'/app/clients/'+patient.id)
    await page.getByRole('button',{name:'Review eligible retail originals',exact:true}).click()
    await page.locator('#retention-review').waitFor()
-   if(width===1440)assert.ok(await page.locator('#retention-review').getByText('Retail receipts and visit entitlements: 3',{exact:true}).count())
+   if(width===1440)assert.ok(await page.locator('#retention-review').getByText('Retail receipts and visit entitlements: 10',{exact:true}).count())
    await page.locator('#retention-review').scrollIntoViewIfNeeded()
    await page.screenshot({path:output+'/retail-scoped-destruction-'+width+'.png'})
+  }
+ }})
+ await retailStaffJourney(h,{screen:async({patient,biller})=>{
+  const [key,...value]=biller.cookie.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
+  for(const width of [1440,390]) {
+   await page.setViewportSize({width,height:1000});await page.goto(h.origin+'/app/clients/'+patient.id)
+   const retail=page.locator('#retail');await retail.scrollIntoViewIfNeeded()
+   await retail.locator('summary').filter({hasText:'Record product'}).click()
+   if(width===1440){assert.equal(await retail.locator('form[action*="name=pay.retail.sell"]').count(),4);assert.equal(await retail.locator('form[action*="name=pay.retail.membership"]').count(),0)}
+   await page.screenshot({path:output+'/retail-authorized-staff-'+width+'.png'})
+  }
+ }})
+ await giftSettlementJourney(h,{screen:async({patient,member})=>{
+  const [key,...value]=h.owner.split('=');await context.clearCookies();await context.addCookies([{name:key,value:value.join('='),url:h.origin,secure:true}])
+  for(const width of [1440,390]) {
+   await page.setViewportSize({width,height:1000});await page.goto(h.origin+'/app/clients/'+patient.id)
+   const item=page.locator('#retail li').filter({hasText:'synthetic-balm-gift-funded-membership'})
+   await item.locator('summary').filter({hasText:'Restore unused gift value'}).click()
+   const form=item.locator('form[action*="name=pay.retail.gift_settle"]')
+   if(width===1440){assert.equal(await form.locator('[name=settlementAmountCents]').inputValue(),'3001');assert.equal(await form.locator('[name=cashReturned]').count(),0)}
+   await item.scrollIntoViewIfNeeded();await page.screenshot({path:output+'/retail-gift-restoration-'+width+'.png'})
   }
  }})
  // Render the digest-bound retail destruction inventory through its native form.
