@@ -1,3 +1,5 @@
+import {historicalPlanCustody} from './plan-custody-fixture.mjs'
+import {scanInput} from './plan-version-journey.mjs'
 import { cutoverInvoices } from './movein-reconciliation-journey.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
@@ -44,6 +46,14 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.cmd('retention.preview',{clientId:invoiceClient},h.owner,409)
   const invoiceIds=invoiceImport.records.filter(r=>r.kind==='invoice').map(r=>r.target_id)
   await assert.rejects(h.db.prepare('DELETE FROM bm_movein_invoices WHERE id=?').bind(invoiceIds[0]).run(),/imported_records_retained/)
+  const planPatient=await h.cmd('client.save',{firstName:'Historical',lastName:'Plan entry',dateOfBirth:'1960-01-01'})
+  const planVisit=await pastVisit(h,planPatient.id,priya,service.id,h.owner,8);await ageVisit(h,planVisit)
+  const newPlan=await h.cmd('plan.send',{clientId:planPatient.id,diagnoses:'M25.561',shortTermGoals:'Synthetic historical goal',longTermGoals:'Synthetic historical recovery',frequencyPerWeek:1,durationWeeks:6,interventions:'Synthetic exercise',startDate:'1990-01-01',physicianName:'Synthetic Physician',physicianEmail:['synthetic-balm-physician','example.test'].join('@'),signature:'Priya',credentials:'PT',attest:true},priya.cookie)
+  const plan=(await h.send('/api/balm/clients/'+planPatient.id,undefined,priya.cookie)).value.plans[0]
+  const filing=await h.cmd('plan.certification.file',scanInput(plan,planPatient),priya.cookie)
+  const planDeadline=new Date(filing.filedAt.slice(0,10)+'T00:00:00Z');planDeadline.setUTCFullYear(planDeadline.getUTCFullYear()+6)
+  assert.equal((await file(h,planPatient.id)).retention.eligibleAfter,planDeadline.toISOString().slice(0,10),'an old written signature cannot backdate the current filing retention')
+  await h.cmd('retention.preview',{clientId:planPatient.id},h.owner,409)
   await h.cmd('retention.save',{...policy,payerYears:70})
   assert.equal((await file(h,patient.id)).retention.eligible,false)
   await h.cmd('retention.save',{...policy,adultYears:70})
@@ -218,6 +228,8 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const planContent=JSON.stringify({startDate:'1990-01-01',frequencyPerWeek:1,durationWeeks:1,goals:'Private historical goals'})
   await h.db.prepare(`INSERT INTO bm_plans_of_care(id,client_id,author_id,note_id,content,content_sha256,therapist_name,therapist_credentials,created_at,physician_name,physician_email,sent_at,status)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(historicalPlan,patient.id,priya.id,noteId,planContent,'historical-plan-signature','Historical Clinician','PT','1990-01-02T03:00:00.000Z','Private Physician','physician@example.test','1990-01-02T03:00:00.000Z','sent').run()
+  const historicalCertification=await historicalPlanCustody(h,{patient,priya,planId:historicalPlan})
+  for(const table of ['bm_plan_certifications','bm_plan_sends'])await assert.rejects(h.db.prepare('DELETE FROM '+table+' WHERE client_id=?').bind(patient.id).run(),/plan_requires_retention_review/)
   await h.form('/portal',{email:'private@patient.example'})
   const portalMail=h.mail.findLast(m=>m.to.includes('private@patient.example')&&m.text.includes('/portal/confirm?token='))
   assert.ok(portalMail)
@@ -280,6 +292,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const locationBefore=await h.send('/api/balm/reports?from=1990-01-01&to=1990-01-31&locationId='+location.id,undefined,h.owner)
   assert.equal(locationBefore.status,200)
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
+  assert.equal(preview.records.bm_plan_certifications,1);assert.equal(preview.records.bm_plan_sends,1)
   assert.equal(preview.records.bm_calls,1,'COMM-003 call records join reviewed destruction scope')
   assert.equal(preview.records.bm_movein_invoices,1,'historical invoice originals join reviewed destruction scope')
   assert.ok(preview.records.bm_note_revisions>0)
@@ -296,6 +309,8 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
   const destroyed=await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   assert.equal(destroyed.destroyed,true)
+  for(const table of ['bm_plan_certifications','bm_plan_sends'])assert.equal((await h.db.prepare('SELECT count(*) n FROM '+table+' WHERE client_id=?').bind(patient.id).first()).n,0)
+  assert.equal((await h.send('/api/balm/chart-documents/'+historicalCertification.documentId,undefined,h.owner)).status,404)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_movein_invoices WHERE id=?').bind(oldInvoice).first()).n,0)
   assert.deepEqual(await h.db.prepare('SELECT issued_on,billed_cents,balance_cents FROM bm_destroyed_movein_invoices WHERE id=?').bind(oldInvoice).first(),{issued_on:'1990-01-02',billed_cents:10000,balance_cents:0})
   assert.doesNotMatch(JSON.stringify(await h.cmd('movein.journal',{jobId:oldInvoiceJob})),/Private historical invoice original/)

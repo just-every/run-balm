@@ -42,7 +42,7 @@ export async function checkSelfService(db: D1Database, input: SelfServiceInput) 
     insist(await one(db, 'SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL', input.clientId), 'client_not_found', 404)
   }
   if (rules.requirePlan) {
-    insist(input.clientId && await one(db, `SELECT 1 FROM bm_plans_of_care WHERE client_id=? AND author_id=? AND status='certified'
+    insist(input.clientId && await one(db, `SELECT 1 FROM bm_plans_of_care WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=bm_plans_of_care.id) AND client_id=? AND author_id=? AND status='certified'
       AND json_extract(content,'$.startDate')<=? AND json_extract(content,'$.certifiedThrough')>=? LIMIT 1`,
     input.clientId, target.practitioner.id, localDate, localDate), 'contact_clinic_about_plan_of_care', 409)
   }

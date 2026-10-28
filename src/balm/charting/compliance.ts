@@ -41,7 +41,7 @@ export async function documentationAlerts(db: D1Database, visitId: string, revis
   const date = hostDateAt(new Date(visit.start_at), visit.time_zone), config = (await one(db, 'SELECT * FROM bm_documentation_settings WHERE id=1'))!
   const policies = await rows(db, `SELECT y.id,y.name,y.medicare,COALESCE(d.required,'[]') AS required FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id LEFT JOIN bm_payer_documentation d ON d.payer_id=y.id WHERE p.client_id=? AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on>=?)`, visit.client_id, date, date)
   const alerts: DocumentationAlert[] = []
-  const plan = await one(db, 'SELECT * FROM bm_plans_of_care WHERE client_id=? AND author_id=? AND json_extract(content,\'$.startDate\')<=? ORDER BY json_extract(content,\'$.startDate\') DESC,created_at DESC LIMIT 1', visit.client_id, visit.practitioner_id, date)
+  const plan = await one(db, 'SELECT * FROM bm_plans_of_care WHERE NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=bm_plans_of_care.id) AND client_id=? AND author_id=? AND json_extract(content,\'$.startDate\')<=? ORDER BY json_extract(content,\'$.startDate\') DESC,created_at DESC LIMIT 1', visit.client_id, visit.practitioner_id, date)
   if (!plan) alerts.push({ kind: 'plan', message: 'No certified plan of care covers this visit.' })
   else {
     const content = JSON.parse(plan.content)

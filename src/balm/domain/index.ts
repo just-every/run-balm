@@ -86,7 +86,7 @@ export async function snapshot(db: D1Database, who: Actor) {
   const appointments = await rows(db, `SELECT a.id,a.client_id,a.practitioner_id,a.service_id,a.room_id,a.equipment_id,a.series_id,a.start_at,a.end_at,a.status,a.patient_response,a.patient_response_at,a.booked_via,c.first_name||' '||c.last_name AS client,
     p.name AS practitioner,s.name AS service,(SELECT 1 FROM bm_intake_responses r WHERE r.appointment_id=a.id) AS intake_received,(SELECT 1 FROM bm_intake_responses o WHERE o.client_id=a.client_id) AS intake_on_file,
     (SELECT CASE WHEN MIN(n.signed_at IS NOT NULL)=1 THEN 'signed' WHEN COUNT(*)>0 THEN 'unsigned' END FROM bm_notes n WHERE n.appointment_id=a.id) AS note_status,
-    (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care
+    (SELECT pc.status||'|'||COALESCE(pc.certified_at,pc.sent_at)||'|'||pc.physician_name FROM bm_plans_of_care pc WHERE pc.client_id=a.client_id AND NOT EXISTS(SELECT 1 FROM bm_plan_replacements r WHERE r.predecessor_id=pc.id) ORDER BY pc.created_at DESC LIMIT 1) AS plan_of_care
     FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id JOIN bm_staff p ON p.id=a.practitioner_id JOIN bm_services s ON s.id=a.service_id
     WHERE a.end_at>? AND (? OR a.practitioner_id=?) ORDER BY a.start_at LIMIT 300`, new Date(Date.now() - 14 * 86400_000).toISOString(), desk ? 1 : 0, own ?? '')
   const patientAlerts = await alertsForClients(db, who, appointments.map(a => String(a.client_id)))
