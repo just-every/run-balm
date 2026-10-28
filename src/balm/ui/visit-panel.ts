@@ -78,7 +78,7 @@ export function patientPanel(s: any, c: any, a: any, body: { visit: string; prim
   const sum = c.summary, file = `/app/clients/${a.client_id}`, age = ageOn(a.date_of_birth, c.today)
   const payer = sum?.insurance ? (sum.insurance.policies[0]?.payer_name ?? 'Self-pay') : a.payer ?? null
   const tabs = [['Overview', ''], ['Notes', '#notes'], ['Billing', '#billing'], ['Messages', '#messages']]
-  return `<section class="patient" id="visit" aria-label="Selected visit"><header class="profile">${avatar(a.client, 'lg')}<div><h2>${h(a.client)}</h2><p>${[age !== null ? String(age) : '', payer ?? ''].filter(Boolean).map(h).join(' · ')}</p></div>${controlLink('visit-file-tip',file,'Open client file',icon('chevron'),'more')}</header>`
+  return `<section class="patient" id="visit" aria-label="Selected visit"><header class="profile">${avatar(a.client, 'lg')}<div><h2>${h(a.client)}</h2><p>${[age !== null ? String(age) : '', payer ?? ''].filter(Boolean).map(h).join(' · ')}</p></div>${controlLink('visit-file-tip',file,'Open patient file',icon('chevron'),'more')}</header>`
     + `<nav class="tabs" aria-label="Patient file">${tabs.map(([label, anchor]) => anchor ? `<a href="${h(file + anchor)}">${label}</a>` : `<span aria-current="true">${label}</span>`).join('')}</nav>`
     + alertBadges(a.alerts) + body.visit + facts(s, a, sum, c.today) + body.primary + denial(s, sum, a) + body.actions + agentStrip(s, sum) + '</section>'
 }

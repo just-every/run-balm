@@ -586,7 +586,7 @@ test('PAY-002: an uncertain Terminal send is reconciled on its original intent w
    if(process.env.BALM_UI_SCREENSHOTS){
     const {viewportProof}=await import('./viewport-proof.mjs'),selector='.collection-recovery[data-payment-id="'+id+'"]'
     await viewportProof(h,[
-     {name:command==='pay.terminal.sync'?'overdue-terminal-schedule':'overdue-card-schedule',path:'/app?date=2000-01-03&appt='+visit,cookie:reception.cookie,selector,tooltips:['Previous day','Next day','Open client file']},
+     {name:command==='pay.terminal.sync'?'overdue-terminal-schedule':'overdue-card-schedule',path:'/app?date=2000-01-03&appt='+visit,cookie:reception.cookie,selector,tooltips:['Previous day','Next day','Open patient file']},
      {name:command==='pay.terminal.sync'?'overdue-terminal-file':'overdue-card-file',path:'/app/clients/'+client.id,cookie:reception.cookie,selector,interact:async({page,width})=>{
       const recovery=page.locator(selector).first(),form=recovery.locator('form').filter({has:page.getByRole('button',{name:'Check Stripe status',exact:true})})
       assert.equal(await form.locator('[name=paymentId]').inputValue(),id)
