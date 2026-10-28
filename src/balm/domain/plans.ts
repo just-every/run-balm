@@ -123,9 +123,17 @@ export async function certifyPlan(db: D1Database, link: string, input: Data) {
 export async function plansFor(db: D1Database, who: Actor, clientId: string) {
   const clinical = who.role === 'owner' || !!practitionerId(who)
   const sends = await rows(db, 'SELECT * FROM bm_plan_sends WHERE client_id=? ORDER BY sent_at,id', clientId)
-  return (await rows(db, `SELECT p.*,r.successor_id,prior.predecessor_id,f.document_id,f.signature_date,f.certification_date,f.filed_at,f.filed_by
+  const plans = await rows(db, `SELECT p.*,r.successor_id,prior.predecessor_id,f.document_id,f.signature_date,f.certification_date,f.filed_at,f.filed_by
     FROM bm_plans_of_care p LEFT JOIN bm_plan_replacements r ON r.predecessor_id=p.id LEFT JOIN bm_plan_replacements prior ON prior.successor_id=p.id
-    LEFT JOIN bm_plan_certifications f ON f.plan_id=p.id WHERE p.client_id=? ORDER BY p.created_at DESC,p.id`, clientId)).map(p => ({
+    LEFT JOIN bm_plan_certifications f ON f.plan_id=p.id WHERE p.client_id=? ORDER BY p.created_at DESC,p.id`, clientId)
+  const byId = new Map(plans.map(p => [p.id, p]))
+  const versionNumber = (plan: Data) => {
+    let number = 1, previous = byId.get(plan.predecessor_id)
+    while (previous && number <= plans.length) { number++; previous = byId.get(previous.predecessor_id) }
+    return number
+  }
+  return plans.map(p => ({
+    versionNumber: versionNumber(p),
     predecessorId: p.predecessor_id, supersededBy: p.successor_id, sends: sends.filter(s => s.plan_id === p.id),
     certification: clinical && p.document_id ? { documentId:p.document_id, signatureDate:p.signature_date, certificationDate:p.certification_date, filedAt:p.filed_at, filedBy:p.filed_by } : null,
     id: p.id, noteId: p.note_id, authorId: p.author_id, status: p.status, sentAt: p.sent_at, createdAt: p.created_at, physicianName: p.physician_name, physicianEmail: p.physician_email,

@@ -41,6 +41,7 @@ export async function planVersionJourney(h){
  await h.cmd('plan.send',replacementInput,priya.cookie,409)
  let current=(await file()).plans.find(p=>p.id===replacement.id)
  assert.equal(current.predecessorId,initial.id)
+ assert.equal(current.versionNumber,2)
  assert.equal((await file()).plans.find(p=>p.id===initial.id).supersededBy,replacement.id)
  assert.deepEqual((await file()).plans.find(p=>p.id===initial.id).sends,prior.sends,'predecessor sends remain immutable')
  const scan=scanInput(current,patient,episode.id)

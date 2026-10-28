@@ -122,7 +122,7 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const planReplacement=await h.cmd('plan.send',{...versionClinic.input,predecessorId:versionClinic.initial.id,predecessorSha256:versionClinic.first.sha256,longTermGoals:'Synthetic archived replacement recovery'},priya.cookie)
     const planVersion=(await versionClinic.file()).plans.find(p=>p.id===planReplacement.id)
     const planCertification=await h.cmd('plan.certification.file',scanInput(planVersion,maya,versionClinic.episode.id),priya.cookie)
-    const planCustody={first:versionClinic.initial.id,current:planReplacement.id,certification:planCertification,episodeId:versionClinic.episode.id,plans:(await versionClinic.file()).plans}
+    const planCustody={first:versionClinic.initial.id,current:planReplacement.id,certification:planCertification,episodeId:versionClinic.episode.id,plans:(await versionClinic.file(h.owner)).plans}
 
     const injuryPatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Carrier archive',dateOfBirth:'1980-01-01'})
     const injuryPolicy=await h.cmd('insurance.policy.save',{clientId:injuryPatient.id,payerId:payer.id,memberId:'synthetic-balm-260',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2026-01-01'})
