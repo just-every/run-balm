@@ -1438,7 +1438,7 @@
       "executable": false
     },
     "RUN-LOCALLY.md": {
-      "sha256": "6136642d4082c18551a33b27f783b9d0bf46518f3611b34c14a9d6f9bf05ff99",
+      "sha256": "2233c26fa438b9ff9196f598c233e2a8fe8c239df219090c2cb699b0ec79ef46",
       "executable": false
     },
     "scripts/backups/drill.mjs": {
@@ -1690,7 +1690,7 @@
       "executable": false
     },
     "src/balm/archive-policy.mjs": {
-      "sha256": "26d3a14d47aacc35a9cb1dc37313f054868a09162bbe96d7805d9b0daef56c17",
+      "sha256": "5d6bfc617217b2ca25cd755159ea77f04a011c1aac38c9daf919a72837d8cf6b",
       "executable": false
     },
     "src/balm/availability/date-bounds.ts": {

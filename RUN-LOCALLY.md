@@ -213,6 +213,10 @@ After import, run setup to establish the owner and local configuration. Auth,
 private settings and transient runtime state are excluded. Remote
 transfer is unsupported by the maintained references and fails visibly.
 
+Business person bindings, agent policy, pending agent decisions and replay state
+are also excluded. A restored installation needs fresh pairing and authorization;
+agent audit and event history remain records of the original installation.
+
 Real deployment uses the owner-account procedure and its private credentials.
 `rer deploy --dry-run` validates and builds locally without a
 provider request. The default environment is `production`; select another with
