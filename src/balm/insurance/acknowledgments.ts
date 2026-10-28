@@ -1,4 +1,5 @@
 import { audit, commit, guard, id, insist, now, one, sha256, stmt, text, type Actor, type Data } from '../domain/model'
+import { acknowledgmentReason } from './codes'
 import { claimFor } from './access'
 import { parseX12 } from './x12'
 
@@ -30,7 +31,7 @@ export async function importAcknowledgment(db:D1Database,who:Actor,input:Data) {
     const rejected=entry.statuses.some(s=>/^A[3-8]$/.test(s.category)),accepted=entry.statuses.some(s=>s.category==='A2')
     insist(rejected||accepted||entry.statuses.every(s=>s.category==='A1'),'unsupported_acknowledgment_status')
     const status=rejected?'rejected':accepted?'accepted':'submitted'
-    const errors=rejected?entry.statuses.filter(s=>/^A[3-8]$/.test(s.category)).map(s=>({code:'payer_'+s.category+'_'+s.status,field:s.entity||'claim',message:`Payer acknowledgment ${s.category}:${s.status}${s.entity?':'+s.entity:''}. Correct the named field and resubmit.`})):[]
+    const errors=rejected?entry.statuses.filter(s=>/^A[3-8]$/.test(s.category)).map(s=>({code:'payer_'+s.category+'_'+s.status,field:s.entity||'claim',message:acknowledgmentReason(s.category,s.status,s.entity)})):[]
     statements.push(stmt(db,'UPDATE bm_claims SET status=?,errors=?,payer_control=CASE WHEN ?<>\'\' THEN ? ELSE payer_control END,updated_at=?,version=version+1 WHERE id=? AND version=?',status,JSON.stringify(errors),entry.control,entry.control,at,claim.id,claim.version),guard(db,'changes()=1'),stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'277CA',JSON.stringify(entry),at),audit(db,who,'insurance.acknowledgment_imported',claim.client_id,claim.id))
     outcomes.push({id:claim.id,status,errors})
   }

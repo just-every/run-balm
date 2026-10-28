@@ -85,7 +85,7 @@ export function casesPage(s: any) {
   return `<div class="cases"><h1>Cases</h1><p>One case per referral, followed from referral to paid claim. Balm works out where each case stands from the clinic’s records and lines up the next step with the records it used. Nothing is sent until a person approves it, and every approval is kept with who gave it.</p>`
     + (wording.ready ? '' : `<p class="notice" role="note">${h(wording.line)}</p>`)
     + `<div class="stats">${counts.map(([label, value]) => `<div class="stat"><span class="label">${h(label)}</span><strong class="value">${h(value)}</strong></div>`).join('')}</div>`
-    + (list.length ? list.map(c => caseCard(s, c, wording)).join('') : panel('Cases', empty('No cases yet. Open one from a referral below.'))) + openForm(s)
+    + (list.length ? list.map(c => caseCard(s, c, wording)).join('') : panel('Cases', empty('No cases yet. Open one from a referral below.'))) + (s.actor?.staffKind==='biller'?'':openForm(s))
     + panel('How a case reaches paid or denied', '<p>A claim leaves Balm as an 837P claim file (or through your clearinghouse when one is connected). The payer answers with an 835, which your clearinghouse or the payer’s portal gives you. Upload it here or on the Insurance page: posting it marks each claim paid or denied, records any patient share, and moves the case on. A 277CA only says the claim was received or rejected.</p>')
     + `<div class="insurance">${payerFileUploads(s.insurance?.payers ?? [], path)}</div></div>`
 }

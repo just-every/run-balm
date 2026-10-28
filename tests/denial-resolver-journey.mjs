@@ -26,7 +26,7 @@ export async function denialFixture(h){
  const referral=await h.cmd('case.open',{clientId:patient.id,policyId:policy.id,receivedOn:'2000-01-01',referringFirst:'Synthetic',referringLast:'Provider'})
  const biller=await h.staff('AppealBiller','biller'),reception=await h.staff('AppealReception','reception')
  const view=async(cookie=h.owner)=>{const response=await h.send('/api/balm/cases',undefined,cookie);assert.equal(response.status,200,response.text);return response.value.cases.find(c=>c.referral.id===referral.id)}
- const reject=async()=>h.cmd('insurance.acknowledgment.import',{payerId:payer.id,x12:(await fixture('277CA.x12',claim.id)).replace('A2:20','A3:21')})
+ const reject=async()=>h.cmd('insurance.acknowledgment.import',{payerId:payer.id,x12:(await fixture('277CA.x12',claim.id)).replace('A2:20','A3:21:85')})
  const detailed=body=>{const paid=body.includes('EFTPAID001'),extra=`LQ*HE*${paid?'M15':'N54'}~SVC*HC:97110:GP*70*${paid?'45':'0'}**2~REF*6R*synthetic-balm-4~DTM*573*20261017~SVC*HC:97140:GP*25*${paid?'15':'0'}**1~REF*6R*synthetic-balm-5~DTM*573*20261017~`;return body.replace(/SE\*\d+\*/,extra+'SE*'+(body.split('~').filter(v=>v.trim()).length+7)+'*')}
  const deny=async()=>h.cmd('insurance.remittance.import',{payerId:payer.id,x12:detailed(await fixture('835-denied.x12',claim.id))})
  const authorize=async()=>h.cmd('insurance.authorization.save',{policyId:policy.id,number:'synthetic-balm-2',...coverage,visits:12})
@@ -41,7 +41,11 @@ export async function denialJourney(h,{capture=async()=>{}}={}){
  await c.reject()
  const rejection=(await c.view()).steps.find(s=>s.kind==='denial.fix')
  assert.match(rejection.why,/A3:21/,'277CA original codes explain the rejection')
- assert.deepEqual(rejection.citations.map(x=>x.kind).sort(),['claim','note','visit'],'277CA never invents an ERA')
+ assert.match(rejection.why,/Required information is missing or invalid for the billing provider/)
+ assert.deepEqual(rejection.citations.map(x=>x.kind).sort(),['acknowledgment','claim','note','visit'],'the rejection cites its acknowledgment without inventing an ERA')
+ const acknowledgment=rejection.citations.find(x=>x.kind==='acknowledgment')
+ assert.equal(acknowledgment.label,'277CA A3:21:85')
+ assert.equal(acknowledgment.href,`/app/clients/${c.patient.id}#claim-${c.claim.id}`)
  await capture('rejected',c)
  await c.deny();const auth=await c.authorize(),packet=await c.prepare(auth)
  for(const cookie of [c.reception.cookie,c.priya.cookie])await h.cmd('case.appeal.prepare',{caseId:c.referral.id,claimId:c.claim.id,authorizationId:auth.id},cookie,403)

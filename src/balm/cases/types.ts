@@ -1,7 +1,7 @@
 import type { Data } from '../domain/model'
 
 /** A record the agent used, with the page that shows it. */
-export type Citation = { kind: 'referral' | 'policy' | 'eligibility' | 'authorization' | 'visit' | 'note' | 'claim' | 'era' | 'invoice' | 'statement'; label: string; href: string }
+export type Citation = { kind: 'referral' | 'policy' | 'eligibility' | 'authorization' | 'visit' | 'note' | 'claim' | 'era' | 'invoice' | 'statement' | 'acknowledgment'; label: string; href: string }
 export type StageId = 'referral' | 'intake' | 'eligibility' | 'authorization' | 'visits' | 'notes' | 'claim' | 'era' | 'outcome'
 /** done: complete; waiting: on someone else or a date; stalled: needs a person; none: does not apply or has not started. */
 /** `next` is what a person does to move a stage that waits on the clinic, and where. */

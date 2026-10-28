@@ -53,3 +53,10 @@ export function denialNextStep(code:string) {
     default:return 'Review the payer reason and supporting records before correcting or appealing.'
   }
 }
+
+/** Preserve the payer codes and explain only what their status and entity establish. */
+export function acknowledgmentReason(category:string,status:string,entity:string) {
+ const state=status==='21'?'Required information is missing or invalid':'Review the payer status code before correcting the claim'
+ const subject=entity==='85'?'billing provider':entity==='82'?'rendering provider':entity==='IL'?'subscriber':'named claim entity'
+ return `277CA ${category}:${status}${entity?':'+entity:''}: ${state}${entity?' for the '+subject:''}. This is a rejection, not a payment or an adjudicated denial.`
+}

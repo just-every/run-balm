@@ -2,6 +2,7 @@
 // the case's records; the AI key only ever rewords a letter's request paragraph.
 // A step's digest covers what it rests on, so an approval given on a page that
 // has since changed is refused instead of acting on facts nobody reviewed.
+import { payerReason } from '../insurance/codes'
 import { dollars, invoiceNumber } from '../domain/invoices'
 import { sha256 } from '../domain/model'
 import { template } from '../charting/templates'
@@ -94,9 +95,9 @@ export async function steps(f: CaseFacts): Promise<Step[]> {
     out.push({
       key: `denial.fix:${c.id}`, kind: 'denial.fix', button: 'Correct and resubmit', draftable: false,
       title: `Fix and resubmit the ${c.status === 'rejected' ? 'rejected' : 'denied'} claim for ${usDay(c.service_date, f.zone)}`,
-      why: c.errors.map((e: any) => e.message.trim()).join(' ') || 'The payer did not pay this claim. Review the remittance before resubmitting.',
+      why: c.errors.map((e: any) => /^carc_/.test(e.code) ? payerReason(e.code,e.message).reason : e.message.trim()).join(' ') || 'The payer did not pay this claim. Review the remittance before resubmitting.',
       blocked: needsAuth ? `Record a new payer authorization after this denial on the policy, with a different number covering ${usDay(c.service_date, f.zone)} and its treating practitioner. The authorization on the denied claim was ${c.snapshot.authorization ?? 'not recorded'}; resubmitting it would be denied again.` : undefined,
-      citations: [cite.claim(f, c), ...(c.era_trace ? [cite.era(f, c)] : []), ...(v ? [cite.visit(f, v)] : []), ...(note ? [cite.note(f, note)] : []), ...(auth ? [cite.authorization(f, { ...auth })] : [])],
+      citations: [cite.claim(f, c), ...(c.era_trace ? [cite.era(f, c)] : c.acknowledgment ? [{kind:'acknowledgment' as const,label:`277CA ${JSON.parse(c.acknowledgment.detail).statuses.map((s:any)=>`${s.category}:${s.status}:${s.entity}`).join(', ')}`,href:`/app/clients/${f.client.id}#claim-${c.id}`}] : []), ...(v ? [cite.visit(f, v)] : []), ...(note ? [cite.note(f, note)] : []), ...(auth ? [cite.authorization(f, { ...auth })] : [])],
     })
   }
 
