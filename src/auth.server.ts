@@ -18,6 +18,8 @@ export interface Bindings {
  ASSETS?: Fetcher
  RER_DEPLOY_SOURCE?: string
  RER_DEPLOY_FINGERPRINT?: string
+ /** Non-secret inventory of the actual hosting account, deployment and every used service. */
+ BALM_HOSTING_PROFILE?: string
  BALM_INSURANCE_ADAPTER_URL?: string
  BALM_INSURANCE_ADAPTER_TOKEN?: string
  RER_VERSION?: { id: string }

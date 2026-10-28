@@ -1,3 +1,5 @@
+import { saveClient } from './domain/clients'
+import { hostingCommand } from './domain/hosting'
 import { previewRetailDestruction, destroyRetailRecords } from './retention/retail'
 import { prepareLetter, editLetter, deliverLetter, lettersFor, previewLetter } from './charting/letters'
 import { readinessCommand, readinessState } from './domain/readiness'
@@ -233,6 +235,8 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
     if (warnings.some(w => w.blocking) || (warnings.length && input.acknowledgeInsurance !== 'on' && input.acknowledgeInsurance !== true))
       throw new DomainError('Review the insurance authorization warnings before booking.', 409, { insuranceBooking: { name, input, warnings } })
   }
+  if (name === 'client.save') return saveClient(env.DB,who,input,env)
+  if (name.startsWith('hosting.')) return hostingCommand(env,who,name,input)
   if (name.startsWith('readiness.')) return readinessCommand(env.DB,who,name,input)
   if (name === 'owner.name') return saveOwnerName(request, env, who, input)
   if (name.startsWith('accounting.')) return accountingCommand(env,who,name,input)
@@ -241,10 +245,10 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name.startsWith('message.')) return messageCommand(env, who, name, input)
   if (name.startsWith('reminders.')) return reminderCommand(env, who, name, input)
   if (name.startsWith('pay.')) return paymentCommand(env, env.DB, who, name, input)
-  if (name.startsWith('movein.')) return bundleCommand(env.DB, who, name, input)
+  if (name.startsWith('movein.')) return bundleCommand(env.DB, who, name, input, env)
   if (name.startsWith('import.')) {
     if (who.role !== 'owner') fail('only_the_owner_imports', 403)
-    return importCommand(env.DB, who, name, input)
+    return importCommand(env.DB, who, name, input, env)
   }
   if (name === 'note.check') return checkDefensibility(env, who, input)
   if (name.startsWith('scribe.') || name === 'note.scribe') return scribeCommand(env, who, name, input)

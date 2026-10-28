@@ -169,3 +169,9 @@ COMM-002 scheduled SMS quiet hours uses Lander-Regenerate:
 `node scripts/contract-docs.mjs write COMM-002`, then
 `node scripts/contract-docs.mjs check COMM-002`. Keep the source lock last:
 `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+HIPAA-005 uses the same Lander-Regenerate entry point:
+`node scripts/contract-docs.mjs write HIPAA-005`, then
+`node scripts/contract-docs.mjs check HIPAA-005`. Hosting evidence is historical
+in archives; patient mode and deployment qualification are excluded. Regenerate
+the source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
+`check`.

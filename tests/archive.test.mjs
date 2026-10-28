@@ -1,3 +1,4 @@
+import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
@@ -897,12 +898,16 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
  let h
  try{
   await checkout(source);await checkout(restored)
-  h=await harness({root:source,migrate:true,codeSets:false})
+  h=await harness({root:source,migrate:true,codeSets:false,auth:{BALM_HOSTING_PROFILE:JSON.stringify(hostingProfile)}})
   const before=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
   assert.equal(before.ready,true)
   assert.equal(before.record.privacy_officer,'Synthetic Privacy Officer')
   assert.equal(before.record.risk_reviewed_on,'2026-10-01')
   assert.deepEqual(before.baas.map(b=>b.processor).sort(),['backups','clearinghouse','mail','scribe','sms'])
+  const retired=await hostingFixture(h)
+  await h.cmd('hosting.revoke',{id:retired.id})
+  const current=await hostingFixture(h)
+  await h.cmd('hosting.mode',patientMode('real',current.id))
   await h.cmd('readiness.baa.revoke',{id:before.baas.find(b=>b.processor==='sms').id})
   const original=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
   const identity={auth:h.auth,owner:h.owner}
@@ -913,7 +918,16 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
   h=await harness({root:restored,...identity,codeSets:false})
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   const after=(await h.send('/api/balm/readiness.json',undefined,cookie)).value
-  assert.deepEqual(after,original,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
+  const {hosting:sourceHosting,...sourceRecord}=original,{hosting:restoredHosting,...restoredRecord}=after
+  assert.deepEqual(restoredRecord,sourceRecord,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
+  const evidence=records=>records.map(({qualification_present,...row})=>row)
+  assert.deepEqual(evidence(restoredHosting.records),evidence(sourceHosting.records),'all hosting evidence and revocations survive unchanged')
+  assert.equal(restoredHosting.mode,'blocked');assert.equal(restoredHosting.permitted,false)
+  assert.ok(restoredHosting.records.every(r=>r.qualification_present===0),'historical evidence grants no deployment qualification')
+  assert.equal((await h.cmd('client.save',{firstName:'Synthetic',lastName:'Restored'},cookie,409)).code,'hosting_readiness_required')
+  await h.cmd('hosting.mode',patientMode('real',current.id),cookie,409)
+  const modeAudit=await h.db.prepare("SELECT subject_id FROM bm_audit WHERE action='hosting.mode_changed' AND subject_id=?").bind(current.id).first()
+  assert.equal(modeAudit.subject_id,current.id,'the old activation audit remains evidence only')
   const audits=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'readiness.%'").all()).results.map(r=>r.action)
   assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}

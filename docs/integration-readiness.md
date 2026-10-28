@@ -9,3 +9,5 @@ SMS enablement and sends, patient mail, the scribe model, clearinghouse sends an
 **Export readiness record** downloads the checklist, review and BAA register as JSON. These practice records and their audit events travel in clinic archives. Secrets are not part of the readiness export. A restored clinic still follows the existing credential reconnection requirements.
 
 A passing integration check means the owner recorded the required facts and agreements. It does not establish HIPAA compliance, eligible hosting or permission to enter real patient data. HIPAA-005 retains the hosting BAA, real-patient gate and required live backup receipts, and the practice must complete its privacy review.
+
+Hosting evidence and the separate audited patient-mode switch are under **Clinic → Hosting and patient mode**. See [Hosting and patient mode](./hosting-readiness.md). Restoring an archive retains the evidence but starts with patient creation blocked; a fresh qualification and explicit activation are required.
