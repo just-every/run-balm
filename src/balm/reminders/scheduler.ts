@@ -34,11 +34,13 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
   await stmt(db, "UPDATE bm_visit_reminders SET state='cancelled',outcome='Not sent: the visit has started' WHERE channel='sms' AND state='pending' AND start_at<=?", at).run()
   // A crash after a claim may have reached the provider. Keep this distinct from a definite failure.
   await stmt(db, "UPDATE bm_visit_reminders SET state='uncertain',outcome='Delivery outcome unknown; contact the patient before resending' WHERE state='sending' AND attempted_at<?", new Date(scheduledTime-15*60_000).toISOString()).run()
-  const due = await rows(db, `SELECT r.id,r.channel FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id
-    WHERE r.state='pending' AND r.due_at<=? AND a.start_at>? AND a.start_at=r.start_at AND a.status='booked' ORDER BY r.due_at LIMIT 50`, at, at)
-  let sent = 0
-  for (const candidate of due) {
-    if (candidate.channel === 'sms') { sent += await sendScheduledSms(env, candidate.id, at); continue }
+  let sent = 0, attempts = 0
+  for await (const candidate of dueReminders(db, at)) {
+    if (candidate.channel === 'sms') {
+      const result = await sendScheduledSms(env, candidate.id, at)
+      if (result !== null) { sent += result; if (++attempts === 50) break }
+      continue
+    }
     const token = intakeToken(), hash = await sha256(token)
     const claim = await stmt(db, "UPDATE bm_visit_reminders SET state='sending',attempted_at=? WHERE id=? AND state='pending' RETURNING *", at, candidate.id).first<any>()
     if (!claim) continue
@@ -70,14 +72,29 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
       audit(db, system, 'reminder.' + state, visit.client_id, claim.id, claim.channel),
     ])
     if (state === 'sent') sent++
+    if (++attempts === 50) break
   }
   await sendDueFollowups(env, scheduledTime)
   await runPaymentSchedules(env, db, at)
   return { sent }
 }
 
+/** Page past refusals without spending the provider-attempt budget or revisiting a row this tick. */
+async function* dueReminders(db: D1Database, at: string) {
+  let dueAt = '', reminderId = ''
+  while (true) {
+    const due = await rows(db, `SELECT r.id,r.channel,r.due_at FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id
+      WHERE r.state='pending' AND r.due_at<=? AND a.start_at>? AND a.start_at=r.start_at AND a.status='booked'
+      AND (r.due_at>? OR (r.due_at=? AND r.id>?)) ORDER BY r.due_at,r.id LIMIT 50`, at, at, dueAt, dueAt, reminderId)
+    if (!due.length) return
+    for (const candidate of due) {
+      dueAt = candidate.due_at; reminderId = candidate.id
+      yield candidate
+    }
+  }
+}
 
-/** Quiet hours precede a provider claim. A deferred row has no attempted_at. */
+/** Quiet hours precede a provider claim. Null means no attempt; a deferred row has no attempted_at. */
 async function sendScheduledSms(env: Bindings, reminderId: string, at: string) {
   const db = env.DB
   const context = () => one(db, `SELECT r.*,a.client_id,a.status,a.start_at AS visit_start,c.erased_at,c.phone,c.sms_reminder_consent,c.sms_time_zone AS patient_zone,c.version AS client_version,
@@ -96,10 +113,10 @@ async function sendScheduledSms(env: Bindings, reminderId: string, at: string) {
     await stmt(db, `UPDATE bm_visit_reminders SET state='pending',attempted_at=NULL,outcome=?,sms_quiet_policy_id=?,sms_time_zone=? WHERE id=? AND state=?`,
       outcome, row?.current_policy ?? null, row?.patient_zone ?? null, reminderId, claimed ? 'sending' : 'pending').run()
     if (claimed) await stmt(db, 'UPDATE bm_visit_reply_links SET revoked_at=? WHERE reminder_id=?', at, reminderId).run()
-    return 0
+    return null
   }
   const row = await context()
-  if (!row || row.state !== 'pending') return 0
+  if (!row || row.state !== 'pending') return null
   const block = refusal(row)
   if (block) return pending(row, block)
   const sender = await smsSender(env)
@@ -111,7 +128,7 @@ async function sendScheduledSms(env: Bindings, reminderId: string, at: string) {
       WHERE a.id=bm_visit_reminders.appointment_id AND a.status='booked' AND a.start_at=bm_visit_reminders.start_at AND a.start_at>?
       AND c.erased_at IS NULL AND c.sms_reminder_consent=1 AND c.version=? AND s.version=? AND s.reminder_sms=1 AND s.sms_quiet_policy_id=?)
     AND EXISTS(SELECT 1 FROM bm_baa_records WHERE processor='sms' AND revoked_at IS NULL) RETURNING id`, at, row.current_policy, row.patient_zone, reminderId, at, row.client_version, row.settings_version, row.current_policy).first()
-  if (!claimed) return 0
+  if (!claimed) return null
   await stmt(db, 'INSERT INTO bm_visit_reply_links(reminder_id,token_hash) VALUES(?,?) ON CONFLICT(reminder_id) DO UPDATE SET token_hash=excluded.token_hash,revoked_at=NULL', reminderId, hash).run()
   // Re-read after asynchronous preparation. Deferred attempts use today's authority and policy, never a frozen permission.
   const current = await context(), changed = refusal(current)

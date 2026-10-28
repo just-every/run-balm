@@ -166,7 +166,12 @@ export async function advanceOffers(db: D1Database, offerIds?: string[]): Promis
  return mails
 }
 export async function recordDelivery(db: D1Database, offerId: string, entryId: string, column: 'delivery' | 'taken_notice', value: string) {
-  await db.prepare(`UPDATE bm_offer_recipients SET ${column}=? WHERE offer_id=? AND entry_id=?`).bind(value, offerId, entryId).run()
+  const updates = [stmt(db, `UPDATE bm_offer_recipients SET ${column}=? WHERE offer_id=? AND entry_id=?`, value, offerId, entryId)]
+  // An install that suppresses mail cannot send its queued turns either. Keep
+  // that outcome separate from activation and expiry, which still track order.
+  if (column === 'delivery' && value === 'suppressed') updates.push(stmt(db,
+    "UPDATE bm_offer_recipients SET delivery='suppressed' WHERE offer_id=? AND activated_at IS NULL AND delivery='queued'", offerId))
+  await db.batch(updates)
 }
 
 async function offerByToken(db: D1Database, token: string) {
