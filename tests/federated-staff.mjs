@@ -26,6 +26,7 @@ export async function federatedStaffJourney() {
       return result.value.recoveryCodes
     }
     const ownerRecovery = await activate(owner)
+    await command('hosting.mode',{mode:'demo',reason:'Synthetic federation journey only',attest:true})
     const linked = await h.send('/.well-known/rer-link/callback', { issuer: idp.issuer, interface: 'oidc-provider@1', code: 'synthetic-balm-1' })
     assert.equal(linked.status, 200, linked.text)
     const enabled = await h.send('/auth/settings/identity', { idpSignIn: true }, owner)

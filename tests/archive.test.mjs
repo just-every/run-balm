@@ -1,5 +1,6 @@
 import {historicalPlanCustody} from './plan-custody-fixture.mjs'
 import {planVersionFixture,scanInput,signedPlanBytes} from './plan-version-journey.mjs'
+import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
@@ -251,6 +252,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
   try{
     const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')
     h=await harness({root:source,...identity})
+    await h.cmd('hosting.mode',patientMode('demo'))
     const historicalSale=crypto.randomUUID()
     const historicalVisit=await h.db.prepare('SELECT id,service_id FROM bm_appointments WHERE client_id=?').bind(retentionPatient.id).first()
     await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'membership','Synthetic resolved historical membership',?,2,2000,0,0,'','','synthetic-balm-stale-member','1990-01-02T03:00:00.000Z',?,?)").bind(historicalSale,retentionPatient.id,historicalVisit.service_id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical receipt')).run()
@@ -271,6 +273,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await command(source,['export','--output',beforeDestruction,'--no-queue'])
         h=await harness({root:source,...identity})
         const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
+        await h.cmd('hosting.mode',patientMode('demo'),ownerCookie)
         await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
         const scopedPreview=await h.cmd('retention.retail.preview',{clientId:scopedPatient.id},ownerCookie)
@@ -372,7 +375,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
       assert.equal(bucket.log.length, 0, 'Managed never contacts storage')
     } finally { await managed.close() }
     for (const path of [source, scratch, refused]) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 4e6 })
+    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 16e6 })
     h = await harness({ root: source, outbound: bucket.fetchHandler })
     await clinic(h, []); await h.finishSetup()
     const tick = async at => (await h.mf.getWorker()).scheduled({ scheduledTime: at, cron: '* * * * *' })
@@ -510,7 +513,7 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
  let h
  try {
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const {service,practitioners:[priya]}=await clinic(h)
   const student=await h.staff('ArchiveStudent','student',{discipline:'pt',supervisorId:priya.id,credentials:'SPT'})
@@ -625,7 +628,7 @@ test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches,
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null
@@ -649,7 +652,7 @@ test('retail and finance originals, paused entitlements and preparation authorit
   let h
   try {
     await checkout(source);await checkout(restored)
-    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
     const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge(),stripe=fakeProviders()
     h=await harness({root:source,outbound:r=>new URL(r.url).hostname==='api.stripe.com'?stripe.handler(r):qbo.outbound(r)})
     const {service,practitioners:[priya]}=await clinic(h)
@@ -786,7 +789,7 @@ test('prior authorization signed packets and recorded payer decisions survive a 
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:4e6})
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
   h=await harness({root:source})
   const {authorizationRequestFixture,approveAuthorizationRelease}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
   await c.sign()
@@ -919,12 +922,16 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
  let h
  try{
   await checkout(source);await checkout(restored)
-  h=await harness({root:source,migrate:true,codeSets:false})
+  h=await harness({root:source,migrate:true,codeSets:false,auth:{BALM_HOSTING_PROFILE:JSON.stringify(hostingProfile)}})
   const before=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
   assert.equal(before.ready,true)
   assert.equal(before.record.privacy_officer,'Synthetic Privacy Officer')
   assert.equal(before.record.risk_reviewed_on,'2026-10-01')
   assert.deepEqual(before.baas.map(b=>b.processor).sort(),['backups','clearinghouse','mail','scribe','sms'])
+  const retired=await hostingFixture(h)
+  await h.cmd('hosting.revoke',{id:retired.id})
+  const current=await hostingFixture(h)
+  await h.cmd('hosting.mode',patientMode('real',current.id))
   await h.cmd('readiness.baa.revoke',{id:before.baas.find(b=>b.processor==='sms').id})
   const original=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
   const identity={auth:h.auth,owner:h.owner}
@@ -935,7 +942,16 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
   h=await harness({root:restored,...identity,codeSets:false})
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   const after=(await h.send('/api/balm/readiness.json',undefined,cookie)).value
-  assert.deepEqual(after,original,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
+  const {hosting:sourceHosting,...sourceRecord}=original,{hosting:restoredHosting,...restoredRecord}=after
+  assert.deepEqual(restoredRecord,sourceRecord,'the public readiness export is byte-equivalent after the CLI archive round trip, including revoked agreement history')
+  const evidence=records=>records.map(({qualification_present,...row})=>row)
+  assert.deepEqual(evidence(restoredHosting.records),evidence(sourceHosting.records),'all hosting evidence and revocations survive unchanged')
+  assert.equal(restoredHosting.mode,'blocked');assert.equal(restoredHosting.permitted,false)
+  assert.ok(restoredHosting.records.every(r=>r.qualification_present===0),'historical evidence grants no deployment qualification')
+  assert.equal((await h.cmd('client.save',{firstName:'Synthetic',lastName:'Restored'},cookie,409)).code,'hosting_readiness_required')
+  await h.cmd('hosting.mode',patientMode('real',current.id),cookie,409)
+  const modeAudit=await h.db.prepare("SELECT subject_id FROM bm_audit WHERE action='hosting.mode_changed' AND subject_id=?").bind(current.id).first()
+  assert.equal(modeAudit.subject_id,current.id,'the old activation audit remains evidence only')
   const audits=(await h.db.prepare("SELECT action FROM bm_audit WHERE action LIKE 'readiness.%'").all()).results.map(r=>r.action)
   assert.ok(audits.includes('readiness.recorded')&&audits.includes('readiness.baa_recorded')&&audits.includes('readiness.baa_revoked'))
  }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}

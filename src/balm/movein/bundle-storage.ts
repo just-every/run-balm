@@ -1,3 +1,5 @@
+import type { Bindings } from '../../auth.server'
+import { patientCreationFence } from '../domain/hosting'
 import { audit, commit, guard, now, rows, stmt, type Actor } from '../domain/model.ts'
 import { authorizationCarryStatements } from './authorization-carry'
 import { carryClaimStatements } from './claim-carry.ts'
@@ -13,7 +15,7 @@ async function schema(db: D1Database) {
 export const snapshot = (columns: string[], alias = 't') => `json_object(${columns.flatMap(c => ["'" + c.replaceAll("'", "''") + "'", alias + '.' + quote(c)]).join(',')})`
 export const reportFor = (plan: BundlePlan) => ({ timeZone: plan.timeZone, counts: plan.counts, reconciliation: plan.reconciliation, diagnostics: plan.diagnostics, unmappedColumns: plan.unmappedColumns, unmappedRows: plan.unmappedRows, migrationReport: plan.migrationReport, mappingDigest: plan.mappingDigest })
 
-export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, acceptanceReason: string, approvedMapping = false) {
+export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, acceptanceReason: string, approvedMapping = false, env?: Bindings) {
   const jobId = crypto.randomUUID(), at = now(), { bundle } = plan
   const clients = new Map(plan.patients.map(p => [p.sourceId, p.id]))
   const patients = plan.patients.map(p => ({ ...p, identity: identityText(p.firstName, p.lastName, p.dateOfBirth) }))
@@ -24,6 +26,7 @@ export async function applyBundle(db: D1Database, who: Actor, plan: BundlePlan, 
   const invoices = await Promise.all(bundle.carriedInvoices.map(async i => ({ ...i, id: await targetId(bundle.provider, 'invoice', i.sourceId), clientId: clients.get(i.patientId)! })))
   const report = JSON.stringify(reportFor(plan))
   const body = [
+    await patientCreationFence(db,env),
     guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND version=?)', plan.settingsVersion),
     guard(db, 'NOT EXISTS(SELECT 1 FROM bm_movein_jobs WHERE source_json=?)', plan.sourceJson),
     stmt(db, `INSERT INTO bm_movein_jobs(id,provider,fingerprint,state,created_at,created_by,acceptance_reason,source_json,report_json) VALUES(?,?,?,'applied',?,?,?,?,?)`, jobId, bundle.provider, plan.fingerprint, at, who.id, acceptanceReason, plan.sourceJson, report.length > 200_000 ? JSON.stringify({ chunked: true }) : report),

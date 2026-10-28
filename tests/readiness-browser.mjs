@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { harness } from './harness.mjs'
-import { readinessFacts } from './readiness-fixture.mjs'
+import { readinessFacts, hostingProfile, recordTestBaa, readinessFixture } from './readiness-fixture.mjs'
 
 let h, browser
 try {
- h=await harness({readiness:false,browserHttps:true})
+ h=await harness({readiness:false,browserHttps:true,patientMode:false,auth:{BALM_HOSTING_PROFILE:JSON.stringify(hostingProfile)}})
  await h.finishSetup()
  await h.cmd('settings.save',{clinicName:'Synthetic readiness clinic',timeZone:'America/Chicago'})
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{}),args:['--no-sandbox','--use-mock-keychain','--password-store=basic']})
@@ -56,5 +56,59 @@ try {
  await page.locator('#readiness').getByRole('button',{name:'Revoke BAA'}).click()
  assert.equal(await page.locator('#readiness [role=status]').textContent(),'Integration readiness is incomplete.')
  await capture('readiness-revoked')
+ await readinessFixture(h)
+ const hostBaa=await recordTestBaa(h,'hosting'),backupBaa=await recordTestBaa(h,'backups')
+ await page.setViewportSize({width:1440,height:1000})
+ await page.goto(h.origin+'/app/clinic')
+ async function captureHosting(name){
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:1000})
+   await page.locator('#hosting').screenshot({path:directory+'/'+name+'-'+width+'.png'})
+  }
+  await page.setViewportSize({width:1440,height:1000})
+ }
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
+ await page.locator('#hosting summary').filter({hasText:'Record hosting evidence'}).click()
+ const hosting=page.locator('form[action*="hosting.record"]')
+ await hosting.locator('[name=provider]').selectOption('cloudflare')
+ await hosting.locator('[name=baaId]').selectOption(hostBaa.id)
+ await hosting.locator('[name=backupBaaId]').selectOption(backupBaa.id)
+ for(const [key,value] of Object.entries({account:hostingProfile.account,deployment:hostingProfile.deployment,services:'workers\nd1\nr2',coveredServices:'workers\nd1',serviceEvidence:JSON.stringify({workers:'synthetic-balm-922',d1:'synthetic-balm-923',r2:'synthetic-balm-924'}),qualificationReference:'synthetic-balm-925',backupReceipt:'synthetic-balm-926',drillReceipt:'synthetic-balm-927'}))await hosting.locator(`[name=${key}]`).fill(value)
+ await hosting.locator('[name=attest]').check()
+ await captureHosting('hosting-incomplete-r2-form')
+ await hosting.getByRole('button',{name:'Record hosting evidence',exact:true}).click()
+ let hostState=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting
+ const omitted=hostState.records[0].id
+ async function changeMode(mode,id=''){
+  const details=page.locator('#hosting details').filter({has:page.locator('form[action*="hosting.mode"]')})
+  if(!await details.getAttribute('open'))await details.locator('summary').click()
+  const form=page.locator('form[action*="hosting.mode"]')
+  await form.locator('[name=mode]').selectOption(mode)
+  await form.locator('[name=id]').selectOption(id)
+  await form.locator('[name=reason]').fill('Synthetic native form journey only')
+  await form.locator('[name=attest]').check()
+  await form.getByRole('button',{name:'Save patient mode',exact:true}).click()
+ }
+ await changeMode('real',omitted)
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/blocked/)
+ assert.match(await page.locator('body').textContent(),/owner must review Hosting and patient mode/)
+ await captureHosting('hosting-r2-refused')
+ await page.locator('#hosting summary').filter({hasText:'Record hosting evidence'}).click()
+ for(const [key,value] of Object.entries({account:hostingProfile.account,deployment:hostingProfile.deployment,services:'workers\nd1\nr2',coveredServices:'workers\nd1\nr2',serviceEvidence:JSON.stringify({workers:'synthetic-balm-922',d1:'synthetic-balm-923',r2:'synthetic-balm-924'}),qualificationReference:'synthetic-balm-925',backupReceipt:'synthetic-balm-926',drillReceipt:'synthetic-balm-927'}))await hosting.locator(`[name=${key}]`).fill(value)
+ await hosting.locator('[name=baaId]').selectOption(hostBaa.id)
+ await hosting.locator('[name=backupBaaId]').selectOption(backupBaa.id)
+ await hosting.locator('[name=attest]').check()
+ await hosting.getByRole('button',{name:'Record hosting evidence',exact:true}).click()
+ hostState=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value.hosting
+ const complete=hostState.records.find(r=>r.id!==omitted).id
+ await changeMode('real',complete)
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/real.*permitted/)
+ await captureHosting('hosting-recorded-mode')
+ const hostingRecord=page.locator('#hosting details').filter({has:page.locator('form[action*="hosting.revoke"] [name=id][value="'+complete+'"]')})
+ await hostingRecord.locator('summary').click()
+ await hostingRecord.getByRole('button',{name:'Revoke hosting evidence',exact:true}).click()
+ assert.match(await page.locator('#hosting [role=status]').textContent(),/Patient creation is blocked/)
+ await captureHosting('hosting-revoked')
+ console.log('HIPAA-005 native browser: hosting form, omitted R2 refusal, audited synthetic mode and revocation inspected at 1440 and 390')
  console.log('HIPAA-001 browser: readiness forms, export, revocation and tooltip audit passed at 1440 and 390')
 }finally{if(browser)await browser.close();if(h)await h.close()}

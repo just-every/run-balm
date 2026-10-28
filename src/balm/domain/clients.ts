@@ -1,4 +1,6 @@
 import { patientSmsZone } from '../sms/quiet-hours'
+import type { Bindings } from '../../auth.server'
+import { patientCreationFence } from './hosting'
 import { templateCatalog } from '../charting/template-catalog'
 import { supervisorReadSql, supervisionPlans } from './supervision'
 import { phoneNumber } from './us-clinic'
@@ -46,7 +48,7 @@ export async function listClients(db: D1Database, who: Actor) {
   return rows(db, 'SELECT id,first_name,last_name,date_of_birth,created_via FROM bm_clients c WHERE erased_at IS NULL AND EXISTS(SELECT 1 FROM bm_appointments a WHERE a.client_id=c.id AND a.practitioner_id=?) ORDER BY last_name,first_name', own ?? '')
 }
 
-export async function saveClient(db: D1Database, who: Actor, input: Data) {
+export async function saveClient(db: D1Database, who: Actor, input: Data, env?: Bindings) {
   need(who, 'owner', 'reception'); human(who)
   const previous = input.id ? await clientVisible(db, who, input.id) : null
   const values = { first: text(input.firstName, 'first_name', 80), last: text(input.lastName, 'last_name', 80),
@@ -54,6 +56,7 @@ export async function saveClient(db: D1Database, who: Actor, input: Data) {
   const clientId = previous?.id as string ?? id()
   const identity = await clientIdentity(values.first, values.last, values.dob)
   await commit(db, who, [
+    ...(previous ? [] : [await patientCreationFence(db,env)]),
     ...(previous ? [guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND version=?)', clientId, input.version === undefined ? previous.version : integer(input.version, 'version', 1, Number.MAX_SAFE_INTEGER))]
       : [guard(db, 'NOT EXISTS(SELECT 1 FROM bm_erasure_journal WHERE identity_hash=?)', identity)]),
     stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,sms_time_zone,created_at,created_via) VALUES(?,?,?,?,?,?,?,?,'staff')

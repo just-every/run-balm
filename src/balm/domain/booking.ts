@@ -1,3 +1,4 @@
+import { patientCreationFence } from './hosting'
 import type { Bindings } from '../../auth.server'
 import { reserveBooking, bookingHoldGuard } from '../payments/booking-prepayment'
 import { ruleChecker, serviceGuards } from '../scheduling/service-rules'
@@ -218,6 +219,7 @@ const unproven = `CASE WHEN EXISTS(SELECT 1 FROM bm_clients WHERE lower(email)=?
 
 /** Public online booking for a new client. Returns the one-time intake link token. */
 export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
+  const hosting = await patientCreationFence(db,env)
   const unchanged = await selfServiceSnapshot(db)
   const clinic = await settings(db)
   insist(clinic.booking_open === 1, 'online_booking_closed', 409)
@@ -248,7 +250,7 @@ export async function bookOnline(db: D1Database, input: Data, env?: Bindings) {
   const clientId = (existing?.id as string) ?? id(), token = intakeToken(), appointmentId = id(), visitor = { email: client.email, role: 'online booking' }
   const visit={ id: appointmentId, clientId, practitionerId: practitioner.id, serviceId: service.id, startAt: start.toISOString(), endAt: end.toISOString(), bookedVia: 'online', roomId:await roomFor(db,input.roomId), tokenHash: await sha256(token), ...bookingCoverage(input), timeZone:clinic.time_zone }
   const writes=[
-    unchanged, ...eligibility.guards,
+    hosting, unchanged, ...eligibility.guards,
     guard(db, `${upcomingOnline}<3`, client.email, client.email, now(), client.email, now()),
     ...(existing ? [guard(db, inCare, existing.id, practitioner.id, existing.id)] : [
       stmt(db, `INSERT INTO bm_clients(id,first_name,last_name,date_of_birth,email,phone,created_at,created_via) VALUES(?,?,?,?,${unproven},?,'online')`,

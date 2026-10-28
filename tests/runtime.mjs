@@ -188,6 +188,7 @@ sys.exit(result if result is not None and result >= 0 else 1)
       assert.equal(result.status,200,name + ': '+result.text)
       return result.value.result
     }
+    await cmd('hosting.mode',{mode:'demo',reason:'Synthetic clean-start journey only',attest:true})
     assert.equal((await send('/api/balm/state')).value.settings.time_zone,'America/Chicago','the browser saved the first-run clinic settings')
     const practitioner = await cmd('staff.save',{name:'Jordan Lee',email:'owner@clinic.example',role:'practitioner',profession:'Physical Therapist',discipline:'pt',active:true})
     const service = await cmd('service.save',{name:'Therapy visit',durationMinutes:45,priceCents:9500})

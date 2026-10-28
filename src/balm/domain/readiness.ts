@@ -1,3 +1,4 @@
+import { hostingState } from './hosting'
 import type { Bindings } from '../../auth.server'
 import { audit, commit, day, human, id, insist, need, now, one, rows, stmt, text, type Actor, type Data } from './model'
 
@@ -40,7 +41,7 @@ export async function readinessState(env: Bindings, who: Actor) {
   const subprocessors = processors.map(([key, name, requirement]) => ({ key, name, requirement, provider:providers[key] ?? 'Not connected', configured: !!configured[key], baaOnFile: baas.some(b => b.processor === key && !b.revoked_at) }))
   const missing = ['privacy_officer','security_officer','risk_analysis','risk_reviewed_on','encryption_at_rest','encryption_in_transit'].filter(key => !record?.[key])
   for (const p of subprocessors) if (p.configured && !p.baaOnFile) missing.push(p.key + '_baa')
-  return { record, baas, subprocessors, missing, ready: missing.length === 0,
+  return { hosting: await hostingState(env), record, baas, subprocessors, missing, ready: missing.length === 0,
     boundary: 'This checks owner-recorded integration readiness only. It does not verify legal documents, hosting eligibility or HIPAA compliance. HIPAA-005 and the practice privacy review still gate real patient use.' }
 }
 
