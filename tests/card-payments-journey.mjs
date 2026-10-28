@@ -138,9 +138,21 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).status,200)
  await h.cmd('pay.copay.save',{clientId:patient.id,copay:'30.00'},reception.cookie)
  const link=await h.cmd('pay.link.create',{clientId:patient.id,purpose:'card',delivery:'shown'},reception.cookie),path=new URL(link.url).pathname
- const started=await h.form(path+'?do=card',{consent:'on'});stripe.complete(started.location.split('/').at(-1),{declined:true})
- await h.send(path+'?setup='+started.location.split('/').at(-1))
- const appointmentId=await pastVisit(h,patient.id,priya,service.id,reception.cookie,0,{coverageChoice:'self_pay',deliveryMethod:'paper'})
+ const saveCard=async declined=>{
+  const started=await h.form(path+'?do=card',{consent:'on'})
+  if(hooks.saveResponsibilityCard)await hooks.saveResponsibilityCard(started,path,declined)
+  else {stripe.complete(started.location.split('/').at(-1),{declined});await h.send(path+'?setup='+started.location.split('/').at(-1))}
+ }
+ const settleTerminal=async paymentId=>{
+  let paid=await h.cmd('pay.terminal.simulate',{paymentId},reception.cookie)
+  for(let attempt=0;attempt<8&&paid.status==='processing';attempt++){
+   await new Promise(resolve=>setTimeout(resolve,700))
+   paid=await h.cmd('pay.terminal.sync',{paymentId},reception.cookie)
+  }
+  return paid
+ }
+ await saveCard(true)
+ const appointmentId=await pastVisit(h,patient.id,priya,service.id,reception.cookie,1,{coverageChoice:'self_pay',deliveryMethod:'paper'})
  await h.cmd('pay.checkin',{appointmentId},reception.cookie)
  const day=await visitDate(h,appointmentId),input={appointmentId,invoiceId:invoice.id,purpose:'coinsurance',amount:'35.00',confirm:true,paymentId:randomUUID()}
  await h.cmd('pay.checkin.collect',input,reception.cookie,409)
@@ -157,7 +169,7 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  await h.cmd('pay.checkin.collect',{...input,amount:'26.01'},reception.cookie,409)
  await h.cmd('pay.checkin.collect',{...input,amount:'16.00',confirm:false},reception.cookie,400)
  await h.cmd('pay.checkin.collect',{...input,amount:'16.00'},priya.cookie,403)
- await h.cmd('pay.terminal.configure',{locationId:'tml_syntheticbalm1',simulated:true})
+ await h.cmd('pay.terminal.configure',{locationId:hooks.locationId ?? 'tml_syntheticbalm1',simulated:true})
  await hooks.screen?.('responsibility-choice','/app?date='+day,'form[action*="pay.checkin.collect"]',reception.cookie)
  const declinedInput={...input,amount:'16.00',paymentId:randomUUID()}
  const declined=await h.cmd('pay.checkin.collect',declinedInput,reception.cookie)
@@ -165,7 +177,7 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  const declinedWrites=stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length
  await h.cmd('pay.checkin.collect',declinedInput,reception.cookie)
  assert.equal(stripe.calls.filter(c=>c.method==='POST'&&c.path==='/payment_intents').length,declinedWrites)
- const replacement=await h.form(path+'?do=card',{consent:'on'});stripe.complete(replacement.location.split('/').at(-1));await h.send(path+'?setup='+replacement.location.split('/').at(-1))
+ await saveCard(false)
  const reportRange='from='+new Date(Date.now()-86400000+10*3600000).toISOString().slice(0,10)+'&to='+new Date(Date.now()+86400000+10*3600000).toISOString().slice(0,10)
  const beforeReport=(await h.send('/api/balm/reports/financial?'+reportRange,undefined,h.owner)).value
  const cardTotal=report=>report.deposits.rows.filter(r=>r.source==='Card payments (Stripe)').reduce((n,r)=>n+r.receivedCents,0)
@@ -190,7 +202,7 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  const coinsurance=await h.cmd('pay.terminal.collect',coinsuranceInput,reception.cookie)
  assert.equal(coinsurance.collection_purpose,'coinsurance');assert.equal(coinsurance.amount_cents,400)
  await h.cmd('pay.checkin.collect',{...input,purpose:'balance',amount:'6.01',paymentId:randomUUID()},reception.cookie,409)
- assert.equal((await h.cmd('pay.terminal.simulate',{paymentId:coinsurance.id},reception.cookie)).status,'succeeded')
+ assert.equal((await settleTerminal(coinsurance.id)).status,'succeeded')
  const balance=await h.cmd('pay.checkin.collect',{...input,purpose:'balance',amount:'2.00',paymentId:randomUUID()},reception.cookie)
  assert.equal(balance.collection_purpose,'balance');assert.equal(balance.amount_cents,200);assert.equal(balance.status,'succeeded')
  const terminalInput={...input,purpose:'balance',amount:'4.00',paymentId:randomUUID()}
@@ -211,7 +223,7 @@ export async function checkInResponsibilityJourney({h,stripe,service,priya,recep
  await hooks.screen?.('responsibility-overdue-file','/app/clients/'+patient.id,recoverySelector,reception.cookie)
  assert.equal((await h.cmd('pay.terminal.sync',{paymentId:terminal.id},reception.cookie)).payment_intent,terminal.payment_intent)
  await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind(currentVisit.start_at,currentVisit.end_at,appointmentId).run()
- const paid=await h.cmd('pay.terminal.simulate',{paymentId:terminal.id},reception.cookie)
+ const paid=await settleTerminal(terminal.id)
  assert.equal(paid.status,'succeeded');assert.equal(paid.amount_cents,400)
  await h.cmd('pay.terminal.sync',{paymentId:terminal.id},reception.cookie)
  const receipt=await h.send('/portal/receipts/'+terminal.id+'.pdf',undefined,cookie)

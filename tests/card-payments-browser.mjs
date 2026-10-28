@@ -10,9 +10,10 @@ const output=process.env.BALM_UI_SCREENSHOTS
 assert.ok(output,'Set a screenshot directory')
 const live=!!process.env.STRIPE_SECRET_KEY
 if(live)assert.ok(process.env.STRIPE_SECRET_KEY.includes('_test_'),'A held Stripe test key is required')
-const stripe=live?null:fakeProviders()
+const stripe=live?{calls:[]}:fakeProviders()
 await mkdir(output,{recursive:true})
 const provider=async request=>{
+ stripe.calls.push({method:request.method,path:new URL(request.url).pathname.replace(/^\/v1/,'')})
  const body=request.method==='POST'?await request.arrayBuffer():null
  if(body)assert.ok(!/(Ava|ava%40|M25[.]561|Therapy.follow-up)/.test(new TextDecoder().decode(body)),'Stripe receives amounts and opaque patient references only')
  const response=await fetch(request.url,{method:request.method,headers:request.headers,...(body?{body}:{}),redirect:'manual'})
@@ -75,13 +76,13 @@ try{
   const r=await fetch('https://api.stripe.com/v1/terminal/locations',{method:'POST',headers:{authorization:'Bearer '+process.env.STRIPE_SECRET_KEY,'content-type':'application/x-www-form-urlencoded','stripe-version':'2026-09-30.endive'},body:new URLSearchParams({display_name:'Synthetic Balm clinic','address[line1]':'123 Test Street','address[city]':'San Francisco','address[state]':'CA','address[postal_code]':'94103','address[country]':'US'})})
   const v=await r.json();assert.ok(r.ok,v.error?.message);locationId=v.id
  }
- const checkout=async(started,source)=>{
+ const checkout=async(started,source,cardNumber)=>{
   assert.equal(started.status,303,started.text)
   await page.goto(started.location)
   await page.waitForTimeout(1500)
   const linkSave=page.getByRole('checkbox',{name:/Save my information with Link/});if(await linkSave.count())await linkSave.uncheck()
   const email=page.getByRole('textbox',{name:'Email',exact:true});if(await email.count()&&await email.isEditable())await email.fill('synthetic-balm-'+client.id+'@example.com')
-  await page.getByLabel('Card number',{exact:true}).fill(source.startsWith('/intake')?'4000051230000072':'4242424242424242')
+  await page.getByLabel('Card number',{exact:true}).fill(cardNumber ?? (source.startsWith('/intake')?'4000051230000072':'4242424242424242'))
   await page.getByLabel('Expiration',{exact:false}).fill('1234')
   await page.locator('#cardCvc,input[autocomplete=cc-csc]').first().fill('123')
   const name=page.getByLabel('Cardholder name',{exact:false});if(await name.count()&&await name.isEditable())await name.fill('Synthetic Balm')
@@ -131,5 +132,9 @@ try{
  const result=await cardPaymentsJourney({h,service,priya,reception,client},{screen,checkout,startCard,locationId,checkin,collect,refunded,cardSaved})
  console.log('PASS PAY-002 at 1440 and 390: intake, portal, approval, ledger, reports, Terminal pending and paid; named icon tooltips checked')
  console.log(JSON.stringify({account:result.payment.stripe_account_id,intakeSetup:result.setup.id,intakeIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.setup.card_id).first()).setup_intent,portalSetup:result.portalSetup.id,portalIntent:(await h.db.prepare('SELECT setup_intent FROM bm_cards WHERE id=?').bind(result.portalSetup.card_id).first()).setup_intent,originalCharge:result.refund.charge_id,charge:result.payment.payment_intent,refund:result.refund.provider_refund_id,reader:result.terminal.reader_id,terminalIntent:result.terminal.payment_intent,terminalReceipt:result.terminal.receipt_number}))
+ const responsibility=await checkInResponsibilityJourney({h,stripe,service,priya,reception},{screen,collectResponsibility,locationId,saveResponsibilityCard:async(started,path,declined)=>checkout(started,path,declined?'4000000000000341':'4242424242424242')})
+ const collections=await h.db.prepare("SELECT id,collection_purpose,amount_cents,payment_intent,receipt_number FROM bm_card_payments WHERE client_id=? AND status='succeeded' ORDER BY created_at,id").bind(responsibility.patient.id).all()
+ console.log(JSON.stringify({proof:'live-checkin-responsibility',collections:collections.results,patientBalanceCents:0}))
+ console.log('PASS PAY-002 live Stripe test mode: coinsurance and balance by saved card and simulated Terminal, exact cents, decline, replay, reservations, ledger and report parity, patient-only fixed receipts, and native screens at 1440 and 390. Physical reader operation remains unproved.')
  }
 }catch(error){if(page)await page.screenshot({path:output+'/failed.png',fullPage:true}).catch(()=>{});throw error}finally{await browser?.close();await h.close()}

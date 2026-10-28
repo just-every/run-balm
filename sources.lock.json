@@ -5418,11 +5418,11 @@
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
-      "sha256": "93f06a7e4d7504470a2d76ec56197eb0bea5ea388f40a16b9b67a4d5366d3f7b",
+      "sha256": "185d0772b48be15b1728a6e1dbaafb285cbd779804db690f83331a4f363fb07f",
       "executable": false
     },
     "tests/card-payments-journey.mjs": {
-      "sha256": "30dcea0609e7efa699dd30a49a7f00cbbbf3878bf12e97204dabfb567a876e5c",
+      "sha256": "843776672b3c95f760e2967ec77773b3de83d52387bf44cd12677da38b8a6623",
       "executable": false
     },
     "tests/cases.test.mjs": {
