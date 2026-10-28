@@ -108,6 +108,24 @@ export async function smsQuietJourney() {
   await h.cmd('reminders.quiet_hours',quietPolicy)
   await tick('2030-11-11T13:01:00Z');await tick('2030-11-11T13:20:00Z')
   assert.equal(edge.texts.length,5,'an uncertain HTTP attempt is never replayed after a policy change')
+
+  const missingZone=await h.cmd('client.save',{...c.fields,lastName:'Missing zone queue'})
+  await h.cmd('reminders.consent',{clientId:missingZone.id,consent:true})
+  const shortVisit=await h.cmd('service.save',{name:'Synthetic queue visit',durationMinutes:15,priceCents:1000})
+  for(let index=0;index<50;index++){
+   const minute=60+index*15,time=String(Math.floor(minute/60)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0')
+   await h.cmd('appointment.book',{clientId:missingZone.id,practitionerId:c.priya.id,serviceId:shortVisit.id,date:'2031-01-10',time})
+  }
+  const later=await book('2031-01-10')
+  await tick('2031-01-09T13:00:00Z');await tick('2031-01-09T13:01:00Z')
+  assert.equal(edge.texts.length,6,'50 older missing-zone reminders cannot starve an eligible same-day reminder')
+  assert.equal((await history(later.appointmentId)).state,'sent')
+  const refused=(await h.send('/api/balm/clients/'+missingZone.id,undefined,h.owner)).value.reminderHistory.filter(r=>r.channel==='sms')
+  assert.equal(refused.length,50)
+  assert.ok(refused.every(r=>r.state==='pending'&&r.attempted_at===null&&r.sent_at===null),'skipped reminders remain deferred without a provider attempt')
+  assert.ok(refused.every(r=>/IANA time zone/.test(r.outcome)))
+  await tick('2031-01-09T13:02:00Z')
+  assert.equal(edge.texts.length,6,'paging past deferred rows preserves once-only delivery')
   const original=(await h.state()).reminders.sms_quiet_policy_id
   await h.cmd('reminders.quiet_hours',quietPolicy,h.owner,409,{'x-synthetic-revoke':h.auth.OWNER_EMAIL})
   assert.equal((await h.state(await h.signIn(h.auth.OWNER_EMAIL))).reminders.sms_quiet_policy_id,original,'live owner revocation rolls back the complete policy write')
