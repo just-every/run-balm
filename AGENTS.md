@@ -161,3 +161,8 @@ MOVE-006 historical invoice carry uses the same Lander-Regenerate command:
 `node scripts/contract-docs.mjs write MOVE-006`, then
 `node scripts/contract-docs.mjs check MOVE-006`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+COMM-002 scheduled SMS quiet hours uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write COMM-002`, then
+`node scripts/contract-docs.mjs check COMM-002`. Keep the source lock last:
+`node scripts/edition-authoring/cli.mjs lock`, then its `check`.

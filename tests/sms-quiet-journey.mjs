@@ -60,8 +60,8 @@ export async function smsQuietJourney() {
   assert.equal(edge.texts[0].body.To,'+13125550199')
 
   // Independent UTC instants: New York skips 02:00 on March 10, 2030 and repeats 01:00 on November 3.
-  const spring=await book('2030-03-11')
-  for(const at of ['2030-03-10T05:30:00Z','2030-03-10T06:59:00Z','2030-03-10T07:00:00Z','2030-03-10T11:59:00Z']){
+  const spring=await book('2030-03-11','13:00')
+  for(const at of ['2030-03-10T03:00:00Z','2030-03-10T05:30:00Z','2030-03-10T06:59:00Z','2030-03-10T07:00:00Z','2030-03-10T11:59:00Z']){
    await tick(at);assert.match((await noAttempt(spring,1)).outcome,/Deferred/)
   }
   await tick('2030-03-10T12:00:00Z');await tick('2030-03-10T12:01:00Z')
@@ -97,7 +97,7 @@ export async function smsQuietJourney() {
   assert.equal((await history(cancelled.appointmentId)).state,'cancelled')
   const expired=await book('2030-11-10')
   await tick('2030-11-09T05:30:00Z');await noAttempt(expired,4)
-  await tick('2030-11-10T05:30:00Z');assert.equal(edge.texts.length,4,'no deferred text goes out at or after the visit starts')
+  await tick('2030-11-10T05:30:00Z');await tick('2030-11-10T13:00:00Z');assert.equal(edge.texts.length,4,'no deferred text goes out at or after the visit starts')
   assert.equal((await history(expired.appointmentId)).state,'cancelled')
 
   const uncertain=await book('2030-11-12')
