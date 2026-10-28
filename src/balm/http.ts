@@ -63,7 +63,7 @@ import { communicationHistory, historyAllowed } from './messages/history'
 import { sendVisitChange } from './mail/changes'
 import { reminderDownload } from './domain/reminders'
 import { acceptOffer, offerView, recordDelivery, takenNotices } from './domain/waitlist'
-import { certifyPlan, planView, resendPlan, sendPlan } from './domain/plans'
+import { certifyPlan, filePlanCertification, planView, resendPlan, sendPlan } from './domain/plans'
 import { sendBooked, sendCanceled, sendIntake, sendPlanLink, sendTaken } from './mail-out'
 import { checkDefensibility } from './charting/defensibility'
 import { scribeCommand, scribeStatus } from './scribe'
@@ -249,6 +249,7 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
   if (name === 'note.check') return checkDefensibility(env, who, input)
   if (name.startsWith('scribe.') || name === 'note.scribe') return scribeCommand(env, who, name, input)
   if (name.startsWith('backup.')) return backupCommand(env, who, name, input)
+  if (name === 'plan.certification.file') return filePlanCertification(env.DB, who, input)
   if (name === 'plan.send' || name === 'plan.resend') {
     const plan = await (name === 'plan.send' ? sendPlan : resendPlan)(env.DB, who, input)
     return { ...plan, mail: await sendPlanLink(env, plan.physicianEmail, plan.token) }
@@ -293,7 +294,7 @@ async function inputBody(request: Request): Promise<Record<string, unknown>> {
           const data=new Uint8Array(await value.arrayBuffer());let binary='';for(const byte of data)binary+=String.fromCharCode(byte)
           const map=(input.media??={}) as Record<string,string>;map[value.name]='data:'+value.type+';base64,'+btoa(binary)
         }
-        else if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
+        else if(key==='attachment'&&['insurance.payer_eob.attach','insurance.cob.paper.prepare','plan.certification.file'].includes(new URL(request.url).searchParams.get('name')??'')){Object.assign(input,await uploadField(value))}
         else if (key === 'abnDocument') {
           if (!['application/pdf','image/png','image/jpeg','image/webp'].includes(value.type)) fail('upload_a_pdf_png_jpeg_or_webp_abn')
           const bytes = new Uint8Array(await value.arrayBuffer())

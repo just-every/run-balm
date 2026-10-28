@@ -894,3 +894,8 @@ test('CHART-011: clinician reviews and delivers a fixed progress original with e
  const {letterJourney}=await import('./clinical-letter-journey.mjs')
  await letterJourney(h)
 }, {browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
+
+test('CHART-003: therapist replacements preserve prior plans and clinician-filed signed scans certify one matched version with audited original history',()=>run(async h=>{
+ const {planVersionJourney}=await import('./plan-version-journey.mjs')
+ await planVersionJourney(h)
+}))
