@@ -35,14 +35,6 @@
       "environment": "MAIL_API_KEY"
     },
     {
-      "binding": "MAIL_PROVIDER",
-      "environment": "MAIL_PROVIDER"
-    },
-    {
-      "binding": "MAIL_FROM",
-      "environment": "MAIL_FROM"
-    },
-    {
       "binding": "SMS_PROVIDER",
       "environment": "SMS_PROVIDER",
       "optional": true

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "clinic-balm",
-  "vars": {"OWNER_EMAIL":"","AUTH_LOCAL":"false","AUTH_ORIGIN":"","MAIL_PROVIDER":"","MAIL_FROM":"","MAIL_RELAY_URL":"","MAIL_ACCOUNT_ID":""},
+  "vars": {"AUTH_LOCAL":"false","AUTH_ORIGIN":"","MAIL_PROVIDER":"","MAIL_FROM":"","MAIL_RELAY_URL":"","MAIL_ACCOUNT_ID":""},
   "triggers": { "crons": ["* * * * *"] },
   "main": "src/server.ts",
   "compatibility_date": "2026-09-08",

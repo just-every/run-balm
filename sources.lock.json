@@ -166,7 +166,7 @@
       "executable": false
     },
     "deploy.json": {
-      "sha256": "e6a9b7720e97b37f28fda24263e4a7f22d90066ea6a1baf783f35635ee1d9f27",
+      "sha256": "dd4a5150a64e02c2baa49198cb66f3c5a2b29d784c61e262920d676523984609",
       "executable": false
     },
     "docs/ACCESS-MATRIX.md": {
@@ -5914,7 +5914,7 @@
       "executable": false
     },
     "wrangler.jsonc": {
-      "sha256": "e18d8f8717e4fe162a9e651a0cf6b6a7ec72d0e2826273ed52a493ebfe301d40",
+      "sha256": "bc8149c490a8f4104f8b092f4082df37be4edbb7c5969864bdb1ceb82b1f6766",
       "executable": false
     }
   }
