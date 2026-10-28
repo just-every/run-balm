@@ -29,7 +29,7 @@ type Defaults = { clientSelect?: string; clientId?: string; practitionerId?: str
 export function seriesForm(s: any, back: string, d: Defaults) {
   const choices = practitioners(s).filter(p => s.actor.role === 'owner' || s.actor.staffRole === 'reception' || p.id === s.actor.staffId)
   const roomList = rows(s, 'rooms').filter(r => r.active === undefined || r.active)
-  const plans = (d.plans ?? []).filter(p => p.content && (s.actor.role === 'owner' || p.mine))
+  const plans = (d.plans ?? []).filter(p => !p.supersededBy && p.content && (s.actor.role === 'owner' || p.mine))
   const selected = plans.find(p => p.id === d.planId)
   return form('series.preview', back, (selected ? hidden('planId', selected.id) + `<p>From the signed plan: ${h(selected.content.frequencyPerWeek)} visits a week for ${h(selected.content.durationWeeks)} weeks, starting ${h(dateLabel(selected.content.startDate))}. Choose the treatment weekdays.</p>` : plans.length ? select('planId', 'Plan of care cadence', [['', 'Manual pattern'], ...plans.map(p => [p.id, `${p.therapistName}: ${p.content.frequencyPerWeek} times/week for ${p.content.durationWeeks} weeks from ${p.content.startDate}`] as [unknown, unknown])], d.planId ?? '', '') + '<p class="help">Selecting a plan uses its start date and duration. Choose exactly its number of weekdays and its treating practitioner; every date is reviewed before booking.</p>' : '') + (d.clientId ? hidden('clientId', d.clientId) : d.clientSelect ?? '')
     + select('practitionerId', 'Practitioner', choices.map(p => [p.id, p.name]), d.practitionerId) + select('serviceId', 'Service', services(s).map(x => [x.id, `${x.name} · ${x.duration_minutes} min`]))

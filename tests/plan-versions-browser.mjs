@@ -47,7 +47,7 @@ try{
  await replacement.getByRole('button',{name:'Sign and send replacement',exact:true}).click()
  let file=await c.file(),current=file.plans.find(p=>p.predecessorId===c.initial.id)
  assert.ok(current,'the native replacement form creates a linked version')
- assert.equal(current.status,'sent');assert.match(current.content.shortTermGoals,/twenty minutes/)
+ assert.equal(current.versionNumber,2);assert.equal(current.status,'sent');assert.match(current.content.shortTermGoals,/twenty minutes/)
  assert.deepEqual(await h.db.prepare('SELECT * FROM bm_plans_of_care WHERE id=?').bind(c.initial.id).first(),old)
  assert.equal((await h.send('/plan/'+c.initial.token)).status,404)
  const plan=page.locator('#plan-'+current.id)

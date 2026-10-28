@@ -26,7 +26,7 @@ export function planContent(c: any, zone: string) {
 function planEntry(s: any, f: any, p: any) {
   const path = `/app/clients/${f.client.id}`, zone = zoneOf(s)
   const sent = p.status === 'sent' ? `<p class="help">Sent to ${h(p.physicianName)} (${h(p.physicianEmail)}) ${h(usDate(p.sentAt, zone))}; the link expires ${h(usDate(p.linkExpiresAt, zone))}.</p>` : `<p class="help">Certified ${p.certifierNpi ? `· NPI ${h(p.certifierNpi)} ` : ''}· ${when(s, p.certifiedAt)}</p>`
-  return entry(p.content ? `Plan of care from ${usDate(p.content.startDate, zone)}` : 'Plan of care', `<p>${planLine(p, zone)}</p>${sent}${p.content ? planContent(p.content, zone) : ''}`
+  return entry(p.content ? `Plan of care · version ${p.versionNumber} from ${usDate(p.content.startDate, zone)}` : 'Plan of care', `<p>${planLine(p, zone)}</p>${sent}${p.content ? planContent(p.content, zone) : ''}`
     + (p.predecessorId ? `<p>Replaces <a href="#plan-${h(p.predecessorId)}">the earlier plan version</a>.</p>` : '')
     + (p.supersededBy ? `<p>${status('Superseded')} · <a href="#plan-${h(p.supersededBy)}">Open replacement plan</a>. The earlier signing link is closed.</p>` : '')
     + (p.certification ? `<dl class="answers"><dt>Written signature date</dt><dd>${h(usDate(p.certification.signatureDate, zone))}</dd><dt>Certification date</dt><dd>${h(usDate(p.certification.certificationDate, zone))}</dd><dt>Filed by</dt><dd>${h(p.certification.filedBy)} · ${when(s, p.certification.filedAt)}</dd></dl><a href="/api/balm/chart-documents/${h(p.certification.documentId)}">Download signed plan original</a>` : '')
@@ -70,7 +70,7 @@ function writePlan(s: any, f: any, previous?: any) {
 function fileCertification(s:any, f:any, p:any) {
   const today=hostDateAt(new Date(),zoneOf(s)), episode=f.episodes?.find((e:any)=>e.id===p.episodeId)
   const body=hidden('id',p.id)+hidden('clientId',f.client.id)+hidden('planSha256',p.sha256)+hidden('episodeId',p.episodeId || 'none')
-    + `<p>Patient: <strong>${h(f.client.first_name)} ${h(f.client.last_name)}</strong>. Plan from ${h(usDate(p.content.startDate,zoneOf(s)))} signed by ${h(p.therapistName)}. Episode: <strong>${h(episode?.title ?? 'Not assigned to an episode')}</strong>.</p>`
+    + `<p>Patient: <strong>${h(f.client.first_name)} ${h(f.client.last_name)}</strong>. Plan version <strong>${h(p.versionNumber)}</strong> from ${h(usDate(p.content.startDate,zoneOf(s)))} signed by ${h(p.therapistName)}. Episode: <strong>${h(episode?.title ?? 'Not assigned to an episode')}</strong>.</p>`
     + `<div class="pair">${field('name','Signing physician name',p.physicianName,'text','required maxlength="160"')}${field('credentials','Signer credentials','','text','required maxlength="40"')}</div>`
     + field('npi','Signer NPI (when shown)','','text','maxlength="10" pattern="[0-9]{10}"')
     + `<div class="pair">${field('signatureDate','Signature date written on copy','','date','required max="'+today+'"')}${field('certificationDate','Certification date',today,'date','required max="'+today+'"')}</div>`
