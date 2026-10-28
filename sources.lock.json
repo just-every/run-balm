@@ -5422,7 +5422,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "673aadf10b0b3cccbcb1d5e4bfb10cf5cc0ae4d751fe040b02d1e15f828ca41d",
+      "sha256": "18925a78dd445c239bb93dbe9c3d52dec6ef787508a369836f6ebf5e60799672",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {

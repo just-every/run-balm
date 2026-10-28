@@ -235,6 +235,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
   try{
     const old=join(temporary,'before.rer'),beforeDestruction=join(temporary,'before-destruction.rer'),later=join(temporary,'later.rer')
     h=await harness({root:source,...identity})
+    await h.cmd('hosting.mode',patientMode('demo'))
     const historicalSale=crypto.randomUUID()
     const historicalVisit=await h.db.prepare('SELECT id,service_id FROM bm_appointments WHERE client_id=?').bind(retentionPatient.id).first()
     await h.db.prepare("INSERT INTO bm_retail_sales(id,client_id,kind,label,service_id,units,amount_cents,tax_cents,tax_basis_points,tax_state,tax_evidence,reference,recorded_at,recorded_by,receipt_base64) VALUES(?,?,'membership','Synthetic resolved historical membership',?,2,2000,0,0,'','','synthetic-balm-stale-member','1990-01-02T03:00:00.000Z',?,?)").bind(historicalSale,retentionPatient.id,historicalVisit.service_id,h.auth.OWNER_EMAIL,btoa('%PDF-1.4 Synthetic historical receipt')).run()
@@ -255,6 +256,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await command(source,['export','--output',beforeDestruction,'--no-queue'])
         h=await harness({root:source,...identity})
         const ownerCookie=await h.signIn(h.auth.OWNER_EMAIL)
+        await h.cmd('hosting.mode',patientMode('demo'),ownerCookie)
         await h.cmd('client.erase',{id:retentionPatient.id},ownerCookie,409)
         await h.cmd('retention.save',{state:'AZ'},ownerCookie)
         const scopedPreview=await h.cmd('retention.retail.preview',{clientId:scopedPatient.id},ownerCookie)
