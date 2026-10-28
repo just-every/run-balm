@@ -4,6 +4,7 @@
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { contractPageHtml } from '../base/contract-page'
+import { hostingPageHtml } from '../base/hosting-page'
 import { runPageHtml, siteNotFoundHtml, type RunData, type SiteBuild, type SiteContext } from '../base/run-site'
 import type { EditionIdentity } from '../base/identity'
 import { identity } from '../identity'
@@ -31,7 +32,7 @@ const siteIdentity: EditionIdentity = { ...identity, theme: '/site/theme.css', b
 const SHARE_IMAGE = `${identity.runSite}/site/share.jpg`
 const HOME_DESCRIPTION = 'Balm runs your clinic’s schedule, intake, notes and reminders, and bills insurance and patients through to paid. 100% free, open source alternative to WebPT, SimplePractice and Jane.'
 
-export function sitePages({ styles, contract }: SiteContext): SiteBuild {
+export function sitePages({ styles, contract, hosting }: SiteContext): SiteBuild {
   const data: RunData = run
   const document = (title: string, description: string, body: ReactElement, script = '') => '<!doctype html>' + renderToStaticMarkup(
     <html lang="en-US">
@@ -65,6 +66,7 @@ export function sitePages({ styles, contract }: SiteContext): SiteBuild {
     pages: [
       { path: '/', html: keepSeparators(document('Balm — Back to your patients', HOME_DESCRIPTION, <Landing />)) },
       { path: '/run', html: runPageHtml(siteIdentity, data, contract) },
+      { path: '/docs/hosting', html: hostingPageHtml(siteIdentity, data, hosting ?? null, contract) },
       ...(contract ? [{ path: '/contract', html: contractPageHtml(siteIdentity, data, contract) }] : []),
       { path: '/docs', html: document(...head(), <DocsIndex />) },
       ...docsPages.map(page => ({ path: `/docs/${page.slug}`, html: document(...head(page.slug), <DocsArticle slug={page.slug} />, COPY) })),
