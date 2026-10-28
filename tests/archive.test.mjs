@@ -804,11 +804,14 @@ test('prior authorization signed packets and recorded payer decisions survive a 
 
 // Keep call custody independent of the large clinical archive fixture. Both
 // installations start from the real migrations; only public CLI transfer moves data.
-test('COMM-003: public CLI archive round trip preserves exact calls and custody in an empty install', {timeout:180000},async()=>{
+test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, waitlist preferences and custody in an empty install', {timeout:180000},async()=>{
  const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  const snapshot=async(db,clientId)=>({
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
+  waitlist:(await db.prepare('SELECT * FROM bm_waitlist WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
+  offers:(await db.prepare('SELECT * FROM bm_offers ORDER BY id').all()).results,
+  recipients:(await db.prepare('SELECT offer_id,entry_id,channel,delivery,outcome,responded_at,taken_notice FROM bm_offer_recipients ORDER BY offer_id,entry_id').all()).results,
   audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
  })
  try{
@@ -818,7 +821,7 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
   h=await harness({root:source,migrate:true,codeSets:false})
   const desk=await h.staff('Rosa','reception')
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody'})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@')})
   const ids=[]
   for(const [direction,occurredAt,disposition] of [
    ['incoming','2000-01-02T03:00:00Z','synthetic-balm-301 scheduling question'],
@@ -828,7 +831,26 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   const history=(await h.send(path,undefined,h.owner)).value
   assert.equal(history.total,2)
   assert.deepEqual(new Set(history.results.map(r=>r.id)),new Set(ids))
+  const {service,practitioners:[priya]}=await clinic(h)
+  const sourcePatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Opening'})
+  const entryInput={clientId:patient.id,practitionerId:priya.id,serviceId:service.id,earliestDate:'2099-03-01',latestDate:'2099-03-31',weekdays:[0],timeFrom:'09:00',timeUntil:'09:45'}
+  await h.cmd('waitlist.add',entryInput)
+  const visit=await h.cmd('appointment.book',{clientId:sourcePatient.id,practitionerId:priya.id,serviceId:service.id,date:'2099-03-01',time:'09:00'})
+  await h.cmd('appointment.cancel',{id:visit.appointmentId,reason:'Synthetic archive opening'})
+  const offerPath=new URL(h.mail.findLast(m=>m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
+  assert.equal((await h.form(offerPath,{})).status,303)
+  const removed=await h.cmd('waitlist.add',{...entryInput,timeFrom:'10:00',timeUntil:'11:00'})
+  await h.cmd('waitlist.remove',{id:removed.id})
+  await h.cmd('waitlist.add',{...entryInput,weekdays:[1,3],timeFrom:'14:00',timeUntil:'16:00'})
+  const secondVisit=await h.cmd('appointment.book',{clientId:sourcePatient.id,practitionerId:priya.id,serviceId:service.id,date:'2099-03-02',time:'14:00'})
+  await h.cmd('appointment.cancel',{id:secondVisit.appointmentId,reason:'Synthetic live archive offer'})
+  const openOfferPath=new URL(h.mail.findLast(m=>m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
+  assert.match((await h.send(openOfferPath)).text,/A time opened up/)
+  const bearerHashes=(await h.db.prepare('SELECT offer_token_hash FROM bm_offer_recipients').all()).results.map(r=>r.offer_token_hash)
   const original=await snapshot(h.db,patient.id)
+  assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
+  assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
+  assert.equal(original.recipients.filter(r=>r.outcome===null).length,1)
   assert.equal(original.calls.length,2)
   assert.deepEqual(original.calls.map(c=>[c.direction,c.occurred_at,c.staff_id,c.staff_name,c.recorded_by,c.disposition]).sort(),[
    ['incoming','2000-01-02T03:00:00.000Z',desk.id,'Rosa',desk.email,'synthetic-balm-301 scheduling question'],
@@ -840,10 +862,16 @@ test('COMM-003: public CLI archive round trip preserves exact calls and custody 
   await h.close();h=null
   const archive=join(temporary,'calls.rer')
   await command(source,['export','--output',archive,'--no-queue'])
+  const archiveText=await readFile(archive,'utf8')
+  for(const hash of bearerHashes)assert.ok(!archiveText.includes(hash),'offer capability hashes never enter the archive')
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,...identity,codeSets:false})
-  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call field and patient custody audit row survives unchanged')
+  assert.deepEqual(await snapshot(h.db,patient.id),original,'every call, waitlist preference, offer outcome and patient custody audit row survives unchanged')
   assert.equal((await h.send(path,undefined,identity.owner)).status,401,'archive does not transplant a live staff session')
+  for(const stale of [offerPath,openOfferPath]){
+   assert.equal((await h.send(stale)).status,404,'archive does not revive an offer bearer')
+   assert.equal((await h.form(stale,{})).status,404,'an archived offer cannot place a booking')
+  }
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
   await assert.rejects(h.db.prepare('UPDATE bm_calls SET disposition=? WHERE id=?').bind('Changed original',ids[0]).run(),/calls_are_health_records/)

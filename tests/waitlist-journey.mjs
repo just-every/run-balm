@@ -56,6 +56,22 @@ export async function waitlistPreferencesJourney(h) {
  const competitor=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-03-01',time:'09:00'})
  await refuse()
  await h.cmd('appointment.cancel',{id:competitor.appointmentId,reason:'Synthetic opening restored'})
+ // Authorization is checked again after delivery, with no new booking on refusal.
+ const payer=await h.cmd('insurance.payer.save',{name:'Synthetic waitlist Medicare',payerId:'SYNTHETICBALM507',receiverId:'CMS',unitMethod:'cms',medicare:true})
+ const policyInput=clientId=>({clientId,payerId:payer.id,memberId:'synthetic-balm-508',relationship:'18',patientSex:'M',address:'1 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2099-01-01',endsOn:'2099-12-31'})
+ const policy=await h.cmd('insurance.policy.save',policyInput(match.id))
+ await h.cmd('insurance.authorization.save',{policyId:policy.id,number:'synthetic-balm-509',startsOn:'2099-01-01',endsOn:'2099-12-31',visits:1,bookingAction:'block'})
+ const reserved=await h.cmd('appointment.book',{clientId:match.id,practitionerId:p.id,serviceId:service.id,date:'2099-11-07',time:'12:00',acknowledgeInsurance:'on'})
+ const reservedCount=await count()
+ assert.equal((await h.form(links[3],{})).status,409)
+ assert.equal(await count(),reservedCount,'an exhausted authorization cannot be bypassed by an old offer')
+ await h.cmd('appointment.cancel',{id:reserved.appointmentId,reason:'Synthetic reservation released'})
+ // Capacity left does not authorize overlapping two Medicare patients.
+ await h.cmd('capacity.save',{practitionerId:p.id,capacity:2})
+ await h.cmd('capacity.save',{serviceId:service.id,capacity:2})
+ await h.cmd('insurance.policy.save',policyInput(source.id))
+ await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-11-08',time:'09:00',acknowledgeInsurance:'on'})
+ await refuse(links[3])
  // A delivered link cannot revive an entry removed by staff.
  await h.cmd('waitlist.remove',{id:added.id})
  await refuse(links[1])

@@ -161,3 +161,7 @@ MOVE-006 historical invoice carry uses the same Lander-Regenerate command:
 `node scripts/contract-docs.mjs write MOVE-006`, then
 `node scripts/contract-docs.mjs check MOVE-006`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+SCHED-005 preference evidence uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write SCHED-005`, then
+`node scripts/contract-docs.mjs check SCHED-005`. The default check retains this adopted projection.

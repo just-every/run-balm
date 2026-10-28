@@ -146,7 +146,7 @@ async function offerByToken(db: D1Database, token: string) {
     (SELECT 1 FROM bm_intake_responses i WHERE i.client_id=w.client_id AND i.form_id=(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1) LIMIT 1) AS intake_on_file,
     (SELECT a.intake_token_hash IS NOT NULL FROM bm_appointments a WHERE a.id=o.appointment_id) AS intake_requested
     FROM bm_offer_recipients r JOIN bm_offers o ON o.id=r.offer_id JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id
-    JOIN bm_services s ON s.id=w.service_id JOIN bm_staff p ON p.id=o.practitioner_id, bm_settings st WHERE c.erased_at IS NULL AND r.offer_token_hash=?`, await sha256(token))
+    JOIN bm_services s ON s.id=w.service_id JOIN bm_staff p ON p.id=o.practitioner_id, bm_settings st WHERE c.erased_at IS NULL AND r.offer_authority=1 AND r.offer_token_hash=?`, await sha256(token))
   insist(row, 'offer_not_found', 404)
   return row
 }
