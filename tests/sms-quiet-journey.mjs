@@ -18,6 +18,7 @@ export async function smsQuietFixture(h) {
 }
 
 export async function smsQuietJourney() {
+ await smsBacklogJourney()
  const edge=fakeProviders();let loseResponse=false
  const h=await harness({entry:'tests/sms-quiet-worker.ts',auth:smsAuth,outbound:async request=>{
   const response=await edge.handler(request)
@@ -112,5 +113,40 @@ export async function smsQuietJourney() {
   await h.cmd('reminders.quiet_hours',quietPolicy,h.owner,409,{'x-synthetic-revoke':h.auth.OWNER_EMAIL})
   assert.equal((await h.state(await h.signIn(h.auth.OWNER_EMAIL))).reminders.sms_quiet_policy_id,original,'live owner revocation rolls back the complete policy write')
   assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM bm_audit WHERE action='sms.quiet_policy_recorded'").first()).n,4)
+ } finally {await h.close()}
+}
+
+export async function smsBacklogJourney() {
+ const edge=fakeProviders(),h=await harness({auth:smsAuth,outbound:edge.handler})
+ try {
+  const c=await smsQuietFixture(h)
+  await h.cmd('reminders.quiet_hours',quietPolicy)
+  await h.cmd('client.save',{...c.fields,id:c.patient.id,smsTimeZone:'America/New_York'})
+  await h.cmd('capacity.save',{practitionerId:c.priya.id,capacity:10})
+  await h.cmd('capacity.save',{serviceId:c.service.id,capacity:10})
+  const missingZone=[]
+  for(let i=0;i<10;i++){
+   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Backlog '+i,phone:'+13125550199'})
+   missingZone.push(patient.id)
+   await h.cmd('reminders.consent',{clientId:patient.id,consent:true})
+   for(const time of ['09:00','10:00','11:00','12:00','13:00'])await h.cmd('appointment.book',{
+    clientId:patient.id,practitionerId:c.priya.id,serviceId:c.service.id,date:'2031-01-11',time,
+   })
+  }
+  const eligible=await h.cmd('appointment.book',{clientId:c.patient.id,practitionerId:c.priya.id,serviceId:c.service.id,date:'2031-01-11',time:'15:30'})
+  const tick=async at=>(await h.mf.getWorker()).scheduled({scheduledTime:Date.parse(at),cron:'* * * * *'})
+  // Drain ordinary email batches too: refused texts must never hold the scheduler's queue forever.
+  for(const at of ['2031-01-10T13:00:00Z','2031-01-10T13:01:00Z','2031-01-10T13:02:00Z'])await tick(at)
+  assert.equal(edge.texts.length,1,'50 older missing-zone reminders must not starve an eligible same-day visit')
+  const history=(await h.send('/api/balm/clients/'+c.patient.id,undefined,h.owner)).value.reminderHistory
+  assert.equal(history.find(r=>r.appointment_id===eligible.appointmentId&&r.channel==='sms').state,'sent')
+  const refused=(await h.db.prepare("SELECT r.state,r.attempted_at,r.sent_at,r.outcome,l.reminder_id FROM bm_visit_reminders r JOIN bm_appointments a ON a.id=r.appointment_id LEFT JOIN bm_visit_reply_links l ON l.reminder_id=r.id WHERE r.channel='sms' AND a.client_id<>?").bind(c.patient.id).all()).results
+  assert.equal(refused.length,50)
+  assert.ok(refused.every(r=>r.state==='pending'&&r.attempted_at===null&&r.sent_at===null&&r.reminder_id===null&&/IANA time zone/.test(r.outcome)),'refused reminders stay recoverable without a provider attempt or reply link')
+  await h.cmd('client.save',{id:missingZone[0],firstName:'Synthetic',lastName:'Backlog 0',phone:'+13125550199',smsTimeZone:'America/New_York'})
+  await tick('2031-01-10T13:03:00Z')
+  assert.equal(edge.texts.length,6,'recording the missing zone makes those five reminders eligible on the next dispatch')
+  await tick('2031-01-10T13:04:00Z')
+  assert.equal(edge.texts.length,6,'successful reminders remain once-only while other rows are still refused')
  } finally {await h.close()}
 }
