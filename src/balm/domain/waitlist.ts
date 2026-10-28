@@ -2,6 +2,7 @@
 // the next turn starts; accepting closes the opening in the booking batch.
 import { hostDateAt, weekdayForDate, zonedParts } from '../availability/timezone'
 import { appointmentStatements, intakeToken, placementGuards, placeVisit, settings } from './booking'
+import { waitlistHolds } from '../scheduling/waitlist-holds'
 import { medicareOverlaps } from '../scheduling/capacity'
 import { clientVisible } from './clients'
 import { selfServiceSnapshot } from '../scheduling/self-service-policy'
@@ -137,9 +138,11 @@ export async function advanceOffers(db: D1Database, offerIds?: string[]): Promis
   const candidates=Date.parse(at)<closesAt(offer)?await rows(db,`SELECT w.*,r.position,c.email,c.first_name,s.name AS service,s.duration_minutes,p.name AS practitioner FROM bm_offer_recipients r
    JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id JOIN bm_staff p ON p.id=?
    WHERE r.offer_id=? AND r.offer_authority=1 AND r.activated_at IS NULL AND r.outcome IS NULL AND w.status='waiting' AND c.erased_at IS NULL AND c.email IS NOT NULL AND s.active=1 AND p.active=1 AND p.erased_at IS NULL ORDER BY r.position`,offer.practitioner_id,offer.id):[]
+  const held=await waitlistHolds(db,offer.practitioner_id,null,offer.id)
   let next: Data|undefined
   for(const entry of candidates){
    if(!preferencesFit(entry,offer.start_at,entry.duration_minutes,zone,offer.practitioner_id))continue
+   if(held.some(h=>h.client_id===entry.client_id&&h.start_at<new Date(Date.parse(offer.start_at)+entry.duration_minutes*60000).toISOString()&&h.end_at>offer.start_at))continue
    const warnings=await bookingWarnings(db,entry.client_id,hostDateAt(new Date(offer.start_at),zone),offer.practitioner_id)
    if(warnings.some(w=>w.blocking))continue
    const place=await placeVisit(db,zone,{practitionerId:offer.practitioner_id,serviceId:entry.service_id,durationMinutes:entry.duration_minutes,date:hostDateAt(new Date(offer.start_at),zone),minute:localMinute(offer.start_at,zone),roomId:offer.room_id,offerId:offer.id})
@@ -153,7 +156,7 @@ export async function advanceOffers(db: D1Database, offerIds?: string[]): Promis
     guard(db,"EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open' AND revision=?)",offer.id,offer.revision),
     ...(current?[stmt(db,"UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL",at,offer.id,offer.active_entry_id),audit(db,{email:'balm',role:'waitlist'},'waitlist.turn_ended',current.client_id,offer.id)]:[]),
     ...(next?[
-     ...await placementGuards(db,{practitionerId:offer.practitioner_id,serviceId:next.service_id,startAt:offer.start_at,endAt:next.endAt,roomId:offer.room_id,offerId:offer.id}),
+     ...await placementGuards(db,{practitionerId:offer.practitioner_id,serviceId:next.service_id,startAt:offer.start_at,endAt:next.endAt,roomId:offer.room_id,offerId:offer.id,clientId:next.client_id}),
      guard(db,"EXISTS(SELECT 1 FROM bm_offer_recipients WHERE offer_id=? AND entry_id=? AND offer_authority=1 AND activated_at IS NULL AND outcome IS NULL)",offer.id,next.id),
      stmt(db,'UPDATE bm_offers SET active_entry_id=?,hold_until=?,hold_end_at=?,revision=revision+1 WHERE id=?',next.id,expires,next.endAt,offer.id),
      stmt(db,"UPDATE bm_offer_recipients SET offer_token_hash=?,activated_at=?,expires_at=?,delivery='pending' WHERE offer_id=? AND entry_id=?",await sha256(token),at,expires,offer.id,next.id),

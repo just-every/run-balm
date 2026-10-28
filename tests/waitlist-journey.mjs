@@ -24,9 +24,11 @@ export async function waitlistPreferencesJourney(h) {
  await h.cmd('waitlist.add',{...input(earlyEnd.id),timeUntil:'09:44'})
  const removedEntry=await h.cmd('waitlist.add',input(removed.id))
  await h.cmd('waitlist.remove',{id:removedEntry.id})
+ let competitor
  const cancel=async(date,time='09:00')=>{
   const booked=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date,time})
   const before=h.mail.length
+  if(date==='2099-03-01')competitor=await h.cmd('appointment.book',{clientId:removed.id,practitionerId:p.id,serviceId:service.id,date,time})
   await h.cmd('appointment.cancel',{id:booked.appointmentId,reason:'Synthetic opening'})
   return h.mail.slice(before).filter(m=>m.subject.startsWith('A time opened up'))
  }
@@ -59,10 +61,12 @@ export async function waitlistPreferencesJourney(h) {
  await h.cmd('service.save',{id:service.id,name:'Waitlist follow-up',durationMinutes:45,priceCents:9500})
  // The original recipient must not lose an active hold to a staff booking.
  await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-03-01',time:'09:00'},h.owner,409)
- await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE start_at='2099-03-01T14:00:00.000Z'").bind(new Date(Date.now()-60000).toISOString()).run()
  await h.cmd('capacity.save',{practitionerId:p.id,capacity:1})
- const competitor=await h.cmd('appointment.book',{clientId:source.id,practitionerId:p.id,serviceId:service.id,date:'2099-03-01',time:'09:00'})
+ const liveOffer=(await h.state()).waitlist.offers.find(o=>o.start_at==='2099-03-01T14:00:00.000Z')
+ assert.ok(Date.parse(liveOffer.hold_until)>Date.now(),'capacity refusal starts with an unexpired hold')
+ assert.match((await h.send(links[0])).text,/A time opened up/)
  await refuse()
+ assert.equal((await h.state()).waitlist.offers.find(o=>o.id===liveOffer.id).status,'closed','capacity validation closes the unavailable opening')
  await h.cmd('appointment.cancel',{id:competitor.appointmentId,reason:'Synthetic opening restored'})
  // Authorization is checked again after delivery, with no new booking on refusal.
  const payer=await h.cmd('insurance.payer.save',{name:'Synthetic waitlist Medicare',payerId:'SYNTHETICBALM507',receiverId:'CMS',unitMethod:'cms',medicare:true})
@@ -87,6 +91,7 @@ export async function waitlistPreferencesJourney(h) {
  const history=(await h.state()).waitlist.entries.find(e=>e.id===added.id)
  assert.deepEqual([history.status,JSON.parse(history.preferred_weekdays),history.preferred_start_minute,history.preferred_end_minute],['removed',[0],540,585])
  await waitlistTurnCompatibility(h,p,source)
+ await waitlistCapacityOpeningsJourney(h)
 }
 
 // Retain the original competing-recipient guarantee for pre-migration links,
@@ -129,4 +134,36 @@ async function waitlistTurnCompatibility(h,p,source) {
  const advanced=h.mail.slice(before).filter(m=>m.subject.startsWith('A time opened up'))
  assert.deepEqual(advanced.map(m=>m.to[0]),[['synthetic-balm-531','patient.example'].join('@')],'removal advances once to the next eligible patient')
  assert.equal((await h.form(old,{})).status,409,'a removed turn cannot accept the successor hold')
+}
+
+// Two cancellations at the same time each retain their available capacity.
+export async function waitlistCapacityOpeningsJourney(h) {
+ const service=await h.cmd('service.save',{name:'Synthetic capacity follow-up',durationMinutes:45,priceCents:9500})
+ const p=await h.staff('SyntheticCapacity','practitioner',{discipline:'pt',profession:'Physical therapist'})
+ await h.cmd('hours.save',{practitionerId:p.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
+ await h.cmd('capacity.save',{practitionerId:p.id,capacity:2})
+ await h.cmd('capacity.save',{serviceId:service.id,capacity:2})
+ const people=[]
+ for(const n of [540,541,542,543,544])people.push(await h.cmd('client.save',{firstName:'Synthetic',lastName:'Capacity '+n,email:['synthetic-balm-'+n,'patient.example'].join('@')}))
+ const date='2099-12-06',time='09:00'
+ const visits=[]
+ for(const person of people.slice(0,2))visits.push(await h.cmd('appointment.book',{clientId:person.id,practitionerId:p.id,serviceId:service.id,date,time}))
+ for(const person of people.slice(2))await h.cmd('waitlist.add',{clientId:person.id,practitionerId:p.id,serviceId:service.id,earliestDate:date,latestDate:date})
+ const before=h.mail.length
+ for(const visit of visits)await h.cmd('appointment.cancel',{id:visit.appointmentId,reason:'Synthetic simultaneous opening'})
+ const mails=h.mail.slice(before).filter(m=>m.subject.startsWith('A time opened up'))
+ assert.equal(mails.length,2,'both canceled capacity places are offered')
+ assert.deepEqual(mails.map(m=>m.to[0]),[542,543].map(n=>['synthetic-balm-'+n,'patient.example'].join('@')),'each opening holds a different matching patient in order')
+ const links=mails.map(offerPath)
+ const state=await h.state(),offers=state.waitlist.offers.filter(o=>visits.some(v=>v.appointmentId===o.source_appointment_id))
+ assert.equal(offers.filter(o=>o.status==='open'&&Date.parse(o.hold_until)>Date.now()).length,2)
+ const answers=await Promise.all(links.map(path=>h.form(path,{})))
+ assert.deepEqual(answers.map(r=>r.status),[303,303],'both patients can accept their held opening')
+ const booked=(await h.state()).appointments.filter(a=>a.practitioner_id===p.id&&a.status==='booked')
+ assert.equal(booked.length,2)
+ assert.deepEqual(booked.map(a=>a.client_id).sort(),people.slice(2,4).map(p=>p.id).sort())
+ assert.equal(new Set(booked.map(a=>a.start_at)).size,1)
+ for(const link of links){assert.match((await h.send(link)).text,/You're booked/);assert.equal((await h.form(link,{})).status,409)}
+ await h.cmd('appointment.book',{clientId:people[4].id,practitionerId:p.id,serviceId:service.id,date,time},h.owner,409)
+ assert.equal((await h.state()).appointments.filter(a=>a.practitioner_id===p.id&&a.status==='booked').length,2,'replay and a third patient create no extra visit')
 }

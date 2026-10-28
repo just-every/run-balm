@@ -122,7 +122,7 @@ export async function patientPlacement(db: D1Database, row: Data, input: Data) {
   return { startAt: start.toISOString(), endAt: end.toISOString() }
 }
 /** Same-batch fences: neither the practitioner, the room nor the equipment holds another live visit then. */
-export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string; reservationId?: string; offerId?: string }) {
+export async function placementGuards(db: D1Database, v: { practitionerId: unknown; serviceId: unknown; roomId?: unknown; equipmentId?: unknown; startAt: string; endAt: string; except?: string; reservationId?: string; offerId?: string; clientId?: string }) {
   return [
     bookingHoldGuard(db,v),
     waitlistHoldGuard(db,v),
@@ -178,7 +178,9 @@ export async function placeVisit(db: D1Database, zone: string, v: { practitioner
     WHERE a.${column}=? AND ${live.replace(/status/, 'a.status')} AND a.start_at<? AND a.end_at>? AND a.id NOT IN (SELECT value FROM json_each(?)) LIMIT 1`, key, end.toISOString(), start.toISOString(), JSON.stringify(except))
   // SCHED-010: up to the practitioner's and services' capacity at every instant.
   const { capacity } = await capacityOf(db, v.practitionerId, v.serviceId)
-  const full = overflow(await liveVisits(db, v.practitionerId, start.toISOString(), end.toISOString(), except), capacity, start.toISOString(), end.toISOString())
+  const held = await waitlistHolds(db,v.practitionerId,v.roomId,v.offerId)
+  const visits = await liveVisits(db, v.practitionerId, start.toISOString(), end.toISOString(), except)
+  const full = overflow([...visits,...(v.offerId ? held.filter(h=>h.practitioner_id===v.practitionerId) : [])], capacity, start.toISOString(), end.toISOString())
   if (full) return { start, end, problem: 'practitioner_already_booked', clash: await overlapping('practitioner_id', v.practitionerId) ?? undefined }
   if (v.roomId) {
     const clash = await overlapping('room_id', v.roomId)
@@ -188,7 +190,7 @@ export async function placeVisit(db: D1Database, zone: string, v: { practitioner
     const clash = await overlapping('equipment_id', v.equipmentId)
     if (clash) return { start, end, problem: 'equipment_in_use', clash }
   }
-  if ((await waitlistHolds(db,v.practitionerId,v.roomId,v.offerId)).some(h=>h.start_at<end.toISOString()&&h.end_at>start.toISOString())) return {start,end,problem:'waitlist_time_held'}
+  if (held.some(h=>h.start_at<end.toISOString()&&h.end_at>start.toISOString()&&(!v.offerId||v.roomId&&h.room_id===v.roomId))) return {start,end,problem:'waitlist_time_held'}
   return { start, end }
 }
 export function intakeToken() {
