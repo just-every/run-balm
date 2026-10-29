@@ -175,3 +175,10 @@ HIPAA-005 uses the same Lander-Regenerate entry point:
 in archives; patient mode and deployment qualification are excluded. Regenerate
 the source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
 `check`.
+
+AGENT-002 care continuity uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write AGENT-002`, then
+`node scripts/contract-docs.mjs check AGENT-002`. Historical preparations and
+approvals travel in archives with review authority disabled. Regenerate the
+source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
+`check`.
