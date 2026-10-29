@@ -1,3 +1,4 @@
+import { eftView } from './eft-reconciliation'
 import { audit, commit, day, guard, human, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 
 const owner = (who: Actor) => { human(who); insist(who.role === 'owner', 'only_the_owner_reviews_finance', 403) }
@@ -70,7 +71,7 @@ export async function payoutView(db: D1Database, who: Actor, inputMonth: unknown
     WHERE o.kind='card' AND c.erased_at IS NULL AND substr(o.occurred_on,1,7)<=? ORDER BY o.occurred_on,o.id`, month)
   const reviews = await readReviews(db,month)
   await commit(db,who,[audit(db,who,'finance.payouts_read',null,null,month)])
-  return {month,payouts,sources,observations,reviews}
+  return {month,payouts,sources,observations,reviews,efts:await eftView(db,month)}
 }
 
 export async function payoutCommand(db: D1Database, who: Actor, name: string, input: Data) {

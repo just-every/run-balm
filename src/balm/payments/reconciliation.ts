@@ -1,3 +1,4 @@
+import { eftCommand, prepareEfts } from './eft-reconciliation'
 import { payoutCommand, preparePayouts } from './payout-reconciliation'
 import { audit, commit, day, guard, human, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { clientVisible } from '../domain/clients'
@@ -5,6 +6,7 @@ import { requireScope } from '../portal/integrations'
 
 function owner(who: Actor) { human(who); insist(who.role==='owner','only_the_owner_reviews_finance',403) }
 export async function reconciliationCommand(db: D1Database,who: Actor,name: string,input: Data) {
+  if(name.startsWith('finance.eft.')) return eftCommand(db,who,name,input)
   if(name.startsWith('finance.payout.')) return payoutCommand(db,who,name,input)
   if(name==='finance.reconcile.prepare') {
     if(who.role==='agent')requireScope(who,'finance.reconcile.prepare');else owner(who)
@@ -12,10 +14,15 @@ export async function reconciliationCommand(db: D1Database,who: Actor,name: stri
     insist(/^\d{4}-(0[1-9]|1[0-2])$/.test(month),'invalid_month')
     const observations=await rows(db,'SELECT o.* FROM bm_finance_observations o JOIN bm_clients c ON c.id=o.client_id WHERE c.erased_at IS NULL AND substr(o.occurred_on,1,7)=? ORDER BY o.id',month)
     const sources=await rows(db,'SELECT s.* FROM bm_finance_sources s JOIN bm_clients c ON c.id=s.client_id WHERE c.erased_at IS NULL AND substr(s.occurred_on,1,7)=? ORDER BY s.id',month)
-    // Each recorded amount appears once. Matching is an explanation, never execution authority.
+    // Current-month rows are explained once; cited related originals can be from earlier periods.
+    const references=JSON.stringify([...observations,...sources].map(s=>[s.client_id,s.source_reference]))
+    const related=(table:string)=>rows(db,`SELECT s.* FROM ${table} s JOIN bm_clients c ON c.id=s.client_id
+      WHERE c.erased_at IS NULL AND substr(s.occurred_on,1,7)<=? AND (s.client_id,s.source_reference) IN
+      (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?)) ORDER BY s.occurred_on,s.id`,month,references)
+    const [allObservations,allSources]=await Promise.all([related('bm_finance_observations'),related('bm_finance_sources')])
     const matching: Data[]=[]
     const groups=new Map<string,Data[]>()
-    for(const source of [...observations,...sources]) {
+    for(const source of [...allObservations,...allSources]) {
       const key=JSON.stringify([source.client_id,source.source_reference])
       groups.set(key,[...(groups.get(key)??[]),source])
     }
@@ -24,7 +31,7 @@ export async function reconciliationCommand(db: D1Database,who: Actor,name: stri
       const card=sum('card'),charge=sum('charge'),accounting=sum('accounting'),payout=sum('payout')
       const fees=group.filter(x=>x.kind==='payout').reduce((total,x)=>total+Number(x.fee_cents),0)
       const present=(kind:string)=>group.some(x=>x.kind===kind)
-      for(const source of group) {
+      for(const source of group.filter(s=>s.occurred_on.slice(0,7)===month)) {
         const gaps:string[]=[]
         if(present('eft')&&present('card'))gaps.push('Mixed EFT and card originals require owner review.')
         if(source.kind==='eft'||source.kind==='accounting'&&present('eft')&&!present('card')) {
@@ -57,7 +64,7 @@ export async function reconciliationCommand(db: D1Database,who: Actor,name: stri
         const found=await one(db,"SELECT m.id FROM bm_insurance_imports m JOIN bm_remittance_claims r ON r.import_id=m.id JOIN bm_claims c ON c.id=r.claim_id WHERE m.kind='835' AND m.trace=? AND m.amount_cents=? AND c.client_id=?",o.source_reference,o.amount_cents,o.client_id)
         if(!found)findings.push({observation:o,kind:'missing_era',explanation:'Recorded EFT '+o.reference+' has no matching ERA trace and amount. Claims remain unchanged.',requestDraft:'Please provide the ERA for EFT trace '+o.source_reference+' and amount '+o.amount_cents+' cents.',citations:[o.id,o.reference,o.source_reference]})
       }else{
-        const original=observations.find(x=>x.kind==='card'&&x.client_id===o.client_id&&x.source_reference===o.source_reference&&x.amount_cents===o.amount_cents&&x.id<o.id)
+        const original=allObservations.find(x=>x.kind==='card'&&x.client_id===o.client_id&&x.source_reference===o.source_reference&&x.amount_cents===o.amount_cents&&(x.occurred_on<o.occurred_on||x.occurred_on===o.occurred_on&&x.id<o.id))
         if(original)findings.push({observation:o,kind:'possible_duplicate_card',explanation:'Two distinct settlement references cite the same patient, original charge and amount. Review the provider originals before any refund.',refundDraft:{amountCents:o.amount_cents,settlementReference:o.reference,originalCharge:o.source_reference,action:'Owner must verify and separately execute any refund in Stripe; nothing is refunded here.'},citations:[original.id,o.id,original.reference,o.reference,o.source_reference]})
       }
     }
@@ -69,7 +76,7 @@ export async function reconciliationCommand(db: D1Database,who: Actor,name: stri
     statements.push(...[...new Set([...observations,...sources].map(o=>o.client_id))].map(clientId=>audit(db,who,'finance.reconciled',clientId,null,month)))
     await commit(db,who,statements)
     const result=await rows(db,'SELECT r.id,r.client_id,r.kind,r.payload,r.sha256,r.approved_by FROM bm_finance_reviews r JOIN bm_finance_observations o ON o.id=r.observation_id WHERE substr(o.occurred_on,1,7)=? ORDER BY r.id',month)
-    return {month,matching,payouts:await preparePayouts(db,who,month),recordedOnly:true,findings:result.map(r=>({...r,payload:JSON.parse(r.payload)})),outbound:'No request sent and no refund executed.'}
+    return {month,matching,payouts:await preparePayouts(db,who,month),efts:await prepareEfts(db,who,month),recordedOnly:true,findings:result.map(r=>({...r,payload:JSON.parse(r.payload)})),outbound:'No request sent and no refund executed.'}
   }
   owner(who)
   if(name==='finance.source.record') {

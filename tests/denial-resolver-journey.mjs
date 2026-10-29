@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {clinic,pastVisit} from './clinic.mjs'
 const fixture=async(name,claim)=>(await readFile(new URL('./fixtures/insurance/'+name,import.meta.url),'utf8')).replaceAll('{{CLAIM}}',claim)
-export async function denialFixture(h){
+export async function denialFixture(h,{clinicSetup}={}){
  await h.finishSetup()
- const {service,practitioners:[priya]}=await clinic(h)
+ const {service,practitioners:[priya]}=clinicSetup??await clinic(h)
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
  await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
  await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})

@@ -60,7 +60,7 @@ export async function importRemittance(db:D1Database,who:Actor,input:Data) {
       stmt(db,'INSERT INTO bm_claim_events(id,claim_id,kind,detail,created_at) VALUES(?,?,?,?,?)',id(),claim.id,'835',JSON.stringify(r),at),audit(db,who,'insurance.remittance_posted',claim.client_id,claim.id))
     outcomes.push({id:claim.id,policyId:claim.policy_id,crossover,forwardedTo:forwarded?.policy_id??null,status,paidCents:r.paidCents,adjustmentCents:writeoff,patientResponsibilityCents:r.prCents,errors})
   }
-  statements.push(stmt(db,'INSERT INTO bm_runout_deposits(import_id,native_cents) VALUES(?,?)',key,outcomes.filter(o=>!('migrated' in o)&&!('suspense' in o)).reduce((sum,o)=>sum+o.paidCents,0)))
+  statements.push(stmt(db,'INSERT INTO bm_runout_deposits(import_id,native_cents,billed_cents,adjustment_cents,responsibility_cents,claim_count) VALUES(?,?,?,?,?,?)',key,outcomes.filter(o=>!('migrated' in o)&&!('suspense' in o)).reduce((sum,o)=>sum+o.paidCents,0),parsed.claims.reduce((n,c)=>n+c.chargeCents,0),parsed.claims.reduce((n,c)=>n+c.adjustments.filter(a=>a.group!=='PR').reduce((t,a)=>t+a.amountCents,0),0),parsed.claims.reduce((n,c)=>n+c.prCents,0),parsed.claims.length))
   await commit(db,who,statements)
   return {id:key,depositCents:parsed.amountCents,claims:outcomes,duplicate:false}
 }

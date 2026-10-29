@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "218b72c9e95f4d2de812f135e142af301b59d55730304995c56a84ac22b97114",
+      "sha256": "c7020776c58153524e87846720df5c87ff954397dfc9fd5d64a7833c96ff2c8b",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "8d1edb53d52b2dd5a50c3f57e490861414292b9184c93d028761d9c5253d4017",
+      "sha256": "db3be731151226058a2a0594c66fa87e44045ccee4e38a47401fbab2d7e7cdb0",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "1a0bfe950a98aa8fd48cd17fa8e592c2c2642af8a4baed16ef14b4e6f268e9a9",
+      "sha256": "dbfa3d8b410406c05c1d8aaa7e3e60be53baeb933ed684e3f80f796b0fbc306a",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -839,6 +839,10 @@
     },
     "migrations/core/0130_balm_payout_reconciliation.sql": {
       "sha256": "04dbb0bcbc3e404d334baaa27e58ecd6775c6f0c048dfc8c8cf73ec304eb4c11",
+      "executable": false
+    },
+    "migrations/core/0131_balm_cross_period_payouts.sql": {
+      "sha256": "2ab512e9f5f823a1f2904a1a1fa31de8783124e101d35f430a83e9277f9d38aa",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -2258,7 +2262,7 @@
       "executable": false
     },
     "src/balm/insurance/remittances.ts": {
-      "sha256": "8ef1c0ca370e42da8a37533679842ec01977dffe3935b3555105ec27db4c8de8",
+      "sha256": "8736b4778df1f7eb5243c8fcdab88166cc70d1c9e0ad749035fb298e13966c06",
       "executable": false
     },
     "src/balm/insurance/runout.ts": {
@@ -2586,7 +2590,7 @@
       "executable": false
     },
     "src/balm/payments/payout-reconciliation.ts": {
-      "sha256": "6e44e2b67054362cf73068223d7b3a0b4704ad198ff76f174e5bb14fddcb5bb4",
+      "sha256": "4df08de750d26721358c7667cf2f1b34d013409db717f571dc5dfd3663221eb6",
       "executable": false
     },
     "src/balm/payments/pdf.ts": {
@@ -2610,7 +2614,7 @@
       "executable": false
     },
     "src/balm/payments/reconciliation.ts": {
-      "sha256": "241a59aeb7bf892665e97504747e17706add61271e588966a2cbee1e6aa989dd",
+      "sha256": "1be714a60277f41a15f73ed032a0ac81391592f9fb86f644862fc79d03cffc58",
       "executable": false
     },
     "src/balm/payments/refunds.ts": {
@@ -3050,7 +3054,7 @@
       "executable": false
     },
     "src/balm/ui/finance-reconciliation.ts": {
-      "sha256": "9b7e20308a9ae49d024a790d5b42e5e47234d28faa8612a2b30370409b859e97",
+      "sha256": "17dbce54e3cdb995ebc8bd3f183794d8aebb76bf3e04b89e488a823557fd6978",
       "executable": false
     },
     "src/balm/ui/financial-reports.ts": {
@@ -5434,7 +5438,7 @@
       "executable": false
     },
     "tests/agent-migration-browser.mjs": {
-      "sha256": "8f278c956bf40a78c6301d5abcb319a2a88a7e7323c03dec117eff0d98612823",
+      "sha256": "2031dc7528e3eabbb549812ce8282efb55f8037e481fdae487764097af4c07d7",
       "executable": false
     },
     "tests/alerts.test.mjs": {
@@ -5442,7 +5446,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "a0365205c0017516c21059c6703876a05c6fe9915700cd4dca62169909f2c4da",
+      "sha256": "0ec4f67b2351c7aeb2b92b60e87d64f8188658b4026e71af0063af92526d6689",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5574,7 +5578,7 @@
       "executable": false
     },
     "tests/denial-resolver-journey.mjs": {
-      "sha256": "f4bb2322bf671bcc6b52cbf001f6d9483f230bd8fb5e63aba19d831b993ac8c0",
+      "sha256": "8ee066ac23a5b7e28fd074048effc530e0c8c5e9e331c5325dd0286d034d4539",
       "executable": false
     },
     "tests/denial-work-browser.mjs": {
@@ -5622,7 +5626,7 @@
       "executable": false
     },
     "tests/finance-review-journey.mjs": {
-      "sha256": "b0d707e770572cf877d1f1d4a39d4554de3309c4c96b3c590f2f532f1e9cf213",
+      "sha256": "bfee09c77ef08699f468013b8d3044999bb3be349f14b6864513714d9bd12bc0",
       "executable": false
     },
     "tests/fixtures/cliniko-export-us.csv": {
@@ -5878,7 +5882,7 @@
       "executable": false
     },
     "tests/retention.test.mjs": {
-      "sha256": "ebc1d9b17a872551a393d550ae4942a2de8254ce9bc0ef6b8d472af90f4ef50e",
+      "sha256": "8a4347885455830ef738acf6f980765834bbfc32b3227579cadc55be7a5a0799",
       "executable": false
     },
     "tests/runtime.mjs": {

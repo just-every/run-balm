@@ -12,7 +12,7 @@ export function financeReconciliation(s: any) {
     +field('reference','Settlement reference','','text','required maxlength="120"')+field('sourceReference','Original charge or EFT trace','','text','required maxlength="120"')+original,'Record settlement')
     +'<h3>Allocated source original</h3>'+form('finance.source.record',path,patient+select('kind','Source kind',[['payout','Allocated payout portion'],['charge','Charge original'],['accounting','Accounting original']])
     +field('amount','Recorded net or original amount (USD)','','number','required min="0.01" step="0.01"')+field('fee','Recorded portion fee (USD)','0.00','number','required min="0" step="0.01"')
-    +field('reference','Unique source reference','','text','required maxlength="120"')+field('sourceReference','Original charge reference','','text','required maxlength="120"')+original
+    +field('reference','Unique source reference','','text','required maxlength="120"')+field('sourceReference','Original charge or EFT trace','','text','required maxlength="120"')+original
     +check('confirm','I reviewed this allocated original; recording it moves no money.'),'Record source original')+'</details>'
   const record = '<details><summary>Record whole payout</summary>'+form('finance.payout.record',path,
     field('accountReference','Practice processor account','','text','required maxlength="120"')+field('payoutReference','Whole payout reference','','text','required maxlength="120"')
@@ -41,5 +41,38 @@ export function financeReconciliation(s: any) {
   return panel('Recorded payout comparisons','<p>Compare owner-recorded originals. This does not verify Stripe or a bank, correct allocations, change balances, send a request or execute a refund.</p>'
     +`<form method="get" action="/app/reports#finance-reconciliation">${field('payoutMonth','Payout month',v.month,'month','required')}<button type="submit">Show payout month</button></form>`
     +sources+record+(payouts||empty('No whole payout recorded for this month.'))
-    +form('finance.reconcile.prepare',path,hidden('month',v.month),'Prepare cited comparisons')+(reviews||empty('No saved payout comparison.')),'full','finance-reconciliation')
+    +form('finance.reconcile.prepare',path,hidden('month',v.month),'Prepare cited comparisons')+(reviews||empty('No saved payout comparison.'))+eftComparisons(v.efts,path,original),'full','finance-reconciliation')
+}
+
+/** EFT records use the same labelled native forms and disclosures as card payouts. */
+function eftComparisons(v:any,path:string,original:string) {
+ if(!v)return ''
+ const record='<details><summary>Record whole EFT</summary>'+form('finance.eft.record',path,
+   field('accountReference','Practice bank account reference','','text','required maxlength="120"')+select('payerId','Payer',v.payers.map((p:any)=>[p.id,p.name]))
+   +field('trace','EFT trace','','text','required maxlength="120"')+field('amount','Recorded deposit (USD)','','number','required min="0.01" step="0.01"')+original
+   +check('confirm','I reviewed this recorded bank deposit; no bank or payer action is authorized.'),'Record whole EFT')+'</details>'
+ const deposits=v.deposits.map((d:any)=>{
+  const common=hidden('eftId',d.id)+hidden('accountReference',d.account_reference)+hidden('trace',d.trace)
+  return entry('EFT · '+d.trace,`<p>${h(d.payer_name)} · ${h(d.account_reference)} · ${h(d.occurred_on)} · ${money(d.amount_cents)}.</p><p>${h(d.evidence)}</p>`
+   +'<details><summary>Link imported ERA</summary>'+form('finance.eft.era.link',path,common
+    +select('importId','Imported remittance',v.imports.filter((m:any)=>m.payer_id===d.payer_id&&m.trace===d.trace).map((m:any)=>[m.id,`${m.trace} · ${money(m.amount_cents)} · ${m.sha256}`]))
+    +check('confirm','I checked the bank account, payer and original EFT trace.'),'Link imported ERA')+'</details>'
+   +'<details><summary>Link charge or accounting original</summary>'+form('finance.eft.source.link',path,common
+    +select('sourceId','Recorded source original',v.sources.filter((s:any)=>s.source_reference===d.trace).map((s:any)=>[s.id,`${s.first_name} ${s.last_name} · ${s.kind} · ${s.reference} · ${s.occurred_on} · ${money(s.amount_cents)}`]))
+    +check('confirm','I checked this source original against the bank account and EFT trace.'),'Link EFT source')+'</details>')
+ }).join('')
+ const reviews=[...v.reviews].reverse().map((r:any)=>{
+  const p=r.payload,t=p.totals
+  return entry('EFT comparison · '+p.deposit.trace,status(r.approved_at?'EFT preparation approved':'Preparation only')
+   +`<p>Recorded deposit ${money(t.depositCents)} · imported ERA ${money(t.eraCents)}. Native payments ${money(t.nativeCents)} · migrated payments ${money(t.migratedCents)} · suspense ${money(t.suspenseCents)}.</p>`
+   +(t.eraChargeCents===null?'<p>Original ERA gross-charge arithmetic unavailable.</p>':`<p>Imported billed charges ${money(t.eraChargeCents)} · payer adjustments ${money(t.eraAdjustmentCents)} · patient responsibility ${money(t.eraPatientCents)}. Unmatched billed charges ${money(t.chargeDifferenceCents)}.</p>`)
+   +`<p>Cited billed charges ${money(t.chargeCents)} · accounting ${money(t.accountingCents)}. Unattributed ${money(t.unattributedCents)} · accounting difference ${money(t.accountingDifferenceCents)}.</p>`
+   +'<ul>'+p.explanations.map((x:string)=>`<li>${h(x)}</li>`).join('')+'</ul>'
+   +'<details><summary>EFT originals and approval</summary><p>Deposit: '+h(p.deposit.evidence)+'</p>'
+   +(p.era?`<p>Imported ERA: ${h(p.era.trace)} · digest <code>${h(p.era.sha256)}</code>.</p>`:'<p>No imported ERA linked.</p>')
+   +'<ul>'+p.sources.map((x:any)=>`<li>${h(x.kind)}: ${h(x.reference)} · ${h(x.occurred_on)} · ${money(x.amount_cents)} · ${h(x.evidence)}</li>`).join('')+'</ul>'
+   +`<p>Comparison digest: <code>${h(r.sha256)}</code></p>`
+   +(r.approved_at?`<p>Preparation approved ${h(r.approved_at)}. No request, payment, correction or suspense resolution is authorized.</p>`:form('finance.eft.approve',path,hidden('id',r.id)+hidden('sha256',r.sha256)+check('confirm','Approve only this exact EFT preparation; all execution remains disabled.'),'Approve EFT preparation'))+'</details>')
+ }).join('')
+ return '<h3>Recorded EFT comparisons</h3><p>Keep imported native, migrated and unidentified money separate. Charge originals show billed amounts before adjudication; their total is not the net deposit.</p>'+record+deposits+reviews
 }
