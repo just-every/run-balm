@@ -6398,7 +6398,7 @@
       "executable": false
     },
     "tests/harness.mjs": {
-      "sha256": "052728efbc735f66534b4dd6acaeb04b80596e6c416e8a3e8ecc6c97448519a7",
+      "sha256": "cefab993125e7967d3c95b105287fa3be10311224240568fabe66818dafda316",
       "executable": false
     },
     "tests/insurance.test.mjs": {
