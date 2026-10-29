@@ -1,3 +1,4 @@
+import { payoutView } from './payments/payout-reconciliation'
 import { saveClient } from './domain/clients'
 import { hostingCommand } from './domain/hosting'
 import { previewRetailDestruction, destroyRetailRecords } from './retention/retail'
@@ -137,6 +138,7 @@ async function page(env: Bindings, who: Actor, target: string, notice: Parameter
   }
   if(path==='/app/insurance'&&(who.role==='owner'||biller(who)))s.insurance.work=await claimWork(env.DB,who,Object.fromEntries(new URLSearchParams(query)))
   if (path === '/app/cases' && (who.role === 'owner' || who.staffRole === 'reception' || who.staffKind==='biller')) s.cases = await caseList(env, who)
+  if (path === '/app/reports' && who.role === 'owner') s.payoutReconciliation = await payoutView(env.DB,who,new URLSearchParams(query).get('payoutMonth') ?? new Date().toISOString().slice(0,7))
   if (path === '/app/reports' && who.role === 'owner') s.reports = await operationalReports(env.DB, who, Object.fromEntries(new URLSearchParams(query)))
     .catch(async error => { s.reportError = message(error).text; return operationalReports(env.DB, who, {}) })
   if (path === '/app/reports' && (who.role === 'owner' || biller(who))) s.financial = await financialReports(env.DB, who, s.reports ? { from: s.reports.from, to: s.reports.to } : {})
@@ -575,6 +577,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (!path.endsWith('.csv')) return json(report)
         return new Response(outcomeCsv(report),{headers:{...headers,'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="balm-outcomes.csv"','content-security-policy':"default-src 'none'"}})
       }
+      if (path === '/api/balm/finance/payouts') return json(await payoutView(env.DB,who,url.searchParams.get('month')))
       const financial = path.match(/^\/api\/balm\/reports\/financial\/([a-z-]+)\.csv$/)
       if (financial && (financialKinds as readonly string[]).includes(financial[1])) {
         const report = await financialReports(env.DB, who, Object.fromEntries(url.searchParams))
@@ -650,6 +653,13 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         if (typeof input.price === 'string') input.priceCents = parseDollars(input.price, 'price')
         if (typeof input.amount === 'string' && input.amount.trim()) input.amountCents = parseDollars(input.amount)
         delete input.price; delete input.amount
+        if (name.startsWith('finance.')) {
+          input.confirm = input.confirm === 'on' || input.confirm === true
+          for (const [field,key] of [['gross','grossCents'],['fee','feeCents'],['net','netCents']]) {
+            if (typeof input[field] === 'string') input[key] = parseDollars(input[field],field)
+            delete input[field]
+          }
+        }
         if(name==='service.save'){for(const key of ['practitionerIds','locationIds'])if(input[key]!==undefined)input[key]=input[key+'_item']??[]}
         if(name==='schedule.exception'&&input.mode==='open')input.windows=[{start:input.start,end:input.end}]
         if (['hours.save','location.save'].includes(name) && input.hoursForm === 'on') input.hours = hoursFromForm(input)
