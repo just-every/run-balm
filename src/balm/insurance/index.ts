@@ -16,6 +16,7 @@ export { medicareSpending, medicarePosition } from './medicare'
 import { importEligibility, prepareEligibility, recordEligibility, submitEligibility } from './eligibility'
 import { correctClaim, documentNecessity, draftAppeal, prepareClaim, scrubStoredClaim } from './claims'
 import { prepareBatch, submitBatch } from './batches'
+import { importFunctionalAcknowledgment } from './functional-acknowledgments'
 import { importAcknowledgment } from './acknowledgments'
 import { importRemittance } from './remittances'
 import {draftPayerBatch,addPayerLine,removePayerLine,attachPayerEob} from './manual-payers'
@@ -66,6 +67,7 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.claim.necessity':return documentNecessity(db,who,input)
     case 'insurance.batch.prepare':return prepareBatch(db,who,input)
     case 'insurance.batch.submit':return submitBatch(env,who,input)
+    case 'insurance.functional_acknowledgment.import':return importFunctionalAcknowledgment(db,who,input)
     case 'insurance.acknowledgment.import':return importAcknowledgment(db,who,input)
     case 'insurance.payer_batch.prepare':return draftPayerBatch(db,who,input)
     case 'insurance.payer_line.add':return addPayerLine(db,who,input)
