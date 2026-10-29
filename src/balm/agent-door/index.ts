@@ -31,7 +31,11 @@ export function balmAgentDoor(original:Bindings) {
   })
 }
 export async function agentResponse(request:Request,original:Bindings):Promise<Response|null> {
-  const env=runtimeBindings(original),business=await balmBusiness(env).handle(request)
-  if(business)return business
-  return balmAgentDoor(env).handle(request)
+  const path=new URL(request.url).pathname
+  if(['/api/rer/business-settings','/rer-business-logo','/rer-business.css'].includes(path))return balmBusiness(runtimeBindings(original)).handle(request)
+  const owned=['/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/api/rer/agent-policy','/agents'].includes(path)
+    || path.startsWith('/agents/api/') || /^\/agents\/approvals\/[^/]+$/.test(path)
+  // Unconfigured installations still serve native health, setup and public pages.
+  if(!owned)return null
+  return balmAgentDoor(original).handle(request)
 }
