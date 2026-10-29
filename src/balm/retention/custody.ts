@@ -101,6 +101,8 @@ export const custody = [
   {"table":"bm_medicare_years","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_calls","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_messages","client":true,"links":[["client_id","bm_clients","id"]]},
+  {"table":"bm_inbox_preparations","client":true,"links":[["message_id","bm_messages","id"]]},
+  {"table":"bm_inbox_approvals","client":true,"links":[["preparation_id","bm_inbox_preparations","id"]]},
   {"table":"bm_message_attachments","client":false,"links":[["message_id","bm_messages","id"]]},
   {"table":"bm_message_links","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_movein_invoices","client":true,"links":[["client_id","bm_clients","id"]]},
