@@ -138,7 +138,7 @@
       "executable": false
     },
     "base-copies.json": {
-      "sha256": "3d2b9eb7f9660b4c93b4dbf01eadc5c5c656727577457b548f94ab519bf74df8",
+      "sha256": "7397d467a75d756fb5e6786cea614ca91894de122190d71fad598422f4c9dbfc",
       "executable": false
     },
     "CHANGELOG.md": {
@@ -846,7 +846,7 @@
       "executable": false
     },
     "package.json": {
-      "sha256": "d029163577dc698c06b73f86323f63b27edad26b1c256e3ad3a389931584e03a",
+      "sha256": "f71e112f0f2b3cb03be36968cabc96dd5edcd6df7bcdd065ce4094d8e3caf0cc",
       "executable": false
     },
     "packaging.json": {
@@ -854,7 +854,7 @@
       "executable": false
     },
     "pnpm-lock.yaml": {
-      "sha256": "6781dcd4d3ce6b62defee40a1f4eab3a2f3b006a3b5bbf1bf215f28b9e19e531",
+      "sha256": "18d5840f8d164c64dc35c9bed428b87234243223451fb2b87a95608370ddf3c2",
       "executable": false
     },
     "public/apple-touch-icon.png": {
