@@ -35,6 +35,10 @@ export async function eligibilityCohortJourney(h) {
  assert.equal(localVisit.start_at,'2030-03-12T03:00:00.000Z','DST clinic-local date includes a visit on the following UTC date')
  const preview=()=>h.cmd('insurance.eligibility.cohort.preview',input)
  let p=await preview()
+ const nativePreview=await h.form('/app/action?name=insurance.eligibility.cohort.preview&returnTo=/app/insurance',input,h.owner)
+ assert.equal(nativePreview.status,200,nativePreview.text)
+ assert.match(nativePreview.text,/id="eligibility-cohort-preview"/)
+ assert.match(nativePreview.text,/2030-03-11/)
  assert.equal(p.serviceDate,'2030-03-11');assert.equal(p.timeZone,'America/New_York')
  assert.equal(p.members.length,3);assert.equal(p.members.find(m=>m.policyId===c.policies[0].id).visits.length,3)
  const reception=await h.staff('CohortReception','reception'),biller=await h.staff('CohortBiller','biller')
@@ -90,6 +94,7 @@ export async function eligibilityCohortJourney(h) {
  const staleAnswer=await cohortAnswer(h,stale.id,c.policies[3].input.memberId)
  await h.cmd('insurance.policy.save',{...c.policies[3].input,id:c.policies[3].id,planName:'Explicitly changed by owner'})
  await h.cmd('insurance.eligibility.import',{id:stale.id,x12:staleAnswer},h.owner,409)
+ await h.cmd('insurance.eligibility.submit',{id:stale.id},h.owner,409)
  // Mismatched trace, member and payer refuse and preserve the prepared request.
  const answer=await cohortAnswer(h,first,c.policies[0].input.memberId,'6')
  for(const x12 of [answer.replace(/TRN\*2\*[^*]+/,'TRN*2*WRONG'),answer.replace('SYNTHETIC-BALM-301','WRONG'),answer.replace('PI*60054','PI*99999')])await h.cmd('insurance.eligibility.import',{id:first,x12},h.owner,400)
@@ -117,28 +122,38 @@ export async function eligibilityCohortJourney(h) {
  if(process.env.BALM_UI_SCREENSHOTS) {
   const {viewportProof}=await import('./viewport-proof.mjs')
   const browserRequest=mb.requests.find(r=>r.policyId===c.policies[0].id).id
+  const browserRow='cohort-request-'+mb.id+'-'+browserRequest
   const browserAnswer=await cohortAnswer(h,browserRequest,c.policies[0].input.memberId,'6')
-  await viewportProof(h,[{name:'INS-002-cohorts',path:'/app/insurance',cookie:h.owner,selector:'#eligibility-cohorts',open:'Prepare a cohort',interact:async({page,width})=>{
+  await viewportProof(h,[{name:'INS-002-cohorts',path:'/app/insurance',cookie:h.owner,selector:'#eligibility-cohort-preview',open:'Prepare a cohort',interact:async({page,width})=>{
     if(width!==1440)return
     const panel=page.locator('#eligibility-cohorts')
-    await panel.getByLabel('Cohort',{exact:true}).selectOption('monthly')
+    await panel.locator('select[name=kind]').selectOption('monthly')
     await panel.getByLabel('Clinic date (monthly uses this month)').fill('2030-05-20')
-    await panel.getByRole('button',{name:'Preview policies',exact:true}).click()
-    await page.waitForURL('**/app/action?**')
+    const [response]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('insurance.eligibility.cohort.preview')),panel.getByRole('button',{name:'Preview policies',exact:true}).click()])
+    assert.equal(response.status(),200)
     assert.match(await page.locator('#eligibility-cohort-preview').innerText(),/2030-05-01/)
-    await page.getByRole('button',{name:'Prepare reviewed inquiries',exact:true}).click()
+    const [prepared]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('insurance.eligibility.cohort.prepare')),page.getByRole('button',{name:'Prepare reviewed inquiries',exact:true}).click()])
+    assert.equal(prepared.status(),303)
     await page.waitForLoadState('domcontentloaded')
     assert.match(await page.locator('#eligibility-cohorts').innerText(),/2030-05-01/)
+    await page.getByText('Prepare a cohort',{exact:true}).click()
+    const again=page.locator('#eligibility-cohorts')
+    await again.locator('select[name=kind]').selectOption('monthly')
+    await again.locator('input[name=asOfDate]').fill('2030-05-20')
+    const [review]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('insurance.eligibility.cohort.preview')),again.getByRole('button',{name:'Preview policies',exact:true}).click()])
+    assert.equal(review.status(),200)
+    await page.locator('#eligibility-cohort-preview').waitFor()
    }},
-   {name:'INS-002-results',path:'/app/insurance',cookie:h.owner,selector:'#eligibility-cohorts',openSelector:'#eligibility-cohorts details:has(#cohort-request-'+browserRequest+') > summary',interact:async({page,width})=>{
+   {name:'INS-002-results',path:'/app/insurance',cookie:h.owner,selector:'#eligibility-cohorts',openSelector:'#eligibility-cohort-'+mb.id+' > summary',interact:async({page,width})=>{
     if(width!==1440)return
-    const request=page.locator('#cohort-request-'+browserRequest)
+    const request=page.locator('#'+browserRow)
     await request.getByLabel('Matched 271 response').setInputFiles({name:'synthetic-balm-340.271',mimeType:'text/plain',buffer:Buffer.from(browserAnswer)})
-    await request.getByRole('button',{name:'Import eligibility response',exact:true}).click()
+    const [imported]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('insurance.eligibility.import')),request.getByRole('button',{name:'Import eligibility response',exact:true}).click()])
+    assert.equal(imported.status(),303)
     await page.waitForLoadState('domcontentloaded')
-    const summary=page.locator('#eligibility-cohorts details:has(#cohort-request-'+browserRequest+') > summary')
+    const summary=page.locator('#eligibility-cohort-'+mb.id+' > summary')
     await summary.click()
-    assert.match(await page.locator('#cohort-request-'+browserRequest).innerText(),/inactive/)
+    assert.match(await page.locator('#'+browserRow).innerText(),/inactive/)
    }},
    {name:'INS-002-calendar',path:'/app?date=2030-03-11',cookie:h.owner,selector:'.cal-wrap',tooltips:['Previous day','Next day']},
    {name:'INS-002-daily-close',path:'/app',cookie:h.owner,selector:'#daily-close'}])

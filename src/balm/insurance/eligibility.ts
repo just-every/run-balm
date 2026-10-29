@@ -43,7 +43,7 @@ export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
   insist(!row.policy_basis||row.policy_basis===await eligibilityBasis(policy),'eligibility_policy_changed_prepare_again',409)
   const status=await adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}
   insist(['prepared','exported'].includes(row.status),'eligibility_already_submitted',409)
-  await commit(db,who,[stmt(db,"UPDATE bm_eligibility SET status='sending',version=version+1 WHERE id=? AND version=?",row.id,row.version),guard(db,'changes()=1'),audit(db,who,'insurance.eligibility_submission_started',policy.client_id,row.id)])
+  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),stmt(db,"UPDATE bm_eligibility SET status='sending',version=version+1 WHERE id=? AND version=?",row.id,row.version),guard(db,'changes()=1'),audit(db,who,'insurance.eligibility_submission_started',policy.client_id,row.id)])
   let result
   try {result=await insuranceAdapter(env).submit({kind:'270',id:row.id,body:row.request,sha256:await sha256(row.request)})}
   catch(error){await commit(db,who,[stmt(db,"UPDATE bm_eligibility SET status='uncertain',version=version+1 WHERE id=? AND status='sending'",row.id),audit(db,who,'insurance.eligibility_submission_uncertain',policy.client_id,row.id)]);throw error}
