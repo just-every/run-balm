@@ -11,8 +11,9 @@ async function reader(db: D1Database, who: Actor) {
 
 /** No inference changes a conversation's existing destination or readership. */
 function triage(source: Data, attachments: Data[]) {
-  const clinical = /\b(pain|symptom\w*|medicat\w*|diagnos\w*|treatment|exercise\w*|injur\w*|bleed\w*|numb\w*|dizz\w*)\b/i.test(source.body)
+  const clinical = /\b(pain|hurt\w*|sore|fever|nausea|dose|surgery|weakness|symptom\w*|medicat\w*|diagnos\w*|treatment|exercise\w*|injur\w*|bleed\w*|numb\w*|dizz\w*)\b/i.test(source.body)
   if (source.route === 'practitioner' || clinical) return { intent: 'clinical', state: 'clinical', reason: source.route === 'practitioner' ? 'Remains in the existing clinician conversation, without a drafted answer.' : 'Clinical content needs human review. No destination or access was changed.', draft: null }
+  if (/\b(not sure|unsure|uncertain|maybe|perhaps|not|never|do not|don[’']t)\b/i.test(source.body)) return { intent: 'review', state: 'review', reason: 'An uncertain or negated request needs human review before drafting.', draft: null }
   const rules = [
     ['reschedule', /\b(reschedul\w*|move (?:my |the )?(?:visit|appointment)|change (?:my |the )?(?:visit|appointment))\b/i],
     ['billing', /\b(bill\w*|invoice\w*|payment\w*|charge\w*|copay\w*|balance)\b/i],

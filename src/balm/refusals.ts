@@ -1,6 +1,9 @@
 // What a person reads when Balm refuses something. Commands refuse with a stable
 // code (the JSON doors return it as `code`); pages show the sentence for it.
 const sentences: Record<string, string> = {
+  conversation_changed_prepare_again: 'This conversation or patient record changed. Prepare from the message again, then review the new preparation.',
+  preparation_digest_changed: 'This preparation no longer matches the version you reviewed. Reload the conversation before approving.',
+  preparation_requires_human_review_or_is_historical: 'This item needs human review or is archive history. It cannot approve an action.',
   hosting_readiness_required: 'Patient creation is unavailable. The owner must review Hosting and patient mode under Clinic settings before entering real patient data. Contact the clinic about online booking.',
   confirm_hosting_evidence: 'Confirm that the signed agreements cover this exact provider, account, deployment and listed services, and that you reviewed the original eligibility and backup evidence.',
   confirm_patient_mode: 'Confirm the patient mode change. Demo mode is for synthetic data only.',

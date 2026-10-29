@@ -1,5 +1,6 @@
 import {recordedCohort} from './eligibility-cohort-journey.mjs'
 import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
+import { historicalInbox } from './inbox-journey.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
 import { chartFixture } from './chart-template-journey.mjs'
@@ -51,6 +52,7 @@ async function historicalErasurePatient(h,priya,service) {
   await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'incoming','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:00:00Z','Historical archived call','practitioner',?)").bind(crypto.randomUUID(),patient.id,priya.id,priya.email,priya.id).run()
   const cohort=await recordedCohort(h,patient.id)
   await h.db.prepare("UPDATE bm_eligibility SET created_at='1990-01-02T03:00:00.000Z',checked_at='1990-01-02T03:00:00.000Z' WHERE id=?").bind(cohort.requestId).run()
+  await historicalInbox(h,patient.id)
   return {...patient,eligibilityRequestId:cohort.requestId}
 }
 async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
@@ -271,7 +273,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},ownerCookie,409)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items','bm_inbox_preparations','bm_inbox_approvals','bm_messages'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
         assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
@@ -288,7 +290,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items','bm_inbox_preparations','bm_inbox_approvals','bm_messages'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
       assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
       assert.equal(await current.env.DB.prepare('SELECT id FROM bm_retail_sales WHERE id=?').bind(scopedSale).first(),null)
       assert.equal((await current.env.DB.prepare('SELECT id FROM bm_clients WHERE id=?').bind(scopedPatient.id).first()).id,scopedPatient.id)
@@ -835,6 +837,9 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   quietPolicy:(await db.prepare('SELECT sms_quiet_policy_id FROM bm_settings WHERE id=1').first()).sms_quiet_policy_id,
   patientZone:(await db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(clientId).first()).sms_time_zone,
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
+  inbox:(await db.prepare('SELECT * FROM bm_inbox_preparations WHERE client_id=? ORDER BY id').bind(clientId).all()).results.map(({authority,...original})=>original),
+  inboxApprovals:(await db.prepare('SELECT * FROM bm_inbox_approvals WHERE client_id=? ORDER BY preparation_id').bind(clientId).all()).results,
+  messages:(await db.prepare('SELECT * FROM bm_messages WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
   waitlist:(await db.prepare('SELECT * FROM bm_waitlist WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   offers:(await db.prepare('SELECT * FROM bm_offers ORDER BY id').all()).results,
   recipients:(await db.prepare('SELECT offer_id,entry_id,channel,delivery,outcome,responded_at,taken_notice,position,activated_at,expires_at FROM bm_offer_recipients ORDER BY offer_id,entry_id').all()).results,
@@ -876,7 +881,17 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.match((await h.send(openOfferPath)).text,/A time opened up/)
   const cohort=await recordedCohort(h,patient.id)
   const bearerHashes=(await h.db.prepare('SELECT offer_token_hash FROM bm_offer_recipients').all()).results.map(r=>r.offer_token_hash)
+  const portal=await portalLogin(h,['synthetic-balm-510','patient.example'].join('@'))
+  const inbox=[]
+  for(const body of ['I have a billing question about my invoice.','Please review my records request.']){
+   assert.equal((await h.form('/portal/action',{name:'message.send',recipient:'front_desk',body},portal)).status,303)
+   const message=(await h.db.prepare("SELECT id FROM bm_messages WHERE client_id=? AND sender='patient' ORDER BY sequence DESC LIMIT 1").bind(patient.id).first())
+   inbox.push(await h.cmd('inbox.prepare',{clientId:patient.id,messageId:message.id},desk.cookie))
+  }
+  await h.cmd('inbox.approve',{clientId:patient.id,id:inbox[1].id,digest:inbox[1].digest,confirm:true},desk.cookie)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_inbox_preparations WHERE authority=1').first()).n,2)
   const original=await snapshot(h.db,patient.id)
+  assert.equal(original.inbox.length,2);assert.equal(original.inboxApprovals.length,1)
   assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
   assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
   assert.equal(original.recipients.filter(r=>r.outcome===null).length,1)
@@ -916,6 +931,14 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'* * * * *'})
   assert.equal(h.mail.length,mailCount,'restored historical queues never restart outbound offers')
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
+  const restoredInbox=(await h.send('/api/balm/clients/'+patient.id+'/inbox',undefined,cookie)).value
+  assert.equal(restoredInbox.total,2)
+  assert.ok(restoredInbox.preparations.every(p=>p.historical),'restored preparation confers no review or execution authority')
+  assert.equal(restoredInbox.preparations.find(p=>p.id===inbox[1].id).digest,inbox[1].digest)
+  for(const p of inbox)await h.cmd('inbox.approve',{clientId:patient.id,id:p.id,digest:p.digest,confirm:true},cookie,409)
+  const repeated=await h.cmd('inbox.prepare',{clientId:patient.id,messageId:inbox[1].messageId},cookie)
+  assert.equal(repeated.historical,true,'repeated preparation cannot reactivate an archived original')
+  assert.equal(repeated.id,inbox[1].id)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
   const restoredCohorts=(await h.state(cookie)).insurance.eligibilityCohorts
   assert.equal(restoredCohorts.batches.find(b=>b.id===cohort.batchId).items[0].status,'inactive')
