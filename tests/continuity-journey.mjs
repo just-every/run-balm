@@ -135,3 +135,48 @@ export async function continuityJourney(h, proof = async () => {}) {
   await h.cmd('continuity.approve', refreshedApproval, priya.cookie, 401)
   return { ...f, prepared: waiting }
 }
+
+export async function continuityCoverageJourney(h) {
+  const f = await continuityFixture(h)
+  const input = { seriesId: f.booked.seriesId }, dates = ['2099-03-10', '2099-03-15']
+  const prepare = async () => {
+    const p = await h.cmd('continuity.prepare', input, f.priya.cookie)
+    assert.deepEqual(p.payload.occurrences.map(o => o.date), dates)
+    assert.deepEqual(p.payload.authorization.map(a => [a.total, a.used, a.reserved, a.proposed, a.afterBooking]), [[5, 0, 1, 2, 2]])
+    assert.equal(p.payload.policy.id, f.policy.id)
+    return p
+  }
+  await prepare()
+
+  // Native service defaults are CPT strings, including when scope is restricted.
+  await h.cmd('service.save', { id: f.service.id, cptDefaults: ['97110'] })
+  const scoped = { ...f.authInput, id: f.authorization.id, cptScope: ['97110'] }
+  await h.cmd('insurance.authorization.save', scoped)
+  const matching = await prepare()
+  assert.deepEqual(matching.payload.authorization[0].scope, '["97110"]')
+  await h.cmd('insurance.authorization.save', { ...scoped, cptScope: ['97530'] })
+  await h.cmd('continuity.prepare', input, f.priya.cookie, 409)
+  await h.cmd('continuity.approve', { id: matching.id, digest: matching.digest, confirm: true }, f.priya.cookie, 409)
+  await h.cmd('insurance.authorization.save', scoped)
+
+  // A retained expired primary policy does not compete with dated coverage.
+  const payer = await h.cmd('insurance.payer.save', { name: 'Synthetic historical payer', payerId: 'SYNOLD', unitMethod: 'cms', fees: [] })
+  await h.cmd('insurance.policy.save', { clientId: f.patient.id, payerId: payer.id, memberId: 'synthetic-balm-205', relationship: '18', patientSex: 'F', address: '1 Synthetic St', city: 'Austin', state: 'TX', postalCode: '78701', startsOn: '2000-01-01', endsOn: '2000-12-31' })
+  await prepare()
+
+  // A nonoverlapping OT visit belongs to a different episode, so it cannot
+  // consume this plan's twice-weekly PT cadence or its authorization.
+  const episode = await h.cmd('episode.open', { clientId: f.patient.id, title: 'Synthetic OT episode', start: 'direct_access' })
+  const ot = await h.staff('SyntheticOT', 'practitioner', { discipline: 'ot' })
+  await h.cmd('hours.save', { practitionerId: ot.id, hours: [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00', end: '24:00' })) })
+  const service = await h.cmd('service.save', { name: 'Synthetic OT service', durationMinutes: 45, priceCents: 9500, intakeDiscipline: 'ot' })
+  const visit = await h.cmd('appointment.book', { clientId: f.patient.id, practitionerId: ot.id, serviceId: service.id, episodeId: episode.id, date: '2099-03-09', time: '09:00', acknowledgeInsurance: 'on' })
+  await h.cmd('waitlist.add', { clientId: f.patient.id, practitionerId: f.priya.id, serviceId: f.service.id, earliestDate: dates[0], latestDate: dates[1] })
+  const before = (await h.state()).appointments.length
+  const p = await prepare()
+  await h.cmd('continuity.approve', { id: p.id, digest: p.digest, confirm: true }, f.priya.cookie)
+  assert.equal((await h.state()).appointments.length, before, 'review creates no replacement booking')
+  // Separate episode cadence never exempts a real patient-time overlap.
+  await h.cmd('appointment.move', { id: visit.appointmentId, date: dates[0], time: '10:00', practitionerId: ot.id, acknowledgeInsurance: 'on' })
+  await h.cmd('continuity.prepare', input, f.priya.cookie, 409)
+}
