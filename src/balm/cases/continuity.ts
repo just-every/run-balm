@@ -1,5 +1,7 @@
-// Native treating-clinician preparation only. An approval is a historical
-// review record; it grants no booking, reservation or delivery authority.
+// Preparation approval is historical. A separate clinician release and the
+// patient's exact-date confirmation are required before any booking.
+import { portalGuard, type Patient } from '../portal/auth'
+import { appointmentStatements } from '../domain/booking'
 import { datePlus, hostDateAt } from '../availability/timezone'
 import { preferencesFit } from '../domain/waitlist'
 import { patternDates } from '../domain/series'
@@ -46,7 +48,9 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
   insist(lastDate >= today && content.certifiedThrough >= today, 'continuity_plan_expired', 409)
   const { service, practitioner } = await bookable(db, series.practitioner_id, series.service_id)
   const visits = await rows(db, 'SELECT * FROM bm_appointments WHERE series_id=? ORDER BY start_at,id', series.id)
-  const cancelled = visits.filter(v => v.status === 'cancelled')
+  const replaced = await rows(db, `SELECT j.value ->> '$.id' AS id FROM bm_continuity_acceptances a
+    JOIN bm_continuity_proposals p ON p.id=a.proposal_id,json_each(p.payload,'$.cancellations') j WHERE a.client_id=?`, client.id)
+  const cancelled = visits.filter(v => v.status === 'cancelled' && !replaced.some(r => r.id === v.id))
   insist(cancelled.length >= 2, 'continuity_needs_two_cancellations', 409)
   const after = cancelled.map(v => hostDateAt(new Date(v.start_at), zone)).sort().at(-1)!
   const waitlist = await rows(db, 'SELECT * FROM bm_waitlist WHERE client_id=? AND service_id=? ORDER BY id', client.id, service.id)
@@ -98,6 +102,7 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
 
 export async function continuityCommand(db: D1Database, who: Actor, name: string, input: Data) {
   if (name === 'continuity.read') return continuityFor(db, who, input.clientId, true)
+  if (name === 'continuity.offer' || name === 'continuity.withdraw') return releaseContinuity(db, who, name, input)
   if (name === 'continuity.prepare') {
     const p = await proposal(db, who, input.seriesId)
     const prior = await one(db, 'SELECT * FROM bm_continuity_proposals WHERE series_id=? AND digest=? AND review_authority=1', p.payload.seriesId, p.digest)
@@ -135,6 +140,90 @@ export async function continuityFor(db: D1Database, who: Actor, clientId: string
   if (required) insist(series.length, 'continuity_series_not_found', 404)
   if (!series.length) return null
   const proposals = await rows(db, 'SELECT * FROM bm_continuity_proposals WHERE client_id=? AND practitioner_id=? ORDER BY prepared_at DESC,id', clientId, practitionerId(live))
+  const offers = await rows(db, `SELECT o.*,a.accepted_at,a.appointment_ids,a.authorization FROM bm_continuity_offers o
+    LEFT JOIN bm_continuity_acceptances a ON a.offer_id=o.id WHERE o.client_id=? AND o.practitioner_id=? ORDER BY o.released_at DESC`, clientId, practitionerId(live))
   await commit(db, live, [guard(db, 'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)', clientId), audit(db, live, 'continuity.read', clientId)])
-  return { series: series.filter(s => JSON.parse(s.pattern).planId), proposals: proposals.map(p => ({ ...p, payload: JSON.parse(p.payload) })) }
+  return { series: series.filter(s => JSON.parse(s.pattern).planId), proposals: proposals.map(p => ({ ...p, payload: JSON.parse(p.payload), offers: offers.filter(o => o.proposal_id === p.id) })) }
+}
+
+async function releaseContinuity(db: D1Database, who: Actor, name: string, input: Data) {
+  const live = await clinician(db, who)
+  if (name === 'continuity.withdraw') {
+    const offer = await one(db, 'SELECT * FROM bm_continuity_offers WHERE id=? AND practitioner_id=?', text(input.id, 'offer', 100), practitionerId(live))
+    insist(offer, 'continuity_offer_not_found', 404)
+    await commit(db, live, [
+      guard(db, 'NOT EXISTS(SELECT 1 FROM bm_continuity_acceptances WHERE offer_id=?)', offer.id),
+      stmt(db, 'UPDATE bm_continuity_offers SET revoked_at=COALESCE(revoked_at,?) WHERE id=?', now(), offer.id),
+      audit(db, live, 'continuity.offer_withdrawn', offer.client_id, offer.id),
+    ])
+    return { withdrawn: true }
+  }
+  const stored = await one(db, 'SELECT * FROM bm_continuity_proposals WHERE id=? AND practitioner_id=?', text(input.id, 'proposal', 100), practitionerId(live))
+  insist(stored, 'continuity_proposal_not_found', 404)
+  insist(stored.review_authority === 1 && stored.approved_at && stored.approved_by === live.email, 'continuity_review_not_active', 409)
+  insist(input.confirm === true || input.confirm === 'on', 'confirm_exact_continuity_offer')
+  insist(input.digest === stored.digest, 'continuity_changed_review_again', 409)
+  const p = await proposal(db, live, stored.series_id)
+  insist(p.digest === stored.digest, 'continuity_changed_review_again', 409)
+  const prior = await one(db, `SELECT id,expires_at FROM bm_continuity_offers WHERE proposal_id=? AND execution_authority=1
+    AND revoked_at IS NULL AND expires_at>? AND operator_version=? AND staff_version=? AND session_id IS ? ORDER BY released_at DESC LIMIT 1`, stored.id, now(), live.operatorVersion, live.staffVersion, live.sessionId ?? null)
+  const key = prior?.id ?? id(), at = now()
+  const expiresAt = prior?.expires_at ?? new Date(Math.min(Date.now() + 86400_000, Date.parse(p.payload.occurrences[0].startAt) - 120 * 60_000)).toISOString()
+  insist(expiresAt > at, 'continuity_offer_expired', 409)
+  await commit(db, live, [...sourceGuards(db, p.versions),
+    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_continuity_acceptances WHERE proposal_id=?)', stored.id),
+    ...(prior ? [] : [stmt(db, `INSERT INTO bm_continuity_offers(id,proposal_id,client_id,practitioner_id,released_at,released_by,operator_id,operator_version,staff_version,session_id,expires_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`, key, stored.id, stored.client_id, practitionerId(live), at, live.email, live.id, live.operatorVersion, live.staffVersion, live.sessionId ?? null, expiresAt)]),
+    audit(db, live, 'continuity.offered_in_portal', stored.client_id, key, stored.digest),
+  ])
+  return { id: key, expiresAt, booked: false, reserved: false, outbound: false }
+}
+
+// The portal receives only scheduling facts, never the clinician's source packet.
+export async function patientContinuity(db: D1Database, patient: Patient) {
+  if (patient.guardianEmail) return []
+  const list = await rows(db, `SELECT o.id,o.expires_at,o.revoked_at,o.execution_authority,p.payload,a.accepted_at,a.appointment_ids
+    FROM bm_continuity_offers o JOIN bm_continuity_proposals p ON p.id=o.proposal_id
+    LEFT JOIN bm_continuity_acceptances a ON a.offer_id=o.id WHERE o.client_id=?
+    AND (a.accepted_at IS NOT NULL OR (o.execution_authority=1 AND o.revoked_at IS NULL AND o.expires_at>?)) ORDER BY o.released_at DESC`, patient.clientId, now())
+  await commit(db, null, [portalGuard(db, patient), audit(db, { email: 'patient-portal', role: 'patient' }, 'continuity.offers_read', patient.clientId)])
+  return list.map(o => {
+    const p = JSON.parse(o.payload)
+    return { id: o.id, service: p.service, practitioner: p.practitioner, timeZone: p.timeZone, occurrences: p.occurrences.map((v: Data) => ({ startAt: v.startAt, endAt: v.endAt })), expiresAt: o.expires_at, acceptedAt: o.accepted_at }
+  })
+}
+
+/** Exact reviewed dates and their allowance commit together, or no visit does. */
+export async function acceptContinuity(db: D1Database, patient: Patient, input: Data) {
+  insist(!patient.guardianEmail, 'continuity_patient_confirmation_required', 403)
+  const offer = await one(db, `SELECT o.*,p.series_id,p.digest,p.review_authority FROM bm_continuity_offers o
+    JOIN bm_continuity_proposals p ON p.id=o.proposal_id WHERE o.id=? AND o.client_id=?`, text(input.id, 'offer', 100), patient.clientId)
+  insist(offer, 'continuity_offer_not_found', 404)
+  insist(offer.execution_authority === 1 && offer.review_authority === 1 && !offer.revoked_at && offer.expires_at > now(), 'continuity_offer_not_active', 409)
+  insist(!await one(db, 'SELECT 1 FROM bm_continuity_acceptances WHERE proposal_id=?', offer.proposal_id), 'continuity_already_accepted', 409)
+  insist(input.confirm === true || input.confirm === 'on', 'confirm_all_continuity_dates')
+  const live = await actor(db, offer.operator_id)
+  insist(live.operatorVersion === offer.operator_version && live.staffVersion === offer.staff_version && practitionerId(live) === offer.practitioner_id, 'continuity_clinician_authority_changed', 409)
+  const p = await proposal(db, live, offer.series_id)
+  insist(p.digest === offer.digest, 'continuity_changed_review_again', 409)
+  const ids = p.payload.occurrences.map(() => id()), at = now()
+  const patientActor = { email: 'patient-portal', role: 'patient' }
+  await commit(db, p.live, [portalGuard(db, patient), ...sourceGuards(db, p.versions),
+    guard(db, 'EXISTS(SELECT 1 FROM bm_staff WHERE id=? AND version=? AND active=1 AND erased_at IS NULL)', offer.practitioner_id, offer.staff_version),
+    guard(db, `EXISTS(SELECT 1 FROM bm_continuity_offers WHERE id=? AND execution_authority=1 AND revoked_at IS NULL AND expires_at>?)`, offer.id, at),
+    ...(offer.session_id ? [guard(db, 'EXISTS(SELECT 1 FROM oa_sessions WHERE id=? AND revoked_at IS NULL AND expires_at>?)', offer.session_id, Date.now())] : []),
+    guard(db, 'NOT EXISTS(SELECT 1 FROM bm_continuity_acceptances WHERE proposal_id=?)', offer.proposal_id),
+    // Source revisions cover all existing bookings and signed usage before any
+    // insert. Each appointment then reserves its normal visit or unit allowance.
+    ...(await Promise.all(p.payload.occurrences.map(async (v: Data, i: number) => [
+      guard(db, "julianday(?)>julianday('now')+120.0/1440", v.startAt),
+      ...await appointmentStatements(db, patientActor, { id: ids[i], clientId: patient.clientId, practitionerId: p.payload.practitionerId,
+        serviceId: p.payload.serviceId, roomId: p.payload.roomId, startAt: v.startAt, endAt: v.endAt, seriesId: p.payload.seriesId, bookedVia: 'online', coverageChoice: 'insured_claim' }),
+      ...(p.payload.episodeId ? [stmt(db, `INSERT INTO bm_episode_records(record_kind,record_id,client_id,episode_id,assigned_at,assigned_by) VALUES('visit',?,?,?,?,?)
+        ON CONFLICT(record_kind,record_id) DO UPDATE SET episode_id=excluded.episode_id`, ids[i], patient.clientId, p.payload.episodeId, at, 'clinician-reviewed continuity')] : []),
+    ]))).flat(),
+    stmt(db, 'INSERT INTO bm_continuity_acceptances(proposal_id,offer_id,client_id,accepted_at,appointment_ids,authorization) VALUES(?,?,?,?,?,?)', offer.proposal_id, offer.id, patient.clientId, at, JSON.stringify(ids), JSON.stringify(p.payload.authorization)),
+    audit(db, patientActor, 'continuity.accepted_and_booked', patient.clientId, offer.id, offer.digest),
+  ])
+  return { redirect: '/portal/home?scheduled=1#visits' }
 }

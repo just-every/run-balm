@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { clinic } from './clinic.mjs'
+import { portalLogin } from './portal-billing.mjs'
 
 export async function continuityFixture(h, options = {}) {
   await h.finishSetup()
@@ -134,4 +135,89 @@ export async function continuityJourney(h, proof = async () => {}) {
   await h.cmd('continuity.prepare', input, priya.cookie, 401)
   await h.cmd('continuity.approve', refreshedApproval, priya.cookie, 401)
   return { ...f, prepared: waiting }
+}
+
+export async function continuityBookingJourney(h) {
+  const f = await continuityFixture(h), { patient, priya, service } = f
+  const input = { seriesId: f.booked.seriesId }
+  const patientEmail = ['synthetic-balm-204', 'patient.example'].join('@')
+  const cookie = await portalLogin(h, patientEmail)
+  const count = async () => (await h.state()).appointments.filter(a => a.client_id === patient.id).length
+  const allowance = async () => (await h.send('/api/balm/clients/' + patient.id, undefined, priya.cookie)).value.insurance.authorizations[0]
+  const prepare = async () => {
+    const p = await h.cmd('continuity.prepare', input, priya.cookie)
+    await h.cmd('continuity.approve', { id: p.id, digest: p.digest, confirm: true }, priya.cookie)
+    return p
+  }
+  const release = p => h.cmd('continuity.offer', { id: p.id, digest: p.digest, confirm: true }, priya.cookie)
+  const accept = (id, expected = 303, headers = {}) => h.send('/portal/action', { name: 'continuity.accept', id, confirm: 'on' }, cookie, headers).then(r => { assert.equal(r.status, expected, r.text); return r })
+  const baseline = await count()
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, allowanceKind: 'units', units: 10, unitsPerVisit: 3 })
+  let prepared = await prepare()
+  assert.ok(!(await h.send('/portal/home', undefined, cookie)).text.includes('data-continuity-offer='), 'preparation approval releases nothing to the patient')
+  await accept(prepared.id, 404)
+  const desk = await h.staff('ContinuityOfferDesk', 'reception'), biller = await h.staff('ContinuityOfferBiller', 'biller'), other = await h.staff('ContinuityOfferOther', 'practitioner')
+  for (const person of [desk, biller, other]) {
+    const refused = await h.send('/api/balm/command', { name: 'continuity.offer', input: { id: prepared.id, digest: prepared.digest, confirm: true } }, person.cookie)
+    assert.ok([403, 404].includes(refused.status))
+    assert.ok(!refused.text.includes(prepared.digest))
+  }
+  await h.cmd('continuity.offer', { id: prepared.id, digest: prepared.digest, confirm: true }, priya.cookie, 409, { 'x-synthetic-session-revoke': priya.email })
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_continuity_offers').first()).n, 0)
+  priya.cookie = await h.signIn(priya.email)
+  let offer = await release(prepared)
+  assert.equal((await release(prepared)).id, offer.id, 'replayed release does not duplicate the offer')
+  const outbound = h.outboundRequests.length
+  const visible = await h.send('/portal/home', undefined, cookie)
+  assert.ok(visible.text.includes(offer.id))
+  assert.ok(!visible.text.includes(prepared.digest) && !visible.text.includes(f.authInput.number), 'patient sees dates, not the clinical source packet')
+  assert.equal(await count(), baseline)
+  assert.deepEqual([(await allowance()).reserved_allowance, (await allowance()).remaining_allowance], [3, 7], 'release reserves nothing')
+  const foreign = await h.cmd('client.save', { firstName: 'Synthetic', lastName: 'Foreign continuity', email: ['synthetic-balm-205', 'patient.example'].join('@') })
+  const foreignCookie = await portalLogin(h, ['synthetic-balm-205', 'patient.example'].join('@'))
+  assert.ok(!(await h.send('/portal/home', undefined, foreignCookie)).text.includes(offer.id))
+  assert.equal((await h.form('/portal/action', { name: 'continuity.accept', id: offer.id, confirm: 'on', clientId: patient.id }, foreignCookie)).status, 404)
+  assert.equal((await h.form('/portal/action', { name: 'continuity.accept', id: offer.id }, cookie)).status, 400)
+  await accept(offer.id, 403, { origin: 'https://foreign.example' })
+  const competing = await h.cmd('appointment.book', { clientId: foreign.id, practitionerId: priya.id, serviceId: service.id, date: prepared.payload.occurrences[1].date, time: '10:00' })
+  await accept(offer.id, 409)
+  assert.equal(await count(), baseline, 'one unavailable date refuses every replacement')
+  await h.cmd('appointment.cancel', { id: competing.appointmentId, reason: 'Synthetic capacity restored' })
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, allowanceKind: 'units', units: 6, unitsPerVisit: 3 })
+  await accept(offer.id, 409)
+  assert.equal(await count(), baseline, 'insufficient authorization books no date')
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, allowanceKind: 'units', units: 10, unitsPerVisit: 3 })
+  await accept(offer.id, 409)
+  assert.equal(await count(), baseline, 'changed authorization requires a new exact review even after its allowance is restored')
+  prepared = await prepare(); offer = await release(prepared)
+  await h.cmd('continuity.withdraw', { id: offer.id }, priya.cookie)
+  await accept(offer.id, 409)
+  offer = await release(prepared)
+  await h.send('/auth/signout', {}, priya.cookie)
+  await accept(offer.id, 409)
+  priya.cookie = await h.signIn(priya.email)
+  offer = await release(prepared)
+  await accept(offer.id, 409, { 'x-synthetic-revoke': priya.email })
+  assert.equal(await count(), baseline, 'live clinician revocation in the booking transaction creates no visit')
+  priya.cookie = await h.signIn(priya.email)
+  offer = await release(prepared)
+  await accept(offer.id, 409, { 'x-synthetic-patient-revoke': patient.id })
+  assert.equal(await count(), baseline, 'live patient-session revocation creates no visit')
+  const freshCookie = await portalLogin(h, patientEmail)
+  const outcomes = await Promise.all([1, 2].map(() => h.form('/portal/action', { name: 'continuity.accept', id: offer.id, confirm: 'on' }, freshCookie)))
+  assert.deepEqual(outcomes.map(r => r.status).sort(), [303, 409], outcomes.map(r => r.text).join('\n'))
+  const receipt = await h.db.prepare('SELECT * FROM bm_continuity_acceptances WHERE offer_id=?').bind(offer.id).first()
+  const ids = JSON.parse(receipt.appointment_ids)
+  assert.equal(ids.length, 2)
+  assert.equal(await count(), baseline + 2)
+  assert.deepEqual((await h.state()).appointments.filter(a => ids.includes(a.id)).map(a => a.start_at).sort(), prepared.payload.occurrences.map(o => o.startAt).sort())
+  assert.deepEqual([(await allowance()).used_allowance, (await allowance()).reserved_allowance, (await allowance()).remaining_allowance], [0, 9, 1], 'existing visit plus two atomic reservations consume nine of ten units')
+  assert.deepEqual(JSON.parse(receipt.authorization).map(a => [a.remaining, a.proposed, a.afterBooking]), [[7, 6, 1]])
+  assert.ok((await h.send('/portal/home', undefined, freshCookie)).text.includes('All replacement visits are booked above'))
+  assert.equal((await h.form('/portal/action', { name: 'continuity.accept', id: offer.id, confirm: 'on' }, freshCookie)).status, 409)
+  await h.cmd('continuity.prepare', input, priya.cookie, 409)
+  assert.equal(await count(), baseline + 2, 'replaced cancellations cannot fund another replacement sequence')
+  assert.ok(h.outboundRequests.slice(outbound).every(r => r.pathname === '/emails'), 'no text or automatic delivery is claimed')
+  const audit = (await h.db.prepare("SELECT action FROM bm_audit WHERE client_id=? AND action LIKE 'continuity.%'").bind(patient.id).all()).results
+  for (const action of ['continuity.offered_in_portal', 'continuity.offer_withdrawn', 'continuity.accepted_and_booked']) assert.ok(audit.some(r => r.action === action), action)
 }
