@@ -1,3 +1,4 @@
+import {previewEligibilityCohort,prepareEligibilityCohort} from './eligibility-batches'
 import {authorizationRequestCommand} from './authorization-requests'
 import {injuryCommand} from './injury'
 import {runoutCommand} from './runout'
@@ -53,6 +54,8 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.medicare.settings.save':return saveMedicareSettings(db,who,input)
     case 'insurance.medicare.recognized.save':return saveRecognizedExpense(db,who,input)
     case 'insurance.medicare.service.save':return saveMedicareService(db,who,input)
+    case 'insurance.eligibility.cohort.preview':return previewEligibilityCohort(db,who,input)
+    case 'insurance.eligibility.cohort.prepare':return prepareEligibilityCohort(db,who,input)
     case 'insurance.eligibility.prepare':return prepareEligibility(db,who,input)
     case 'insurance.eligibility.submit':return submitEligibility(env,who,input)
     case 'insurance.eligibility.import':return importEligibility(db,who,input)

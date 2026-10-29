@@ -853,3 +853,8 @@ test('signed evaluation authorization requests retain external decisions and cre
  const {authorizationRequestJourney}=await import('./authorization-request-journey.mjs')
  await run(authorizationRequestJourney)
 })
+
+test('INS-002: owner prepares dated eligibility cohorts, imports matched answers and reviews affected visits without inferred policy changes',async()=>{
+ const {eligibilityCohortJourney}=await import('./eligibility-cohort-journey.mjs')
+ await run(eligibilityCohortJourney,{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+})

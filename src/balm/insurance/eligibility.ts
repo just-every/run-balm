@@ -1,8 +1,11 @@
 import { audit, commit, day, guard, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
-import { policyFor } from './access'
+import { policyColumns } from './policy'
+import { clientGuard, policyFor } from './access'
 import { cents, envelope, parseX12, segment, xdate } from './x12'
 import { insuranceAdapter, adapterStatus } from './adapter'
 import type { InsuranceEnv } from './types'
+
+export const eligibilityBasis = (policy:Data) => sha256(JSON.stringify([...policyColumns.map(k=>policy[k]??null),policy.payer_code,policy.receiver_id]))
 
 /** Builds real 270 bytes; callers supply authority and commit the returned request atomically. */
 export async function eligibilityRequest(db: D1Database, policy: Data, date: string) {
@@ -23,15 +26,15 @@ export async function eligibilityRequest(db: D1Database, policy: Data, date: str
   }
   parts.push(segment('DTP','291','D8',xdate(date)),segment('EQ','30'))
   const body=envelope('270','005010X279A1',config270,parts)
-  return { id:key, policyId:policy.id, serviceDate:date, trace, body, configVersion:config.version }
+  return { id:key, policyId:policy.id, serviceDate:date, trace, body, configVersion:config.version, policyBasis:await eligibilityBasis(policy) }
 }
-export function eligibilityStatement(db: D1Database, request: Awaited<ReturnType<typeof eligibilityRequest>>) {
-  return stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,created_at) VALUES(?,?,?,?,?,?)',request.id,request.policyId,request.serviceDate,request.trace,request.body,now())
+export function eligibilityStatement(db: D1Database, request: Awaited<ReturnType<typeof eligibilityRequest>>, cohortKey:string|null=null) {
+  return stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,created_at,policy_basis,cohort_key) VALUES(?,?,?,?,?,?,?,?)',request.id,request.policyId,request.serviceDate,request.trace,request.body,now(),request.policyBasis,cohortKey)
 }
 export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
   const policy=await policyFor(db,who,input.policyId), date=day(input.serviceDate,'service_date')
   const request=await eligibilityRequest(db,policy,date)
-  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),eligibilityStatement(db,request),audit(db,who,'insurance.eligibility_prepared',policy.client_id,request.id)])
+  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),eligibilityStatement(db,request),audit(db,who,'insurance.eligibility_prepared',policy.client_id,request.id)])
   return {id:request.id,policyId:policy.id,status:'prepared'}
 }
 export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
@@ -52,7 +55,10 @@ export async function importEligibility(db:D1Database,who:Actor,input:Data) {
   const policy=await policyFor(db,who,row.policy_id),parsed=parseX12(input.x12,'271'),hash=await sha256(parsed.body)
   if(row.response_sha256===hash)return {id:row.id,status:row.status,duplicate:true}
   insist(!row.response,'eligibility_response_already_imported',409)
+  insist(!row.policy_basis||row.policy_basis===await eligibilityBasis(policy),'eligibility_policy_changed_prepare_again',409)
   insist(parsed.segments.some(s=>s[0]==='TRN'&&s[2]===row.trace),'eligibility_trace_does_not_match')
+  const payers=parsed.segments.filter(s=>s[0]==='NM1'&&s[1]==='PR'&&s[8]==='PI')
+  insist(payers.length>0&&payers.every(s=>s[9]===policy.payer_code),'eligibility_payer_does_not_match')
   const members=parsed.segments.filter(s=>s[0]==='NM1'&&s[1]==='IL'&&s[8]==='MI')
   insist(members.some(s=>s[9]===policy.member_id),'eligibility_member_does_not_match')
   const errors=parsed.segments.filter(s=>s[0]==='AAA'&&s[1]==='N').map(s=>({reason:s[3],followup:s[4]}))
@@ -63,10 +69,11 @@ export async function importEligibility(db:D1Database,who:Actor,input:Data) {
   // benefits. Preserve every EB for review; never add visit counts across codes.
   const planBenefits=benefits.filter(b=>b.serviceTypes.includes('30')&&['','IND'].includes(b.coverageLevel))
   const changed=benefits.some(b=>b.information==='R'),inactive=planBenefits.some(b=>['6','7','8'].includes(b.information)),active=planBenefits.some(b=>['1','2','3','4','5'].includes(b.information))
-  const status=errors.length?'error':changed?'changed':inactive?'inactive':active?'active':'unknown'
+  const exhausted=benefits.some(b=>b.information==='F'&&b.timePeriod==='29'&&b.quantityQualifier==='VS'&&b.quantity===0&&b.serviceTypes.some(t=>['30','AE','PT','OT'].includes(t)))
+  const status=errors.length?'error':changed?'changed':inactive?'inactive':exhausted?'exhausted':active?'active':'unknown'
   const copays=planBenefits.filter(b=>b.information==='B'&&b.network!=='N'&&b.amountCents!==null),deductibles=planBenefits.filter(b=>b.information==='C'&&b.timePeriod==='29'&&b.network!=='N'&&b.amountCents!==null)
   const copay=copays.length===1?copays[0].amountCents:null,deductible=deductibles.length===1?deductibles[0].amountCents:null,at=now()
-  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),stmt(db,'UPDATE bm_eligibility SET response=?,response_sha256=?,benefits=?,status=?,checked_at=?,version=version+1 WHERE id=? AND response IS NULL',parsed.body,hash,JSON.stringify({benefits,errors}),status,at,row.id),guard(db,'changes()=1'),stmt(db,'UPDATE bm_policies SET eligibility_status=?,eligibility_checked_at=?,copay_cents=?,deductible_cents=?,version=version+1 WHERE id=?',status,at,copay,deductible,policy.id),audit(db,who,'insurance.eligibility_imported',policy.client_id,row.id)])
+  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),stmt(db,'UPDATE bm_eligibility SET response=?,response_sha256=?,benefits=?,status=?,checked_at=?,version=version+1 WHERE id=? AND response IS NULL',parsed.body,hash,JSON.stringify({benefits,errors}),status,at,row.id),guard(db,'changes()=1'),stmt(db,'UPDATE bm_policies SET eligibility_status=?,eligibility_checked_at=?,copay_cents=?,deductible_cents=?,version=version+1 WHERE id=?',status,at,copay,deductible,policy.id),audit(db,who,'insurance.eligibility_imported',policy.client_id,row.id)])
   return {id:row.id,policyId:policy.id,status,benefits,errors,copayCents:copay,deductibleCents:deductible}
 }
 /** A check made by phone or on the payer's website: who said what, kept like a 271
@@ -76,7 +83,7 @@ export async function recordEligibility(db:D1Database,who:Actor,input:Data) {
   insist(status==='active'||status==='inactive','choose_whether_coverage_is_active')
   const source=text(input.source,'eligibility_source',300),copay=input.copayCents===undefined||input.copayCents===null?null:integer(input.copayCents,'copay_cents',0,1_000_000)
   const key=id(),at=now(),manual={source,by:who.email,copayCents:copay}
-  await commit(db,who,[guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),
+  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),
     stmt(db,"UPDATE bm_eligibility SET status='superseded',version=version+1 WHERE policy_id=? AND response IS NULL AND status IN ('prepared','exported')",policy.id),
     stmt(db,'INSERT INTO bm_eligibility(id,policy_id,service_date,trace,request,response,benefits,status,created_at,checked_at) VALUES(?,?,?,?,?,?,?,?,?,?)',key,policy.id,date,'MANUAL'+key.replace(/-/g,'').toUpperCase(),'',`Checked by hand: ${source}`,JSON.stringify({benefits:[],errors:[],manual}),status,at,at),
     stmt(db,'UPDATE bm_policies SET eligibility_status=?,eligibility_checked_at=?,copay_cents=COALESCE(?,copay_cents),version=version+1 WHERE id=?',status,at,copay,policy.id),

@@ -40,7 +40,7 @@ function openWindows(c: any, column: any) {
 
 /** A visit's colour: coral when this visit's claim was denied or the patient is past Medicare's KX threshold, sage when attended with a signed note, honey while its note waits, sky when booked. */
 export function visitTone(a: any) {
-  if (Number(a.claims_to_fix) > 0 || Number(a.kx_required) === 1) return 'coral'
+  if (a.eligibilityWarnings?.length || Number(a.claims_to_fix) > 0 || Number(a.kx_required) === 1) return 'coral'
   if (a.status === 'attended') return a.note_status === 'signed' ? 'sage' : 'honey'
   if (a.status === 'no_show') return 'muted'
   return 'sky'
@@ -54,6 +54,7 @@ export const toneIcon: Record<string, string> = { coral: 'warning', sage: 'check
 export function visitChips(s: any, a: any) {
   const pay = s.payments?.visits?.[a.id]
   const chips: [string, string, string?][] = []
+  for(const warning of a.eligibilityWarnings??[])chips.push([warning.message,'coral',warning.code==='eligibility_inactive'?'Coverage inactive':warning.code==='eligibility_changed'?'Coverage changed':'Visit limit exhausted'])
   if (a.alerts?.length) chips.push([`${a.alerts.length} patient ${a.alerts.length === 1 ? 'alert' : 'alerts'}`, 'coral', 'Alert'])
   if (Number(a.claims_to_fix) > 0) chips.push(['Claim denied', 'coral', 'Denied'])
   else if (Number(a.kx_required) === 1) chips.push(['KX threshold', 'coral', 'KX'])

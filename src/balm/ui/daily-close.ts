@@ -3,7 +3,7 @@ import { h, panel, usDate } from './shared'
 const groups = [
   ['notes', 'Unsigned notes'], ['plans', 'Plans of care'], ['charges', 'Visits without charges'],
   ['copays', 'Uncollected copays'], ['claims', 'Claims not sent'], ['intakes', 'Intakes not returned'],
-  ['authorizations', 'Authorizations running out'],
+  ['authorizations', 'Authorizations running out'], ['eligibility','Coverage to review'],
 ] as const
 
 export function dailyClosePanel(s: any) {

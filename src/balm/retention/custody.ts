@@ -85,6 +85,7 @@ export const custody = [
   {"table":"bm_disclosures","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_drafts","client":true,"links":[]},
   {"table":"bm_eligibility","client":false,"links":[["policy_id","bm_policies","id"]]},
+  {"table":"bm_eligibility_cohort_items","client":true,"links":[["eligibility_id","bm_eligibility","id"],["policy_id","bm_policies","id"]]},
   {"table":"bm_followups","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_followup_attempts","client":true,"links":[["client_id","bm_clients","id"],["followup_id","bm_followups","id"]]},
   {"table":"bm_import_client_revisions","client":true,"links":[["client_id","bm_clients","id"]]},

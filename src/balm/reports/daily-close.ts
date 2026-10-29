@@ -1,3 +1,4 @@
+import {eligibilityWarning} from '../insurance/eligibility-flags'
 import {attachBillingSchedules} from '../insurance/schedules'
 import { rows } from '../domain/model'
 import { accountAuthorizations, authorizationCoversVisit, selectAuthorization, signedAuthorizationChargeSql } from '../insurance/authorization-accounting'
@@ -22,6 +23,7 @@ export type DailyCloseFacts = {
   copays: DailyCloseItem[]
   claims: DailyCloseItem[]
   intakes: DailyCloseItem[]
+  eligibility: DailyCloseItem[]
   authorizations: DailyCloseItem[]
 }
 
@@ -82,14 +84,14 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       FROM bm_claims q JOIN bm_invoices i ON i.id=q.invoice_id JOIN bm_appointments a ON a.id=q.appointment_id JOIN bm_clients c ON c.id=q.client_id
       WHERE q.status IN ('draft','ready','batched','exported') AND i.status<>'void' AND q.service_date<=?
       AND julianday(a.start_at)<julianday(?) AND julianday(q.created_at)<julianday(?) ORDER BY q.service_date,q.id`, date, cutoff, cutoff),
-    stmt(db, `SELECT id,client_id,starts_on,ends_on FROM bm_policies ORDER BY priority,starts_on DESC,id`),
+    stmt(db, `SELECT id,client_id,starts_on,ends_on,eligibility_status FROM bm_policies ORDER BY priority,starts_on DESC,id`),
     stmt(db, `SELECT z.*,p.client_id,y.unit_method,y.fixed_unit_minutes,COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='authorization' AND record_id=z.id),'') AS episodeId,
       c.first_name||' '||c.last_name AS client FROM bm_authorizations z JOIN bm_policies p ON p.id=z.policy_id JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=p.client_id
       ORDER BY z.starts_on DESC,z.id DESC`),
     stmt(db, signedAuthorizationChargeSql),
   ])
   const [visits, unsigned, plans, invoices, copayPayments, unsent, policies, authorizations, chargeRows] = results.map(r => r.results)
-  const result: DailyCloseFacts = { date, zone, notes: [], plans: [], charges: [], copays: [], claims: [], intakes: [], authorizations: [] }
+  const result: DailyCloseFacts = { date, zone, notes: [], plans: [], charges: [], copays: [], claims: [], intakes: [], eligibility: [], authorizations: [] }
   const localVisits: (Data & { local_date: string })[] = visits.map(v => ({ ...v, local_date: hostDateAt(new Date(v.start_at), zone) }))
   const throughToday = localVisits.filter(v => v.local_date <= date)
   const invoicesByVisit = groupBy(invoices, 'appointment_id'), policiesByClient = groupBy(policies, 'client_id')
@@ -152,6 +154,12 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
     const serviceDate = hostDateAt(new Date(invoice.start_at), zone)
     if ((policiesByClient.get(invoice.client_id) ?? []).some(p => p.starts_on <= serviceDate && (!p.ends_on || p.ends_on >= serviceDate))) {
       result.claims.push(item(invoice, 'missing_claim', `Insured approved charge has no claim · ${displayDate(serviceDate)}`, `invoice-${invoice.id}`))
+    }
+  }
+
+  for(const visit of localVisits.filter(v=>v.status==='booked'&&v.local_date>=date)) {
+    for(const policy of policiesByClient.get(visit.client_id)??[])if(policy.starts_on<=visit.local_date&&(!policy.ends_on||policy.ends_on>=visit.local_date)){
+      for(const warning of eligibilityWarning(policy as {id:string;eligibility_status:string}))result.eligibility.push(item(visit,warning.code,warning.message+' · '+displayDate(visit.local_date),'insurance'))
     }
   }
 
