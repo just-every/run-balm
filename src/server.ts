@@ -14,6 +14,7 @@ import { balmResponse } from './balm/http'
 import { localLinkResponse } from './balm/local-link'
 import { sendDueReminders } from './balm/reminders/scheduler'
 import { runDueBackup } from './balm/backup'
+import { progressWaitlistOffers } from './balm/scheduling/patient-effects'
 import { seedDemo } from './demo'
 
 const api = new Hono<{ Bindings: Bindings }>()
@@ -30,6 +31,7 @@ function noTransform(response: Response): Response {
 
 export default withDemo<Bindings, ExportedHandler<Bindings>>({
   async scheduled(controller, env, execution) {
+    execution.waitUntil(progressWaitlistOffers(runtimeBindings(env)))
     execution.waitUntil(sendDueReminders(runtimeBindings(env), controller.scheduledTime))
     execution.waitUntil(runDueBackup(runtimeBindings(env), controller.scheduledTime).catch(error => console.error('scheduled backup', error)))
   },
