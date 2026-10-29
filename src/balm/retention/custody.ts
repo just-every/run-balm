@@ -127,6 +127,7 @@ export const custody = [
   {"table":"bm_payments","client":false,"links":[["account_entry_id","bm_account_entries","id"],["card_payment_id","bm_card_payments","id"],["invoice_id","bm_invoices","id"]]},
   {"table":"bm_plan_installments","client":false,"links":[["plan_id","bm_payment_plans","id"]]},
   {"table":"bm_plans_of_care","client":true,"links":[["note_id","bm_notes","id"],["client_id","bm_clients","id"]]},
+  {"table":"bm_institutional_visits","client":true,"links":[]},
   {"table":"bm_portal_links","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_portal_sessions","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_remittance_claims","client":false,"links":[["claim_id","bm_claims","id"]]},

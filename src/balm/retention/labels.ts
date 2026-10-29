@@ -11,7 +11,7 @@ const groups: Record<string,string[]> = {
   'Retail receipts and visit entitlements':['retail_sales','membership_events','membership_cancellations','membership_settlements','package_assignments','package_uses'],
   'Saved payment credentials and private payment links':['card_setups','cards','stripe_customers','pay_links'],
   'Payment plans and balance reminders':['payment_plans','plan_installments','balance_reminders','balance_notices','balance_review_queue'],
-  'Insurance coverage, claims and remittance detail':['policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','payer_payment_lines','cob_stages','cob_adjudications','cob_patient_decisions','cob_paper_packets','cob_manual_reductions','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],
+  'Insurance coverage, claims and remittance detail':['institutional_visits','policies','authorizations','eligibility','claims','claim_batch_items','claim_events','insurance_adjustments','remittance_claims','payer_payment_lines','cob_stages','cob_adjudications','cob_patient_decisions','cob_paper_packets','cob_manual_reductions','movein_insurance','medicare_abns','medicare_expenses','medicare_years'],
   'Referrals and referral work':['referrals','case_drafts','case_steps'],
   'Integration booking events and delivery history':['integration_events','integration_deliveries'],
   'Guardian authority and submitted profile changes':['guardian_grants','guardian_sessions','portal_profile_changes'],

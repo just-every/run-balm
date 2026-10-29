@@ -1,3 +1,4 @@
+import {institutionalFacts} from './institutional-facts'
 import {claimRequirements} from './claim-requirements'
 import {claimCoding} from './coding'
 import { audit, commit, DomainError, guard, id, insist, now, one, stmt, text, type Actor, type Data } from '../domain/model'
@@ -13,6 +14,8 @@ import type { ClaimSnapshot } from './types'
 export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:Data) {
   const correction=replaces?authorizationCorrection({...replaces,errors:JSON.parse(replaces.errors),snapshot:JSON.parse(replaces.snapshot),
     ...(await one(db,"SELECT MAX(sequence) AS remittance_sequence FROM bm_audit WHERE client_id=? AND subject_id=? AND action='insurance.remittance_posted'",replaces.client_id,replaces.id))}):null
+  insist(!input.claimFormat||['837P','837I'].includes(input.claimFormat),'invalid_claim_format')
+  if(replaces)insist(!JSON.parse(replaces.snapshot).institutional&&input.claimFormat!=='837I','institutional_correction_workflow_not_available',409)
   const key=id(),facts=await claimFacts(db,who,{...input,authorizationCorrection:correction}),at=now()
   if(replaces){
     const prior=JSON.parse(replaces.snapshot) as ClaimSnapshot
@@ -24,6 +27,7 @@ export async function prepareClaim(db:D1Database,who:Actor,input:Data,replaces?:
   }
   facts.coding=await claimCoding(db,facts)
   facts.requirements=await claimRequirements(db,facts,(await one(db,'SELECT client_id FROM bm_policies WHERE id=?',input.policyId))!.client_id,input.appointmentId)
+  if(input.claimFormat==='837I')facts.institutional=await institutionalFacts(db,facts,input.appointmentId,input.policyId)
   const errors=scrubClaim(facts),amount=facts.lines.reduce((t,l)=>t+l.amountCents,0)
   // Zero-priced incomplete claims still keep the approved invoice charge while
   // the scrubber names the missing line prices. No invented price is billed.
@@ -85,5 +89,6 @@ export async function refreshClaimFacts(db:D1Database,who:Actor,claim:Data) {
   const fresh=await claimFacts(db,who,{appointmentId:claim.appointment_id,policyId:claim.policy_id,therapyGroup:claim.therapy_group,referringFirst:old.referring?.first,referringLast:old.referring?.last,referringNpi:old.referring?.npi,authorizationCorrection:old.basis?.authorizationCorrection})
   applyMedicareServices(fresh,old.medicareServices,old.medicalNecessity);fresh.frequency=old.frequency;fresh.originalControl=old.originalControl
   fresh.requirements=await claimRequirements(db,fresh,claim.client_id,claim.appointment_id)
+  if(old.institutional)fresh.institutional=await institutionalFacts(db,fresh,claim.appointment_id,claim.policy_id)
   return fresh
 }

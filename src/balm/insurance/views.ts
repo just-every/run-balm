@@ -1,4 +1,5 @@
 import {eligibilityCohorts} from './eligibility-batches'
+import {institutionalSettings} from './institutional-facts'
 import {authorizationPreparationFor,authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
 import {injuryState} from './injury'
 import {runoutState} from './runout'
@@ -46,7 +47,7 @@ export async function insuranceFile(db:D1Database,initial:Actor,clientId:string)
       e.benefits = JSON.stringify(benefits)
     }
   }
-  return {authorizationPreparation:await authorizationPreparationFor(db,who,clientId),authorizationRequests:await authorizationRequestsFor(db,who,clientId),cob:who.role==='owner'||biller(who)?await cobState(db,initial,clientId):null,policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),medicare:positions,warnings}
+  return {authorizationPreparation:await authorizationPreparationFor(db,who,clientId),authorizationRequests:await authorizationRequestsFor(db,who,clientId),cob:who.role==='owner'||biller(who)?await cobState(db,initial,clientId):null,policies,authorizations:auths,eligibility:eligibility.map(e=>({...e,benefits:e.benefits?JSON.parse(e.benefits):null})),claims:claims.map(c=>claimView(c,who)),institutionalVisits:who.role==='owner'?await rows(db,'SELECT * FROM bm_institutional_visits WHERE client_id=? ORDER BY rowid DESC',client.id):[],medicare:positions,warnings}
 }
 export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   const who=await insuranceActor(env.DB,initial),db=env.DB,desk=who.role==='owner'||who.staffRole==='reception'
@@ -54,7 +55,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
     who.role==='owner'?one(db,'SELECT * FROM bm_insurance_settings WHERE id=1'):Promise.resolve(null),
     rows(db,'SELECT * FROM bm_payers ORDER BY name'),rows(db,'SELECT * FROM bm_payer_fees ORDER BY payer_id,code'),rows(db,'SELECT * FROM bm_payer_enrollments'),
     rows(db,"SELECT id,name,npi,profession FROM bm_staff WHERE role='practitioner' AND erased_at IS NULL"),
-    desk?rows(db,`SELECT b.id,b.payer_id,b.status,b.reference,b.sha256,b.created_at,NOT EXISTS(SELECT 1 FROM bm_claim_batch_items x JOIN bm_claims c ON c.id=x.claim_id WHERE x.batch_id=b.id AND c.status NOT IN ('batched','exported')) AS can_submit FROM bm_claim_batches b ORDER BY b.created_at DESC LIMIT 100`):Promise.resolve([]),
+    desk?rows(db,`SELECT b.format,b.id,b.payer_id,b.status,b.reference,b.sha256,b.created_at,NOT EXISTS(SELECT 1 FROM bm_claim_batch_items x JOIN bm_claims c ON c.id=x.claim_id WHERE x.batch_id=b.id AND c.status NOT IN ('batched','exported')) AS can_submit FROM bm_claim_batches b ORDER BY b.created_at DESC LIMIT 100`):Promise.resolve([]),
     rows(db,`SELECT c.*,a.practitioner_id,(SELECT recognized_cents FROM bm_medicare_expenses WHERE claim_id=c.id) AS recognized_cents,(SELECT source FROM bm_medicare_expenses WHERE claim_id=c.id) AS expense_source,(COALESCE((SELECT r.paid_cents FROM bm_remittance_claims r WHERE r.claim_id=c.id),0)+COALESCE((SELECT SUM(CASE l.kind WHEN 'recoupment' THEN -l.amount_cents ELSE l.paid_cents END) FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id WHERE l.claim_id=c.id AND b.status='closed'),0)) AS payer_paid_cents,(COALESCE((SELECT r.pr_cents FROM bm_remittance_claims r WHERE r.claim_id=c.id),0)+COALESCE((SELECT SUM(l.pr_cents) FROM bm_payer_payment_lines l JOIN bm_payer_payment_batches b ON b.id=l.batch_id WHERE l.claim_id=c.id AND b.status='closed'),0)) AS patient_responsibility_cents FROM bm_claims c JOIN bm_appointments a ON a.id=c.appointment_id JOIN bm_clients p ON p.id=c.client_id WHERE p.erased_at IS NULL AND (? OR a.practitioner_id=?) AND c.status<>'corrected' ORDER BY c.updated_at DESC LIMIT 200`,desk?1:0,practitionerId(who)??''),
     rows(db,`SELECT a.id,a.client_id,a.practitioner_id,a.start_at FROM bm_appointments a JOIN bm_clients c ON c.id=a.client_id WHERE c.erased_at IS NULL AND a.status='booked' AND (? OR a.practitioner_id=?) AND a.start_at>=? AND a.start_at<? ORDER BY a.start_at`,desk?1:0,practitionerId(who)??'',now(),new Date(Date.now()+8*86400000).toISOString()),
     rows(db,'SELECT * FROM bm_medicare_settings ORDER BY year DESC,therapy_group'),
@@ -69,7 +70,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   }
   const schedules=who.role==='owner'?await rows(db,'SELECT * FROM bm_billing_schedules ORDER BY effective_on DESC'):[]
   const licenses=who.role==='owner'?await rows(db,'SELECT * FROM bm_provider_licenses ORDER BY ends_on DESC'):[]
-  return {eligibilityCohorts:await eligibilityCohorts(db,who),injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:await adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {institutionalSettings:who.role==='owner'?await institutionalSettings(db):null,eligibilityCohorts:await eligibilityCohorts(db,who),injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:await adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)
@@ -88,11 +89,13 @@ export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:stri
     await commit(db,who,[clientGuard(db,who,e.client_id),stmt(db,"UPDATE bm_eligibility SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),audit(db,who,'insurance.270_exported',e.client_id,id)])
     return {filename:`eligibility-${id}.270.x12`,contentType:'application/EDI-X12',body:e.request as string}
   }
-  insist(kind==='837P','insurance_download_kind_invalid',404)
+  insist(kind==='837P'||kind==='837I','insurance_download_kind_invalid',404)
   const batch=await one(db,'SELECT * FROM bm_claim_batches WHERE id=?',id);insist(batch,'insurance_batch_not_found',404)
+  insist(batch.body,'claim_original_withdrawn',410)
+  insist(kind===batch.format,'claim_format_does_not_match_download',404)
   const claims=await rows(db,'SELECT c.id,c.client_id,c.snapshot FROM bm_claims c JOIN bm_claim_batch_items b ON b.claim_id=c.id WHERE b.batch_id=?',id)
   insist(who.role==='owner'||!claims.some(c=>JSON.parse(c.snapshot).injury),'injury_case_requires_owner',403)
   const coding=await batchCodeGuards(db,id)
   await commit(db,who,[...coding,...claims.map(c=>guard(db,'EXISTS(SELECT 1 FROM bm_clients WHERE id=? AND erased_at IS NULL)',c.client_id)),stmt(db,"UPDATE bm_claim_batches SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),...claims.flatMap(c=>[stmt(db,"UPDATE bm_claims SET status='exported',version=version+1,updated_at=? WHERE id=? AND status='batched'",now(),c.id),audit(db,who,'insurance.837_exported',c.client_id,c.id)])])
-  return {filename:`claims-${id}.837p.x12`,contentType:'application/EDI-X12',body:batch.body as string}
+  return {filename:`claims-${id}.${kind.toLowerCase()}.x12`,contentType:'application/EDI-X12',body:batch.body as string}
 }

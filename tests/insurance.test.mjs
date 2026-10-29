@@ -857,4 +857,9 @@ test('signed evaluation authorization requests retain external decisions and cre
 test('INS-002: owner prepares dated eligibility cohorts, imports matched answers and reviews affected visits without inferred policy changes',async()=>{
  const {eligibilityCohortJourney}=await import('./eligibility-cohort-journey.mjs')
  await run(eligibilityCohortJourney,{browserHttps:!!process.env.BALM_UI_SCREENSHOTS})
+ })
+
+test('institutional Medicare claim preparation preserves signed charges, refuses stale facts and exports unsent 837I originals once',async()=>{
+ const {institutionalJourney}=await import('./institutional-claims-journey.mjs')
+ await run(institutionalJourney,{browserHttps:!!process.env.BALM_UI_SCREENSHOTS,auth:{BALM_INSURANCE_ADAPTER_URL:'https://clearinghouse.clinic.example/x12',BALM_INSURANCE_ADAPTER_TOKEN:'synthetic-balm-309'},outbound:async()=>{throw Error('Institutional preparation must not call a provider')}})
 })

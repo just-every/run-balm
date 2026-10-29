@@ -1,3 +1,4 @@
+import {institutionalBatch} from './institutional'
 import { codeBatch, batchCodeGuards } from './batch-coding'
 import { audit, commit, guard, id, insist, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { refreshClaimFacts } from './claims'
@@ -35,17 +36,19 @@ export async function prepareBatch(db:D1Database,who:Actor,input:Data) {
     claims.push({...claim,facts})
   }
   insist(new Set(claims.map(c=>c.appointment_id)).size===claims.length,'a_batch_cannot_bill_the_same_visit_twice',409)
+  insist(new Set(claims.map(c=>c.facts.institutional?'837I':'837P')).size===1,'mixed_professional_and_institutional_batches_are_refused',409)
   await codeBatch(db,claims)
   const payer=claims[0].facts.payer.id
   insist(claims.every(c=>c.facts.payer.id===payer&&JSON.stringify(c.facts.billing)===JSON.stringify(claims[0].facts.billing)),'batch_requires_one_payer_and_billing_identity')
-  const key=id(),body=professionalBatch(claims.map(c=>({id:c.id,snapshot:c.facts})),key),hash=await sha256(body),at=now()
-  await commit(db,who,[stmt(db,"INSERT INTO bm_claim_batches(id,payer_id,body,sha256,status,created_by,created_at) VALUES(?,?,?,?,'prepared',?,?)",key,payer,body,hash,who.email,at),
+  const key=id(),body=(claims[0].facts.institutional?institutionalBatch:professionalBatch)(claims.map(c=>({id:c.id,snapshot:c.facts})),key),hash=await sha256(body),at=now()
+  await commit(db,who,[stmt(db,"INSERT INTO bm_claim_batches(id,payer_id,body,sha256,status,created_by,created_at,format) VALUES(?,?,?,?,'prepared',?,?,?)",key,payer,body,hash,who.email,at,claims[0].facts.institutional?'837I':'837P'),
     ...claims.flatMap(c=>claimFactGuards(db,c,c.facts)),
     ...claims.flatMap(c=>[stmt(db,"UPDATE bm_claims SET status='batched',snapshot=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND status='ready'",JSON.stringify(c.facts),at,c.id,c.version),guard(db,'changes()=1'),stmt(db,'INSERT INTO bm_claim_batch_items(batch_id,claim_id) VALUES(?,?)',key,c.id),audit(db,who,'insurance.claim_batched',c.client_id,c.id)])])
   return {id:key,status:'prepared',claims:claims.map(c=>c.id),sha256:hash}
 }
 export async function submitBatch(env:InsuranceEnv,who:Actor,input:Data) {
   const db=env.DB,batch=await one(db,'SELECT * FROM bm_claim_batches WHERE id=?',text(input.id,'batch',100));insist(batch,'insurance_batch_not_found',404)
+  insist(batch.format!=='837I','institutional_submission_not_configured_no_claim_sent',409)
   const injury=await one(db,"SELECT 1 FROM bm_claim_batch_items b JOIN bm_claims c ON c.id=b.claim_id WHERE b.batch_id=? AND json_type(c.snapshot,'$.injury') IS NOT NULL",batch.id)
   insist(!injury,'injury_report_transport_not_configured_no_claim_sent',409)
   const status=await adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}

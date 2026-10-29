@@ -249,6 +249,14 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   }
   const releasePayer=await h.cmd('insurance.payer.save',{name:'Synthetic retained payer',payerId:'SYNTHETICRETENTION',receiverId:'SYNTHETIC',unitMethod:'cms',fees:[{code:'97110',cents:3500}]})
   const releasePolicy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:releasePayer.id,memberId:'synthetic-balm-1',relationship:'18',patientSex:'F',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'1980-01-01',endsOn:'2099-12-31'})
+  const institutionalVisit=crypto.randomUUID(),institutionalClaim=crypto.randomUUID(),institutionalBatch=crypto.randomUUID()
+  // Historical originals enter this existing custody fixture without executable provider credentials.
+  await h.db.prepare("INSERT INTO bm_institutional_visits(id,client_id,appointment_id,policy_id,plan_id,attending_first,attending_last,attending_npi,patient_status,occurrences,source,created_by,created_at) VALUES(?,?,?,?,?,'Synthetic','Physician','1234567893','01',?,'synthetic-balm-320 historical occurrence original',?,'1990-01-02T03:00:00Z')").bind(institutionalVisit,patient.id,visit,releasePolicy.id,historicalPlan,JSON.stringify([{code:'29',date:'1990-01-02'}]),h.auth.OWNER_EMAIL).run()
+  await h.db.prepare("INSERT INTO bm_claims(id,client_id,appointment_id,policy_id,invoice_id,snapshot,status,amount_cents,therapy_group,service_date,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'exported',9500,'pt_slp','1990-01-02',?,'1990-01-02T03:00:00Z','1990-01-02T03:00:00Z')").bind(institutionalClaim,patient.id,visit,releasePolicy.id,invoice.id,JSON.stringify({institutional:{billType:'741'},patient:{first:'Private',last:'Historical'},payer:{name:'Synthetic retained payer',medicare:false},lines:[]}),h.auth.OWNER_EMAIL).run()
+  await h.db.prepare("INSERT INTO bm_claim_batches(id,payer_id,body,sha256,status,created_by,created_at,format) VALUES(?,?,'ST*837*0001*005010X223A2~Private historical institutional original~','synthetic-balm-321','exported',?,'1990-01-02T03:00:00Z','837I')").bind(institutionalBatch,releasePayer.id,h.auth.OWNER_EMAIL).run()
+  await h.db.prepare('INSERT INTO bm_claim_batch_items(batch_id,claim_id) VALUES(?,?)').bind(institutionalBatch,institutionalClaim).run()
+  await assert.rejects(h.db.prepare('DELETE FROM bm_institutional_visits WHERE id=?').bind(institutionalVisit).run(),/institutional_visit_requires_retention_review/)
+  await assert.rejects(h.db.prepare("UPDATE bm_claim_batches SET body='changed' WHERE id=?").bind(institutionalBatch).run(),/institutional_batch_original_fixed/)
   const historicalReferral=await h.cmd('case.open',{clientId:patient.id,policyId:releasePolicy.id,receivedOn:'1990-01-01',referringFirst:'Historical',referringLast:'Physician'})
   const historicalRequest=crypto.randomUUID()
   // Immutable external-work originals from the same historical clinic fixture.
@@ -299,6 +307,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   assert.equal(preview.records.bm_note_checks,1,'AGENT-003 questions containing clinical excerpts join destruction scope')
   assert.ok(preview.records.bm_portal_links>0)
   for(const table of ['bm_authorization_requests','bm_authorization_submissions','bm_authorization_decisions'])assert.equal(preview.records[table],1)
+  assert.equal(preview.records.bm_institutional_visits,1);assert.equal(preview.withdrawnClaimBatches,1)
   assert.equal(preview.records.bm_clinical_letters,1);assert.equal(preview.records.bm_letter_deliveries,1)
   assert.equal(preview.records.bm_measures,1)
   assert.equal(preview.records.bm_membership_events,1)
@@ -308,6 +317,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
   const destroyed=await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   assert.equal(destroyed.destroyed,true)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_institutional_visits WHERE id=?').bind(institutionalVisit).first()).n,0)
+  assert.equal((await h.db.prepare('SELECT body FROM bm_claim_batches WHERE id=?').bind(institutionalBatch).first()).body,'')
+  assert.equal((await h.send('/api/balm/insurance/837I/'+institutionalBatch,undefined,h.owner)).status,410)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_movein_invoices WHERE id=?').bind(oldInvoice).first()).n,0)
   assert.deepEqual(await h.db.prepare('SELECT issued_on,billed_cents,balance_cents FROM bm_destroyed_movein_invoices WHERE id=?').bind(oldInvoice).first(),{issued_on:'1990-01-02',billed_cents:10000,balance_cents:0})
   assert.doesNotMatch(JSON.stringify(await h.cmd('movein.journal',{jobId:oldInvoiceJob})),/Private historical invoice original/)

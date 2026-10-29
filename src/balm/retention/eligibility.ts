@@ -28,6 +28,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(r.written_at) FROM bm_note_revisions r JOIN bm_notes n ON n.id=r.note_id WHERE n.client_id=?),''),
     COALESCE((SELECT MAX(a.written_at) FROM bm_note_addenda a JOIN bm_notes n ON n.id=a.note_id WHERE n.client_id=?),''),
     COALESCE((SELECT MAX(MAX(occurred_at,recorded_at)) FROM bm_calls WHERE client_id=?),''),
+    COALESCE((SELECT MAX(created_at) FROM bm_institutional_visits WHERE client_id=?),''),
     COALESCE((SELECT MAX(sent_at) FROM bm_messages WHERE client_id=?),''),
     COALESCE((SELECT MAX(created_at) FROM bm_chart_documents WHERE client_id=?),''),
     COALESCE((SELECT MAX(recorded_at) FROM bm_disclosures WHERE client_id=?),''),
@@ -39,7 +40,7 @@ export async function eligibility(db: D1Database, client: Data, policy: Data | n
     COALESCE((SELECT MAX(created_at) FROM bm_outcome_schedules WHERE client_id=?),''),
     COALESCE((SELECT MAX(created_at) FROM bm_outcome_requests WHERE client_id=?),''),
     COALESCE((SELECT MAX(attempted_at) FROM bm_outcome_attempts WHERE client_id=?),'')
-  ) AS at`,...Array(14).fill(client.id))
+  ) AS at`,...Array(15).fill(client.id))
   const authorizationDate = await one(db,`SELECT MAX(at) AS at FROM (SELECT prepared_at AS at FROM bm_authorization_requests WHERE client_id=? UNION ALL SELECT s.recorded_at FROM bm_authorization_submissions s JOIN bm_authorization_requests r ON r.id=s.request_id WHERE r.client_id=? UNION ALL SELECT d.recorded_at FROM bm_authorization_decisions d JOIN bm_authorization_requests r ON r.id=d.request_id WHERE r.client_id=?)`,client.id,client.id,client.id)
   const eligibilityDate=await one(db,`SELECT MAX(MAX(e.created_at,COALESCE(e.checked_at,e.created_at))) AS at FROM bm_eligibility e JOIN bm_policies p ON p.id=e.policy_id WHERE p.client_id=?`,client.id)
   const invoiceDate = await one(db, 'SELECT MAX(at) AS at FROM (SELECT issued_on AS at FROM bm_movein_invoices WHERE client_id=? UNION ALL SELECT imported_at FROM bm_movein_invoices WHERE client_id=?)', client.id, client.id)

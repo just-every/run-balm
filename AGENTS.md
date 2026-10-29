@@ -180,3 +180,8 @@ INS-002 eligibility cohort evidence uses Lander-Regenerate:
 `node scripts/contract-docs.mjs write INS-002`, then
 `node scripts/contract-docs.mjs check INS-002`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+INS-011 institutional preparation uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write INS-011`, then
+`node scripts/contract-docs.mjs check INS-011`. Regenerate the edition source lock
+last with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.

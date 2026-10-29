@@ -76,3 +76,19 @@ export function insuranceSettings(s: any) {
     + `<details id="payers"${i.settings && !payers.length ? ' open' : ''}><summary>2. Payers you bill and your fee schedule ${done(payers.length > 0)}</summary>${payerList}<details${payers.length ? '' : ' open'}><summary>Add a payer</summary>${payerForm(i)}</details></details>`
     + `<details id="enrollment"${payers.length && !(i.enrollments ?? []).length ? ' open' : ''}><summary>3. Provider enrollment ${done((i.enrollments ?? []).length > 0)}</summary><p class="help">Record each practitioner the payer has accepted (enrolled) to treat its members.</p>${enrollment(i, payers, staff)}</details>` + datedBilling(i,payers,staff) + medicareSettings(s, path), 'full')
 }
+
+
+/** Configuration lives in the existing clinic Settings screen. */
+export function institutionalSettingsPanel(s:any){
+ if(!owner(s))return ''
+ const st=s.insurance?.institutionalSettings
+ const mappings=st?JSON.parse(st.revenue_mappings).map((m:any)=>m.code+' '+m.revenueCode).join('\n'):''
+ return panel('Rehab agency institutional claims',`<details id="institutional-settings"><summary>Institutional claim settings</summary><p>Record the agency enrollment reference and written payer instructions. Balm does not verify enrollment or payer rules. Only original, single-visit outpatient Medicare test files are available; submission stays unavailable.</p>${st?'<p>Current instructions: '+h(st.source)+' · '+(st.active?'active':'inactive')+'</p>':''}`
+ +named(form('insurance.institutional.settings','/app/clinic',select('billType','Bill type',[['741','741 · Original outpatient rehabilitation']])
+ +input('enrollmentReference','Recorded agency enrollment reference',st?.enrollment_reference,'Your existing enrollment record; entering it grants no provider authority.')
+ +`<label>Procedure to revenue mappings<textarea name="revenueLines" rows="4" required>${h(mappings)}</textarea><span class="hint">One procedure code and four-digit revenue code per line, from the written payer instructions.</span></label>`
+ +input('planSpanCode','Plan period occurrence span code',st?.plan_span_code,'The two-character code your written payer instructions use for the signed plan period. Balm does not choose one.','required maxlength="2"')
+ +input('source','Written institutional instruction source',st?.source,'Name the payer guide, version and section.','required')
+ +tick('active','Use these recorded instructions',!!st?.active,'A new revision keeps earlier claim originals intact.')
+ +check('attest','I reviewed these facts against the agency enrollment record and written payer instructions.','required'),'Record institutional instructions'))+'</details>','full','rehab-agency')
+}

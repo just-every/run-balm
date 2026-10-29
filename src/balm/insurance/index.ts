@@ -1,4 +1,6 @@
 import {previewEligibilityCohort,prepareEligibilityCohort} from './eligibility-batches'
+
+import {saveInstitutionalSettings,saveInstitutionalVisit} from './institutional-facts'
 import {authorizationRequestCommand} from './authorization-requests'
 import {injuryCommand} from './injury'
 import {runoutCommand} from './runout'
@@ -43,6 +45,8 @@ export async function insuranceCommand(env:InsuranceEnv,initial:Actor,name:strin
     case 'insurance.filing.date':return recordFilingDate(db,initial,input)
     case 'insurance.claim.action':return recordClaimAction(db,initial,input)
     case 'insurance.requirements.save':return saveClaimRequirements(db,who,input)
+    case 'insurance.institutional.settings':return saveInstitutionalSettings(db,who,input)
+    case 'insurance.institutional.visit':return saveInstitutionalVisit(db,who,input)
     case 'insurance.settings.save':return saveInsuranceSettings(db,who,input)
     case 'insurance.schedule.save':return saveBillingSchedule(db,who,input)
     case 'insurance.license.save':return saveProviderLicense(db,who,input)
