@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "bafc9637c5eb1f13dd6ed692643d4d341c23eb6894e1b9f6d737c17cfc326a76",
+      "sha256": "b4e3cf42fea6c4223e3bdc01202e350cbede2abdd4b0a3ed6344a2de2316d827",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "469ded6a426a74b917e7cb76b1c953cb4984fb89fdc102b265702ae030867ce0",
+      "sha256": "b1e7f7f899e639d021eb57c33a785324cbe7487880fe1b961135acccddaf1885",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "96a411a7c56c2f86ac9987d755ae1ae9c71a60a73de3f6eeea85459e23ddb479",
+      "sha256": "089df59d80cf7e58f759ad1293983603a3a9097778bf117604399bf0f5afe2f4",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -6114,7 +6114,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "dd7c5f8357a850bc10e31e24055d2b4f8e881b8ae531fb848aaedf24d0c2e1e9",
+      "sha256": "c7c91d6a742e5194926886746a8f0a362dce714246e600cada87a01f68eb2e12",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -6454,7 +6454,7 @@
       "executable": false
     },
     "tests/functional-ack-fixture.mjs": {
-      "sha256": "21e1b8a7bbdc407df8238900f4e99a475563b78eeb1703db3a6fd4c38119568a",
+      "sha256": "d207fe8f1446ca5ffe4b35b71581b4124109d032dd7927231994f406aa1ab6ba",
       "executable": false
     },
     "tests/good-faith-journey.mjs": {
