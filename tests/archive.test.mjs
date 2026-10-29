@@ -874,9 +874,22 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const acceptanceOriginal=await h.db.prepare('SELECT * FROM bm_continuity_acceptances WHERE offer_id=?').bind(acceptedOffer.id).first()
   for(const visitId of JSON.parse(acceptanceOriginal.appointment_ids))await h.cmd('appointment.cancel',{id:visitId,reason:'Synthetic later continuity cancellation'},continuity.priya.cookie)
   await h.cmd('insurance.authorization.save',{...continuity.authInput,id:continuity.authorization.id,visits:6})
-  const pending = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
-  await h.cmd('continuity.approve',{id:pending.id,digest:pending.digest,confirm:true},continuity.priya.cookie)
-  const openContinuityOffer=await h.cmd('continuity.offer',{id:pending.id,digest:pending.digest,confirm:true},continuity.priya.cookie)
+  const released = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
+  await h.cmd('continuity.approve',{id:released.id,digest:released.digest,confirm:true},continuity.priya.cookie)
+  const openContinuityOffer=await h.cmd('continuity.offer',{id:released.id,digest:released.digest,confirm:true},continuity.priya.cookie)
+  // A separate cancelled series keeps the UNREVIEWED preparation current
+  // without changing the source facts of the open portal offer.
+  const pendingSeriesInput={...continuity.seriesInput,time:'11:00'}
+  const pendingPreview=await h.cmd('series.preview',pendingSeriesInput,continuity.priya.cookie)
+  const pendingSeries=await h.cmd('series.book',{...pendingSeriesInput,occurrences:pendingPreview.occurrences.map((o,i)=>({date:o.date,time:o.time,skip:i>=2}))},continuity.priya.cookie)
+  for(const visitId of pendingSeries.appointmentIds)await h.cmd('appointment.cancel',{id:visitId,reason:'Synthetic unreviewed continuity archive'},continuity.priya.cookie)
+  const pendingInput={seriesId:pendingSeries.seriesId}
+  const pending = await h.cmd('continuity.prepare',pendingInput,continuity.priya.cookie)
+  assert.equal((await h.cmd('continuity.offer',{id:released.id,digest:released.digest,confirm:true},continuity.priya.cookie)).id,openContinuityOffer.id,'the open offer is still current before export')
+  const pendingOriginal=(await h.cmd('continuity.read',{clientId:continuity.patient.id},continuity.priya.cookie)).proposals.find(p=>p.id===pending.id)
+  assert.equal(pendingOriginal.approved_at,null)
+  assert.equal(pendingOriginal.approved_by,null)
+  assert.equal(pendingOriginal.review_authority,1)
   const offerOriginals=(await h.db.prepare('SELECT id,proposal_id,client_id,practitioner_id,released_at,released_by,operator_id,operator_version,staff_version,expires_at,revoked_at FROM bm_continuity_offers ORDER BY id').all()).results
   const originals = (await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results
   const original=await snapshot(h.db,patient.id)
@@ -920,7 +933,7 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.equal(h.mail.length,mailCount,'restored historical queues never restart outbound offers')
   const clinicianCookie=await h.signIn(continuity.priya.email)
   const restoredProposals=await h.cmd('continuity.read',{clientId:continuity.patient.id},clinicianCookie)
-  assert.equal(restoredProposals.proposals.length,2)
+  assert.equal(restoredProposals.proposals.length,3)
   assert.deepEqual((await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results,originals,'continuity dates, cited sources and review originals survive exactly')
   assert.ok(restoredProposals.proposals.every(p=>p.review_authority===0),'historical reviews carry no executable review authority')
   assert.deepEqual((await h.db.prepare('SELECT id,proposal_id,client_id,practitioner_id,released_at,released_by,operator_id,operator_version,staff_version,expires_at,revoked_at FROM bm_continuity_offers ORDER BY id').all()).results,offerOriginals,'exact portal release originals survive restore')
@@ -930,8 +943,11 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const restoredPatientCookie=await continuityPatientLogin(h,['synthetic-balm-204','patient.example'].join('@'))
   assert.equal((await h.form('/portal/action',{name:'continuity.accept',id:openContinuityOffer.id,confirm:'on'},restoredPatientCookie)).status,409)
   assert.equal((await h.form('/portal/action',{name:'continuity.accept',id:acceptedOffer.id,confirm:'on'},restoredPatientCookie)).status,409)
+  const restoredPending=restoredProposals.proposals.find(p=>p.id===pending.id)
+  assert.equal(restoredPending.approved_at,null,'restore refusal exercises an unreviewed preparation')
+  assert.equal(restoredPending.approved_by,null)
   await h.cmd('continuity.approve',{id:pending.id,digest:pending.digest,confirm:true},clinicianCookie,409)
-  const preparedAgain=await h.cmd('continuity.prepare',continuityInput,clinicianCookie)
+  const preparedAgain=await h.cmd('continuity.prepare',pendingInput,clinicianCookie)
   assert.notEqual(preparedAgain.id,pending.id,'a restored clinician must create a new current preparation')
   assert.equal(preparedAgain.digest,pending.digest)
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
