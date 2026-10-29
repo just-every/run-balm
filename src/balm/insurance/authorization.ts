@@ -1,3 +1,4 @@
+import {eligibilityWarning,eligibilityPolicies} from './eligibility-flags'
 import {attachBillingSchedules} from './schedules'
 import { day, one, rows, type Data } from '../domain/model'
 import { hostDateAt } from '../availability/timezone'
@@ -25,13 +26,13 @@ export async function bookingWarnings(db: D1Database, clientId: string, date: st
   const on = day(date.slice(0, 10), 'date'), warnings: BookingWarning[] = []
   const episode = episodeId ?? (excludeAppointmentId ? (await one(db, "SELECT episode_id FROM bm_episode_records WHERE record_kind='visit' AND record_id=?", excludeAppointmentId))?.episode_id ?? '' : await bookingEpisode(db, clientId))
   const [policies, auths, charges] = await Promise.all([
-    rows(db, 'SELECT id,starts_on,ends_on,eligibility_status FROM bm_policies WHERE client_id=? AND priority=1', clientId),
+    eligibilityPolicies(db, clientId),
     authorizationsFor(db, clientId, excludeAppointmentId), excludeAppointmentId ? chargeFacts(db, clientId) : Promise.resolve([]),
   ])
   const dates = plannedDates?.length ? plannedDates : [on]
-  for (const p of policies) {
+  for (const p of policies.filter(p=>p.priority===1)) {
     if (dates.some(d => d < p.starts_on || p.ends_on && d > p.ends_on)) warnings.push({ code: 'policy_outside_coverage', message: 'The visit is outside the policy coverage dates.', policyId: p.id, blocking: false })
-    if (p.eligibility_status === 'inactive' || p.eligibility_status === 'changed') warnings.push({ code: 'eligibility_' + p.eligibility_status, message: p.eligibility_status === 'inactive' ? 'The latest eligibility response says coverage is inactive.' : 'The latest eligibility response names other coverage. Review the policy.', policyId: p.id, blocking: false })
+    if(dates.some(d=>p.starts_on<=d&&(!p.ends_on||p.ends_on>=d)))warnings.push(...eligibilityWarning(p as {id:string;eligibility_status:string}))
     const choices = auths.filter(a => a.policy_id === p.id && a.episodeId === episode && (!practitionerId || !a.practitioner_id || a.practitioner_id === practitionerId)).sort(authorizationOrder)
     if (!choices.length) continue
     const demand = new Map<string, { authorization: typeof choices[number]; count: number }>()
@@ -55,6 +56,7 @@ export async function bookingWarnings(db: D1Database, clientId: string, date: st
       else if (left <= lowRemainder(a)) warnings.push({ ...base, blocking: false, code: 'authorization_low', message: `${left} unreserved authorized ${label}${left === 1 ? ' remains' : 's remain'}.` })
     }
   }
+  for(const p of policies.filter(p=>p.priority!==1&&dates.some(d=>p.starts_on<=d&&(!p.ends_on||p.ends_on>=d))))warnings.push(...eligibilityWarning(p as {id:string;eligibility_status:string}))
   return warnings
 }
 
@@ -66,7 +68,7 @@ function warningBase(a: Data) {
  * Attended unsigned unit visits reserve the same allowance as future bookings. */
 export async function existingVisitWarnings(db: D1Database, clientId: string): Promise<Record<string, BookingWarning[]>> {
   const [policies, auths, visits, settings, charges] = await Promise.all([
-    rows(db, 'SELECT id,starts_on,ends_on,eligibility_status FROM bm_policies WHERE client_id=? AND priority=1', clientId),
+    eligibilityPolicies(db, clientId),
     authorizationsFor(db, clientId),
     rows(db, `SELECT id,client_id,start_at,status,practitioner_id,${episodeOf('visit', 'bm_appointments.id')} FROM bm_appointments WHERE client_id=? AND status IN ('booked','attended') ORDER BY start_at,id`, clientId),
     one(db, 'SELECT time_zone FROM bm_settings WHERE id=1'), chargeFacts(db, clientId),
@@ -74,9 +76,9 @@ export async function existingVisitWarnings(db: D1Database, clientId: string): P
   const reserved = new Map<string, number>(), result: Record<string, BookingWarning[]> = {}
   for (const visit of visits) {
     const on = hostDateAt(new Date(visit.start_at), settings!.time_zone), warnings: BookingWarning[] = []
-    for (const policy of policies) {
+    for (const policy of policies.filter(p=>p.priority===1)) {
       if (on < policy.starts_on || policy.ends_on && on > policy.ends_on) warnings.push({ code: 'policy_outside_coverage', message: 'The visit is outside the policy coverage dates.', policyId: policy.id, blocking: false })
-      if (policy.eligibility_status === 'inactive' || policy.eligibility_status === 'changed') warnings.push({ code: 'eligibility_' + policy.eligibility_status, message: policy.eligibility_status === 'inactive' ? 'The latest eligibility response says coverage is inactive.' : 'The latest eligibility response names other coverage. Review the policy.', policyId: policy.id, blocking: false })
+      if(on>=policy.starts_on&&(!policy.ends_on||on<=policy.ends_on))warnings.push(...eligibilityWarning(policy as {id:string;eligibility_status:string}))
       const choices = auths.filter(a => a.policy_id === policy.id && a.episodeId === visit.episodeId && (!a.practitioner_id || a.practitioner_id === visit.practitioner_id))
       if (!choices.length) continue
       const current = selectAuthorization(choices, policy.id, on, visit.practitioner_id, visit.episodeId), a = current ?? choices[0], base = warningBase(a)
@@ -90,6 +92,7 @@ export async function existingVisitWarnings(db: D1Database, clientId: string): P
         else if (a.used_allowance + a.reserved_allowance <= a.allowance_total && a.remaining_allowance <= lowRemainder(a)) warnings.push({ ...base, blocking: false, code: 'authorization_low', message: `${a.remaining_allowance} unreserved authorized ${label}${a.remaining_allowance === 1 ? ' remains' : 's remain'}.` })
       }
     }
+    for(const p of policies.filter(p=>p.priority!==1&&p.starts_on<=on&&(!p.ends_on||p.ends_on>=on)))warnings.push(...eligibilityWarning(p as {id:string;eligibility_status:string}))
     result[visit.id] = warnings
   }
   return result

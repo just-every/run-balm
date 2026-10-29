@@ -1,3 +1,4 @@
+import {recordedCohort} from './eligibility-cohort-journey.mjs'
 import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
@@ -48,7 +49,9 @@ async function historicalErasurePatient(h,priya,service) {
   const visit=await pastVisit(h,patient.id,priya,service.id,h.owner,12)
   await h.db.prepare('UPDATE bm_appointments SET start_at=?,end_at=? WHERE id=?').bind('1990-01-02T02:00:00.000Z','1990-01-02T02:45:00.000Z',visit).run()
   await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'incoming','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:00:00Z','Historical archived call','practitioner',?)").bind(crypto.randomUUID(),patient.id,priya.id,priya.email,priya.id).run()
-  return patient
+  const cohort=await recordedCohort(h,patient.id)
+  await h.db.prepare("UPDATE bm_eligibility SET created_at='1990-01-02T03:00:00.000Z',checked_at='1990-01-02T03:00:00.000Z' WHERE id=?").bind(cohort.requestId).run()
+  return {...patient,eligibilityRequestId:cohort.requestId}
 }
 async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
@@ -268,7 +271,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
         await h.cmd('pay.retail.sell',{clientId:scopedPatient.id,kind:'product',label:'synthetic-balm-replayed-private-receipt',amountCents:1200,taxBasisPoints:0,taxState:'TX',taxEvidence:'synthetic-balm-tax-evidence',reference:'synthetic-balm-retired-archive-sale',confirm:true},ownerCookie,409)
         const destruction=await h.cmd('retention.preview',{clientId:retentionPatient.id},ownerCookie)
         await h.cmd('retention.destroy',{previewId:destruction.previewId,digest:destruction.digest,confirm:true},ownerCookie)
-        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+        for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
         assert.equal((await h.db.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
         await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'},ownerCookie,409)
         await h.close();h=null
@@ -285,7 +288,7 @@ test('HIPAA-002 ERASE-001: public CLI erasure journals refuse both ordinary eras
     finally { await proxy.dispose() }
     const current=await getPlatformProxy({configPath:join(erased,'wrangler.jsonc'),persist:{path:join(erased,'.wrangler/state/v3')},remoteBindings:false})
     try {
-      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
+      for(const table of ['bm_retail_sales','bm_package_uses','bm_membership_cancellations','bm_membership_settlements','bm_calls','bm_eligibility_cohort_items'])assert.equal((await current.env.DB.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(retentionPatient.id).first()).n,0)
       assert.equal((await current.env.DB.prepare('SELECT SUM(amount_cents) n FROM bm_destroyed_retail').first()).n,3200)
       assert.equal(await current.env.DB.prepare('SELECT id FROM bm_retail_sales WHERE id=?').bind(scopedSale).first(),null)
       assert.equal((await current.env.DB.prepare('SELECT id FROM bm_clients WHERE id=?').bind(scopedPatient.id).first()).id,scopedPatient.id)
@@ -659,6 +662,13 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const base={clientId:patient.id,amountCents:5000,occurredOn:'2026-09-01',evidence:'Owner reviewed synthetic original'}
     await h.cmd('finance.observation.record',{...base,kind:'eft',reference:'synthetic-balm-archive-eft',sourceReference:'synthetic-balm-archive-trace'})
     await h.cmd('finance.source.record',{...base,kind:'charge',reference:'synthetic-balm-archive-charge',sourceReference:'synthetic-balm-archive-original',confirm:true})
+    const {payoutFixture}=await import('./finance-review-journey.mjs')
+    const payout=await payoutFixture(h,'archive')
+    await h.cmd('finance.payout.link',payout.link(0))
+    await h.cmd('finance.payout.link',payout.link(1))
+    const payoutReview=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).payouts.find(r=>r.payout_id===payout.payout.id)
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true})
+    const payoutBefore=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value
     const review=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).findings[0]
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
     const {giftSettlementJourney}=await import('./retail-gift-settlement-journey.mjs')
@@ -751,8 +761,15 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.equal(restoredStaff.active,0)
     assert.equal(h.outboundRequests.filter(x=>x.origin.includes('stripe')).length,0)
     const finance=await h.cmd('finance.reconcile.prepare',{month:'2026-09'},owner)
-    assert.equal(finance.matching.length,2)
+    assert.equal(finance.matching.length,14,'both prior originals and every restored payout source remain explained')
+    assert.equal(finance.matching.filter(x=>['synthetic-balm-archive-charge','synthetic-balm-archive-eft'].includes(x.reference)).length,2)
     assert.ok(finance.matching.find(x=>x.reference==='synthetic-balm-archive-charge').explanations.some(x=>x.includes('No recorded card settlement')))
+    const payoutAfter=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,owner)).value
+    assert.deepEqual(payoutAfter,payoutBefore,'whole payout originals, cited portions, fixed comparisons and historical approvals survive CLI restore')
+    assert.deepEqual(payoutAfter.reviews[0].payload.totals,{grossCents:30000,feeCents:900,netCents:29100,settlementCents:30000,chargeCents:30000,accountingCents:30000,unallocatedGrossCents:5000,unallocatedFeeCents:150,unallocatedNetCents:4850})
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true},owner,409)
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true},inactive.cookie,401)
+    await h.cmd('finance.payout.link',payout.link(2),inactive.cookie,401)
     assert.equal(finance.findings[0].sha256,review.sha256)
     assert.ok(finance.findings[0].approved_by)
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true},owner,409)
@@ -811,6 +828,9 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
  const temporary=await mkdtemp(join(tmpdir(),'balm-call-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  const snapshot=async(db,clientId)=>({
+  eligibility:(await db.prepare('SELECT e.* FROM bm_eligibility e JOIN bm_policies p ON p.id=e.policy_id WHERE p.client_id=? ORDER BY e.id').bind(clientId).all()).results,
+  cohorts:(await db.prepare('SELECT * FROM bm_eligibility_cohorts ORDER BY id').all()).results,
+  cohortItems:(await db.prepare('SELECT * FROM bm_eligibility_cohort_items WHERE client_id=? ORDER BY batch_id,policy_id').bind(clientId).all()).results,
   quietPolicies:(await db.prepare('SELECT * FROM bm_sms_quiet_policies ORDER BY id').all()).results,
   quietPolicy:(await db.prepare('SELECT sms_quiet_policy_id FROM bm_settings WHERE id=1').first()).sms_quiet_policy_id,
   patientZone:(await db.prepare('SELECT sms_time_zone FROM bm_clients WHERE id=?').bind(clientId).first()).sms_time_zone,
@@ -827,7 +847,7 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
   h=await harness({root:source,migrate:true,codeSets:false})
   const desk=await h.staff('Rosa','reception')
-  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',email:['synthetic-balm-510','patient.example'].join('@'),smsTimeZone:'America/New_York'})
+  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',dateOfBirth:'1988-04-02',email:['synthetic-balm-510','patient.example'].join('@'),smsTimeZone:'America/New_York'})
   await h.cmd('reminders.quiet_hours',{intervals:'21:00-08:00',source:'synthetic-balm-403 earlier reviewed policy',attest:true})
   const policy=await h.cmd('reminders.quiet_hours',{intervals:'22:00-08:00\n12:00-13:00',source:'synthetic-balm-404 current reviewed policy',attest:true})
   const ids=[]
@@ -854,12 +874,16 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   await h.cmd('appointment.cancel',{id:secondVisit.appointmentId,reason:'Synthetic live archive offer'})
   const openOfferPath=new URL(h.mail.findLast(m=>m.subject.startsWith('A time opened up')).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
   assert.match((await h.send(openOfferPath)).text,/A time opened up/)
+  const cohort=await recordedCohort(h,patient.id)
   const bearerHashes=(await h.db.prepare('SELECT offer_token_hash FROM bm_offer_recipients').all()).results.map(r=>r.offer_token_hash)
   const original=await snapshot(h.db,patient.id)
   assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
   assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
   assert.equal(original.recipients.filter(r=>r.outcome===null).length,1)
   assert.equal(original.calls.length,2)
+  assert.equal(original.eligibility.length,1);assert.equal(original.eligibility[0].response,cohort.x12)
+  assert.ok(original.eligibility[0].request.includes('ST*270*'))
+  assert.equal(original.cohortItems[0].eligibility_id,cohort.requestId)
   assert.equal(original.quietPolicy,policy.id)
   assert.equal(original.patientZone,'America/New_York')
   assert.deepEqual(original.quietPolicies.map(p=>[p.source,JSON.parse(p.intervals)]).sort(),[
@@ -893,6 +917,11 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.equal(h.mail.length,mailCount,'restored historical queues never restart outbound offers')
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
+  const restoredCohorts=(await h.state(cookie)).insurance.eligibilityCohorts
+  assert.equal(restoredCohorts.batches.find(b=>b.id===cohort.batchId).items[0].status,'inactive')
+  const original270=await h.send('/api/balm/insurance/270/'+cohort.requestId,undefined,cookie)
+  assert.equal(original270.text,original.eligibility[0].request)
+  assert.equal((await h.cmd('insurance.eligibility.import',{id:cohort.requestId,x12:cohort.x12},cookie)).duplicate,true)
   await assert.rejects(h.db.prepare('UPDATE bm_calls SET disposition=? WHERE id=?').bind('Changed original',ids[0]).run(),/calls_are_health_records/)
   await assert.rejects(h.db.prepare('DELETE FROM bm_calls WHERE id=?').bind(ids[0]).run(),/calls_are_health_records/)
   await h.cmd('client.erase',{id:patient.id},cookie,409)

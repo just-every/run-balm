@@ -150,3 +150,25 @@ In the patient file, open **Prior authorization requests**. The owner selects th
 The owner submits the packet through Availity or the payer’s portal outside Balm. The owner or biller then uses **Record external submission** to record the actual channel, date and portal reference. Once the payer answers, record its approval or denial, date, reference and source. An approval also records its actual authorization number, date range, visits or units, CPT scope and booking limits. Balm creates that authorization atomically with the decision; repeated decisions cannot create another allowance. A denial creates no authorization.
 
 The referral shows the submission and decision. The new authorization feeds the existing visit counts, reservations, booking warnings and daily close. Requests and fixed originals travel with the clinic archive and follow the clinic’s approved retention policy. Balm does not submit these requests or retrieve decisions automatically. No live payer connection is established by recording external work.
+
+## Prepare eligibility cohorts
+
+The owner can open **Claims & reimbursement → Eligibility cohorts → Prepare a cohort**.
+Choose the next business day’s schedule or the monthly active-policy cohort and
+enter the clinic-local date. Monthly preparation uses the first business day of
+that date’s month; next-day preparation starts after the entered date. Business
+days are Monday through Friday, excluding holidays already recorded in Clinic
+settings. Preview lists every selected policy before explicit preparation. A
+changed visit, policy or calendar requires a fresh preview. Multiple visits and
+overlapping cohorts reuse the policy’s inquiry for the same service date.
+
+Preparation sends nothing. Download each 270 and import its matched 271 response
+from the cohort or the patient file. The recorded status remains prepared or
+exported until an actual response or submission is recorded. Inactive coverage,
+changed coverage and an explicitly exhausted remaining therapy visit limit flag
+affected booked visits and the owner’s daily close. A response never selects a
+replacement payer or plan for you. Review and update those recorded facts yourself.
+
+Clearinghouse enrollment, provider credentials, an applicable signed BAA and live
+sandbox qualification are still required for provider use. These manual cohorts
+do not enable unattended checking or prove live payer acceptance.

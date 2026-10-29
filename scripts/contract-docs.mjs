@@ -9,7 +9,7 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode='check',...requested]=process.argv.slice(2)
-const ids=[...new Set(['HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id)&&!id.startsWith('BASE-AGENT-'))])]
+const ids=[...new Set(['INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id)&&!id.startsWith('BASE-AGENT-'))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=source.split('\n').filter(line=>/^\| `[A-Z][A-Z0-9-]+` \|/.test(line)).map(line=>{const cells=line.split('|').slice(1,-1).map(cell=>cell.trim());return [line,cells[0].replaceAll('`',''),...cells.slice(1)]}).filter(row=>['published','target','push-further'].includes(row[3])&&['done','partial','missing'].includes(row[4]))

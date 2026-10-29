@@ -1,3 +1,4 @@
+import {eligibilityCohorts} from './eligibility-batches'
 import {authorizationPreparationFor,authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
 import {injuryState} from './injury'
 import {runoutState} from './runout'
@@ -68,7 +69,7 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   }
   const schedules=who.role==='owner'?await rows(db,'SELECT * FROM bm_billing_schedules ORDER BY effective_on DESC'):[]
   const licenses=who.role==='owner'?await rows(db,'SELECT * FROM bm_provider_licenses ORDER BY ends_on DESC'):[]
-  return {injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:await adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
+  return {eligibilityCohorts:await eligibilityCohorts(db,who),injuryCases:await injuryState(db,who),runout:await runoutState(db,who),schedules,licenses,cob:who.role==='owner'||biller(who)?await cobState(db,initial):null,work:null,manualPayers:await manualPayerState(db,who),requirements,settings,payers:payers.map(p=>({...p,unit_method:p.fixed_unit_minutes != null ? 'fixed' : p.unit_method})),fees,enrollments,practitioners,batches,medicareSettings,adapter:await adapterStatus(env),queue:claims.map(c=>claimView(c,who)),warnings}
 }
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)
@@ -84,7 +85,7 @@ export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:stri
   if(kind==='270') {
     const e=await one(db,'SELECT e.*,p.client_id FROM bm_eligibility e JOIN bm_policies p ON p.id=e.policy_id WHERE e.id=?',id);insist(e,'eligibility_not_found',404)
     await insuranceClient(db,who,e.client_id)
-    await commit(db,who,[stmt(db,"UPDATE bm_eligibility SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),audit(db,who,'insurance.270_exported',e.client_id,id)])
+    await commit(db,who,[clientGuard(db,who,e.client_id),stmt(db,"UPDATE bm_eligibility SET status='exported',version=version+1 WHERE id=? AND status='prepared'",id),audit(db,who,'insurance.270_exported',e.client_id,id)])
     return {filename:`eligibility-${id}.270.x12`,contentType:'application/EDI-X12',body:e.request as string}
   }
   insist(kind==='837P','insurance_download_kind_invalid',404)

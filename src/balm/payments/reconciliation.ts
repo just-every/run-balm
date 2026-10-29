@@ -1,9 +1,11 @@
+import { payoutCommand, preparePayouts } from './payout-reconciliation'
 import { audit, commit, day, guard, human, id, insist, integer, now, one, rows, sha256, stmt, text, type Actor, type Data } from '../domain/model'
 import { clientVisible } from '../domain/clients'
 import { requireScope } from '../portal/integrations'
 
 function owner(who: Actor) { human(who); insist(who.role==='owner','only_the_owner_reviews_finance',403) }
 export async function reconciliationCommand(db: D1Database,who: Actor,name: string,input: Data) {
+  if(name.startsWith('finance.payout.')) return payoutCommand(db,who,name,input)
   if(name==='finance.reconcile.prepare') {
     if(who.role==='agent')requireScope(who,'finance.reconcile.prepare');else owner(who)
     const month=text(input.month,'month',7)
@@ -67,7 +69,7 @@ export async function reconciliationCommand(db: D1Database,who: Actor,name: stri
     statements.push(...[...new Set([...observations,...sources].map(o=>o.client_id))].map(clientId=>audit(db,who,'finance.reconciled',clientId,null,month)))
     await commit(db,who,statements)
     const result=await rows(db,'SELECT r.id,r.client_id,r.kind,r.payload,r.sha256,r.approved_by FROM bm_finance_reviews r JOIN bm_finance_observations o ON o.id=r.observation_id WHERE substr(o.occurred_on,1,7)=? ORDER BY r.id',month)
-    return {month,matching,recordedOnly:true,findings:result.map(r=>({...r,payload:JSON.parse(r.payload)})),outbound:'No request sent and no refund executed.'}
+    return {month,matching,payouts:await preparePayouts(db,who,month),recordedOnly:true,findings:result.map(r=>({...r,payload:JSON.parse(r.payload)})),outbound:'No request sent and no refund executed.'}
   }
   owner(who)
   if(name==='finance.source.record') {

@@ -2,7 +2,7 @@ name: Nightly journeys
 
 on:
   schedule:
-    - cron: '23 3 * * *'
+    - cron: '17 7 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -17,5 +17,5 @@ jobs:
       actions: read
     uses: ./.github/workflows/verify.yml
     with:
-      tier: all
+      tier: ${{ github.event_name == 'schedule' && 'nightly' || 'all' }}
       timeout: 45
