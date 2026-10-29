@@ -12,9 +12,9 @@ export function reasonHtml(e: any) {
 }
 
 export const insurancePath = '/app/insurance'
-export const x12Link = (kind: '270' | '837P', id: string) => `/api/balm/insurance/${kind}/${encodeURIComponent(id)}`
+export const x12Link = (kind: '270' | '837P' | '999', id: string) => `/api/balm/insurance/${kind}/${encodeURIComponent(id)}`
 export function x12Upload(command: string, path: string, fields: string, label: string, button: string) {
-  return `<form class="upload" method="post" enctype="multipart/form-data" action="/app/action?name=${encodeURIComponent(command)}&amp;returnTo=${encodeURIComponent(path)}">${fields}<label>${h(label)}<input name="x12" type="file" accept=".txt,.edi,.x12,.271,.277,.835" required></label><button type="submit">${h(button)}</button></form>`
+  return `<form class="upload" method="post" enctype="multipart/form-data" action="/app/action?name=${encodeURIComponent(command)}&amp;returnTo=${encodeURIComponent(path)}">${fields}<label>${h(label)}<input name="x12" type="file" accept=".txt,.edi,.x12,.271,.277,.835,.999" required></label><button type="submit">${h(button)}</button></form>`
 }
 export function insuranceResult(notice: any) {
   const r = result(notice)
