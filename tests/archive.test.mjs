@@ -1,4 +1,5 @@
 import {recordedCohort} from './eligibility-cohort-journey.mjs'
+import { continuityFixture } from './continuity-journey.mjs'
 import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
@@ -876,6 +877,13 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.match((await h.send(openOfferPath)).text,/A time opened up/)
   const cohort=await recordedCohort(h,patient.id)
   const bearerHashes=(await h.db.prepare('SELECT offer_token_hash FROM bm_offer_recipients').all()).results.map(r=>r.offer_token_hash)
+  const continuity = await continuityFixture(h)
+  const continuityInput = {seriesId:continuity.booked.seriesId}
+  const reviewed = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
+  await h.cmd('continuity.approve',{id:reviewed.id,digest:reviewed.digest,confirm:true},continuity.priya.cookie)
+  await h.cmd('insurance.authorization.save',{...continuity.authInput,id:continuity.authorization.id,visits:6})
+  const pending = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
+  const originals = (await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results
   const original=await snapshot(h.db,patient.id)
   assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
   assert.equal(original.recipients.filter(r=>r.outcome==='accepted').length,1)
@@ -915,7 +923,17 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE status='open'").bind(new Date(Date.now()-60000).toISOString()).run()
   await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'* * * * *'})
   assert.equal(h.mail.length,mailCount,'restored historical queues never restart outbound offers')
+  const clinicianCookie=await h.signIn(continuity.priya.email)
+  const restoredProposals=await h.cmd('continuity.read',{clientId:continuity.patient.id},clinicianCookie)
+  assert.equal(restoredProposals.proposals.length,2)
+  assert.deepEqual((await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results,originals,'continuity dates, cited sources and review originals survive exactly')
+  assert.ok(restoredProposals.proposals.every(p=>p.review_authority===0),'historical reviews carry no executable review authority')
+  await h.cmd('continuity.approve',{id:pending.id,digest:pending.digest,confirm:true},clinicianCookie,409)
+  const preparedAgain=await h.cmd('continuity.prepare',continuityInput,clinicianCookie)
+  assert.notEqual(preparedAgain.id,pending.id,'a restored clinician must create a new current preparation')
+  assert.equal(preparedAgain.digest,pending.digest)
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
+  await h.cmd('client.erase',{id:continuity.patient.id},cookie,409)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
   const restoredCohorts=(await h.state(cookie)).insurance.eligibilityCohorts
   assert.equal(restoredCohorts.batches.find(b=>b.id===cohort.batchId).items[0].status,'inactive')
