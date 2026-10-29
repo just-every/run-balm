@@ -130,11 +130,11 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "220bc3bc0f15d899db8a998baa208954d95332e593caa098dc9d7192e850771d",
+      "sha256": "816e5f56be4a99bd37d616da77ca2a866311eb3ba2d29aa65a2ad9d9f2efdc66",
       "executable": false
     },
     "agent-surface.json": {
-      "sha256": "9377b06b70e992a7f7124e1bf0bdb843209b8a40d057911690e573789e487c1a",
+      "sha256": "7bf1f179790975f4645793d11affd86bfb58b0d938fb7315464d2f2a4b82dea1",
       "executable": false
     },
     "AGENTS.md": {
@@ -154,7 +154,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "970f4a58af4afbbd7f3df4b89d61b43730c4a7b798de4a8600b0914ebc427eeb",
+      "sha256": "ed204abba2b2d963b6e0acc31c8aa2287b4949bcae0374c75813c48e416b7776",
       "executable": false
     },
     "DEMO.md": {
@@ -186,7 +186,7 @@
       "executable": false
     },
     "docs/agents.md": {
-      "sha256": "ce76e08610f7df53cbf7c3785a68f3cb019079787ca37756dca2221c895745ea",
+      "sha256": "f045254a644e7e034c0a17bee7822db111a2e24af364933c13b184deac8de9ac",
       "executable": false
     },
     "docs/backup.md": {
@@ -202,7 +202,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "711dd87a49c9b6691974d74f86bdb4cddfc3aa8e7088fd1fc853a8be145a73e1",
+      "sha256": "6baa3fbf03b5a9af62d0899dfc8dc11438fffa455770275800e61f770aece59c",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -1474,7 +1474,7 @@
       "executable": false
     },
     "scripts/agent-docs.mjs": {
-      "sha256": "1686bbac0bcb3b22215a7ff0782f10dde275903de07483a9339d6a97921226d5",
+      "sha256": "f7eee2cbc3adf1840082350a8e18555be05d04befe3553813f7b479d014bc417",
       "executable": false
     },
     "scripts/backups/drill.mjs": {
@@ -1722,7 +1722,7 @@
       "executable": false
     },
     "src/balm/agent-door/catalogue.ts": {
-      "sha256": "8643be4242965c405b20bdc2d3bae3ccb39987f90b79613b038158ffdd6eea5e",
+      "sha256": "3762d84f8f41bc7bca75a60b0d1a21108394a19ce1a8dabc9b3d804539cb67cb",
       "executable": false
     },
     "src/balm/agent-door/index.ts": {

@@ -246,6 +246,22 @@
         "role": "practitioner",
         "active": true
       }
+    },
+    {
+      "id": "staff-sponsor-alias",
+      "tool": "balm.staff.update",
+      "args": {
+        "id": {
+          "$from": "new-staff",
+          "pointer": "/id"
+        },
+        "name": "Synthetic Sponsor",
+        "email": {
+          "$sponsor": "email"
+        },
+        "role": "practitioner",
+        "active": true
+      }
     }
   ],
   "journey": [

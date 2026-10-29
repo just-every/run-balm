@@ -4,7 +4,7 @@ const rows=surface.tools.map(tool=>`| \`${tool.name}\` | ${tool.classes.join(', 
 const result=`<!-- Generated from agent-surface.json; checked against the live registry by rer verify. -->
 ## Therapy practice coordinator
 
-This declared core slice supports clinic identity, service fees and duration, rooms and equipment, native staff jobs, intake preparation and publication, and configuration reads. The registry at /mcp is the runtime authority. It accepts MCP 2026-07-28 and 2025-11-25. Company policy governs each registered call; the sponsor's current native clinic role governs its service access. The current configuration jobs require the native owner role. Business admin status does not grant a clinic job.
+This declared core slice supports clinic identity, service fees and duration, rooms and equipment, native staff jobs, intake preparation and publication, and configuration reads. The registry at /mcp is the runtime authority. It accepts MCP 2026-07-28 and 2025-11-25. Company policy governs each registered call; the sponsor's current native clinic role governs its service access. Most configuration jobs require the native owner role; the template catalogue retains native active-staff admission. Business admin status does not grant a clinic job.
 
 | Tool | Possible classes | Scope | Clauses | Conformance steps |
 | --- | --- | --- | --- | --- |
@@ -19,6 +19,8 @@ Business owner_id and team id bind to native operator ids. Existing team people 
 ## Boundaries
 
 The declared capability set is tools, policy, pause, audit and idempotency. Base 0.2.86 still advertises its compulsory event/subscription surface and requires effect events in its harness; this seed adds no new native event family. Multi-sponsor verification, subscription delivery, event refresh and external mail families are undeclared. There is no provider spend registration or spend enforcement, and these tools contact no outbound provider.
+
+Pinned Base also has no client-scoped retained-artifact redaction and atomic pending-execution/capture hook for Balm erasure. Native custody remains closed rather than claiming that patient deletion clears retained approvals or replay outcomes.
 
 Patient/chart, appointment, ledger, payer, messaging, finance, backup and destruction adapters from ct's draft are not claimed by this configuration slice. Existing native clinical signatures, patient consent, independent proof, imports, devices, connectors, provider callbacks and installation operations keep their own doors. The legacy scoped preparation API retains its existing behavior; its complete policy migration is still owed. No target-only clinical or provider capability is registered.
 
