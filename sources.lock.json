@@ -6130,7 +6130,7 @@
       "executable": false
     },
     "tests/booking-prepayment-journey.mjs": {
-      "sha256": "ceb4d7650cac99805cd7d612d217fd281efeee0f3c9925b11e7c808e19227a4d",
+      "sha256": "1ee01b574efdabbc33eb28a5b71e37e7cb00974ae489fc1b657d6be2524698fd",
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
