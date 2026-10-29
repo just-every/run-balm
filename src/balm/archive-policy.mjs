@@ -6,11 +6,13 @@
 export default {
   product: 'clinic/balm',
   exportRow(table, row) {
+    if (table === 'bm_inbox_preparations') return { ...row, authority: 0 }
     if (table === 'bm_offer_recipients') return { ...row, offer_authority: 0, offer_token_hash: 'archived:' + JSON.stringify([row.offer_id, row.entry_id]) }
     return row
   },
-  importSafety: { bm_offer_recipients: { offer_authority: [0] } },
+  importSafety: { bm_inbox_preparations: { authority: [0] }, bm_offer_recipients: { offer_authority: [0] } },
   importRow(table, row) {
+    if (table === 'bm_inbox_preparations') return { ...row, authority: 0 }
     return table === 'bm_offer_recipients' ? { ...row, offer_authority: 0 } : row
   },
   includeTables: ['rer_mail_event_receipts', 'rer_mail_event_states', 'oa_operators', 'oa_bootstrap', 'oa_invitation_cancellations'],
