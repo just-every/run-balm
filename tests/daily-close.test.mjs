@@ -33,6 +33,10 @@ test('REPORT-004: daily close names every category, links its records, audits na
  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.visit,policyId:c.policy.id});assert.equal(claim.status,'ready');assert.equal((await close()).claims.length,1)
  const batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]});await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)
  assert.equal((await close()).claims[0].kind,'unsent_claim');assert.match((await close()).claims[0].label,/not sent by Balm/)
+ const {functionalAckFile}=await import('./functional-ack-fixture.mjs')
+ const original=(await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).text
+ await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:await functionalAckFile(original)})
+ assert.equal((await close()).claims.length,1,'999 syntax acceptance leaves an exported but unsent claim outstanding')
  await h.cmd('insurance.batch.submit',{id:batch.id});assert.equal((await close()).claims.length,0)
  await c.intake(c.patient.id);await c.intake(c.noCharge.id);assert.equal((await close()).intakes.length,0)
  await h.cmd('insurance.authorization.save',{id:c.authorization.id,policyId:c.policy.id,number:'AUTH12',...c.coverage,visits:12,version:1});assert.equal((await close()).authorizations.length,0)
