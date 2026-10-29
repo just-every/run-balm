@@ -269,7 +269,8 @@ export async function payoutBrowser(h,clinicSetup) {
 export async function eftFixture(h,suffix='eft',clinicSetup) {
  const {denialFixture}=await import('./denial-resolver-journey.mjs')
  clinicSetup??=await clinic(h,['Eft'+suffix.replace(/[^a-z]/gi,'')])
- const c=await denialFixture(h,{clinicSetup})
+ const existingPayer=(await h.state()).insurance.payers.find(p=>p.payer_id==='60054')
+ const c=await denialFixture(h,{clinicSetup,existingPayer})
  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'EFT migrated '+suffix,dateOfBirth:'1950-01-01'})
  const source='synthetic-balm-'+suffix,trace=source+'-trace'
  const csv='Source claim,Patient ID,Payer ID,Patient control,Payer control,Service date,Billed,Balance,Status\n'+`${source}-claim,${patient.id},${c.payer.id},${source}-control,${source}-payer,2026-08-31,100.00,80.00,open\n`

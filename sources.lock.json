@@ -5586,7 +5586,7 @@
       "executable": false
     },
     "tests/denial-resolver-journey.mjs": {
-      "sha256": "8ee066ac23a5b7e28fd074048effc530e0c8c5e9e331c5325dd0286d034d4539",
+      "sha256": "c5de56b0069ade05fa0fb90812b4a2c018880394c3478acd4b492d972a619610",
       "executable": false
     },
     "tests/denial-work-browser.mjs": {
@@ -5634,7 +5634,7 @@
       "executable": false
     },
     "tests/finance-review-journey.mjs": {
-      "sha256": "fb6005ef180dafbc6c72d2ab13d81dce0dfb3265884b66016d6a93ad62f58976",
+      "sha256": "0092a2a401ce4f9e139fb127f501fd8396ec333ca2b5abd24cb3685e1d4e5bc0",
       "executable": false
     },
     "tests/fixtures/cliniko-export-us.csv": {

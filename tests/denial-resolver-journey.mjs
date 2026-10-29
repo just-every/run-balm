@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {clinic,pastVisit} from './clinic.mjs'
 const fixture=async(name,claim)=>(await readFile(new URL('./fixtures/insurance/'+name,import.meta.url),'utf8')).replaceAll('{{CLAIM}}',claim)
-export async function denialFixture(h,{clinicSetup}={}){
+export async function denialFixture(h,{clinicSetup,existingPayer}={}){
  await h.finishSetup()
  const {service,practitioners:[priya]}=clinicSetup??await clinic(h)
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
  await h.cmd('pay.npi.save',{staffId:priya.id,npi:'1234567893'})
  await h.cmd('insurance.settings.save',{billingNpi:'1234567893',taxId:'123456789',address:'100 Main St',city:'Austin',state:'TX',postalCode:'78701',senderId:'BALMTEST',contactName:'Jordan Clinic',contactPhone:'5125550100'})
- const payer=await h.cmd('insurance.payer.save',{name:'Aetna',payerId:'60054',receiverId:'AETNA',unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97140',cents:2500}]})
+ const payer=await h.cmd('insurance.payer.save',{...(existingPayer?{id:existingPayer.id}:{}),name:existingPayer?.name??'Aetna',payerId:'60054',receiverId:'AETNA',unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97140',cents:2500}]})
  await h.cmd('insurance.enrollment.save',{payerId:payer.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
  const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Denial',dateOfBirth:'1988-04-02'})
  const coverage={startsOn:'2000-01-01',endsOn:'2099-12-31'}
