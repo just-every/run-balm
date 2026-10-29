@@ -243,7 +243,7 @@ export async function payoutBrowser(h,clinicSetup) {
    await page.getByRole('heading',{name:'Comparison · synthetic-balm-browser-form',exact:true}).waitFor()
   }
   const comparison=page.locator('article').filter({has:page.getByRole('heading',{name:'Comparison · synthetic-balm-browser-form',exact:true})}).first()
-  await comparison.locator('summary').filter({hasText:/^Cited originals and approval$/}).click()
+  if(!await comparison.locator('details').evaluate(el=>el.open))await comparison.locator('summary').filter({hasText:/^Cited originals and approval$/}).click()
   if(width===1440){
    assert.match(await comparison.textContent(),/Linked gross \$300\.00 · fees \$9\.00 · net \$291\.00/)
    assert.match(await comparison.textContent(),/Unallocated gross \$50\.00 · fees \$1\.50 · net \$48\.50/)
@@ -301,6 +301,8 @@ async function eftJourney(h,clinicSetup) {
  const missing=find(await prepare())
  assert.deepEqual(missing.payload.totals,{depositCents:14000,eraCents:0,nativeCents:0,migratedCents:0,suspenseCents:0,eraChargeCents:null,eraAdjustmentCents:null,eraPatientCents:null,chargeCents:19500,chargeDifferenceCents:null,accountingCents:13900,unattributedCents:14000,accountingDifferenceCents:100})
  assert.match(missing.payload.explanations.join(' '),/Missing ERA/)
+ assert.deepEqual({purpose:missing.payload.requestDraft.purpose,payerId:missing.payload.requestDraft.payerId,trace:missing.payload.requestDraft.trace,amountCents:missing.payload.requestDraft.amountCents},{purpose:'missing_era',payerId:f.c.payer.id,trace:f.record.trace,amountCents:14000})
+ assert.equal(missing.payload.requestDraft.accountReference,f.record.accountReference)
  const original=await h.cmd('insurance.remittance.import',{payerId:f.c.payer.id,x12:f.x12})
  const baseline=(await h.send('/api/balm/clients/'+f.c.patient.id,undefined,h.owner)).value.billing.ledger
  const otherPayer=await h.cmd('insurance.payer.save',{name:'Synthetic separate EFT payer',payerId:'SYNTHETIC70'})
@@ -315,6 +317,7 @@ async function eftJourney(h,clinicSetup) {
  const current=find(await prepare())
  assert.deepEqual(current.payload.totals,{depositCents:14000,eraCents:14000,nativeCents:6000,migratedCents:5000,suspenseCents:3000,eraChargeCents:23500,eraAdjustmentCents:5000,eraPatientCents:4500,chargeCents:19500,chargeDifferenceCents:4000,accountingCents:13900,unattributedCents:3000,accountingDifferenceCents:100})
  assert.equal(current.payload.era.id,original.id)
+ assert.equal(current.payload.requestDraft,null)
  assert.match(current.payload.explanations.join(' '),/remains in suspense: 3000 cents/)
  assert.match(current.payload.explanations.join(' '),/accounting originals by 100 cents/)
  assert.match(current.payload.explanations.join(' '),/billed charges differ.*4000 cents/)
@@ -393,6 +396,19 @@ async function eftBrowser(h,clinicSetup) {
    assert.deepEqual(small,[])
   }
  }}])
+ await viewportProof(h,[{name:'finance-eft-missing-draft',path,cookie:h.owner,selector:'article:has(> h3:text-is("EFT comparison · '+f.record.trace+'")) details',interact:async({page,width})=>{
+  if(width===1440){
+   await page.getByRole('button',{name:'Prepare cited comparisons',exact:true}).click()
+   await page.getByRole('heading',{name:'EFT comparison · '+f.record.trace,exact:true}).first().waitFor()
+  }
+  const comparison=page.locator('article').filter({has:page.getByRole('heading',{name:'EFT comparison · '+f.record.trace,exact:true})}).first()
+  if(!await comparison.locator('details').evaluate(el=>el.open))await comparison.locator('summary').click()
+  if(width===1440){
+   const draft=await comparison.textContent()
+   assert.ok(draft.includes(f.record.trace)&&draft.includes('14000 USD cents'))
+   assert.ok(draft.includes('This draft has not been sent.'))
+  }
+ }}])
  await viewportProof(h,[{name:'finance-eft-cited-comparison',path,cookie:h.owner,selector:'article:has(> h3:text-is("EFT comparison · '+f.record.trace+'"))',interact:async({page,width})=>{
   if(width===1440){
    // Record the same reviewed deposit through the form; immutable replay returns its existing identity.
@@ -416,21 +432,21 @@ async function eftBrowser(h,clinicSetup) {
     await link.getByRole('button',{name:'Link EFT source',exact:true}).click()
    }
    await page.getByRole('button',{name:'Prepare cited comparisons',exact:true}).click()
-   await page.getByRole('heading',{name:'EFT comparison · '+f.record.trace,exact:true}).waitFor()
+   await page.getByRole('heading',{name:'EFT comparison · '+f.record.trace,exact:true}).first().waitFor()
   }
   const comparison=()=>page.locator('article').filter({has:page.getByRole('heading',{name:'EFT comparison · '+f.record.trace,exact:true})}).first()
-  await comparison().locator('summary').click()
+  if(!await comparison().locator('details').evaluate(el=>el.open))await comparison().locator('summary').click()
   if(width===1440){
    for(const fact of ['Recorded deposit $140.00','Native payments $60.00','migrated payments $50.00','suspense $30.00','accounting $139.00','accounting difference $1.00',f.record.evidence])assert.ok((await comparison().textContent()).includes(fact),fact)
    await comparison().locator('[name=confirm]').check()
    await comparison().getByRole('button',{name:'Approve EFT preparation',exact:true}).click()
    await page.getByText('EFT preparation approved',{exact:true}).waitFor()
-   await comparison().locator('summary').click()
+   if(!await comparison().locator('details').evaluate(el=>el.open))await comparison().locator('summary').click()
   }
   await comparison().evaluate(el=>el.scrollIntoView({block:'start'}))
  }}])
  const saved=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value.efts
- const review=saved.reviews.find(r=>r.eft_id===f.deposit.id)
+ const review=saved.reviews.filter(r=>r.eft_id===f.deposit.id&&r.payload.era).at(-1)
  assert.ok(review.approved_at)
  assert.equal(review.payload.totals.suspenseCents,3000)
  console.log('PASS native EFT recording, imported ERA and accounting citations, suspense and preparation approval at 1440 and 390')

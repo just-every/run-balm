@@ -33,7 +33,8 @@ async function comparison(db: D1Database, eftId: string) {
   }
   if (accounting !== deposit.amount_cents) explanations.push('Recorded deposit differs from explicitly linked accounting originals by '+(deposit.amount_cents-accounting)+' cents.')
   if (!sources.some(s => s.kind === 'charge')) explanations.push('No charge original explicitly cited. Billed charges are context, not the net amount paid after adjudication.')
-  return { deposit, era, sources, totals: { depositCents:deposit.amount_cents, eraCents:era?.amount_cents??0,
+  return { deposit, era, sources, requestDraft:era?null:{purpose:'missing_era',payerId:deposit.payer_id,accountReference:deposit.account_reference,trace:deposit.trace,amountCents:deposit.amount_cents,occurredOn:deposit.occurred_on,
+    message:'Please provide the ERA for EFT trace '+deposit.trace+', recorded deposit '+deposit.amount_cents+' USD cents on '+deposit.occurred_on+'. This draft has not been sent.'}, totals: { depositCents:deposit.amount_cents, eraCents:era?.amount_cents??0,
     nativeCents:era?.native_cents??0, migratedCents:era?.migrated_cents??0, suspenseCents:era?.suspense_cents??0,
     eraChargeCents:era?.billed_cents??null, eraAdjustmentCents:era?.adjustment_cents??null, eraPatientCents:era?.responsibility_cents??null,
     chargeCents:charge, chargeDifferenceCents:era?.billed_cents===null||!era?null:era.billed_cents-charge, accountingCents:accounting, unattributedCents:deposit.amount_cents-attributed,

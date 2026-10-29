@@ -69,6 +69,7 @@ function eftComparisons(v:any,path:string,original:string) {
    +`<p>Cited billed charges ${money(t.chargeCents)} · accounting ${money(t.accountingCents)}. Unattributed ${money(t.unattributedCents)} · accounting difference ${money(t.accountingDifferenceCents)}.</p>`
    +'<ul>'+p.explanations.map((x:string)=>`<li>${h(x)}</li>`).join('')+'</ul>'
    +'<details><summary>EFT originals and approval</summary><p>Deposit: '+h(p.deposit.evidence)+'</p>'
+   +(p.requestDraft?`<p>Draft ERA request: ${h(p.requestDraft.message)}</p>`:'')
    +(p.era?`<p>Imported ERA: ${h(p.era.trace)} · digest <code>${h(p.era.sha256)}</code>.</p>`:'<p>No imported ERA linked.</p>')
    +'<ul>'+p.sources.map((x:any)=>`<li>${h(x.kind)}: ${h(x.reference)} · ${h(x.occurred_on)} · ${money(x.amount_cents)} · ${h(x.evidence)}</li>`).join('')+'</ul>'
    +`<p>Comparison digest: <code>${h(r.sha256)}</code></p>`
