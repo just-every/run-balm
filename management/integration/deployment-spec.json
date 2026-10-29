@@ -768,6 +768,24 @@
       "name": "0126_balm_offer_restore_authority.sql",
       "sha256": "9fa8ba16b3402889bde67ee0662a1881de91dbf075b217b8e3ec7702ea68651e",
       "sql": "-- Offer history travels; a restored archive never grants a patient capability.\nALTER TABLE bm_offer_recipients ADD COLUMN offer_authority INTEGER NOT NULL DEFAULT 1 CHECK(offer_authority IN (0,1));\n"
+    },
+    {
+      "binding": "DB",
+      "name": "0127_balm_sms_quiet_hours.sql",
+      "sha256": "154edabbb24ac1383e3668bdfda6da37be08199813e90a6608b2d5801775388b",
+      "sql": "-- No patient zone or quiet interval is inferred for existing records.\nALTER TABLE bm_clients ADD COLUMN sms_time_zone TEXT;\nCREATE TABLE bm_sms_quiet_policies (\n id TEXT PRIMARY KEY,\n intervals TEXT NOT NULL,\n source TEXT NOT NULL,\n recorded_at TEXT NOT NULL,\n recorded_by TEXT NOT NULL\n);\nCREATE TRIGGER bm_sms_quiet_policies_immutable_update BEFORE UPDATE ON bm_sms_quiet_policies BEGIN SELECT RAISE(ABORT,'sms_quiet_policy_is_immutable'); END;\nCREATE TRIGGER bm_sms_quiet_policies_immutable_delete BEFORE DELETE ON bm_sms_quiet_policies BEGIN SELECT RAISE(ABORT,'sms_quiet_policy_is_immutable'); END;\nALTER TABLE bm_settings ADD COLUMN sms_quiet_policy_id TEXT REFERENCES bm_sms_quiet_policies(id);\nALTER TABLE bm_visit_reminders ADD COLUMN sms_quiet_policy_id TEXT REFERENCES bm_sms_quiet_policies(id);\nALTER TABLE bm_visit_reminders ADD COLUMN sms_time_zone TEXT;\n"
+    },
+    {
+      "binding": "DB",
+      "name": "0128_balm_hosting.sql",
+      "sha256": "89d9ca256918443e1276b3caa9f6b4e710a6e21ad25b9cc01f9998c91e4f8b90",
+      "sql": "-- Hosting evidence survives export; executable qualification and patient mode do not.\nCREATE TABLE bm_hosting_records (\n  id TEXT PRIMARY KEY,\n  origin TEXT NOT NULL,\n  provider TEXT NOT NULL CHECK(provider IN ('aws','cloudflare')),\n  account TEXT NOT NULL,\n  deployment TEXT NOT NULL,\n  services TEXT NOT NULL CHECK(json_valid(services)),\n  covered_services TEXT NOT NULL CHECK(json_valid(covered_services)),\n  service_evidence TEXT NOT NULL CHECK(json_valid(service_evidence)),\n  baa_id TEXT NOT NULL REFERENCES bm_baa_records(id),\n  backup_baa_id TEXT NOT NULL REFERENCES bm_baa_records(id),\n  qualification_reference TEXT NOT NULL,\n  backup_receipt TEXT NOT NULL,\n  drill_receipt TEXT NOT NULL,\n  recorded_at TEXT NOT NULL,\n  recorded_by TEXT NOT NULL\n);\nCREATE TABLE bm_hosting_revocations (\n  record_id TEXT PRIMARY KEY REFERENCES bm_hosting_records(id),\n  revoked_at TEXT NOT NULL,\n  revoked_by TEXT NOT NULL\n);\nCREATE TABLE bm_hosting_qualifications (\n  record_id TEXT PRIMARY KEY REFERENCES bm_hosting_records(id),\n  owner_id TEXT NOT NULL,\n  owner_version INTEGER NOT NULL\n);\nCREATE TABLE bm_patient_mode (\n  id INTEGER PRIMARY KEY CHECK(id=1),\n  mode TEXT NOT NULL CHECK(mode IN ('blocked','demo','real')),\n  origin TEXT NOT NULL,\n  record_id TEXT REFERENCES bm_hosting_records(id),\n  owner_id TEXT NOT NULL,\n  owner_version INTEGER NOT NULL\n);\nINSERT INTO bm_patient_mode VALUES(1,'blocked','',NULL,'',0);\nCREATE TRIGGER bm_hosting_records_immutable BEFORE UPDATE ON bm_hosting_records BEGIN SELECT RAISE(ABORT,'hosting_evidence_immutable'); END;\nCREATE TRIGGER bm_hosting_records_retained BEFORE DELETE ON bm_hosting_records BEGIN SELECT RAISE(ABORT,'hosting_evidence_retained'); END;\n"
+    },
+    {
+      "binding": "DB",
+      "name": "0129_balm_waitlist_holds.sql",
+      "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
+      "sql": "-- Existing simultaneous offers retain their original terms. New openings use\n-- one fifteen-minute turn at a time, with durable order and expiry history.\nALTER TABLE bm_offers ADD COLUMN ordered INTEGER NOT NULL DEFAULT 0 CHECK(ordered IN (0,1));\nALTER TABLE bm_offers ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;\nALTER TABLE bm_offers ADD COLUMN active_entry_id TEXT;\nALTER TABLE bm_offers ADD COLUMN hold_until TEXT;\nALTER TABLE bm_offers ADD COLUMN hold_end_at TEXT;\nALTER TABLE bm_offer_recipients ADD COLUMN position INTEGER NOT NULL DEFAULT 0;\nALTER TABLE bm_offer_recipients ADD COLUMN activated_at TEXT;\nALTER TABLE bm_offer_recipients ADD COLUMN expires_at TEXT;\nCREATE INDEX bm_offers_due ON bm_offers(status,ordered,hold_until);\n"
     }
   ],
   "compatibilityDate": "2026-09-08",

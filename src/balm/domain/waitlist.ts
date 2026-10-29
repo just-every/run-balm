@@ -1,9 +1,7 @@
-// The waitlist: clients waiting for a practitioner (or anyone) and a service in
-// a date window. When a booked visit is canceled, its freed time is offered to
-// every matching entry at once by email; the first to accept is booked in the
-// same batch that closes the offer, and the others are told it is taken.
+// Matching patients take ordered email turns. A durable hold expires before
+// the next turn starts; accepting closes the opening in the booking batch.
 import { hostDateAt, weekdayForDate, zonedParts } from '../availability/timezone'
-import { appointmentStatements, intakeToken, placeVisit, settings } from './booking'
+import { appointmentStatements, intakeToken, placementGuards, placeVisit, settings } from './booking'
 import { medicareOverlaps } from '../scheduling/capacity'
 import { clientVisible } from './clients'
 import { selfServiceSnapshot } from '../scheduling/self-service-policy'
@@ -95,18 +93,14 @@ export async function waitlistFor(db: D1Database, who: Actor) {
   const entries = await rows(db, `SELECT w.*,c.first_name||' '||c.last_name AS client,s.name AS service,p.name AS practitioner FROM bm_waitlist w
     JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id LEFT JOIN bm_staff p ON p.id=w.practitioner_id
     WHERE (? OR w.practitioner_id=?) ORDER BY w.status='waiting' DESC,w.created_at DESC LIMIT 300`, desk ? 1 : 0, own)
-  const offers = await rows(db, `SELECT o.*,p.name AS practitioner,(SELECT json_group_array(json_object('entryId',r.entry_id,'delivery',r.delivery,'outcome',r.outcome,'takenNotice',r.taken_notice))
-    FROM bm_offer_recipients r WHERE r.offer_id=o.id) AS recipients FROM bm_offers o JOIN bm_staff p ON p.id=o.practitioner_id
+  const offers = await rows(db, `SELECT o.*,p.name AS practitioner,(SELECT json_group_array(json_object('entryId',r.entry_id,'delivery',r.delivery,'outcome',r.outcome,'takenNotice',r.taken_notice,'expiresAt',r.expires_at,'position',r.position))
+    FROM (SELECT * FROM bm_offer_recipients WHERE offer_id=o.id ORDER BY position) r) AS recipients FROM bm_offers o JOIN bm_staff p ON p.id=o.practitioner_id
     WHERE (? OR o.practitioner_id=?) ORDER BY o.created_at DESC LIMIT 100`, desk ? 1 : 0, own)
   return { entries, offers: offers.map(o => ({ ...o, recipients: JSON.parse(o.recipients as string) })) }
 }
 
-export type OfferMail = { offerId: string; entryId: string; email: string; firstName: string; token: string; service: string; practitioner: string; startAt: string }
-/**
- * Opens one offer per freed visit (canceled, far enough ahead) to every waiting
- * entry whose practitioner, service, dates and local preferences fit that time, and returns the
- * messages to send. Tokens exist only in the returned messages; rows keep hashes.
- */
+export type OfferMail = { offerId: string; entryId: string; expiresAt?: string; email: string; firstName: string; token: string; service: string; practitioner: string; startAt: string }
+/** Snapshot the matching order; only the current recipient receives a capability. */
 export async function offerFreedSlots(db: D1Database, appointmentIds: string[]): Promise<OfferMail[]> {
   if (!appointmentIds.length) return []
   const zone = (await settings(db)).time_zone, mails: OfferMail[] = []
@@ -116,32 +110,72 @@ export async function offerFreedSlots(db: D1Database, appointmentIds: string[]):
     const date = hostDateAt(new Date(slot.start_at), zone)
     const candidates = await rows(db, `SELECT w.*,c.email,c.first_name,s.name AS service,s.duration_minutes FROM bm_waitlist w JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id
       WHERE w.status='waiting' AND (w.practitioner_id IS NULL OR w.practitioner_id=?) AND w.earliest_date<=? AND w.latest_date>=? AND s.active=1
-      AND c.erased_at IS NULL AND c.email IS NOT NULL AND w.client_id<>? ORDER BY w.created_at`, slot.practitioner_id, date, date, slot.client_id)
-    const minute = localMinute(slot.start_at, zone)
-    const fits = []
-    for (const entry of candidates) {
-      if (!preferencesFit(entry, slot.start_at, entry.duration_minutes, zone, slot.practitioner_id)) continue
-      // The waiting client's own service must fit at that start: inside hours, clear of other visits and of the room.
-      const place = await placeVisit(db, zone, { practitionerId: slot.practitioner_id, serviceId: entry.service_id, durationMinutes: entry.duration_minutes, date, minute, roomId: slot.room_id })
-      if (!place.problem && place.start!.toISOString() === slot.start_at) fits.push(entry)
-    }
+      AND c.erased_at IS NULL AND c.email IS NOT NULL AND w.client_id<>? ORDER BY w.created_at,w.rowid`, slot.practitioner_id, date, date, slot.client_id)
+    const fits = candidates.filter(entry=>preferencesFit(entry,slot.start_at,entry.duration_minutes,zone,slot.practitioner_id))
     if (!fits.length) continue
-    const offerId = id(), tokens = fits.map(() => intakeToken())
+    const offerId = id()
     await commit(db, null, [
-      stmt(db, "INSERT INTO bm_offers(id,source_appointment_id,practitioner_id,room_id,start_at,status,created_at) VALUES(?,?,?,?,?,'open',?)", offerId, slot.id, slot.practitioner_id, slot.room_id, slot.start_at, now()),
-      ...(await Promise.all(fits.map(async (entry, i) => stmt(db, 'INSERT INTO bm_offer_recipients(offer_id,entry_id,offer_token_hash) VALUES(?,?,?)', offerId, entry.id, await sha256(tokens[i]))))),
-      ...fits.map(entry => audit(db, { email: 'balm', role: 'waitlist' }, 'waitlist.offered', entry.client_id, offerId, slot.start_at)),
+      guard(db,'NOT EXISTS(SELECT 1 FROM bm_offers WHERE source_appointment_id=?)',slot.id),
+      stmt(db, "INSERT INTO bm_offers(id,source_appointment_id,practitioner_id,room_id,start_at,status,created_at,ordered) VALUES(?,?,?,?,?,'open',?,1)", offerId, slot.id, slot.practitioner_id, slot.room_id, slot.start_at, now()),
+      ...fits.map((entry,i)=>stmt(db,"INSERT INTO bm_offer_recipients(offer_id,entry_id,offer_token_hash,position,delivery) VALUES(?,?,?,?,'queued')",offerId,entry.id,'queued:'+id(),i)),
     ])
-    fits.forEach((entry, i) => mails.push({ offerId, entryId: entry.id, email: entry.email, firstName: entry.first_name, token: tokens[i], service: entry.service, practitioner: slot.practitioner, startAt: slot.start_at }))
+    mails.push(...await advanceOffers(db,[offerId]))
   }
   return mails
 }
+
+/** The minute scheduler and native cancellation share the same durable turn claim. */
+export async function advanceOffers(db: D1Database, offerIds?: string[]): Promise<OfferMail[]> {
+ const mails: OfferMail[]=[]
+ const offers=await rows(db,`SELECT * FROM bm_offers WHERE status='open' AND ordered=1
+ AND EXISTS(SELECT 1 FROM bm_offer_recipients WHERE offer_id=bm_offers.id AND offer_authority=1)
+ ${offerIds?'AND id IN (SELECT value FROM json_each(?))':''} ORDER BY created_at LIMIT 100`,...(offerIds?[JSON.stringify(offerIds)]:[]))
+ for(const offer of offers){
+  const unchanged=await selfServiceSnapshot(db),zone=(await settings(db)).time_zone
+  const at=now(),current=await one(db,`SELECT w.*,r.offer_authority,r.outcome,c.erased_at FROM bm_waitlist w JOIN bm_offer_recipients r ON r.entry_id=w.id JOIN bm_clients c ON c.id=w.client_id WHERE r.offer_id=? AND r.entry_id=?`,offer.id,offer.active_entry_id??'')
+  if(current&&current.offer_authority===1&&current.outcome===null&&current.erased_at===null&&offer.hold_until>at&&preferencesFit(current,offer.start_at,Math.round((Date.parse(offer.hold_end_at)-Date.parse(offer.start_at))/60000),zone,offer.practitioner_id))continue
+  const candidates=Date.parse(at)<closesAt(offer)?await rows(db,`SELECT w.*,r.position,c.email,c.first_name,s.name AS service,s.duration_minutes,p.name AS practitioner FROM bm_offer_recipients r
+   JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id JOIN bm_staff p ON p.id=?
+   WHERE r.offer_id=? AND r.offer_authority=1 AND r.activated_at IS NULL AND r.outcome IS NULL AND w.status='waiting' AND c.erased_at IS NULL AND c.email IS NOT NULL AND s.active=1 AND p.active=1 AND p.erased_at IS NULL ORDER BY r.position`,offer.practitioner_id,offer.id):[]
+  let next: Data|undefined
+  for(const entry of candidates){
+   if(!preferencesFit(entry,offer.start_at,entry.duration_minutes,zone,offer.practitioner_id))continue
+   const warnings=await bookingWarnings(db,entry.client_id,hostDateAt(new Date(offer.start_at),zone),offer.practitioner_id)
+   if(warnings.some(w=>w.blocking))continue
+   const place=await placeVisit(db,zone,{practitionerId:offer.practitioner_id,serviceId:entry.service_id,durationMinutes:entry.duration_minutes,date:hostDateAt(new Date(offer.start_at),zone),minute:localMinute(offer.start_at,zone),roomId:offer.room_id,offerId:offer.id})
+   if(place.problem||place.start!.toISOString()!==offer.start_at)continue
+   if((await medicareOverlaps(db,entry.client_id,offer.practitioner_id,offer.start_at,place.end!.toISOString())).length)continue
+   next={...entry,endAt:place.end!.toISOString()};break
+  }
+  const token=intakeToken(),expires=new Date(Math.min(Date.now()+15*60000,closesAt(offer))).toISOString()
+  try{
+   await commit(db,null,[unchanged,
+    guard(db,"EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open' AND revision=?)",offer.id,offer.revision),
+    ...(current?[stmt(db,"UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL",at,offer.id,offer.active_entry_id),audit(db,{email:'balm',role:'waitlist'},'waitlist.turn_ended',current.client_id,offer.id)]:[]),
+    ...(next?[
+     ...await placementGuards(db,{practitionerId:offer.practitioner_id,serviceId:next.service_id,startAt:offer.start_at,endAt:next.endAt,roomId:offer.room_id,offerId:offer.id}),
+     guard(db,"EXISTS(SELECT 1 FROM bm_offer_recipients WHERE offer_id=? AND entry_id=? AND offer_authority=1 AND activated_at IS NULL AND outcome IS NULL)",offer.id,next.id),
+     stmt(db,'UPDATE bm_offers SET active_entry_id=?,hold_until=?,hold_end_at=?,revision=revision+1 WHERE id=?',next.id,expires,next.endAt,offer.id),
+     stmt(db,"UPDATE bm_offer_recipients SET offer_token_hash=?,activated_at=?,expires_at=?,delivery='pending' WHERE offer_id=? AND entry_id=?",await sha256(token),at,expires,offer.id,next.id),
+     audit(db,{email:'balm',role:'waitlist'},'waitlist.offered',next.client_id,offer.id,offer.start_at),
+    ]:[stmt(db,"UPDATE bm_offers SET status='closed',closed_at=?,active_entry_id=NULL,hold_until=NULL,hold_end_at=NULL,revision=revision+1 WHERE id=?",at,offer.id)]),
+   ])
+   if(next)mails.push({offerId:offer.id,entryId:next.id,email:next.email,firstName:next.first_name,service:next.service,practitioner:next.practitioner,startAt:offer.start_at,token,expiresAt:expires})
+  }catch(error){if(!(error instanceof DomainError&&error.status===409))throw error}
+ }
+ return mails
+}
 export async function recordDelivery(db: D1Database, offerId: string, entryId: string, column: 'delivery' | 'taken_notice', value: string) {
-  await db.prepare(`UPDATE bm_offer_recipients SET ${column}=? WHERE offer_id=? AND entry_id=?`).bind(value, offerId, entryId).run()
+  const updates = [stmt(db, `UPDATE bm_offer_recipients SET ${column}=? WHERE offer_id=? AND entry_id=?`, value, offerId, entryId)]
+  // An install that suppresses mail cannot send its queued turns either. Keep
+  // that outcome separate from activation and expiry, which still track order.
+  if (column === 'delivery' && value === 'suppressed') updates.push(stmt(db,
+    "UPDATE bm_offer_recipients SET delivery='suppressed' WHERE offer_id=? AND activated_at IS NULL AND delivery='queued'", offerId))
+  await db.batch(updates)
 }
 
 async function offerByToken(db: D1Database, token: string) {
-  const row = await one(db, `SELECT r.offer_id,r.entry_id,r.outcome,o.status,o.start_at,o.practitioner_id,o.room_id,o.appointment_id,w.client_id,w.service_id,w.status AS entry_status,w.version AS entry_version,w.practitioner_id AS preferred_practitioner,w.earliest_date,w.latest_date,w.preferred_weekdays,w.preferred_start_minute,w.preferred_end_minute,
+  const row = await one(db, `SELECT r.offer_id,r.entry_id,r.outcome,r.expires_at,o.ordered,o.active_entry_id,o.hold_until,o.status,o.start_at,o.practitioner_id,o.room_id,o.appointment_id,w.client_id,w.service_id,w.status AS entry_status,w.version AS entry_version,w.practitioner_id AS preferred_practitioner,w.earliest_date,w.latest_date,w.preferred_weekdays,w.preferred_start_minute,w.preferred_end_minute,
     c.first_name,c.email,s.name AS service,s.duration_minutes,p.name AS practitioner,st.clinic_name,st.time_zone,
     (SELECT 1 FROM bm_intake_responses i WHERE i.client_id=w.client_id AND i.form_id=(SELECT id FROM bm_intake_forms ORDER BY number DESC LIMIT 1) LIMIT 1) AS intake_on_file,
     (SELECT a.intake_token_hash IS NOT NULL FROM bm_appointments a WHERE a.id=o.appointment_id) AS intake_requested
@@ -155,7 +189,7 @@ const closesAt = (offer: Data) => Date.parse(offer.start_at) - acceptCloseMinute
 /** What the offer link shows: open, taken, yours, or past. */
 export async function offerView(db: D1Database, token: string) {
   const offer = await offerByToken(db, token)
-  const state = offer.outcome === 'accepted' ? 'yours' : offer.status !== 'open' || !preferencesFit({ ...offer, status: offer.entry_status, practitioner_id: offer.preferred_practitioner }, offer.start_at, offer.duration_minutes, offer.time_zone, offer.practitioner_id) ? 'taken' : Date.now() > closesAt(offer) ? 'past' : 'open'
+  const state = offer.outcome === 'accepted' ? 'yours' : offer.status !== 'open' || !preferencesFit({ ...offer, status: offer.entry_status, practitioner_id: offer.preferred_practitioner }, offer.start_at, offer.duration_minutes, offer.time_zone, offer.practitioner_id) ? 'taken' : offer.ordered && (offer.active_entry_id !== offer.entry_id || Date.now() >= Date.parse(offer.hold_until) || offer.outcome === 'too_late') ? 'expired' : Date.now() >= closesAt(offer) ? 'past' : 'open'
   return { offer, state }
 }
 
@@ -165,14 +199,14 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
   const unchanged = await selfServiceSnapshot(db)
   const { offer, state } = await offerView(db, token)
   if (state !== 'open') {
-    if (state === 'taken') await stmt(db, "UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL", now(), offer.offer_id, offer.entry_id).run()
+    if (state === 'taken') await stmt(db, "UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL AND EXISTS(SELECT 1 FROM bm_offers o WHERE o.id=offer_id AND (o.ordered=0 OR o.status<>'open' OR o.active_entry_id<>entry_id OR o.hold_until<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))", now(), offer.offer_id, offer.entry_id).run()
     throw new DomainError(state === 'yours' ? 'already_booked' : state === 'past' ? 'offer_closed' : 'time_taken', 409)
   }
   const zone = offer.time_zone, date = hostDateAt(new Date(offer.start_at), zone)
   const warnings = await bookingWarnings(db, offer.client_id, date, offer.practitioner_id)
   if (warnings.some(w => w.blocking)) throw new DomainError('time_taken', 409)
   const minute = localMinute(offer.start_at, zone)
-  const place = await placeVisit(db, zone, { practitionerId: offer.practitioner_id, serviceId: offer.service_id, durationMinutes: offer.duration_minutes, date, minute, roomId: offer.room_id })
+  const place = await placeVisit(db, zone, { practitionerId: offer.practitioner_id, serviceId: offer.service_id, durationMinutes: offer.duration_minutes, date, minute, roomId: offer.room_id, offerId: offer.offer_id })
   // SCHED-010: a patient's acceptance never overlaps two Medicare patients; no person is there to decide.
   if (!place.problem && (await medicareOverlaps(db, offer.client_id, offer.practitioner_id, place.start!.toISOString(), place.end!.toISOString())).length) throw new DomainError('time_taken', 409)
   const visitor = { email: offer.email, role: 'waitlist offer' }
@@ -186,7 +220,8 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
   try {
     await commit(db, null, [
       unchanged,
-      guard(db, "EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open')", offer.offer_id),
+      guard(db, "EXISTS(SELECT 1 FROM bm_offers WHERE id=? AND status='open' AND (ordered=0 OR (active_entry_id=? AND hold_until>strftime('%Y-%m-%dT%H:%M:%fZ','now'))))", offer.offer_id,offer.entry_id),
+      guard(db,'EXISTS(SELECT 1 FROM bm_offer_recipients WHERE offer_id=? AND entry_id=? AND offer_authority=1 AND offer_token_hash=?)',offer.offer_id,offer.entry_id,await sha256(token)),
       guard(db, "EXISTS(SELECT 1 FROM bm_waitlist WHERE id=? AND status='waiting' AND version=? AND client_id=? AND service_id=? AND practitioner_id IS ? AND earliest_date=? AND latest_date=? AND preferred_weekdays=? AND preferred_start_minute=? AND preferred_end_minute=?)", offer.entry_id, offer.entry_version, offer.client_id, offer.service_id, offer.preferred_practitioner, offer.earliest_date, offer.latest_date, offer.preferred_weekdays, offer.preferred_start_minute, offer.preferred_end_minute),
       guard(db, 'EXISTS(SELECT 1 FROM bm_settings WHERE id=1 AND time_zone=?)', zone),
       guard(db, 'EXISTS(SELECT 1 FROM bm_services WHERE id=? AND active=1 AND duration_minutes=?)', offer.service_id, offer.duration_minutes),
@@ -198,7 +233,7 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
     ])
   } catch (error) {
     if (error instanceof DomainError && error.status === 409) {
-      await stmt(db, "UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL", now(), offer.offer_id, offer.entry_id).run()
+      await stmt(db, "UPDATE bm_offer_recipients SET outcome='too_late',responded_at=? WHERE offer_id=? AND entry_id=? AND outcome IS NULL AND EXISTS(SELECT 1 FROM bm_offers o WHERE o.id=offer_id AND (o.ordered=0 OR o.status<>'open' OR o.active_entry_id<>entry_id OR o.hold_until<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))", now(), offer.offer_id, offer.entry_id).run()
       throw new DomainError('time_taken', 409)
     }
     throw error
@@ -211,5 +246,5 @@ export async function acceptOffer(db: D1Database, token: string): Promise<Accept
 export async function takenNotices(db: D1Database, offerId: string) {
   return rows(db, `SELECT r.entry_id,c.email,c.first_name,o.start_at,s.name AS service FROM bm_offer_recipients r JOIN bm_offers o ON o.id=r.offer_id
     JOIN bm_waitlist w ON w.id=r.entry_id JOIN bm_clients c ON c.id=w.client_id JOIN bm_services s ON s.id=w.service_id
-    WHERE r.offer_id=? AND (r.outcome IS NULL OR r.outcome='too_late') AND r.taken_notice IS NULL AND c.email IS NOT NULL`, offerId)
+    WHERE r.offer_id=? AND r.offer_authority=1 AND c.erased_at IS NULL AND w.status='waiting' AND (r.outcome IS NULL OR r.outcome='too_late') AND r.taken_notice IS NULL AND c.email IS NOT NULL`, offerId)
 }

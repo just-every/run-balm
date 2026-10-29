@@ -131,47 +131,82 @@ test('SCHED-003: plan cadence, named holiday and visit conflicts, atomic series 
 
 }))
 
-test('INTAKE-001: a canceled visit is offered to the waitlist by email; the first to accept is booked and the others are told it is taken', () => run(async h => {
+test('INTAKE-001 SCHED-005: ordered email holds expire to the next patient, book once and retain intake reuse', () => run(async h => {
   await h.finishSetup()
   const { service, practitioners: [priya, sam] } = await clinic(h, ['Priya', 'Sam'])
   const add = (firstName, email) => h.cmd('client.save', { firstName, lastName: 'Example', dateOfBirth: '1990-01-01', email })
   const [ava, ben, cara, dev] = [await add('Ava', 'ava@client.example'), await add('Ben', 'ben@client.example'), await add('Cara', 'cara@client.example'), await add('Dev', 'dev@client.example')]
+  const third=await add('Synthetic', ['synthetic-balm-520','patient.example'].join('@'))
   const local = brisbane(Math.floor((Date.now() + 3 * 86400_000) / 3600_000) * 3600_000), date = local.slice(0, 10)
-  const visit = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, date, time: '10:00' })
+  const room=await h.cmd('room.save',{name:'Synthetic waitlist room'})
+  const visit = await h.cmd('appointment.book', { clientId: ava.id, practitionerId: priya.id, serviceId: service.id, roomId:room.id, date, time: '10:00' })
   const until = brisbane(Date.now() + 10 * 86400_000).slice(0, 10)
   await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until, weekdays: [weekday(date)], timeFrom: '10:00', timeUntil: '10:45' })
   await h.cmd('waitlist.add', { clientId: cara.id, serviceId: service.id, latestDate: until, note: 'Any practitioner', weekdays: [weekday(date)], timeFrom: '09:00', timeUntil: '14:00' })
+  await h.cmd('waitlist.add',{clientId:third.id,practitionerId:priya.id,serviceId:service.id,latestDate:until})
   await h.cmd('waitlist.add', { clientId: dev.id, practitionerId: sam.id, serviceId: service.id, latestDate: until })
   await h.cmd('waitlist.add', { clientId: ben.id, practitionerId: priya.id, serviceId: service.id, latestDate: until }, h.owner, 409)
   const cancelled = await h.form(`/app/action?name=appointment.cancel&returnTo=${encodeURIComponent('/app?view=day&date=' + date)}`, { id: visit.appointmentId, reason: 'Patient requested cancellation' }, h.owner)
   assert.equal(cancelled.status, 303)
-  assert.match(cancelled.location, /offered=2$/)
+  assert.match(cancelled.location, /offered=1$/)
   assert.ok(h.mail.some(m => m.to.includes('ava@client.example') && m.subject.endsWith('is canceled')), 'the patient is told by email')
-  const offers = h.mail.filter(m => m.subject.startsWith('A time opened up'))
-  assert.deepEqual(offers.map(m => m.to[0]).sort(), ['ben@client.example', 'cara@client.example'], 'only entries whose practitioner fits')
+  let offers = h.mail.filter(m => m.subject.startsWith('A time opened up'))
+  assert.deepEqual(offers.map(m => m.to[0]), [['ben','client.example'].join('@')], 'the earliest matching patient gets the first turn')
   const link = email => new URL(offers.find(m => m.to.includes(email)).text.match(/https?:\/\/\S+\/offer\/[\w-]+/)[0]).pathname
-  const page = await h.send(link('ben@client.example'))
+  const firstLink=link(['ben','client.example'].join('@'))
+  const page = await h.send(firstLink)
   assert.equal(page.status, 200); assert.match(page.text, /A time opened up/)
-  // Both accept at once: exactly one is booked.
-  const answers = await Promise.all(['ben@client.example', 'cara@client.example'].map(email => h.form(link(email), {})))
-  assert.deepEqual(answers.map(a => a.status).sort(), [303, 409])
-  const winner = answers[0].status === 303 ? 'ben@client.example' : 'cara@client.example', loser = winner.startsWith('ben') ? 'cara@client.example' : 'ben@client.example'
+  assert.match(page.text,/Held for you until/)
+  // A hold protects the entire visit from staff placement and public listing.
+  await h.cmd('appointment.book',{clientId:ava.id,practitionerId:priya.id,serviceId:service.id,date,time:'10:30'},h.owner,409)
+  const available=await h.send(`/book?serviceId=${service.id}&practitionerId=${priya.id}&from=${date}`)
+  assert.equal(available.status,200)
+  const start=(await h.state()).appointments.find(a=>a.id===visit.appointmentId).start_at
+  assert.ok(!available.text.includes('start='+encodeURIComponent(start)),'public slots omit the held time')
+  await h.cmd('appointment.book',{clientId:ava.id,practitionerId:sam.id,serviceId:service.id,roomId:room.id,date,time:'10:00'},h.owner,409)
+  const countBefore=(await h.state()).clients.length
+  assert.equal((await bookOnline(h,service.id,priya.id,start,{firstName:'Synthetic',lastName:'Held opening',email:['synthetic-balm-521','patient.example'].join('@')})).status,409)
+  assert.equal((await h.state()).clients.length,countBefore,'a held public booking creates no patient')
+  const pattern={clientId:ava.id,practitionerId:priya.id,serviceId:service.id,firstDate:date,weekdays:[weekday(date)],weeks:1,time:'10:00'}
+  const preview=await h.cmd('series.preview',pattern)
+  assert.equal(preview.occurrences[0].problem,'waitlist_time_held')
+  await h.cmd('series.book',{...pattern,occurrences:[{date,time:'10:00'}]},h.owner,409)
+  // Expire only the fixture clock. The production scheduled door advances the queue.
+  const expired=new Date(Date.now()-60000).toISOString()
+  await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE status='open'").bind(expired).run()
+  await h.db.prepare('UPDATE bm_offer_recipients SET expires_at=? WHERE activated_at IS NOT NULL').bind(expired).run()
+  const late=await h.form(firstLink,{})
+  assert.equal(late.status,409);assert.match(late.text,/hold has expired/)
+  assert.equal((await h.state()).appointments.filter(a=>a.status==='booked'&&a.start_at===start).length,0,'expired acceptance changes no booking')
+  for(let i=0;i<2;i++)await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'* * * * *'})
+  offers=h.mail.filter(m=>m.subject.startsWith('A time opened up'))
+  assert.deepEqual(offers.map(m=>m.to[0]),[['ben','client.example'].join('@'),['cara','client.example'].join('@')],'expiry sends exactly one next turn')
+  assert.equal((await h.form(firstLink,{})).status,409,'an old recipient cannot steal the next hold')
+  const winner=['cara','client.example'].join('@'), loser=['ben','client.example'].join('@')
+  // Replayed concurrent acceptance of the current turn creates exactly one visit.
+  const answers=await Promise.all([h.form(link(winner),{}),h.form(link(winner),{})])
+  assert.deepEqual(answers.map(a=>a.status).sort(),[303,409])
   assert.match(answers.find(a => a.status === 303).location, /^\/intake\/[\w-]+\?booked=1/)
-  assert.match(answers.find(a => a.status === 409).text, /This time has been taken/)
+  assert.match(answers.find(a => a.status === 409).text, /You're booked/)
   const mail = h.mail
   assert.ok(mail.some(m => m.to.includes(winner) && /accepted a time from the waitlist/.test(m.text)), 'the winner gets a confirmation with the intake link')
   assert.ok(mail.some(m => m.to.includes(loser) && m.subject.includes('has been taken')), 'the other is told it is taken')
+  assert.ok(mail.some(m=>m.to.includes(['synthetic-balm-520','patient.example'].join('@'))&&m.subject.includes('has been taken')),'the third matching patient is told the opening is gone')
   assert.ok(!mail.some(m => m.to.includes('dev@client.example')))
   const s = await h.state()
   const rebooked = s.appointments.filter(a => a.status === 'booked' && a.start_at === s.appointments.find(x => x.id === visit.appointmentId).start_at)
   assert.equal(rebooked.length, 1)
   assert.equal(s.clients.find(c => c.id === rebooked[0].client_id).first_name, winner.startsWith('ben') ? 'Ben' : 'Cara')
-  assert.deepEqual(s.waitlist.entries.map(e => [e.client, e.status]).sort(), [['Ben Example', winner.startsWith('ben') ? 'booked' : 'waiting'], ['Cara Example', winner.startsWith('cara') ? 'booked' : 'waiting'], ['Dev Example', 'waiting']])
+  assert.deepEqual(s.waitlist.entries.map(e => [e.client, e.status]).sort(), [['Ben Example', winner.startsWith('ben') ? 'booked' : 'waiting'], ['Cara Example', winner.startsWith('cara') ? 'booked' : 'waiting'], ['Dev Example', 'waiting'],['Synthetic Example','waiting']])
   // The link stays honest afterwards, and the waitlist page shows the offer's outcome.
   assert.match((await h.send(link(winner))).text, /You're booked/)
   assert.match((await h.send(link(loser))).text, /has been taken/)
   const listing = await h.send('/app/waitlist', undefined, h.owner)
   assert.equal(listing.status, 200); assert.match(listing.text, /Accepted/); assert.match(listing.text, /told it was taken/)
+  // Keep the earlier patient waiting without taking the later intake-only openings.
+  const earlier=(await h.state()).waitlist.entries.find(e=>e.client_id===ben.id)
+  await h.cmd('waitlist.remove',{id:earlier.id})
+  await h.cmd('waitlist.remove',{id:(await h.state()).waitlist.entries.find(e=>e.client_id===third.id).id})
   // An existing open intake link is reused, then a completed intake stays on
   // file for later waitlist visits. Neither acceptance creates another form.
   const winnerId = rebooked[0].client_id
