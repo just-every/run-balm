@@ -23,7 +23,7 @@ async function cohort(db:D1Database,input:Data) {
   const visits=kind==='next_business_day'?await rows(db,"SELECT id,client_id,version,start_at FROM bm_appointments WHERE status='booked' AND start_at>=? AND start_at<? ORDER BY id",start.toISOString(),end.toISOString()):[]
   const policies=await rows(db,`SELECT p.*,y.name AS payer_name,y.payer_id AS payer_code,y.receiver_id,y.version AS payer_version,c.version AS client_version,c.first_name||' '||c.last_name AS patient
     FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=p.client_id
-    WHERE c.erased_at IS NULL AND p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on>=?) ORDER BY p.id`,serviceDate,serviceDate)
+    WHERE c.erased_at IS NULL AND (?='next_business_day' OR (p.starts_on<=? AND (p.ends_on IS NULL OR p.ends_on>=?))) ORDER BY p.id`,kind,serviceDate,serviceDate)
   const members=policies.filter(p=>kind==='monthly'||visits.some(v=>v.client_id===p.client_id))
   const config=await one(db,'SELECT version FROM bm_insurance_settings WHERE id=1')
   insist(config,'configure_insurance_billing_first',409)
