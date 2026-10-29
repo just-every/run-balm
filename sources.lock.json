@@ -841,6 +841,10 @@
       "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
       "executable": false
     },
+    "migrations/core/0130_balm_continuity_booking.sql": {
+      "sha256": "774826f98c233a1bffafd5e0d1c5db54f48ca8080733228c9714f33eb25b3026",
+      "executable": false
+    },
     "ONBOARDING.md": {
       "sha256": "5d20f1bd0c24def0cd6c1165d1a58d0472ad0f02f2b60047014bda962eaf4274",
       "executable": false
