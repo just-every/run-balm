@@ -5782,7 +5782,7 @@
       "executable": false
     },
     "tests/agent-door-browser.mjs": {
-      "sha256": "c8de5809390f91f1f8d6dd766fb70d09b68650670e1757c2a4b7c8956f3a1173",
+      "sha256": "3f6b782e3af41911026ea1e77d48516e3a4c5a8d3df4ab85edf1075ce489ddbd",
       "executable": false
     },
     "tests/agent-followthrough-browser.mjs": {

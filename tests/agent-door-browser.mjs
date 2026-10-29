@@ -7,7 +7,7 @@ import {join} from 'node:path'
 export default async function({request,origin,cookie}) {
  const folder=process.env.BALM_AGENT_SCREENSHOTS
  if(folder)await mkdir(folder,{recursive:true})
- const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']})
+ const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,args:['--no-sandbox']})
  try {
   const context=await browser.newContext()
   await context.route('**/*',async route=>{
