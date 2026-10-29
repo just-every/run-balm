@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "69ef0063e2bf9c8a49bf8ef22e82c98d8ada78a402056d1e2f8822b7c41b4c0d",
+      "sha256": "515f318ebcde96192735dbc95bb98a24ce55f22a9e56fb92945cd24ec04c733c",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "cf452400888da254bf185b819ba8dc1adb1e9ac4314735452e7c90ed59f85d4a",
+      "sha256": "529c485da1e1857ec2be3bc8d22f5bc47bb45d176a7418a4fcba37c69e429b5a",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "78c6ec4c9a7b8f19d046d07596f731df086d7568804c019c15734e414e84e780",
+      "sha256": "a71e19da0c1d1af7d5d31e8d43f6edc7d39d215ee7b2bf2ddfb6b5eea972743c",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -835,6 +835,10 @@
     },
     "migrations/core/0129_balm_waitlist_holds.sql": {
       "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
+      "executable": false
+    },
+    "migrations/core/0130_balm_inbox.sql": {
+      "sha256": "8c8f0f249ca7761cbf129e50571c6ee78404f589ad11a4dde27a09cedace06de",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -1755,6 +1759,10 @@
     },
     "src/balm/cases/facts.ts": {
       "sha256": "d59eb31e9b49ed189b2091cd9540701018834c4e02a1ea0513365ab94030d054",
+      "executable": false
+    },
+    "src/balm/cases/inbox.ts": {
+      "sha256": "9c2c88e07fbc4b25ca4e979e5d33e6086e934f6fe8909c05ee00bdf4ec38047b",
       "executable": false
     },
     "src/balm/cases/index.ts": {
@@ -2710,7 +2718,7 @@
       "executable": false
     },
     "src/balm/refusals.ts": {
-      "sha256": "f51a286f337f63b65b451fdd1cdc6ff01c1e7d4aea1f92f22fc8568848b43fc8",
+      "sha256": "8435f9ec06da1ea1b6e101d24de9ec17a87e76e78e99765c7d9ac0e96ae71aa9",
       "executable": false
     },
     "src/balm/reminders/replies.ts": {
@@ -3067,6 +3075,10 @@
     },
     "src/balm/ui/imported.ts": {
       "sha256": "d17edb426a875f1824facafc3c7941bb0962a863eaa2c51f247cd724e35ddd53",
+      "executable": false
+    },
+    "src/balm/ui/inbox.ts": {
+      "sha256": "0c4ead382c84aad369ea1a1d689640738de4fc7ddf736246fa8dc704986f4e21",
       "executable": false
     },
     "src/balm/ui/index.ts": {
@@ -5430,7 +5442,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "0e129529ef47fca1f6e62db900edee286c524c120e5844c09b2d0eaa4373904a",
+      "sha256": "987f7a70766613cb5fc68e44f469cde7cca3a4b48d30c742bf1ac6718248521e",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5466,7 +5478,7 @@
       "executable": false
     },
     "tests/cases.test.mjs": {
-      "sha256": "3a6b5ecfbc897706d5bd34a15046fb633ecb5f8945ebd7407853edfadef2c05a",
+      "sha256": "277bd688d32182b82480589ad25442bde820ce14d48cee440a202ba160156f1c",
       "executable": false
     },
     "tests/chart-document-fixtures.mjs": {
@@ -5526,7 +5538,7 @@
       "executable": false
     },
     "tests/communication-browser.mjs": {
-      "sha256": "61339363d823d4f45805ef750be54899bb34fe25fbd1b2715e4545832cd8b275",
+      "sha256": "f9b49b51f445bbd0957378906964fda24acc68f07581f83b25b5215cd459a76d",
       "executable": false
     },
     "tests/communication-journey.mjs": {
@@ -5534,7 +5546,7 @@
       "executable": false
     },
     "tests/communication-worker.ts": {
-      "sha256": "dfa83bff2432a2ce180776607e7f6bb3d260d1a15bf9f2417087d88d28ef4815",
+      "sha256": "31b21e282dae66e7834d2521a091e9352270bf6f3f89cfb7a0bececd2ccbdd58",
       "executable": false
     },
     "tests/daily-close-clinic.mjs": {
@@ -5761,6 +5773,10 @@
       "sha256": "052728efbc735f66534b4dd6acaeb04b80596e6c416e8a3e8ecc6c97448519a7",
       "executable": false
     },
+    "tests/inbox-journey.mjs": {
+      "sha256": "af5aa894b544de02d015e6b972864c03a2493068f45939892e1b8e6a7e9817ae",
+      "executable": false
+    },
     "tests/insurance.test.mjs": {
       "sha256": "a25fc5674d4a79843145cdcd20aa221e27c385cc71afedc6d18f17d790de3195",
       "executable": false
@@ -5866,7 +5882,7 @@
       "executable": false
     },
     "tests/retention.test.mjs": {
-      "sha256": "6e13dfdb9688e106ce2b4ffd730d546d1dc7ec18bc40095db8b5530661e9220e",
+      "sha256": "4a76282c3e721d60a4663371650a2e43015166cdb084f8c6220ca04741cd1a7f",
       "executable": false
     },
     "tests/runtime.mjs": {

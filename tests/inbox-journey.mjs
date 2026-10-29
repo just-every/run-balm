@@ -26,9 +26,13 @@ export async function inboxFixture(h) {
     ['records', 'Please review my records request.', 'front_desk'],
     ['mixed', 'Please reschedule my appointment and explain my invoice.', 'front_desk'],
     ['unknown', 'Could somebody help with this?', 'front_desk'],
+    ['uncertain', 'I am not sure whether to reschedule my appointment.', 'front_desk'],
     ['clinical', 'My shoulder pain increased after the exercise.', priya.id],
     ['misdirected', 'Please reschedule. My medication is causing dizziness.', 'front_desk'],
   ]) messages[intent] = await incoming(body, recipient)
+  messages.attachment = await incoming('I have a new referral to share with an attached original.', 'front_desk', {
+    attachment: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jEAAAAABJRU5ErkJggg==', attachmentName: 'synthetic-balm-referral.png',
+  })
   return { patient, foreign, priya, other, desk, patientCookie, messages, incoming }
 }
 
@@ -53,10 +57,11 @@ export async function inboxJourney(h) {
     assert.match(p.draft.action, { reschedule: /availability.*No visit has been changed/, billing: /billing records.*No balance or payment/, referral: /referral original.*No referral has been filed/, records: /recipient authority.*No records have been released/ }[intent])
     assert.equal((await prepare(messages[intent])).id, p.id, 'repeated preparation keeps one original')
   }
-  for (const key of ['mixed', 'unknown', 'misdirected']) {
+  for (const key of ['mixed', 'unknown', 'uncertain', 'misdirected', 'attachment']) {
     const p = await prepare(messages[key])
     assert.equal(p.draft, null); assert.ok(['review', 'clinical'].includes(p.state))
     await approve(p, desk.cookie, 409)
+    if (key === 'attachment') assert.equal(p.source.attachments[0].filename, 'synthetic-balm-referral.png')
   }
   const clinicalBefore = (await h.db.prepare('SELECT * FROM bm_messages WHERE id=?').bind(messages.clinical.id).first())
   const clinical = await prepare(messages.clinical, priya.cookie)
@@ -65,7 +70,7 @@ export async function inboxJourney(h) {
   await approve(clinical, priya.cookie, 409)
   assert.deepEqual(await h.db.prepare('SELECT * FROM bm_messages WHERE id=?').bind(messages.clinical.id).first(), clinicalBefore)
   assert.ok(h.mail.some(m => m.subject === 'A secure message needs your attention' && m.to.includes(priya.email)), 'the clinical original reached its existing clinician')
-  assert.equal((await read(desk.cookie)).value.total, 7)
+  assert.equal((await read(desk.cookie)).value.total, 9)
   assert.equal((await read(priya.cookie)).value.total, 1)
   assert.doesNotMatch(JSON.stringify((await read(desk.cookie)).value), /shoulder pain|exercise/)
   assert.doesNotMatch(JSON.stringify((await read(priya.cookie)).value), /new referral|records request|billing question/)
@@ -75,6 +80,7 @@ export async function inboxJourney(h) {
   await h.cmd('inbox.prepare', { clientId: foreign.id, messageId: messages.billing.id }, h.owner, 404)
   await approve(prepared.billing, priya.cookie, 404)
   await approve(clinical, desk.cookie, 404)
+  await approve(prepared.billing, desk.cookie, 404, { clientId: foreign.id })
   await approve(prepared.billing, desk.cookie, 409, { digest: 'synthetic-balm-changed' })
   await approve(prepared.billing, desk.cookie, 400, { confirm: false })
   const key = await h.cmd('agent.create', { label: 'Synthetic inbox refusal' })
@@ -93,6 +99,15 @@ export async function inboxJourney(h) {
   await approve(prepared.referral, h.owner)
   assert.deepEqual(await effects(), before, 'preparation and approvals change no messages, bookings, referrals, records or balances')
   assert.equal(h.outboundRequests.length, outbound, 'no provider request occurs during triage or approval')
+  const liveApproval={name:'inbox.approve',input:{clientId:patient.id,id:prepared.records.id,digest:prepared.records.digest,confirm:true}}
+  const racedSource=await h.send('/api/balm/command',liveApproval,desk.cookie,{'x-synthetic-inbox-client':patient.id})
+  assert.equal(racedSource.status,409,'a new incoming message between read and batch refuses stale preparation approval')
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_inbox_approvals WHERE preparation_id=?').bind(prepared.records.id).first()).n,0)
+  const afterSource=await prepare(messages.records)
+  const revoked=await h.send('/api/balm/command',{name:'inbox.approve',input:{...liveApproval.input,id:afterSource.id,digest:afterSource.digest}},desk.cookie,{'x-synthetic-session-revoke':desk.email})
+  assert.equal(revoked.status,409,'a session revoked at the batch boundary cannot approve')
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_inbox_approvals WHERE preparation_id=?').bind(afterSource.id).first()).n,0)
+  desk.cookie=await h.signIn(desk.email)
   await f.incoming('An additional invoice question for the same conversation.')
   await approve(prepared.records, desk.cookie, 409)
   const fresh = await prepare(messages.records)
@@ -100,6 +115,11 @@ export async function inboxJourney(h) {
   await h.cmd('client.save', { id: patient.id, firstName: 'Synthetic', lastName: 'Updated inbox', dateOfBirth: '1980-01-01', email: ['synthetic-balm-701', 'patient.example'].join('@') })
   await approve(fresh, desk.cookie, 409)
   const current = await prepare(messages.records)
+  const beforeApprovals=(await h.db.prepare('SELECT COUNT(*) n FROM bm_inbox_approvals').first()).n
+  const prepareRace=await h.send('/api/balm/command',{name:'inbox.prepare',input:{clientId:patient.id,messageId:messages.records.id}},desk.cookie,{'x-synthetic-revoke':desk.email})
+  assert.equal(prepareRace.status,409,'authority changed at the write boundary refuses preparation')
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_inbox_approvals').first()).n,beforeApprovals)
+  desk.cookie=await h.signIn(desk.email)
   assert.equal((await h.form('/app/action?name=session.signout', {}, desk.cookie)).status, 303)
   await approve(current, desk.cookie, 401)
   const biller = await h.staff('InboxBiller', 'biller')
@@ -120,9 +140,16 @@ export async function inboxJourney(h) {
 export async function historicalInbox(h, clientId) {
   const messageId = crypto.randomUUID(), preparationId = crypto.randomUUID(), at = '1990-01-02T03:00:00.000Z'
   await h.db.prepare("INSERT INTO bm_messages(id,client_id,sender,author_name,body,sent_at,notification_state,route) VALUES(?,?,'patient','Patient','Historical private billing question',?,'shown','front_desk')").bind(messageId, clientId, at).run()
-  const payload = JSON.stringify({ intent: 'billing', state: 'prepared', draft: { reply: 'Historical private reply', action: 'Historical review only' }, citation: { body: 'Historical private billing question' } })
+  const source = await h.db.prepare('SELECT id,client_id,sequence,body,sent_at,route,practitioner_id FROM bm_messages WHERE id=?').bind(messageId).first()
+  const patient = await h.db.prepare('SELECT version FROM bm_clients WHERE id=?').bind(clientId).first()
+  const snapshot = { clientId, patientVersion: patient.version, source, attachments: [], conversationSequence: source.sequence }
+  const sourceDigest = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
+  const payload = JSON.stringify({ intent: 'billing', state: 'prepared', reason: 'Historical administrative review only.',
+    draft: { reply: 'Historical private reply', action: 'Historical review only' }, source: snapshot,
+    citation: { messageId, href: '/app/clients/' + clientId + '#message-' + messageId, label: 'Original incoming portal message', body: source.body },
+    destination: { route: 'front_desk', practitionerId: null } })
   const digest = createHash('sha256').update(payload).digest('hex')
-  await h.db.prepare("INSERT INTO bm_inbox_preparations(id,client_id,message_id,source_digest,digest,payload,state,prepared_by,prepared_at) VALUES(?,?,?,'synthetic-balm-historical-source',?,?,'prepared','historical-operator',?)").bind(preparationId, clientId, messageId, digest, payload, at).run()
+  await h.db.prepare("INSERT INTO bm_inbox_preparations(id,client_id,message_id,source_digest,digest,payload,state,prepared_by,prepared_at) VALUES(?,?,?,?,?,?,'prepared','historical-operator',?)").bind(preparationId, clientId, messageId, sourceDigest, digest, payload, at).run()
   await h.db.prepare("INSERT INTO bm_inbox_approvals VALUES(?,?,?,'historical-operator',?)").bind(preparationId, clientId, digest, at).run()
   return { messageId, preparationId }
 }
