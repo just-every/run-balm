@@ -4,12 +4,13 @@
 export type StaffKind = 'practitioner' | 'reception' | 'biller' | 'assistant' | 'student' | 'fellow' | 'supervisor' | 'location_manager'
 export type Role = 'owner' | 'practitioner' | 'reception' | 'agent'
 export interface Actor {
+  agentAttribution?: { id: string; name: string; sponsorName: string; label: string; operationId: string; approvers: {id:string;name:string}[] }
   /** Native operator id (the owner's id for an agent key). */
   id: string; email: string; role: Role
   /** The linked staff row, when this person is on the clinic's staff list. */
   staffId?: string; staffRole?: 'practitioner' | 'reception'
   operatorVersion: number; staffVersion?: number; balanceVisibility?: boolean
-  keyId?: string; keyScopes?: string[]; keyScope?: string
+  doorScopes?: string[]; keyId?: string; keyScopes?: string[]; keyScope?: string
   sessionId?: string; staffKind?: StaffKind; supervisorId?: string; locationId?: string
 }
 export type Data = Record<string, any>
@@ -74,14 +75,18 @@ function authority(db: D1Database, who: Actor) {
   who.id, who.operatorVersion, who.staffId, who.staffRole, who.staffVersion)
 }
 
+export const actorLabel = (who: Actor) => who.agentAttribution?.label ?? who.email
+export const decisionLabel = (who: Actor) => who.agentAttribution ? who.agentAttribution.approvers.map(p=>p.name).join(', ') || who.agentAttribution.label : who.email
+
 export function audit(db: D1Database, who: Actor | { email: string; role: string }, action: string, clientId: string | null, subjectId: string | null = null, detail = '') {
-  return stmt(db, 'INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail) VALUES(?,?,?,?,?,?,?)', now(), who.email, (['owner','agent'].includes(who.role) ? who.role : ('staffKind' in who ? who.staffKind : null) ?? who.role), action, clientId, subjectId, detail)
+  const agent = 'agentAttribution' in who ? who.agentAttribution : undefined
+  return stmt(db, 'INSERT INTO bm_audit(at,actor_email,actor_role,action,client_id,subject_id,detail,agent_id,agent_name,sponsor_id,sponsor_name,operation_id,approvers) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', now(), agent?.label ?? who.email, agent ? 'agent' : (['owner','agent'].includes(who.role) ? who.role : ('staffKind' in who ? who.staffKind : null) ?? who.role), action, clientId, subjectId, detail, agent?.id ?? null, agent?.name ?? null, agent && 'id' in who ? who.id : null, agent?.sponsorName ?? null, agent?.operationId ?? null, agent ? JSON.stringify(agent.approvers) : null)
 }
 
 /** One D1 batch: live authority, the caller's guards and writes, then cleanup. */
 export async function commit(db: D1Database, who: Actor | null, statements: D1PreparedStatement[]) {
   try {
-    await db.batch([...(who ? [authority(db, who),...(who.role==='agent'?[guard(db,`EXISTS(SELECT 1 FROM bm_agent_keys k WHERE k.id=? AND k.owner_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND k.owner_version=? AND (k.scopes IS NULL OR EXISTS(SELECT 1 FROM json_each(k.scopes) WHERE value=?)))`,who.keyId??'',who.id,Date.now(),who.operatorVersion,who.keyScope??'')]:[]),...(who.sessionId?[guard(db,"EXISTS(SELECT 1 FROM oa_sessions s JOIN bm_staff_session_proofs p ON p.session_id=s.id JOIN bm_staff_security_policy c ON c.id=1 WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND p.last_seen_at+c.idle_minutes*60000>?)",who.sessionId,Date.now(),Date.now())]:[])] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
+    await db.batch([...(who ? [authority(db, who),...(who.role==='agent'?[guard(db,`EXISTS(SELECT 1 FROM bm_agent_keys k WHERE k.id=? AND k.owner_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND k.owner_version=? AND (k.scopes IS NULL OR EXISTS(SELECT 1 FROM json_each(k.scopes) WHERE value=?)))`,who.keyId??'',who.id,Date.now(),who.operatorVersion,who.keyScope??'')]:[]),...(who.doorScopes?[guard(db,`EXISTS(SELECT 1 FROM bm_agent_keys k WHERE k.id=? AND k.owner_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND k.owner_version=? AND (k.scopes IS NULL OR NOT EXISTS(SELECT 1 FROM json_each(?) requested WHERE NOT EXISTS(SELECT 1 FROM json_each(k.scopes) current WHERE current.value=requested.value))))`,who.keyId??'',who.id,Date.now(),who.operatorVersion,JSON.stringify(who.doorScopes))]:[]),...(who.sessionId?[guard(db,"EXISTS(SELECT 1 FROM oa_sessions s JOIN bm_staff_session_proofs p ON p.session_id=s.id JOIN bm_staff_security_policy c ON c.id=1 WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at>? AND p.last_seen_at+c.idle_minutes*60000>?)",who.sessionId,Date.now(),Date.now())]:[])] : []), ...statements, stmt(db, 'DELETE FROM bm_assert')])
   } catch (error) {
     if (/note_locked|plan_locked/.test(String(error))) throw new DomainError('signed_records_cannot_change', 409)
     if (/bm_assert|CHECK constraint|UNIQUE constraint|ik_d1_assertions/.test(String(error))) throw new DomainError('changed_refresh_and_retry', 409)
