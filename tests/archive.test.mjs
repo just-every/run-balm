@@ -1,5 +1,6 @@
 import {recordedCohort} from './eligibility-cohort-journey.mjs'
 import { continuityFixture } from './continuity-journey.mjs'
+import { portalLogin as continuityPatientLogin } from './portal-billing.mjs'
 import { hostingProfile, hostingFixture, patientMode } from './readiness-fixture.mjs'
 import { cutoverInventory, archivedInvoiceInventory, cutoverClaims, cutoverAuthorizations } from './movein-reconciliation-journey.mjs'
 import {portalLogin} from './portal-billing.mjs'
@@ -881,8 +882,16 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const continuityInput = {seriesId:continuity.booked.seriesId}
   const reviewed = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
   await h.cmd('continuity.approve',{id:reviewed.id,digest:reviewed.digest,confirm:true},continuity.priya.cookie)
+  const acceptedOffer=await h.cmd('continuity.offer',{id:reviewed.id,digest:reviewed.digest,confirm:true},continuity.priya.cookie)
+  const continuityCookie=await continuityPatientLogin(h,['synthetic-balm-204','patient.example'].join('@'))
+  assert.equal((await h.form('/portal/action',{name:'continuity.accept',id:acceptedOffer.id,confirm:'on'},continuityCookie)).status,303)
+  const acceptanceOriginal=await h.db.prepare('SELECT * FROM bm_continuity_acceptances WHERE offer_id=?').bind(acceptedOffer.id).first()
+  for(const visitId of JSON.parse(acceptanceOriginal.appointment_ids))await h.cmd('appointment.cancel',{id:visitId,reason:'Synthetic later continuity cancellation'},continuity.priya.cookie)
   await h.cmd('insurance.authorization.save',{...continuity.authInput,id:continuity.authorization.id,visits:6})
   const pending = await h.cmd('continuity.prepare',continuityInput,continuity.priya.cookie)
+  await h.cmd('continuity.approve',{id:pending.id,digest:pending.digest,confirm:true},continuity.priya.cookie)
+  const openContinuityOffer=await h.cmd('continuity.offer',{id:pending.id,digest:pending.digest,confirm:true},continuity.priya.cookie)
+  const offerOriginals=(await h.db.prepare('SELECT id,proposal_id,client_id,practitioner_id,released_at,released_by,operator_id,operator_version,staff_version,expires_at,revoked_at FROM bm_continuity_offers ORDER BY id').all()).results
   const originals = (await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results
   const original=await snapshot(h.db,patient.id)
   assert.deepEqual(original.waitlist.map(e=>e.status).sort(),['booked','removed','waiting'])
@@ -928,6 +937,13 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   assert.equal(restoredProposals.proposals.length,2)
   assert.deepEqual((await h.db.prepare('SELECT id,payload,digest,prepared_at,prepared_by,approved_at,approved_by FROM bm_continuity_proposals ORDER BY id').all()).results,originals,'continuity dates, cited sources and review originals survive exactly')
   assert.ok(restoredProposals.proposals.every(p=>p.review_authority===0),'historical reviews carry no executable review authority')
+  assert.deepEqual((await h.db.prepare('SELECT id,proposal_id,client_id,practitioner_id,released_at,released_by,operator_id,operator_version,staff_version,expires_at,revoked_at FROM bm_continuity_offers ORDER BY id').all()).results,offerOriginals,'exact portal release originals survive restore')
+  assert.deepEqual(await h.db.prepare('SELECT * FROM bm_continuity_acceptances WHERE offer_id=?').bind(acceptedOffer.id).first(),acceptanceOriginal,'accepted dates and authorization accounting survive restore')
+  const historicalOffers=(await h.db.prepare('SELECT execution_authority,session_id FROM bm_continuity_offers').all()).results
+  assert.ok(historicalOffers.every(o=>o.execution_authority===0&&o.session_id===null),'restored portal releases cannot execute or transplant staff sessions')
+  const restoredPatientCookie=await continuityPatientLogin(h,['synthetic-balm-204','patient.example'].join('@'))
+  assert.equal((await h.form('/portal/action',{name:'continuity.accept',id:openContinuityOffer.id,confirm:'on'},restoredPatientCookie)).status,409)
+  assert.equal((await h.form('/portal/action',{name:'continuity.accept',id:acceptedOffer.id,confirm:'on'},restoredPatientCookie)).status,409)
   await h.cmd('continuity.approve',{id:pending.id,digest:pending.digest,confirm:true},clinicianCookie,409)
   const preparedAgain=await h.cmd('continuity.prepare',continuityInput,clinicianCookie)
   assert.notEqual(preparedAgain.id,pending.id,'a restored clinician must create a new current preparation')

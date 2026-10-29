@@ -3,6 +3,7 @@ import { chromium } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { harness } from './harness.mjs'
 import { continuityFixture } from './continuity-journey.mjs'
+import { portalLogin } from './portal-billing.mjs'
 
 const h = await harness({ browserHttps: true })
 let browser
@@ -19,10 +20,10 @@ try {
   await page.setViewportSize({ width: 1440, height: 1100 })
   assert.equal((await page.goto(h.origin + path)).status(), 200)
   const section = page.locator('#care-continuity')
-  const capture = async stage => {
+  const capture = async (stage, target = section) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 1100 })
-      await section.scrollIntoViewIfNeeded()
+      await target.scrollIntoViewIfNeeded()
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'continuity fits ' + width)
       if (directory) await page.screenshot({ path: directory + '/continuity-' + stage + '-' + width + '.png' })
     }
@@ -59,5 +60,26 @@ try {
   assert.equal((await h.state()).appointments.length,appointments)
   assert.equal(h.mail.length,mail)
   await capture('approved')
-  console.log('PASS native continuity preparation and approval forms, exact dates, no booking or outbound effect; screens 1440 and 390')
+  const offerForm = section.locator('form[action*="continuity.offer"]')
+  await offerForm.locator('[name=confirm]').check()
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), offerForm.getByRole('button', { name: 'Offer dates in patient portal', exact: true }).click()])
+  assert.match(await section.innerText(), /Portal offer expires/)
+  assert.equal((await h.state()).appointments.length, appointments, 'a portal offer holds no booking')
+  assert.equal(h.mail.length, mail, 'release sends no unsolicited notice')
+  await capture('offered')
+  const patientCookie = await portalLogin(h, ['synthetic-balm-204', 'patient.example'].join('@'))
+  const [patientName, ...patientValue] = patientCookie.split('=')
+  await context.addCookies([{ name: patientName, value: patientValue.join('='), url: h.origin, secure: true }])
+  assert.equal((await page.goto(h.origin + '/portal/home#visits')).status(), 200)
+  const offered = page.locator('[data-continuity-offer]')
+  assert.match(await offered.innerText(), /Replacement visits/)
+  assert.match(await offered.innerText(), /March 10|Mar 10|10 Mar|03\/10/)
+  assert.equal(await offered.locator('li').count(), 2)
+  await capture('patient-review', offered)
+  await offered.locator('[name=confirm]').check()
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), offered.getByRole('button', { name: 'Accept all replacement visits', exact: true }).click()])
+  assert.match(await offered.innerText(), /All replacement visits are booked above/)
+  assert.equal((await h.state()).appointments.length, appointments + 2)
+  await capture('patient-booked', offered)
+  console.log('PASS native continuity preparation, separate portal release and patient acceptance, exact dates and all-or-nothing bookings; screens 1440 and 390')
 } finally { await browser?.close(); await h.close() }
