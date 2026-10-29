@@ -111,4 +111,6 @@ nav.pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:12p
 .slot.chosen{border-color:var(--pill);background:var(--pill);color:var(--rer-accent-text)}
 .exercise-image{width:160px;max-width:100%;height:120px;object-fit:contain;border-radius:8px}
 @media(max-width:600px){h1{font-size:32px}.panel{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat .value{font-size:26px}}
+
+#care-continuity{min-width:0;overflow-wrap:anywhere}#care-continuity select{min-width:0;max-width:100%}.continuity-digest{overflow-wrap:anywhere}
 `
