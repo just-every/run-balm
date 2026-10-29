@@ -170,11 +170,8 @@ button, input, select, textarea { font-family: inherit; }
 }
 
 /* Base's Run page (/run) and not-found page, in the same look: the serif display
-   headline, white hairline step cards on ivory, deep teal numerals and code cards. */
+   headline, ivory background and deep teal code cards. */
 body:has(> main > .intro) h1, body:has(> main > .hero) h1 { font-weight: 500; letter-spacing: -.035em; word-spacing: .05em; font-variation-settings: 'opsz' 72; }
-body:has(> main > .intro) .step { border-radius: 20px; border-color: var(--line); background: var(--surface); box-shadow: var(--shadow-card); backdrop-filter: none; }
-body:has(> main > .intro) .num { background: var(--pill); color: #fff; font-family: var(--font-head); font-weight: 500; }
-body:has(> main > .intro) .step h2 { font-weight: 500; letter-spacing: -.02em; font-variation-settings: 'opsz' 36; }
 body:has(> main > .intro) .code { background: var(--terminal); }
 body:has(> main) .brand span { font-weight: 500; font-variation-settings: 'opsz' 36; }
 body:has(> main > .intro), body:has(> main > .hero) {
