@@ -1,3 +1,4 @@
+import { financeReconciliation } from './finance-reconciliation'
 // The owner's financial reports under the same dates as the operational ones,
 // clinic-wide, each with a CSV download.
 import { empty, h, money, panel } from './shared'
@@ -26,4 +27,5 @@ export function financialSections(s: any) {
     + panel('A/R aging by payer', '<p class="help">Open balances on invoices whose claim is still open at the payer, aged from the date of service to the last day.</p>' + aging(f.agingByPayer, 'Payer', 'payer') + link('aging-payer', 'payer aging'), 'full', 'report-aging-payer')
     + panel('A/R aging by patient', '<p class="help">Open balances the patient owes, aged from the date of service to the last day.</p>' + aging(f.agingByPatient, 'Patient', 'patient') + link('aging-patient', 'patient aging'), 'full', 'report-aging-patient')
     + panel('Deposit reconciliation', '<p class="help">Money Balm recorded, grouped the way it reaches your bank: each ERA or paper EOB check or EFT (with interest and recoupments separate), card payments by the day Stripe took them, and desk payments by day. Balm does not read your bank or Stripe payouts; Stripe pays out later and keeps its fees, so compare these totals with your statements.</p>' + deposits + link('deposits', 'deposits'), 'full', 'report-deposits')
+    + financeReconciliation(s)
 }
