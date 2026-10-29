@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "4f39fc4fdc15584779d057142e9df4287f04b2a3953c317be297dd2d99ff013f",
+      "sha256": "cf20d3c68abe2273d12cc1703f3d0ffd82eaba860af92af67dde8873ce46d917",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "6dfe84fe7cd453793f9ee6c7fc49ff8d4103ee9e05a59147bd76256858ba78bc",
+      "sha256": "5d5117a1944019b500aaeb2946e1a8d3a934e1691d012271f2b4bcc206bea03e",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "917fa112479ad389f2bdaec70a3f8c022f33de4be72b1005292fdff8bdacf37f",
+      "sha256": "99b5896366169bcb5673bfbfec9d0c19378517ad3c62d45b13b712b3884a399e",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -298,7 +298,7 @@
       "executable": false
     },
     "docs/waitlist.md": {
-      "sha256": "d05d00de8ee23d6bf5bc9166eb8fe9603932b85b64876e1e0ff3527b60b1f776",
+      "sha256": "ce71922b813ec53b68428c68cfef2636b1bbb3797d4784e5dc05e35db893a459",
       "executable": false
     },
     "edition.json": {
@@ -314,7 +314,7 @@
       "executable": false
     },
     "management/integration/deployment-spec.json": {
-      "sha256": "24a2055241fe329aa766787d2d8d823737ee27dc079234e47c64511cb37d36ae",
+      "sha256": "a12372a1786b8ed521b31baaefe878794fe82affab8d1bc8b7e467a7a2f005ef",
       "executable": false
     },
     "migrations/core/0001_owner.sql": {
@@ -835,6 +835,10 @@
     },
     "migrations/core/0129_balm_continuity.sql": {
       "sha256": "8f439b41c9c658c4486484cf85ef30d410e378d4151eb69c059d769829419f25",
+      "executable": false
+    },
+    "migrations/core/0129_balm_waitlist_holds.sql": {
+      "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -1966,7 +1970,7 @@
       "executable": false
     },
     "src/balm/domain/booking.ts": {
-      "sha256": "b1d0f5fc5ae79870cf2d4c2e268327839ab6f88c113f72f426cf7046f7f45b9a",
+      "sha256": "7f1ad9ad64241209000f3de1d413a8150169dc97d765ebb9f5e3ef370825b5dc",
       "executable": false
     },
     "src/balm/domain/calendar-feed.ts": {
@@ -2074,7 +2078,7 @@
       "executable": false
     },
     "src/balm/domain/waitlist.ts": {
-      "sha256": "ee9577b1c194eacf3707418b3bf7152ad81ba68a89d53a4b8474e773d970f859",
+      "sha256": "7cb7ab133a05d2a0214ddb681afb52244ac7ca97fc2ea2d495d975c1d183aa1b",
       "executable": false
     },
     "src/balm/episodes/index.ts": {
@@ -2342,7 +2346,7 @@
       "executable": false
     },
     "src/balm/mail-out.ts": {
-      "sha256": "c4dc6794f3cfd01f8893e552a0d3b45a522ab139086ea808c797a0bfb5b4682a",
+      "sha256": "68be669279d88c2ff5f98a00a65d942991f08d48b865794b9edfdb263f0c70d4",
       "executable": false
     },
     "src/balm/mail/changes.ts": {
@@ -2822,7 +2826,7 @@
       "executable": false
     },
     "src/balm/scheduling/patient-effects.ts": {
-      "sha256": "5a453f367aeff6c468bce6880ee80fe0db2833845ff15adf5775c9975f8e9b51",
+      "sha256": "cfddd7896068452312a23e397a23eb5dd54c17fbfc2ac41f6daafd5aaef1ed75",
       "executable": false
     },
     "src/balm/scheduling/patient.ts": {
@@ -2839,6 +2843,10 @@
     },
     "src/balm/scheduling/service-rules.ts": {
       "sha256": "218e8a80f242286237ef947b6c7cbd8463fc80955d6771b5886d70970ce47581",
+      "executable": false
+    },
+    "src/balm/scheduling/waitlist-holds.ts": {
+      "sha256": "f7c139df93d838da832194815226fbf2ce408d1e06284b036efac6dfc4ce0e09",
       "executable": false
     },
     "src/balm/scribe/index.ts": {
@@ -3242,7 +3250,7 @@
       "executable": false
     },
     "src/balm/ui/public.ts": {
-      "sha256": "6a2dc7a558af791485750ce148366691f2d08183dff3e85abb14f9f64fe5e5ff",
+      "sha256": "582e186e4e92a639c257e4a5295ec9b4a93d9c178430210d39c3f335a6afa8e8",
       "executable": false
     },
     "src/balm/ui/readiness.ts": {
@@ -3330,7 +3338,7 @@
       "executable": false
     },
     "src/balm/ui/waitlist.ts": {
-      "sha256": "3883734b1806a3f9dd479a5b617419d7d6b9af099c9f43c60b2c6e7ffd2e9067",
+      "sha256": "4e6f4d239afb0a86ae48c5e5eda4181f8986dc13b3f642d054a52c2b2ec5f717",
       "executable": false
     },
     "src/balm/visit-summary.ts": {
@@ -5202,7 +5210,7 @@
       "executable": false
     },
     "src/server.ts": {
-      "sha256": "1776fb14ee2299475277367d03e507f09f1c02cd32554bd9b17dbcd75add5032",
+      "sha256": "8b2f10b7a284c4f8ad6a1dabf8f6e4385ae9568d906a37bad23e5cf503f671ef",
       "executable": false
     },
     "src/site/docs/build/manifest.ts": {
@@ -5434,7 +5442,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "aeedc48c1278a7ff8a9ca94f607795244c26043a525ad90ffc1b738e732cdf28",
+      "sha256": "6f8ef42ba4c214d42b534447a7c12d312c6758ed04e011fbaf8e4e57b1df86dd",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5886,7 +5894,7 @@
       "executable": false
     },
     "tests/schedule.test.mjs": {
-      "sha256": "0b1d5152bc99d7b71c4063b9219740812801767fb49cedd9a06c1f0a5b048679",
+      "sha256": "e6bf2520ca85d46ad17cbd8ac76b9722f7b4e83a8e7c483320e24f357ae01156",
       "executable": false
     },
     "tests/security-clinic.mjs": {
@@ -5946,15 +5954,15 @@
       "executable": false
     },
     "tests/waitlist-browser.mjs": {
-      "sha256": "7c7a922707757f7068f5888a83739514dee7a5f3b0a440d56c27547b7c62b641",
+      "sha256": "0ffa5ee84efa76e39f66ce059a740bcc27c967110486df41ef224e85fa8ec9a9",
       "executable": false
     },
     "tests/waitlist-journey.mjs": {
-      "sha256": "6153f9df8a71164cc057af999a179627726590760df921db7708c2f2bd943af8",
+      "sha256": "26628fd7eb841edc79a31cf0aa923717c063d0e8f5deba12fed90c9540d38cf9",
       "executable": false
     },
     "tests/worker.ts": {
-      "sha256": "08320437aa4658f62bc3dfeb76bb7240b8e45c5da366c76667bda260dcc56e1d",
+      "sha256": "45870a5953a33aabdddafc1c72e80957777864fc7b941448dc7ac19e06d28756",
       "executable": false
     },
     "tsconfig.json": {

@@ -818,7 +818,7 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   calls:(await db.prepare('SELECT * FROM bm_calls WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   waitlist:(await db.prepare('SELECT * FROM bm_waitlist WHERE client_id=? ORDER BY id').bind(clientId).all()).results,
   offers:(await db.prepare('SELECT * FROM bm_offers ORDER BY id').all()).results,
-  recipients:(await db.prepare('SELECT offer_id,entry_id,channel,delivery,outcome,responded_at,taken_notice FROM bm_offer_recipients ORDER BY offer_id,entry_id').all()).results,
+  recipients:(await db.prepare('SELECT offer_id,entry_id,channel,delivery,outcome,responded_at,taken_notice,position,activated_at,expires_at FROM bm_offer_recipients ORDER BY offer_id,entry_id').all()).results,
   audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
  })
  try{
@@ -904,6 +904,10 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   const preparedAgain=await h.cmd('continuity.prepare',continuityInput,clinicianCookie)
   assert.notEqual(preparedAgain.id,pending.id,'a restored clinician must create a new current preparation')
   assert.equal(preparedAgain.digest,pending.digest)
+  const mailCount=h.mail.length
+  await h.db.prepare("UPDATE bm_offers SET hold_until=? WHERE status='open'").bind(new Date(Date.now()-60000).toISOString()).run()
+  await (await h.mf.getWorker()).scheduled({scheduledTime:Date.now(),cron:'* * * * *'})
+  assert.equal(h.mail.length,mailCount,'restored historical queues never restart outbound offers')
   const cookie=await h.signIn(h.auth.OWNER_EMAIL)
   await h.cmd('client.erase',{id:continuity.patient.id},cookie,409)
   assert.deepEqual((await h.send(path,undefined,cookie)).value,history,'restored public call history is identical')
