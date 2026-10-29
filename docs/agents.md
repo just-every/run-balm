@@ -18,17 +18,16 @@ This declared core slice supports clinic identity, service fees and duration, ro
 | `balm.forms.prepare` | standard | `intake.prepare` | INTAKE-001, INTAKE-002 | `draft` |
 | `balm.forms.publish` | live | `intake.publish` | INTAKE-001, INTAKE-002 | `publish` |
 | `balm.templates.list` | standard | `context.read` | CHART-002 | `templates` |
-| `balm.events.list` | standard | `events:read` | BASE-AGENT-010 | `events` |
 
 ## Records, identity and approvals
 
-Resources: `balm://clinic/{id}`, `balm://service/{id}`, `balm://staff/{id}`, `balm://room/{id}`, `balm://equipment/{id}`, `balm://form/{id}`. Each reader rechecks native owner visibility; missing and restricted records are indistinguishable. Stored labels, questions and imported text are untrusted. No bearer or provider credential is returned. The witness masks an SSN; clinic identity reads classify an actual full SSN as sensitive. Setting a service fee adds money; changing only duration retains live. Staff changes compute the native subject and refuse self-widening.
+The public resource registry is empty in this CORE declaration. Six internal configuration readers (`balm://clinic/{id}`, `balm://service/{id}`, `balm://staff/{id}`, `balm://room/{id}`, `balm://equipment/{id}`, `balm://form/{id}`) retain native owner visibility for future adoption; they expose no public templates, reads or result links. Stored labels, questions and imported text are untrusted. No bearer or provider credential is returned. The witness masks an SSN; clinic identity reads classify an actual full SSN as sensitive. Setting a service fee adds money; changing only duration retains live. Staff changes compute the native subject and refuse self-widening.
 
 Business owner_id and team id bind to native operator ids. Existing team people keep their clinic grants; a signed roster does not create shadow accounts. Unknown, inactive or natively inadmissible subjects cannot act. Original local preparation keys retain their original scopes and revocation checks. A failed recognizable Business token cannot become a local key. Native sessions and independent second-factor proof control the person-only /agents and approval pages. The agent prepares; actual reviewers are named separately in native activity. Autonomous policy invents no human approval.
 
 ## Boundaries
 
-The declared capability set is tools, policy, pause, audit and idempotency. Base 0.2.86 still advertises its compulsory event/subscription surface and requires effect events in its harness; this seed adds no new native event family. Multi-sponsor verification, subscription delivery, event refresh and external mail families are undeclared. There is no provider spend registration or spend enforcement, and these tools contact no outbound provider.
+The declared capability set is tools, policy, pause, audit and idempotency. The runtime is copied from Base `114ef7a61f080da053af783c5fbe06f625d692cc`, with released `rer 0.2.88`. Events, resources, prompts and subscriptions are undeclared: discovery omits them, listings are empty and calls return `capability_not_declared` with the family name. An unknown native tool returns `tool_not_found`. Multi-sponsor, mail edges, resource refresh, timed lifecycle, dual host, queued lifecycle and owner-native API verification remain unscoped and unproved; the subset makes no claim about them. There is no provider spend registration or spend enforcement, and these tools contact no outbound provider.
 
 Pinned Base also has no client-scoped retained-artifact redaction and atomic pending-execution/capture hook for Balm erasure. Native custody remains closed rather than claiming that patient deletion clears retained approvals or replay outcomes.
 
