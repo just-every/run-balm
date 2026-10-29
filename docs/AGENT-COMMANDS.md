@@ -1,3 +1,7 @@
+The shared company agent door at `/mcp` supports the configuration jobs in [the live agent guide](/docs/agents): clinic identity, service fees and duration, rooms, equipment, native staff jobs and intake versions. Its CORE declaration enables tools, policy, pause, audit and idempotency. Events, resources, prompts and subscriptions return typed refusals. Signed Business policy and the sponsor’s native authority govern those tools. Patient and financial adapters remain partial.
+
+The existing scoped preparation REST API below retains its native prepare-and-human-approve fence; its migration into shared company policy is unfinished.
+
 An agent key lets an assistant read the clinic's working state and prepare work. A signed-in person approves every preparation; the approval is recorded with the SHA-256 of the exact content approved.
 
 Create a key in **Agent access** (owner only). It is shown once, lasts 30 days, and stops working at once when revoked or when the owner's account changes. Send it as `Authorization: Bearer <key>`.

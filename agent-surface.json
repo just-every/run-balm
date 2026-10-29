@@ -166,27 +166,9 @@
       "clauses": [
         "CHART-002"
       ]
-    },
-    {
-      "name": "balm.events.list",
-      "scope": "events:read",
-      "readOnly": true,
-      "classes": [
-        "standard"
-      ],
-      "clauses": [
-        "BASE-AGENT-010"
-      ]
     }
   ],
-  "resources": [
-    "balm://clinic/{id}",
-    "balm://service/{id}",
-    "balm://staff/{id}",
-    "balm://room/{id}",
-    "balm://equipment/{id}",
-    "balm://form/{id}"
-  ],
+  "resources": [],
   "notTools": [
     {
       "clauses": [
@@ -551,16 +533,6 @@
     {
       "id": "templates",
       "tool": "balm.templates.list",
-      "args": {},
-      "expect": [
-        {
-          "class": "standard"
-        }
-      ]
-    },
-    {
-      "id": "events",
-      "tool": "balm.events.list",
       "args": {},
       "expect": [
         {
