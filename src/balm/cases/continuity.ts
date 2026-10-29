@@ -35,8 +35,8 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
   insist(pattern.planId, 'continuity_needs_plan_derived_series', 409)
   const episode = await one(db, "SELECT e.* FROM bm_episode_records r JOIN bm_episodes e ON e.id=r.episode_id WHERE r.record_kind='plan' AND r.record_id=?", pattern.planId)
   insist(!episode?.closed_at, 'continuity_episode_closed', 409)
-  const plan = await one(db, `SELECT p.* FROM bm_plans_of_care p WHERE p.client_id=? AND p.author_id=? AND
-    COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='plan' AND record_id=p.id),'')=? ORDER BY p.created_at DESC,p.rowid DESC LIMIT 1`, series.client_id, series.practitioner_id, episode?.id ?? '')
+  const plan = await one(db, `SELECT p.* FROM bm_plans_of_care p WHERE p.client_id=? AND
+    COALESCE((SELECT episode_id FROM bm_episode_records WHERE record_kind='plan' AND record_id=p.id),'')=? ORDER BY p.created_at DESC,p.rowid DESC LIMIT 1`, series.client_id, episode?.id ?? '')
   insist(plan && plan.id === pattern.planId && plan.content_sha256 === pattern.planSha256, 'continuity_plan_changed', 409)
   const content = JSON.parse(plan.content)
   insist(pattern.firstDate === content.startDate && pattern.weeks === content.durationWeeks && pattern.weekdays.length === content.frequencyPerWeek, 'continuity_cadence_changed', 409)
@@ -51,7 +51,7 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
   const after = cancelled.map(v => hostDateAt(new Date(v.start_at), zone)).sort().at(-1)!
   const waitlist = await rows(db, 'SELECT * FROM bm_waitlist WHERE client_id=? AND service_id=? ORDER BY id', client.id, service.id)
   const authorizations = await authorizationsFor(db, series.client_id)
-  const policies = await rows(db, 'SELECT * FROM bm_policies WHERE client_id=? AND priority=1 ORDER BY id', client.id)
+  const policies = await rows(db, 'SELECT p.*,y.version AS payer_version FROM bm_policies p JOIN bm_payers y ON y.id=p.payer_id WHERE p.client_id=? AND p.priority=1 ORDER BY p.id', client.id)
   insist(policies.length === 1, 'continuity_needs_current_primary_policy', 409)
   const policy = policies[0]
   insist(!['inactive', 'changed'].includes(policy.eligibility_status), 'continuity_coverage_requires_review', 409)
@@ -81,9 +81,10 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
   }
   insist(occurrences.length === cancelled.length, 'continuity_no_feasible_sequence', 409)
   const payload = {
-    clientId: client.id, clientVersion: client.version, seriesId: series.id, practitionerId: practitioner.id, practitioner: practitioner.name, serviceId: service.id, service: service.name, roomId: series.room_id,
+    clientId: client.id, clientVersion: client.version, seriesId: series.id, practitionerId: practitioner.id, practitioner: practitioner.name, practitionerVersion: practitioner.version, serviceId: service.id, service: service.name, serviceVersion: service.version, roomId: series.room_id,
     planId: plan.id, planSha256: plan.content_sha256, planVersion: plan.version, episodeId: episode?.id ?? '', timeZone: zone,
     cadence: { firstDate: content.startDate, lastDate, frequencyPerWeek: content.frequencyPerWeek, weekdays: pattern.weekdays, time: pattern.time },
+    policy: { id: policy.id, version: policy.version, payerId: policy.payer_id, payerVersion: policy.payer_version, startsOn: policy.starts_on, endsOn: policy.ends_on, eligibilityStatus: policy.eligibility_status },
     cancellations: cancelled.map(v => ({ id: v.id, startAt: v.start_at, version: v.version })),
     waitlist: waitlist.map(w => ({ id: w.id, status: w.status, practitionerId: w.practitioner_id, earliestDate: w.earliest_date, latestDate: w.latest_date, weekdays: JSON.parse(w.preferred_weekdays), startMinute: w.preferred_start_minute, endMinute: w.preferred_end_minute })),
     authorization: [...demand].map(([key, needed]) => { const a = authorizations.find(a => a.id === key)!; return { id: key, version: a.version, scope: a.cpt_scope, unitsPerVisit: a.units_per_visit, number: a.number, kind: a.allowance_kind, total: a.allowance_total, used: a.used_allowance, reserved: a.reserved_allowance, remaining: a.remaining_allowance, proposed: needed, afterBooking: a.remaining_allowance - needed, startsOn: a.starts_on, endsOn: a.ends_on } }),
