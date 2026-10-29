@@ -13,13 +13,18 @@ function reason(s:Segment) {
  return {segment:s[0],code,description,source:s.join(' · ')}
 }
 
+export async function functionalBatchOwnerOnly(db:D1Database,batchId:string) {
+ return !!await one(db,"SELECT 1 FROM bm_claim_batch_items b JOIN bm_claims c ON c.id=b.claim_id WHERE b.batch_id=? AND json_extract(c.snapshot,'$.injury') IS NOT NULL",batchId)
+}
+
 export async function functionalBatchClaims(db:D1Database,who:Actor,batchId:string) {
  insist(who.role==='owner'||biller(who),'functional_acknowledgments_require_biller_or_owner',403)
+ insist(who.role==='owner'||!await functionalBatchOwnerOnly(db,batchId),'injury_case_requires_owner',403)
  const claims=await rows(db,'SELECT c.id,c.client_id,p.erased_at FROM bm_claim_batch_items b JOIN bm_claims c ON c.id=b.claim_id JOIN bm_clients p ON p.id=c.client_id WHERE b.batch_id=?',batchId)
  insist(claims.length>0&&claims.every(c=>!c.erased_at),'functional_acknowledgment_batch_unavailable',409)
  return claims
 }
-export const functionalGuards=(db:D1Database,who:Actor,claims:Data[])=>claims.map(c=>clientGuard(db,who,c.client_id))
+export const functionalGuards=(db:D1Database,who:Actor,claims:Data[])=>claims.flatMap(c=>[clientGuard(db,who,c.client_id),guard(db,"EXISTS(SELECT 1 FROM bm_claims WHERE id=? AND (?='owner' OR json_extract(snapshot,'$.injury') IS NULL))",c.id,who.role)])
 
 /** A 999 describes syntax of one stored 837 transaction, never payer adjudication. */
 export async function importFunctionalAcknowledgment(db:D1Database,who:Actor,input:Data) {
@@ -34,13 +39,22 @@ export async function importFunctionalAcknowledgment(db:D1Database,who:Actor,inp
  insist(isa[15]===original.isa[15],'functional_acknowledgment_environment_does_not_match')
  insist(gs[1]==='FA'&&gs[8]==='005010X231A1'&&st[3]==='005010X231A1','unsupported_999_implementation')
  const segments=parsed.segments,ak1=segments.filter(s=>s[0]==='AK1'),ak2=segments.filter(s=>s[0]==='AK2'),ik5=segments.filter(s=>s[0]==='IK5'),ak9=segments.filter(s=>s[0]==='AK9')
- insist(ak1.length===1&&ak2.length===1&&ik5.length===1&&ak9.length===1,'999_requires_one_group_and_transaction_result')
+ insist(ak1.length===1&&ak9.length===1&&ak2.length<=1&&ik5.length===ak2.length,'999_requires_one_group_and_transaction_result')
  insist(ak1[0][1]===original.gs[1]&&ak1[0][2]===original.gs[6]&&(!ak1[0][3]||ak1[0][3]===original.gs[8]),'999_group_does_not_match_batch')
- insist(ak2[0][1]===original.st[1]&&ak2[0][2]===original.st[2]&&(!ak2[0][3]||ak2[0][3]===original.st[3]),'999_transaction_does_not_match_batch')
- const a=segments.indexOf(ak2[0]),k=segments.indexOf(ik5[0]),g=segments.indexOf(ak9[0])
- insist(segments[0]===ak1[0]&&a===1&&k>a&&g===segments.length-1&&g===k+1&&segments.slice(a+1,k).every(s=>['IK3','IK4','CTX'].includes(s[0])),'invalid_999_segment_order')
- const transaction=ik5[0][1],group=ak9[0][1]
- insist(transaction in transactionCodes&&group in groupCodes,'unsupported_999_acknowledgment_code')
+ const group=ak9[0][1]
+ insist(group in groupCodes,'unsupported_999_acknowledgment_code')
+ let transaction=group
+ if(ak2.length) {
+  insist(ak2[0][1]===original.st[1]&&ak2[0][2]===original.st[2]&&(!ak2[0][3]||ak2[0][3]===original.st[3]),'999_transaction_does_not_match_batch')
+  const a=segments.indexOf(ak2[0]),k=segments.indexOf(ik5[0]),g=segments.indexOf(ak9[0])
+  insist(segments[0]===ak1[0]&&a===1&&k>a&&g===segments.length-1&&g===k+1&&segments.slice(a+1,k).every(s=>['IK3','IK4','CTX'].includes(s[0])),'invalid_999_segment_order')
+  transaction=ik5[0][1]
+  insist(transaction in transactionCodes,'unsupported_999_acknowledgment_code')
+ } else {
+  // AK2 is optional. A group summary binds the single stored transaction by
+  // AK1 and the exact included, received and accepted counts in AK9.
+  insist(segments.length===2&&segments[0]===ak1[0]&&segments[1]===ak9[0],'invalid_999_segment_order')
+ }
  const accepted=['A','E'].includes(transaction)
  insist(ak9[0][2]==='1'&&ak9[0][3]==='1'&&ak9[0][4]===(accepted?'1':'0')&&(['A','E'].includes(group)===accepted)&&group!=='P','invalid_999_group_counts')
  const syntaxStatus=accepted?(transaction==='E'||group==='E'?'accepted_with_errors':'accepted'):'rejected'
