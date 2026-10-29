@@ -2774,7 +2774,7 @@
       "executable": false
     },
     "src/balm/insurance/institutional.ts": {
-      "sha256": "685b636fa5ea8d3f15360d8bff2d4b9b8b792ff3cf930296ad98ed8405dd5d57",
+      "sha256": "5097801f2ff3e3cd5ec9466ef34e28e4115f2195dcc929a69f06937ec44ea8d6",
       "executable": false
     },
     "src/balm/insurance/invoice-price.ts": {
@@ -6442,7 +6442,7 @@
       "executable": false
     },
     "tests/institutional-claims-journey.mjs": {
-      "sha256": "87e5bf428be8559d5f8f202dff2b931dc8149e1696fd05862cbc3f67193c5386",
+      "sha256": "f39cbcc6caff158543a1576b93c9432ecbc505eb3b75db69ddeb95f99665ce48",
       "executable": false
     },
     "tests/insurance.test.mjs": {

@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto'
 import {clinic,pastVisit,visitDate} from './clinic.mjs'
 
 export const institutionalInstructions={billType:'741',revenueMappings:[{code:'97110',revenueCode:'0420'},{code:'97140',revenueCode:'0420'}],planSpanCode:'74',enrollmentReference:'synthetic-balm-301 owner-recorded agency enrollment',source:'synthetic-balm-302 synthetic payer guide; structural test only',active:true,attest:true}
-export async function institutionalFixture(h,{historical=false}={}){
+export async function institutionalFixture(h,{historical=false,multipleCodes=false}={}){
  await h.finishSetup()
  const {service,practitioners:[priya]}=await clinic(h)
  await h.cmd('staff.save',{id:priya.id,name:'Priya Shah',email:priya.email,role:'practitioner',credentials:'PT',active:true})
@@ -23,17 +23,17 @@ export async function institutionalFixture(h,{historical=false}={}){
  await h.cmd('appointment.attend',{id:appointmentId})
  const note=await h.cmd('note.write',{clientId:patient.id,appointmentId,body:'Synthetic signed treatment original',charges:[{code:'97110',minutes:23},{code:'97140',minutes:15}]},priya.cookie)
  await h.cmd('note.sign',{id:note.id,revision:1,signature:'Priya Shah',attest:true},priya.cookie)
- await h.cmd('pay.codes.save',{appointmentId,icd10:'M25.561'})
+ await h.cmd('pay.codes.save',{appointmentId,icd10:multipleCodes?['M25.561','M25.562']:['M25.561']})
  const invoice=await h.cmd('invoice.prepare',{appointmentId});await h.cmd('invoice.approve',{id:invoice.id})
  const planInput={clientId:patient.id,noteId:note.id,diagnoses:'M25.561',shortTermGoals:'Synthetic walking goal',longTermGoals:'Synthetic mobility goal',frequencyPerWeek:2,durationWeeks:6,interventions:'Synthetic strengthening',startDate:new Date(Date.parse(serviceDate+'T00:00:00Z')-7*86400000).toISOString().slice(0,10),physicianName:'Synthetic Physician',physicianEmail:['synthetic-balm-305','example.test'].join('@'),signature:'Priya Shah',credentials:'PT',attest:true}
  const plan=await h.cmd('plan.send',planInput,priya.cookie)
  const signed=await h.form('/plan/'+plan.token,{name:'Synthetic Physician',credentials:'MD',npi:'1234567893',attest:'on'})
  assert.equal(signed.status,303)
  const planRecord=(await h.send('/api/balm/clients/'+patient.id,undefined,h.owner)).value.plans.find(p=>p.id===plan.id)
- const visitInput={appointmentId,policyId:policy.id,planId:plan.id,attendingFirst:'Synthetic',attendingLast:'Physician',attendingNpi:'1234567893',patientStatus:'01',occurrences:[{code:'29',date:serviceDate}],source:'synthetic-balm-306 synthetic occurrence instruction',attest:true}
+ const visitInput={appointmentId,policyId:policy.id,planId:plan.id,attendingFirst:'Synthetic',attendingLast:'Physician',attendingNpi:'1234567893',patientStatus:'01',occurrences:(multipleCodes?['29','11','35']:['29']).map(code=>({code,date:serviceDate})),source:'synthetic-balm-306 synthetic occurrence instruction',attest:true}
  const input={appointmentId,policyId:policy.id,claimFormat:'837I'}
  const file=async(cookie=h.owner)=>(await h.send('/api/balm/clients/'+patient.id,undefined,cookie)).value
- return {service,priya,payer,payerInput,patient,policy,policyInput,appointmentId,serviceDate,note,invoice,plan,planInput,planRecord,visitInput,input,file}
+ return {service,priya,payer,payerInput,patient,policy,policyInput,appointmentId,serviceDate,note,invoice,plan,planInput,planRecord,visitInput,input,file,multipleCodes}
 }
 export function inspectInstitutionalFile(body,c,claimId){
  assert.equal(body.slice(0,3),'ISA');assert.equal(body[105],'~','ISA has the fixed-width envelope length')
@@ -51,20 +51,25 @@ export function inspectInstitutionalFile(body,c,claimId){
  assert.ok(all('NM1').some(s=>s[1]==='71'&&s[3]==='PHYSICIAN'&&s[4]==='SYNTHETIC'&&s[9]==='1234567893'))
  assert.ok(all('NM1').some(s=>s[1]==='82'&&s[3]==='SHAH'&&s[9]==='1234567893'))
  const clm=find('CLM');assert.equal(clm[1],claimId);assert.equal(clm[2],'95.00');assert.equal(clm[5],'74:A:1')
+ assert.deepEqual(clm.slice(6),['','A','Y','I'],'institutional CLM06 is not used; assignment and release indicators retain their positions')
+ assert.equal(all('PRV').length,0,'the institutional rendering loop has no PRV segment')
  assert.deepEqual(find('CL1'),['CL1','','','01'])
  assert.deepEqual(all('SV2'),[['SV2','0420','HC:97110:GP','70.00','UN','2'],['SV2','0420','HC:97140:GP','25.00','UN','1']])
  assert.equal(all('SV1').length,0)
  const day=c.serviceDate.replaceAll('-',''),startDay=c.planInput.startDate.replaceAll('-',''),through=new Date(Date.parse(c.planInput.startDate+'T00:00:00Z')+41*86400000).toISOString().slice(0,10).replaceAll('-','')
  assert.ok(all('DTP').some(s=>s[1]==='434'&&s[2]==='RD8'&&s[3]===day+'-'+day))
  assert.deepEqual(all('DTP').filter(s=>s[1]==='472').map(s=>s.slice(2)),[['D8',day],['D8',day]])
- assert.ok(all('HI').some(s=>s[1]==='ABK:M25561'))
- assert.ok(all('HI').some(s=>s[1]==='BH:29:D8:'+day))
- assert.ok(all('HI').some(s=>s[1]==='BI:74:RD8:'+startDay+'-'+through))
+ assert.deepEqual(all('HI'),[
+  ['HI','ABK:M25561'],
+  ...(c.multipleCodes?[['HI','ABF:M25562']]:[]),
+  ['HI','BI:74:RD8:'+startDay+'-'+through],
+  c.multipleCodes?['HI','BH:29:D8:'+day,'BH:11:D8:'+day,'BH:35:D8:'+day]:['HI','BH:29:D8:'+day],
+ ],'principal HI02 is unused, other diagnoses are separate, and occurrences share one HI after the occurrence span')
  assert.deepEqual(all('LX'),[['LX','1'],['LX','2']]);assert.equal(new Set(all('REF').filter(s=>s[1]==='6R').map(s=>s[2])).size,2)
  return createHash('sha256').update(body).digest('hex')
 }
 export async function institutionalJourney(h){
- const c=await institutionalFixture(h),biller=await h.staff('InstitutionalBiller','biller'),reception=await h.staff('InstitutionalDesk','reception')
+ const c=await institutionalFixture(h,{multipleCodes:true}),biller=await h.staff('InstitutionalBiller','biller'),reception=await h.staff('InstitutionalDesk','reception')
  const originalLedger=(await c.file()).billing.ledger
  await h.cmd('insurance.claim.prepare',c.input,h.owner,409)
  await h.cmd('insurance.institutional.settings',{...institutionalInstructions,billType:'751'},h.owner,400)
@@ -81,7 +86,7 @@ export async function institutionalJourney(h){
  const otherPolicy=await h.cmd('insurance.policy.save',{...c.policyInput,clientId:other.id,memberId:'synthetic-balm-307'})
  await h.cmd('insurance.institutional.visit',{...c.visitInput,policyId:otherPolicy.id},h.owner,404)
  await h.cmd('insurance.institutional.visit',{...c.visitInput,attendingNpi:'0000000000'},h.owner,400)
- const visitForm={...c.visitInput,attest:'on',occurrenceLines:'29 '+c.serviceDate};delete visitForm.occurrences
+ const visitForm={...c.visitInput,attest:'on',occurrenceLines:c.visitInput.occurrences.map(o=>o.code+' '+o.date).join('\n')};delete visitForm.occurrences
  assert.equal((await h.form('/app/action?name=insurance.institutional.visit&returnTo='+encodeURIComponent('/app/clients/'+c.patient.id),visitForm,h.owner)).status,303)
  await h.cmd('insurance.claim.prepare',{...c.input,policyId:otherPolicy.id},h.owner,404)
  const claim=await h.cmd('insurance.claim.prepare',c.input,biller.cookie);assert.equal(claim.status,'ready');assert.equal(claim.amountCents,9500)
