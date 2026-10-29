@@ -7,16 +7,18 @@ export function balmBusiness(env: Bindings) {
   const db = env.DB
   const team: TeamAdapter = {
     async ownerEmail() { return (await db.prepare("SELECT o.email FROM oa_operators o JOIN oa_bootstrap b ON b.claim_id=o.id WHERE b.singleton=1 AND o.status='active'").first<{email:string}>())?.email ?? null },
-    async prepare({ members, managed, guard }) {
+    async prepare({ members, managed, guard, ownerEmail }) {
       const result = []
+      const bootstrap=await db.prepare('SELECT claim_id FROM oa_bootstrap WHERE singleton=1').first<{claim_id:string}>()
       for (const member of members) {
         const previous = managed.find(row => row.businessId === member.id)
         const operator = previous?.operatorId
           ? await db.prepare('SELECT id FROM oa_operators WHERE id=?').bind(previous.operatorId).first<{id:string}>()
           : await db.prepare('SELECT id FROM oa_operators WHERE lower(email)=lower(?)').bind(member.email).first<{id:string}>()
-        let state: 'active'|'inactive'|'invited' = operator ? 'inactive' : 'invited'
+        let state: 'active'|'inactive'|'invited'|'conflict' = operator ? 'inactive' : 'invited'
         if (operator) { try { await actor(db, operator.id); state = 'active' } catch {} }
-        result.push({ email: member.email, operatorId: operator?.id ?? null, invite: member.invite, state })
+        if(member.email===ownerEmail || operator?.id===bootstrap?.claim_id || managed.some(row=>row.operatorId===operator?.id && row.businessId && row.businessId!==member.id))state='conflict'
+        result.push({ email: member.email, operatorId: state==='conflict'?previous?.operatorId??null:operator?.id ?? null, invite: member.invite, state })
       }
       for (const previous of managed) if (!members.some(member => member.id === previous.businessId || member.email === previous.email)) result.push({ ...previous, state: 'inactive' as const })
       return { statements: [db.prepare(`INSERT INTO bs_assert(value) SELECT CASE WHEN ${guard.sql} THEN 1 ELSE NULL END`).bind(...guard.args)], rows: result, async afterCommit() {} }
