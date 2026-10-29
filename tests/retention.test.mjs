@@ -1,4 +1,5 @@
 import {recordedCohort} from './eligibility-cohort-journey.mjs'
+import { continuityFixture } from './continuity-journey.mjs'
 import { cutoverInvoices } from './movein-reconciliation-journey.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
@@ -42,6 +43,19 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   assert.equal((await file(h,callPatient.id)).retention.eligibleAfter,callDeadline.toISOString().slice(0,10),'COMM-003 late entry cannot backdate the retention deadline')
   assert.ok((await file(h,callPatient.id)).retention.reasons.includes('retention_period_not_complete'))
   await h.cmd('retention.preview',{clientId:callPatient.id},h.owner,409)
+  const continuity=await continuityFixture(h)
+  const sequence=await h.cmd('continuity.prepare',{seriesId:continuity.booked.seriesId},continuity.priya.cookie)
+  await h.cmd('continuity.approve',{id:sequence.id,digest:sequence.digest,confirm:true},continuity.priya.cookie)
+  // Historical source dates do not backdate a later clinician review.
+  await h.db.prepare("UPDATE bm_appointments SET start_at='1990-01-02T02:00:00.000Z',end_at='1990-01-02T02:45:00.000Z' WHERE client_id=?").bind(continuity.patient.id).run()
+  await h.db.prepare("UPDATE bm_plans_of_care SET created_at='1990-01-02T02:00:00.000Z' WHERE client_id=?").bind(continuity.patient.id).run()
+  const continuityReview=(await h.db.prepare('SELECT * FROM bm_continuity_proposals WHERE id=?').bind(sequence.id).first())
+  const reviewDeadline=new Date(continuityReview.approved_at.slice(0,10)+'T00:00:00Z');reviewDeadline.setUTCFullYear(reviewDeadline.getUTCFullYear()+6)
+  assert.equal((await file(h,continuity.patient.id)).retention.eligibleAfter,reviewDeadline.toISOString().slice(0,10))
+  await h.cmd('retention.preview',{clientId:continuity.patient.id},h.owner,409)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_continuity_proposals WHERE id=?').bind(sequence.id).run(),/continuity_original_kept/)
+  await assert.rejects(h.db.prepare('UPDATE bm_continuity_proposals SET payload=? WHERE id=?').bind('{}',sequence.id).run(),/continuity_original_kept/)
+
   const invoiceInput=cutoverInvoices(),invoicePreview=await h.cmd('movein.prepare',invoiceInput)
   const invoiceImport=await h.cmd('movein.cutover',{...invoiceInput,fingerprint:invoicePreview.fingerprint,mappingApproval:invoicePreview.mappingDigest,cutoverApproval:invoicePreview.fingerprint,acceptanceReason:'Reviewed historical invoice originals and independent aging.'})
   const invoiceClient=invoicePreview.patients[0].id

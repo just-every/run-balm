@@ -34,7 +34,7 @@ function preferences(input: Data) {
 }
 
 /** Check every real minute, so a repeated DST hour cannot hide time outside the window. */
-function preferencesFit(entry: Data, startAt: string, duration: number, zone: string, practitioner: string) {
+export function preferencesFit(entry: Data, startAt: string, duration: number, zone: string, practitioner: string) {
   const date = hostDateAt(new Date(startAt), zone), days = JSON.parse(entry.preferred_weekdays)
   if (entry.status !== 'waiting' || entry.practitioner_id && entry.practitioner_id !== practitioner || date < entry.earliest_date || date > entry.latest_date || !days.includes(weekdayForDate(date))) return false
   const start = Date.parse(startAt), end = start + duration * 60_000
