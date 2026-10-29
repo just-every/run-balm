@@ -46,6 +46,7 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   const continuity=await continuityFixture(h)
   const sequence=await h.cmd('continuity.prepare',{seriesId:continuity.booked.seriesId},continuity.priya.cookie)
   await h.cmd('continuity.approve',{id:sequence.id,digest:sequence.digest,confirm:true},continuity.priya.cookie)
+  const continuityOffer=await h.cmd('continuity.offer',{id:sequence.id,digest:sequence.digest,confirm:true},continuity.priya.cookie)
   // Historical source dates do not backdate a later clinician review.
   await h.db.prepare("UPDATE bm_appointments SET start_at='1990-01-02T02:00:00.000Z',end_at='1990-01-02T02:45:00.000Z' WHERE client_id=?").bind(continuity.patient.id).run()
   await h.db.prepare("UPDATE bm_plans_of_care SET created_at='1990-01-02T02:00:00.000Z' WHERE client_id=?").bind(continuity.patient.id).run()
@@ -55,6 +56,8 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.cmd('retention.preview',{clientId:continuity.patient.id},h.owner,409)
   await assert.rejects(h.db.prepare('DELETE FROM bm_continuity_proposals WHERE id=?').bind(sequence.id).run(),/continuity_original_kept/)
   await assert.rejects(h.db.prepare('UPDATE bm_continuity_proposals SET payload=? WHERE id=?').bind('{}',sequence.id).run(),/continuity_original_kept/)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_continuity_offers WHERE id=?').bind(continuityOffer.id).run(),/continuity_original_kept/)
+  await assert.rejects(h.db.prepare('UPDATE bm_continuity_offers SET expires_at=? WHERE id=?').bind('1990-01-01T00:00:00Z',continuityOffer.id).run(),/continuity_original_kept/)
 
   const invoiceInput=cutoverInvoices(),invoicePreview=await h.cmd('movein.prepare',invoiceInput)
   const invoiceImport=await h.cmd('movein.cutover',{...invoiceInput,fingerprint:invoicePreview.fingerprint,mappingApproval:invoicePreview.mappingDigest,cutoverApproval:invoicePreview.fingerprint,acceptanceReason:'Reviewed historical invoice originals and independent aging.'})

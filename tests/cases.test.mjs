@@ -89,4 +89,4 @@ test('AGENT-006: episode questionnaires follow up once within shared limits and 
 
 test('denial appeal preserves cited adjudications, fences current evidence and billing authority, and resolves only on posted payment', {timeout:120000},async()=>{const {denialJourney}=await import('./denial-resolver-journey.mjs');await run(denialJourney)})
 
-test('care continuity prepares cited feasible dates and only the current treating clinician approves the exact preparation', {timeout:120000}, async()=>{const {continuityJourney}=await import('./continuity-journey.mjs');await run(continuityJourney,{entry:'tests/communication-worker.ts'})})
+test('care continuity prepares cited feasible dates and only the current treating clinician approves the exact preparation', {timeout:120000}, async()=>{const {continuityJourney,continuityBookingJourney}=await import('./continuity-journey.mjs');await run(continuityJourney,{entry:'tests/communication-worker.ts'});await run(continuityBookingJourney,{entry:'tests/communication-worker.ts'})})
