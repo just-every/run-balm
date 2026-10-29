@@ -17,6 +17,27 @@ Billing insurance takes four things. The first three you can fill in today; the 
 
 What waits on a clearinghouse connection: Balm sending claims and eligibility checks for you. You still upload the payer’s answers.
 
+## Upload a 999 syntax acknowledgment
+
+Under **Insurance → Claim files**, find the exact stored 837P file and choose
+**Upload a 999 for this claim file**. An owner or biller uploads the original 999.
+Balm checks its envelope, AK1 group control and AK2 transaction control against
+that stored batch before retaining anything. A wrong batch, unknown transaction,
+invalid count or reused control with changed contents is refused.
+
+The result shows syntax acceptance, acceptance with errors or rejection, with the
+original IK3, IK4, IK5 and AK9 codes and their sourced descriptions. Download the
+unchanged original from the result. Importing the same original again is safe.
+These are syntax results: they establish neither payer acceptance nor payment or
+actual submission. An exported but unsent claim stays on daily close, and a late
+999 never changes an existing 277CA or remittance outcome. Original files travel
+in clinic archives and follow reviewed retention destruction with their claims.
+
+A Claim.MD or Availity sandbox account, enrollment, credentials and live payer
+certification are still required to qualify clearinghouse transport. Local file
+imports do not establish that qualification; status polling and the complete
+sandbox correction and resubmission journey remain unfinished.
+
 ## Step 1: Practice billing details
 
 Open **Insurance → Insurance setup → 1. Practice billing details**. Every field says where to find its value.

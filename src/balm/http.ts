@@ -617,7 +617,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if(paper)return await cobPaperDownload(env.DB,who,paper[2],paper[1]==='paper-eob')
       const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
       if(eob)return await payerEobDownload(env.DB,who,eob[1])
-      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn|authorization-request)\/([\w-]+)$/)
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|999|abn|authorization-request)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })
