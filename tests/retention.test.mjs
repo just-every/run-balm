@@ -131,6 +131,22 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await h.cmd('retention.hold',{clientId:retail.id,reason:'Synthetic retail legal hold'})
   assert.ok((await review()).reasons.includes('legal_hold'))
   await h.cmd('retention.preview',{clientId:retail.id},h.owner,409)
+  const {payoutFixture}=await import('./finance-review-journey.mjs')
+  const payout=await payoutFixture(h,'retention')
+  await h.cmd('finance.payout.link',payout.link(0))
+  const comparison=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).payouts.find(r=>r.payout_id===payout.payout.id)
+  await h.cmd('finance.payout.approve',{id:comparison.id,sha256:comparison.sha256,confirm:true})
+  for(const patient of payout.patients) {
+    const visit=await pastVisit(h,patient.id,priya,service.id)
+    await ageVisit(h,visit)
+    assert.ok((await file(h,patient.id)).retention.reasons.includes('finance_reconciliation_review_pending'))
+    await h.cmd('retention.preview',{clientId:patient.id},h.owner,409)
+    await h.cmd('client.erase',{id:patient.id},h.owner,409)
+  }
+  const kept=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value
+  assert.equal(kept.payouts.length,1)
+  assert.equal(kept.reviews[0].sha256,comparison.sha256,'preparation approval never releases the existing finance custody fence')
+  assert.equal(kept.sources.length,3)
   const page=await h.send('/app/clinic',undefined,h.owner)
   assert.equal(page.status,200)
   assert.match(page.text,/name=retention.save/)

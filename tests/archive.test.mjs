@@ -662,6 +662,13 @@ test('retail and finance originals, paused entitlements and preparation authorit
     const base={clientId:patient.id,amountCents:5000,occurredOn:'2026-09-01',evidence:'Owner reviewed synthetic original'}
     await h.cmd('finance.observation.record',{...base,kind:'eft',reference:'synthetic-balm-archive-eft',sourceReference:'synthetic-balm-archive-trace'})
     await h.cmd('finance.source.record',{...base,kind:'charge',reference:'synthetic-balm-archive-charge',sourceReference:'synthetic-balm-archive-original',confirm:true})
+    const {payoutFixture}=await import('./finance-review-journey.mjs')
+    const payout=await payoutFixture(h,'archive')
+    await h.cmd('finance.payout.link',payout.link(0))
+    await h.cmd('finance.payout.link',payout.link(1))
+    const payoutReview=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).payouts.find(r=>r.payout_id===payout.payout.id)
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true})
+    const payoutBefore=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value
     const review=(await h.cmd('finance.reconcile.prepare',{month:'2026-09'})).findings[0]
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true})
     const {giftSettlementJourney}=await import('./retail-gift-settlement-journey.mjs')
@@ -754,8 +761,15 @@ test('retail and finance originals, paused entitlements and preparation authorit
     assert.equal(restoredStaff.active,0)
     assert.equal(h.outboundRequests.filter(x=>x.origin.includes('stripe')).length,0)
     const finance=await h.cmd('finance.reconcile.prepare',{month:'2026-09'},owner)
-    assert.equal(finance.matching.length,2)
+    assert.equal(finance.matching.length,14,'both prior originals and every restored payout source remain explained')
+    assert.equal(finance.matching.filter(x=>['synthetic-balm-archive-charge','synthetic-balm-archive-eft'].includes(x.reference)).length,2)
     assert.ok(finance.matching.find(x=>x.reference==='synthetic-balm-archive-charge').explanations.some(x=>x.includes('No recorded card settlement')))
+    const payoutAfter=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,owner)).value
+    assert.deepEqual(payoutAfter,payoutBefore,'whole payout originals, cited portions, fixed comparisons and historical approvals survive CLI restore')
+    assert.deepEqual(payoutAfter.reviews[0].payload.totals,{grossCents:30000,feeCents:900,netCents:29100,settlementCents:30000,chargeCents:30000,accountingCents:30000,unallocatedGrossCents:5000,unallocatedFeeCents:150,unallocatedNetCents:4850})
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true},owner,409)
+    await h.cmd('finance.payout.approve',{id:payoutReview.id,sha256:payoutReview.sha256,confirm:true},inactive.cookie,401)
+    await h.cmd('finance.payout.link',payout.link(2),inactive.cookie,401)
     assert.equal(finance.findings[0].sha256,review.sha256)
     assert.ok(finance.findings[0].approved_by)
     await h.cmd('finance.review.approve',{id:review.id,sha256:review.sha256,confirm:true},owner,409)
