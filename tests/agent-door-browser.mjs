@@ -22,7 +22,7 @@ export async function beforeStep(context) {
 export default async function(context) {
  const {request,origin,cookie,tool}=context
  const unknown=await tool('balm.unknown.operation',{})
- assert.equal(unknown.result?._meta?.['com.runeditrun/error']?.code,'tool_not_found')
+ assert.equal(unknown.body?.error?.data?.code,'tool_not_found')
  const approvals=await request(origin+'/agents/api/approvals',{headers:{Cookie:cookie,Origin:origin}})
  assert.equal(approvals.status,200)
  const saved=await approvals.json(),completed=saved.approvals?.find(a=>a.state==='approved'||a.state==='executed')??saved.approvals?.[0]
