@@ -82,3 +82,16 @@ test('REPORT-004: missing and expired plans, an unattached draft and expired aut
  await h.cmd('insurance.authorization.save',{id:authorization.id,policyId:policy.id,number:'RENEWED',...c.coverage,visits:12})
  assert.ok(!(await close()).authorizations.some(i=>i.id===authorization.id))
 }))
+
+
+test('institutional exports remain actionable unsent work on daily close without changing money',()=>run(async h=>{
+ const {exportedInstitutionalFixture}=await import('./institutional-claims-journey.mjs')
+ const c=await exportedInstitutionalFixture(h),before=(await c.file()).billing.ledger
+ const item=(await h.state()).dailyClose.claims.find(q=>q.id===c.claim.id)
+ assert.equal(item.kind,'unsent_claim');assert.match(item.label,/Institutional claim exported; not sent by Balm/)
+ const page=await h.send('/app',undefined,h.owner);assert.ok(page.text.includes(item.label))
+ assert.equal((await h.send(new URL(item.href,h.origin).pathname,undefined,h.owner)).status,200)
+ await h.cmd('insurance.batch.submit',{id:c.batch.id},h.owner,409)
+ assert.ok((await h.state()).dailyClose.claims.some(q=>q.id===c.claim.id))
+ assert.deepEqual((await c.file()).billing.ledger,before)
+}))

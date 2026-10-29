@@ -78,7 +78,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
       WHERE i.status<>'void' AND julianday(a.start_at)<julianday(?) AND julianday(i.prepared_at)<julianday(?) ORDER BY a.start_at,i.id`, cutoff, cutoff, cutoff, cutoff),
     stmt(db, `SELECT appointment_id,SUM(amount_cents) AS cents FROM bm_card_payments
       WHERE kind='copay' AND status='succeeded' AND julianday(succeeded_at)<julianday(?) GROUP BY appointment_id`, cutoff),
-    stmt(db, `SELECT q.id,q.client_id,q.status,q.service_date,c.first_name||' '||c.last_name AS client
+    stmt(db, `SELECT q.id,q.client_id,q.status,q.service_date,json_type(q.snapshot,'$.institutional') IS NOT NULL AS institutional,c.first_name||' '||c.last_name AS client
       FROM bm_claims q JOIN bm_invoices i ON i.id=q.invoice_id JOIN bm_appointments a ON a.id=q.appointment_id JOIN bm_clients c ON c.id=q.client_id
       WHERE q.status IN ('draft','ready','batched','exported') AND i.status<>'void' AND q.service_date<=?
       AND julianday(a.start_at)<julianday(?) AND julianday(q.created_at)<julianday(?) ORDER BY q.service_date,q.id`, date, cutoff, cutoff),
@@ -140,7 +140,7 @@ export async function dailyCloseFacts(db: D1Database, at = new Date()): Promise<
     result.plans.push(item(visit, 'missing_plan', `No plan of care for attended treatment · ${visit.practitioner}`, 'plans'))
   }
 
-  for (const claim of unsent) result.claims.push(item(claim, 'unsent_claim', `Claim ${claim.status === 'exported' ? 'exported; not sent by Balm' : claim.status === 'draft' ? 'needs fixes before sending' : claim.status === 'batched' ? 'batched; not sent' : 'ready; not sent'} · ${displayDate(claim.service_date)}`, `claim-${claim.id}`))
+  for (const claim of unsent) result.claims.push(item(claim, 'unsent_claim', `${claim.institutional?'Institutional claim':'Claim'} ${claim.status === 'exported' ? 'exported; not sent by Balm' : claim.status === 'draft' ? 'needs fixes before sending' : claim.status === 'batched' ? 'batched; not sent' : 'ready; not sent'} · ${displayDate(claim.service_date)}`, `claim-${claim.id}`))
   const nextPayers=await rows(db,`SELECT s.policy_id AS id,i.client_id,c.first_name||' '||c.last_name AS client,y.name AS payer,s.priority,
     (SELECT q.service_date FROM bm_claims q WHERE q.invoice_id=i.id ORDER BY q.created_at LIMIT 1) AS service_date
     FROM bm_cob_stages s JOIN bm_invoices i ON i.id=s.invoice_id JOIN bm_clients c ON c.id=i.client_id

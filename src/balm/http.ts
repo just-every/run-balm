@@ -216,6 +216,8 @@ async function execute(request: Request, env: Bindings, who: Actor, name: string
       const [code, amount] = line.trim().split(/\s+/)
       return { code, cents: parseDollars(amount, 'fee') }
     })
+    if(name==='insurance.institutional.settings'&&typeof input.revenueLines==='string')input.revenueMappings=input.revenueLines.split(/\r?\n/).filter(l=>l.trim()).map(l=>{const [code,revenueCode,...extra]=l.trim().split(/\s+/);if(extra.length)fail('one_procedure_and_revenue_code_per_line',400);return {code,revenueCode}})
+    if(name==='insurance.institutional.visit'&&typeof input.occurrenceLines==='string')input.occurrences=input.occurrenceLines.split(/\r?\n/).filter(l=>l.trim()).map(l=>{const [code,date,...extra]=l.trim().split(/\s+/);if(extra.length)fail('one_occurrence_code_and_date_per_line',400);return {code,date}})
     if (name === 'insurance.eligibility.record' && typeof input.copay === 'string') input.copayCents = input.copay.trim() ? parseDollars(input.copay, 'copay') : null
     if (name === 'insurance.medicare.save' && input.threshold !== undefined) { input.thresholdCents = parseDollars(input.threshold, 'threshold'); input.externalUsedCents = parseDollars(input.externalUsed || '0', 'outside_expenses') }
     return insuranceCommand(env, who, name, input)
@@ -617,7 +619,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
       if(paper)return await cobPaperDownload(env.DB,who,paper[2],paper[1]==='paper-eob')
       const eob=path.match(/^\/api\/balm\/insurance\/eob\/([\w-]+)$/)
       if(eob)return await payerEobDownload(env.DB,who,eob[1])
-      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|abn|authorization-request)\/([\w-]+)$/)
+      const x12 = path.match(/^\/api\/balm\/insurance\/(270|837P|837I|abn|authorization-request)\/([\w-]+)$/)
       if (x12) {
         const download = await insuranceDownload(env, who, x12[1], x12[2])
         return new Response(download.body, { headers: { ...headers, 'content-type': download.contentType, 'content-disposition': `attachment; filename="${download.filename}"` } })

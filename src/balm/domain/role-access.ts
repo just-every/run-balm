@@ -33,7 +33,7 @@ export function roleRead(who: Actor, path: string) {
  if (biller(who)) insist(['/app','/app/cases','/api/balm/cases','/app/clients','/app/invoices','/app/insurance','/app/reports','/api/balm/state','/api/balm/commands','/api/balm/reports/financial'].includes(path)
   || /^\/app\/clients\/[\w-]+$/.test(path) || /^\/api\/balm\/clients\/[\w-]+$/.test(path)
   || /^\/api\/balm\/(note-releases|period-superbills|estimates|invoices|payments|refund-receipts|receipts|statements|superbills|account-receipts|issued-statements|statement-batches)\//.test(path)
-  || /^\/api\/balm\/reports\/financial\//.test(path) || /^\/api\/balm\/insurance\/(authorization-request|270|837P|eob|paper|paper-eob)\//.test(path), 'biller_read_refused', 403)
+  || /^\/api\/balm\/reports\/financial\//.test(path) || /^\/api\/balm\/insurance\/(authorization-request|270|837P|837I|eob|paper|paper-eob)\//.test(path), 'biller_read_refused', 403)
  if (supervised(who)) insist(['/app','/app/clients','/api/balm/state','/api/balm/commands'].includes(path)
   || /^\/app\/clients\/[\w-]+$/.test(path) || /^\/api\/balm\/clients\/[\w-]+$/.test(path), 'supervised_staff_read_refused', 403)
 }

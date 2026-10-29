@@ -998,3 +998,32 @@ test('booking prepayments and fixed receipts survive a public CLI archive round 
   assert.equal((await h.send('/api/balm/clients/'+client.id,undefined,owner)).value.billing.ledger.paymentsCents,15000)
  }finally{await h?.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
 })
+
+
+test('institutional claim originals survive public CLI archive round trip without submission authority', {timeout:360000},async()=>{
+ const {exportedInstitutionalFixture}=await import('./institutional-claims-journey.mjs')
+ const temporary=await mkdtemp(join(tmpdir(),'balm-institutional-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
+ let h
+ try{
+  await checkout(source);await checkout(restored)
+  h=await harness({root:source,migrate:true})
+  const c=await exportedInstitutionalFixture(h),before=(await c.file()).billing.ledger
+  const identity={auth:h.auth,owner:h.owner}
+  await h.close();h=null
+  const archive=join(temporary,'institutional.rer')
+  await command(source,['export','--output',archive,'--no-queue'])
+  await command(restored,['import','--input',archive,'--yes','--no-queue'])
+  h=await harness({root:restored,...identity})
+  assert.equal((await h.send(c.url,undefined,identity.owner)).status,401,'archives do not restore native sessions')
+  const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  const original=await h.send(c.url,undefined,owner);assert.equal(original.status,200);assert.equal(original.text,c.body)
+  const state=await h.state(owner),file=(await h.send('/api/balm/clients/'+c.patient.id,undefined,owner)).value
+  assert.deepEqual(file.billing.ledger,before)
+  assert.equal(file.insurance.claims[0].snapshot.institutional.plan.sha256,c.planRecord.sha256)
+  assert.equal(file.insurance.institutionalVisits[0].source,c.visitInput.source)
+  assert.equal(state.insurance.institutionalSettings.enrollment_reference,'synthetic-balm-301 owner-recorded agency enrollment')
+  assert.equal((await h.cmd('insurance.batch.submit',{id:c.batch.id},owner,409)).code,'institutional_submission_not_configured_no_claim_sent')
+  assert.ok(state.dailyClose.claims.some(q=>q.id===c.claim.id&&q.kind==='unsent_claim'))
+  assert.ok(!h.outboundRequests.some(r=>r.origin.includes('clearinghouse')))
+ }finally{if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100})}
+})

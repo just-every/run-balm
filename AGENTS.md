@@ -175,3 +175,8 @@ HIPAA-005 uses the same Lander-Regenerate entry point:
 in archives; patient mode and deployment qualification are excluded. Regenerate
 the source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
 `check`.
+
+INS-011 institutional preparation uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write INS-011`, then
+`node scripts/contract-docs.mjs check INS-011`. Regenerate the edition source lock
+last with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
