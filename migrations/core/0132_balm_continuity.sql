@@ -58,3 +58,9 @@ CREATE TRIGGER bm_continuity_epoch_delete AFTER DELETE ON bm_continuity_proposal
 CREATE TRIGGER bm_continuity_bm_billing_schedules_insert AFTER INSERT ON bm_billing_schedules BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
 CREATE TRIGGER bm_continuity_bm_billing_schedules_update AFTER UPDATE ON bm_billing_schedules BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
 CREATE TRIGGER bm_continuity_bm_billing_schedules_delete AFTER DELETE ON bm_billing_schedules BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_visit_codes_insert AFTER INSERT ON bm_visit_codes BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_visit_codes_update AFTER UPDATE ON bm_visit_codes BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_visit_codes_delete AFTER DELETE ON bm_visit_codes BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_payers_insert AFTER INSERT ON bm_payers BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_payers_update AFTER UPDATE ON bm_payers BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER bm_continuity_bm_payers_delete AFTER DELETE ON bm_payers BEGIN UPDATE bm_continuity_revision SET version=version+1 WHERE id=1; END;
