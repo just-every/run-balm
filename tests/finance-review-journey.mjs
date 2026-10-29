@@ -128,7 +128,8 @@ async function wholePayoutJourney(h) {
  // Even an appended cited source requires a fresh preparation and digest.
  await h.cmd('finance.payout.approve',{id:complete.id,sha256:complete.sha256,confirm:true},h.owner,409)
  const current=find(await prepare())
- assert.equal(current.payload.totals.grossCents,35000,'unlinked sources do not allocate the payout twice')
+ assert.deepEqual(current.payload.totals,complete.payload.totals,'unlinked sources do not allocate the payout twice')
+ assert.equal(current.payload.portions.length,3,'refused links leave the cited allocation unchanged')
  const key=await h.cmd('agent.create',{label:'Whole payout preparation',scopes:['finance.reconcile.prepare']})
  const agent=await h.send('/api/balm/agent/command',{name:'finance.reconcile.prepare',input:{month:'2026-09'}},'',{authorization:'Bearer '+key.token})
  assert.equal(agent.status,200)
@@ -160,4 +161,68 @@ async function wholePayoutJourney(h) {
   assert.equal(file.billing.payments.length,0)
   await h.cmd('client.erase',{id:patient.id},h.owner,409)
  }
+}
+
+/** Native recording, linking and exact-digest approval in the existing report panel. */
+export async function payoutBrowser(h) {
+ if(!process.env.BALM_UI_SCREENSHOTS){
+  const {mkdtemp}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path')
+  process.env.BALM_UI_SCREENSHOTS=await mkdtemp(join(tmpdir(),'balm-finance-ui-'))
+ }
+ const {payout,record,portions}=await payoutFixture(h,'browser')
+ const {viewportProof}=await import('./viewport-proof.mjs')
+ const path='/app/reports?payoutMonth=2026-09#finance-reconciliation'
+ const fill=async page=>{
+  const form=page.locator('form').filter({has:page.getByRole('button',{name:'Record whole payout',exact:true})})
+  for(const [name,value] of Object.entries({accountReference:record.accountReference,payoutReference:'synthetic-balm-browser-form',gross:'350.00',fee:'10.50',net:'339.50',occurredOn:record.occurredOn,evidence:'Synthetic form original reviewed by owner'}))await form.locator('[name='+name+']').fill(value)
+  await form.locator('[name=confirm]').check()
+  return form
+ }
+ await viewportProof(h,[{name:'finance-payout-recording',path,cookie:h.owner,selector:'#finance-reconciliation',interact:async({page,width})=>{
+  const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:/^Record whole payout$/})})
+  if(!await details.evaluate(el=>el.open))await details.locator('summary').click()
+  await fill(page)
+  if(width===1440){
+   const small=await page.locator('#finance-reconciliation *').evaluateAll(els=>els.filter(el=>el.getClientRects().length&&[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())&&parseFloat(getComputedStyle(el).fontSize)<13).map(el=>({text:el.textContent,size:getComputedStyle(el).fontSize})))
+   assert.deepEqual(small,[])
+  }
+ }}])
+ await viewportProof(h,[{name:'finance-payout-approved-comparison',path,cookie:h.owner,selector:'#finance-reconciliation',interact:async({page,width})=>{
+  if(width===1440){
+   await page.locator('summary').filter({hasText:/^Record whole payout$/}).click()
+   const form=await fill(page)
+   await form.getByRole('button',{name:'Record whole payout',exact:true}).click()
+   await page.getByRole('heading',{name:'synthetic-balm-browser-form',exact:true}).waitFor()
+   for(const portion of portions.slice(0,2)){
+    const card=page.locator('article').filter({has:page.getByRole('heading',{name:'synthetic-balm-browser-form',exact:true})})
+    await card.locator('summary').filter({hasText:/^Link existing portion$/}).click()
+    await card.locator('[name=sourceId]').selectOption(portion.sourceId)
+    await card.locator('[name=observationId]').selectOption(portion.observationId)
+    await card.locator('[name=confirm]').check()
+    await card.getByRole('button',{name:'Link portion',exact:true}).click()
+    await page.getByRole('heading',{name:'synthetic-balm-browser-form',exact:true}).waitFor()
+   }
+   await page.getByRole('button',{name:'Prepare cited comparisons',exact:true}).click()
+   await page.getByRole('heading',{name:'Comparison · synthetic-balm-browser-form',exact:true}).waitFor()
+  }
+  const comparison=page.locator('article').filter({has:page.getByRole('heading',{name:'Comparison · synthetic-balm-browser-form',exact:true})}).first()
+  await comparison.locator('summary').filter({hasText:/^Cited originals and approval$/}).click()
+  if(width===1440){
+   assert.match(await comparison.textContent(),/Linked gross \$300\.00 · fees \$9\.00 · net \$291\.00/)
+   assert.match(await comparison.textContent(),/Unallocated gross \$50\.00 · fees \$1\.50 · net \$48\.50/)
+   assert.ok((await comparison.textContent()).includes('synthetic-balm-browser-settlement-1'))
+   await comparison.locator('[name=confirm]').check()
+   await comparison.getByRole('button',{name:'Approve preparation',exact:true}).click()
+   await page.getByText('Preparation approved',{exact:true}).waitFor()
+   await page.locator('article').filter({has:page.getByRole('heading',{name:'Comparison · synthetic-balm-browser-form',exact:true})}).first().locator('summary').click()
+  }
+  await comparison.evaluate(el=>el.scrollIntoView({block:'start'}))
+ }}])
+ const saved=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value
+ const formPayout=saved.payouts.find(p=>p.payout_reference==='synthetic-balm-browser-form')
+ const review=saved.reviews.find(r=>r.payout_id===formPayout.id)
+ assert.ok(review.approved_at)
+ assert.equal(review.payload.totals.unallocatedNetCents,4850)
+ assert.equal(saved.reviews.find(r=>r.payout_id===payout.id).payload.totals.unallocatedGrossCents,35000,'unlinked whole originals remain independent')
+ console.log('PASS native payout recording, cited portions and preparation approval at 1440 and 390')
 }
