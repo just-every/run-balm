@@ -18,7 +18,7 @@ async function comparison(db: D1Database, payoutId: string) {
     const source = await one(db, 'SELECT s.* FROM bm_finance_sources s JOIN bm_clients c ON c.id=s.client_id WHERE s.id=? AND c.erased_at IS NULL', link.source_id)
     const settlement = await one(db, 'SELECT * FROM bm_finance_observations WHERE id=?', link.observation_id)
     insist(source && settlement, 'payout_source_unavailable', 409)
-    const related = await rows(db, 'SELECT * FROM bm_finance_sources WHERE client_id=? AND source_reference=? AND substr(occurred_on,1,7)=? ORDER BY id', source.client_id, source.source_reference, payout.occurred_on.slice(0,7))
+    const related = await rows(db, 'SELECT * FROM bm_finance_sources WHERE client_id=? AND source_reference=? AND substr(occurred_on,1,7)<=? ORDER BY id', source.client_id, source.source_reference, payout.occurred_on.slice(0,7))
     for (const original of related) originals.set(original.id, original)
     portions.push({ link, source, settlement })
   }
@@ -65,9 +65,9 @@ export async function payoutView(db: D1Database, who: Actor, inputMonth: unknown
   const month = financeMonth(inputMonth)
   const payouts = await rows(db, 'SELECT * FROM bm_finance_payouts WHERE substr(occurred_on,1,7)=? ORDER BY occurred_on,id', month)
   const sources = await rows(db, `SELECT s.*,c.first_name,c.last_name FROM bm_finance_sources s JOIN bm_clients c ON c.id=s.client_id
-    WHERE s.kind='payout' AND c.erased_at IS NULL AND substr(s.occurred_on,1,7)=? ORDER BY s.id`, month)
+    WHERE s.kind='payout' AND c.erased_at IS NULL AND substr(s.occurred_on,1,7)<=? ORDER BY s.occurred_on,s.id`, month)
   const observations = await rows(db, `SELECT o.* FROM bm_finance_observations o JOIN bm_clients c ON c.id=o.client_id
-    WHERE o.kind='card' AND c.erased_at IS NULL AND substr(o.occurred_on,1,7)=? ORDER BY o.id`, month)
+    WHERE o.kind='card' AND c.erased_at IS NULL AND substr(o.occurred_on,1,7)<=? ORDER BY o.occurred_on,o.id`, month)
   const reviews = await readReviews(db,month)
   await commit(db,who,[audit(db,who,'finance.payouts_read',null,null,month)])
   return {month,payouts,sources,observations,reviews}
@@ -104,7 +104,7 @@ export async function payoutCommand(db: D1Database, who: Actor, name: string, in
       return {id:previous.id,recordedOnly:true}
     }
     const key = id()
-    // The trigger checks live patient, original reference, month, exact cents and cumulative allocation in this batch.
+    // The trigger checks live patient, original reference, dates, exact cents and cumulative allocation in this batch.
     await commit(db,who,[stmt(db,'INSERT INTO bm_finance_payout_links(id,payout_id,source_id,observation_id,recorded_by,recorded_at) VALUES(?,?,?,?,?,?)',key,payout.id,sourceId,observationId,who.email,now()),audit(db,who,'finance.payout_portion_linked',null,key)])
     return {id:key,recordedOnly:true}
   }

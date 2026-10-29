@@ -22,8 +22,8 @@ export function financeReconciliation(s: any) {
   const payouts = v.payouts.map((p:any)=>entry(p.payout_reference,
     `<p>Account: ${h(p.account_reference)} · ${h(p.occurred_on)}. Gross ${money(p.gross_cents)} · fees ${money(p.fee_cents)} · net ${money(p.net_cents)}.</p><p>${h(p.evidence)}</p>`
     +'<details><summary>Link existing portion</summary>'+form('finance.payout.link',path,hidden('payoutId',p.id)+hidden('accountReference',p.account_reference)+hidden('payoutReference',p.payout_reference)
-      +select('sourceId','Recorded payout portion',v.sources.map((x:any)=>[x.id,`${x.first_name} ${x.last_name} · ${x.reference} · net ${money(x.amount_cents)} · fees ${money(x.fee_cents)}`]))
-      +select('observationId','Recorded card settlement',v.observations.map((x:any)=>[x.id,`${x.reference} · ${x.source_reference} · ${money(x.amount_cents)}`]))
+      +select('sourceId','Recorded payout portion',v.sources.map((x:any)=>[x.id,`${x.first_name} ${x.last_name} · ${x.reference} · ${x.occurred_on} · net ${money(x.amount_cents)} · fees ${money(x.fee_cents)}`]))
+      +select('observationId','Recorded card settlement',v.observations.map((x:any)=>[x.id,`${x.reference} · ${x.occurred_on} · ${x.source_reference} · ${money(x.amount_cents)}`]))
       +check('confirm','I checked the patient, original charge and this account and payout association.'),'Link portion')+'</details>')).join('')
   const reviews = [...v.reviews].reverse().map((r:any)=>{
     const p=r.payload.payout,t=r.payload.totals

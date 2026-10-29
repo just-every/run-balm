@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "9e3f88da1c35171317e74f4777e45556a340b83748a41c90b49099922c9a3dcd",
+      "sha256": "218b72c9e95f4d2de812f135e142af301b59d55730304995c56a84ac22b97114",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "01fcbb8c09d7dce3fef0466dd8901f0a7b97693c394cf9c7cc0c01e753b3793d",
+      "sha256": "8d1edb53d52b2dd5a50c3f57e490861414292b9184c93d028761d9c5253d4017",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "ee22e583899f6b99a438c36ace4c7b8b53ad0edb6e8a2bb3c5b3fc58c2f497aa",
+      "sha256": "1a0bfe950a98aa8fd48cd17fa8e592c2c2642af8a4baed16ef14b4e6f268e9a9",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -2586,7 +2586,7 @@
       "executable": false
     },
     "src/balm/payments/payout-reconciliation.ts": {
-      "sha256": "3d971a2188f5fe9537b0ef7c9d6b732c4d163830a9ca523a1d2ddb172f2cbd4e",
+      "sha256": "6e44e2b67054362cf73068223d7b3a0b4704ad198ff76f174e5bb14fddcb5bb4",
       "executable": false
     },
     "src/balm/payments/pdf.ts": {
@@ -3050,7 +3050,7 @@
       "executable": false
     },
     "src/balm/ui/finance-reconciliation.ts": {
-      "sha256": "56f932229e306aefa3d973f01b45e1ff43efd73abc76e64ae59140ac11f7b230",
+      "sha256": "9b7e20308a9ae49d024a790d5b42e5e47234d28faa8612a2b30370409b859e97",
       "executable": false
     },
     "src/balm/ui/financial-reports.ts": {
@@ -5622,7 +5622,7 @@
       "executable": false
     },
     "tests/finance-review-journey.mjs": {
-      "sha256": "b414ce7796d122f92fa540787d290a41bf126d9d05197af80e4ca0c665e142dd",
+      "sha256": "b0d707e770572cf877d1f1d4a39d4554de3309c4c96b3c590f2f532f1e9cf213",
       "executable": false
     },
     "tests/fixtures/cliniko-export-us.csv": {

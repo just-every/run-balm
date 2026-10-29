@@ -65,15 +65,16 @@ export async function financeReviewJourney(h){
  assert.equal(h.mail.length,before+1,'only the native staff invitation was sent')
  await h.cmd('agent.revoke',{id:key.id});assert.equal((await prepare()).status,401)
  await wholePayoutJourney(h)
+ await crossPeriodPayoutJourney(h)
 }
 
 /** Independent originals for a 35,000-cent payout across three patients. */
-export async function payoutFixture(h, suffix='journey') {
+export async function payoutFixture(h, suffix='journey', dates={}) {
  const patients=[], portions=[]
  for(const [index,gross,fee] of [[1,10000,300],[2,20000,600],[3,5000,150]]) {
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Payout '+index+' '+suffix,dateOfBirth:'1950-01-01'})
   patients.push(patient)
-  const base={clientId:patient.id,occurredOn:'2026-09-15',evidence:'Synthetic owner original '+index,sourceReference:'synthetic-balm-'+suffix+'-charge-'+index,confirm:true}
+  const base={clientId:patient.id,occurredOn:dates[index]??'2026-09-15',evidence:'Synthetic owner original '+index,sourceReference:'synthetic-balm-'+suffix+'-charge-'+index,confirm:true}
   const settlement=await h.cmd('finance.observation.record',{...base,kind:'card',amountCents:gross,reference:'synthetic-balm-'+suffix+'-settlement-'+index})
   const source=await h.cmd('finance.source.record',{...base,kind:'payout',amountCents:gross-fee,feeCents:fee,reference:'synthetic-balm-'+suffix+'-portion-'+index})
   for(const kind of ['charge','accounting'])await h.cmd('finance.source.record',{...base,kind,amountCents:gross,reference:'synthetic-balm-'+suffix+'-'+kind+'-'+index})
@@ -163,13 +164,40 @@ async function wholePayoutJourney(h) {
  }
 }
 
+/** Prior-month portions join only by reviewed links and retain their actual dates. */
+async function crossPeriodPayoutJourney(h) {
+ const {payout,link,portions,patients}=await payoutFixture(h,'cross-period',{1:'2026-08-31',2:'2026-09-01',3:'2026-09-17'})
+ const before=h.outboundRequests.length
+ await h.cmd('finance.payout.link',link(0))
+ await h.cmd('finance.payout.link',link(1))
+ await h.cmd('finance.payout.link',link(2),h.owner,409)
+ const prepare=()=>h.cmd('finance.reconcile.prepare',{month:'2026-09'})
+ const find=result=>result.payouts.filter(r=>r.payout_id===payout.id).at(-1)
+ const partial=find(await prepare())
+ assert.deepEqual(partial.payload.totals,{grossCents:30000,feeCents:900,netCents:29100,settlementCents:30000,chargeCents:30000,accountingCents:30000,unallocatedGrossCents:5000,unallocatedFeeCents:150,unallocatedNetCents:4850})
+ assert.equal(partial.payload.portions.find(p=>p.source.id===portions[0].sourceId).source.occurred_on,'2026-08-31')
+ assert.equal(find(await prepare()).id,partial.id)
+ assert.equal((await h.cmd('finance.reconcile.prepare',{month:'2026-08'})).payouts.some(r=>r.payout_id===payout.id),false,'deposit belongs to its own month, not each portion month')
+ await h.cmd('finance.payout.approve',{id:partial.id,sha256:partial.sha256,confirm:true})
+ // A late-recorded prior-period accounting original invalidates preparation approval.
+ await h.cmd('finance.source.record',{clientId:patients[0].id,kind:'accounting',amountCents:100,occurredOn:'2026-08-31',reference:'synthetic-balm-cross-period-late-accounting',sourceReference:'synthetic-balm-cross-period-charge-1',evidence:'Synthetic prior-period accounting correction original',confirm:true})
+ const changed=find(await prepare())
+ assert.notEqual(changed.sha256,partial.sha256)
+ assert.equal(changed.payload.totals.accountingCents,30100)
+ assert.match(changed.payload.explanations.join(' '),/accounting originals differ.*-100 cents/)
+ const view=(await h.send('/api/balm/finance/payouts?month=2026-09',undefined,h.owner)).value
+ assert.ok(view.sources.some(s=>s.id===portions[0].sourceId),'native picker includes prior-month portions')
+ assert.ok(view.reviews.find(r=>r.id===partial.id).approved_at,'late records never rewrite the historical approval')
+ assert.equal(h.outboundRequests.length,before)
+}
+
 /** Native recording, linking and exact-digest approval in the existing report panel. */
 export async function payoutBrowser(h) {
  if(!process.env.BALM_UI_SCREENSHOTS){
   const {mkdtemp}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path')
   process.env.BALM_UI_SCREENSHOTS=await mkdtemp(join(tmpdir(),'balm-finance-ui-'))
  }
- const {payout,record,portions}=await payoutFixture(h,'browser')
+ const {payout,record,portions}=await payoutFixture(h,'browser',{1:'2026-08-31'})
  const {viewportProof}=await import('./viewport-proof.mjs')
  const path='/app/reports?payoutMonth=2026-09#finance-reconciliation'
  const fill=async page=>{
