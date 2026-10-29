@@ -8,7 +8,7 @@ import { unitMethodLabel } from '../insurance/unit-method'
 import { creditStatements } from '../payments/ledger'
 import { approvalStatements } from './approvals'
 import { insuredCharge, visitBilling } from '../insurance/invoice-price'
-import { audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
+import { actorLabel, decisionLabel, audit, commit, guard, human, id, insist, integer, need, now, one, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -62,7 +62,7 @@ export async function prepareInvoice(db: D1Database, who: Actor, input: Data) {
       audit(db, who, 'invoice.reprepared', row.client_id as string, invoiceId, replacing.id as string),
     ] : []),
     stmt(db, `INSERT INTO bm_invoices(id,appointment_id,client_id,status,amount_cents,snapshot,prepared_by,prepared_role,prepared_at) VALUES(?,?,?,'draft',?,?,?,?,?)`,
-      invoiceId, appointmentId, row.client_id, value.amountCents, JSON.stringify(value), who.email, who.role, now()),
+      invoiceId, appointmentId, row.client_id, value.amountCents, JSON.stringify(value), actorLabel(who), who.agentAttribution ? 'agent' : who.role, now()),
     audit(db, who, 'invoice.prepared', row.client_id as string, invoiceId, `${value.amountCents} cents`),
   ])
   return { id: invoiceId, status: 'draft', snapshot: value }
