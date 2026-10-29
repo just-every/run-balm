@@ -6,7 +6,8 @@ import { identity } from '../src/identity'
 import { balmResponse } from '../src/balm/http'
 import { sendDueReminders } from '../src/balm/reminders/scheduler'
 import { runDueBackup } from '../src/balm/backup'
-export default { async scheduled(controller: ScheduledController, env: Bindings) { await sendDueReminders(env, controller.scheduledTime); await runDueBackup(env, controller.scheduledTime) }, async fetch(request: Request, env: Bindings) {
+import { progressWaitlistOffers } from '../src/balm/scheduling/patient-effects'
+export default { async scheduled(controller: ScheduledController, env: Bindings) { await progressWaitlistOffers(env); await sendDueReminders(env, controller.scheduledTime); await runDueBackup(env, controller.scheduledTime) }, async fetch(request: Request, env: Bindings) {
   return await authResponse(request, env) ?? await balmResponse(request, env)
     ?? await setupStateResponse(request, runtimeBindings(env))
     ?? await lobbyResponse(request, runtimeBindings(env), identity)
