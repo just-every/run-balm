@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "bde1c23ab59968b74d3f251090873996d4e1974b6c6dbfe09dc2ab702d19e1f7",
+      "sha256": "b5cdf4b6267c77648717d35b727917bc85d457d11401df07b781b72c3b835ae0",
       "executable": false
     },
     "agent-surface.json": {
@@ -154,7 +154,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "5cd9af014789a0b9b2aa942d835f14490eba8ef59b4f3e899e12a6835f8e6076",
+      "sha256": "d6078f4423b42197926b48e4cc9c667a0eb7da4430059e65a4a539d6939eb295",
       "executable": false
     },
     "DEMO.md": {
@@ -202,7 +202,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "7e9f127321a261732e240b8287a090f4fd4b5eb6aeedd2836e247ba1e28386fb",
+      "sha256": "1b4e1c2a7cdbad1a67c18303827f556117ef090c4124aec1803d5393ff5674c8",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -2282,7 +2282,7 @@
       "executable": false
     },
     "src/balm/agent-door/index.ts": {
-      "sha256": "85a9a9ae24a2018f7271f9c3762bd44b55185530ea36139b9da1ac9f706fb866",
+      "sha256": "9b67dfe26f577b948f7bc410e70d36d15ce124d7edd249bc553acf194cd871dd",
       "executable": false
     },
     "src/balm/agent-door/native.ts": {
