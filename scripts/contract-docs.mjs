@@ -9,10 +9,10 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode='check',...requested]=process.argv.slice(2)
-const ids=[...new Set(['INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
+const ids=[...new Set(['INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id)&&!id.startsWith('BASE-AGENT-'))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
-const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
+const rows=source.split('\n').filter(line=>/^\| `[A-Z][A-Z0-9-]+` \|/.test(line)).map(line=>{const cells=line.split('|').slice(1,-1).map(cell=>cell.trim());return [line,cells[0].replaceAll('`',''),...cells.slice(1)]}).filter(row=>['published','target','push-further'].includes(row[3])&&['done','partial','missing'].includes(row[4]))
 const counts=selected=>['done','partial','missing'].map(status=>selected.filter(r=>r[4]===status).length)
 let contract=source
 for(const [label,selected] of [['Published',rows.filter(r=>r[3]==='published')],['Target and push further',rows.filter(r=>r[3]!=='published')],['All',rows]]){
@@ -67,7 +67,7 @@ files.set('CONTRACT.md',source)
 const contract=parseContract(source)
 // The registry limits this gradual migration to adopted clauses. A following
 // round can add another id without regenerating unrelated legacy prose.
-const adopted=['CHART-011']
+const adopted=['CHART-011',...statusRows.filter(row=>row[0].startsWith('`BASE-AGENT-')).map(row=>row[0].replaceAll('`',''))]
 let acceptance=files.get('ACCEPTANCE.md')
 const [done,partial,missing]=counts(statusRows)
 acceptance=acceptance.replace(/Its current counts are: \d+ done, \d+ partial and \d+ missing of \d+ clauses\./,`Its current counts are: ${done} done, ${partial} partial and ${missing} missing of ${statusRows.length} clauses.`)
@@ -80,8 +80,8 @@ for(const id of adopted){
  if(marked.test(acceptance))acceptance=acceptance.replace(marked,block)
  else {
   const legacy=new RegExp('^- \\*\\*'+id+' — [^\\n]*$','m')
-  if(!legacy.test(acceptance))throw Error('Acceptance entry is absent: '+id)
-  acceptance=acceptance.replace(legacy,block)
+  if(!legacy.test(acceptance)){if(!id.startsWith('BASE-AGENT-'))throw Error('Acceptance entry is absent: '+id);acceptance=acceptance.trimEnd()+'\n\n'+block+'\n'}
+  else acceptance=acceptance.replace(legacy,block)
  }
 }
 files.set('ACCEPTANCE.md',acceptance)

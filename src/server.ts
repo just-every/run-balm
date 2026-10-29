@@ -1,3 +1,4 @@
+import { agentResponse } from './balm/agent-door/index.ts'
 import { withDemo } from './modules/demo/index.mjs'
 import { rejectedResponse } from './base/rejected-response'
 import start from '@tanstack/react-start/server-entry'
@@ -39,6 +40,8 @@ export default withDemo<Bindings, ExportedHandler<Bindings>>({
     if (asset) return asset
     const local = await localLinkResponse(request, runtimeBindings(env))
     if (local) return local
+    const agent = await agentResponse(request, env)
+    if (agent) return agent
     const auth = await authResponse(request, env)
     if (auth) return auth
     const app = await balmResponse(request, env)
