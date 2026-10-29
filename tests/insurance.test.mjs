@@ -873,6 +873,7 @@ test('INS-006: matched 999 syntax originals never submit, adjudicate or move mon
   accepted.replace('AK2*837*0001','AK2*837*9999'),
   accepted.replace('AK9*A*1*1*1','AK9*A*2*1*1'),
   accepted.replace(/SE\*\d+\*/,'SE*999*'),
+  accepted.replace('SE*6*','SE*6e0*'),
   accepted.replace('GE*1*901','GE*1*902'),
   accepted.replace('IEA*1*000000901','IEA*1*000000902'),
   accepted.replace('GS*FA*AETNA','GS*FA*UNKNOWN'),

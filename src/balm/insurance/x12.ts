@@ -49,7 +49,7 @@ export function parseX12(raw: unknown, expected: '271'|'277'|'835'|'837'|'999'):
   if(segments[0][0]==='ISA') {
     const gs=segments.find(s=>s[0]==='GS')!
     envelope={isa:segments[0],gs,st:starts[0]}
-    if(expected==='999')insist(segments[0].length===17&&segments.filter(s=>s[0]==='ISA').length===1&&segments.filter(s=>s[0]==='GS').length===1&&segments.filter(s=>s[0]==='GE').length===1&&segments.filter(s=>s[0]==='IEA').length===1&&segments.filter(s=>s[0]==='SE').length===1&&segments[1]===gs&&start===2&&end===segments.length-3&&segments[end+1][0]==='GE'&&segments[end+2][0]==='IEA','invalid_x12_envelope_structure')
+    if(expected==='999')insist(/^\d+$/.test(segments[end][1])&&segments[0].length===17&&segments.filter(s=>s[0]==='ISA').length===1&&segments.filter(s=>s[0]==='GS').length===1&&segments.filter(s=>s[0]==='GE').length===1&&segments.filter(s=>s[0]==='IEA').length===1&&segments.filter(s=>s[0]==='SE').length===1&&segments[1]===gs&&start===2&&end===segments.length-3&&segments[end+1][0]==='GE'&&segments[end+2][0]==='IEA','invalid_x12_envelope_structure')
   }
   return {segments:segments.slice(start+1,end),component,body,envelope}
 }
