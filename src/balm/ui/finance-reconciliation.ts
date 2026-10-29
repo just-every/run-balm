@@ -4,7 +4,7 @@ import { check, empty, entry, field, form, h, hidden, money, panel, select, stat
 export function financeReconciliation(s: any) {
   const v = s.payoutReconciliation
   if (!v) return ''
-  const path = '/app/reports?payoutMonth='+encodeURIComponent(v.month)+'#finance-reconciliation'
+  const path = '/app/reports?payoutMonth='+encodeURIComponent(v.month)
   const original = field('occurredOn','Original transaction date','','date','required')+textarea('evidence','Original evidence','','required maxlength="500"')
   const patient = select('clientId','Patient',s.clients.map((c:any)=>[c.id,c.first_name+' '+c.last_name]))
   const sources = `<details><summary>Record settlement or portion</summary><h3>Settlement observation</h3>`+form('finance.observation.record',path,
@@ -35,7 +35,7 @@ export function financeReconciliation(s: any) {
       +'<details><summary>Cited originals and approval</summary><p>Whole payout: '+h(p.payout_reference)+' · '+h(p.evidence)+'</p><ul>'
       +r.payload.portions.map((x:any)=>`<li>Portion ${h(x.source.reference)} · ${h(x.source.evidence)}. Settlement ${h(x.settlement.reference)} · ${h(x.settlement.evidence)}.</li>`).join('')
       +r.payload.relatedOriginals.filter((x:any)=>x.kind!=='payout').map((x:any)=>`<li>${h(x.kind)}: ${h(x.reference)} · ${h(x.evidence)}</li>`).join('')+'</ul>'
-      +`<p style="overflow-wrap:anywhere">Comparison digest: ${h(r.sha256)}</p>`
+      +`<p>Comparison digest: <code>${h(r.sha256)}</code></p>`
       +(r.approved_at?`<p>Preparation approved ${h(r.approved_at)}. This historical approval grants no execution authority.</p>`:form('finance.payout.approve',path,hidden('id',r.id)+hidden('sha256',r.sha256)+check('confirm','Approve only this exact preparation; no payment or request is authorized.'),'Approve preparation'))+'</details>')
   }).join('')
   return panel('Recorded payout comparisons','<p>Compare owner-recorded originals. This does not verify Stripe or a bank, correct allocations, change balances, send a request or execute a refund.</p>'

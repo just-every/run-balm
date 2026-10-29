@@ -175,3 +175,9 @@ HIPAA-005 uses the same Lander-Regenerate entry point:
 in archives; patient mode and deployment qualification are excluded. Regenerate
 the source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
 `check`.
+
+AGENT-005 whole-payout preparation uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write AGENT-005`, then
+`node scripts/contract-docs.mjs check AGENT-005`. The default check retains this
+adopted projection. Regenerate the source lock last with
+`node scripts/edition-authoring/cli.mjs lock`, then its `check`.

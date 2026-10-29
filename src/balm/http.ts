@@ -681,6 +681,7 @@ export async function balmResponse(request: Request, original: Bindings): Promis
         }
         if (name === 'accounting.prepare') return await page(env, who, back, { message: (result as any).status === 'up_to_date' ? 'QuickBooks matches this day. No new journal is needed.' : 'Review the saved journal below, then approve the exact handoff.' })
         if (name === 'accounting.sync') return await page(env, who, back, { message: 'The saved journal matches QuickBooks. Repeating it creates no new entry.' })
+        if (name.startsWith('finance.')) return redirect(back+'#finance-reconciliation')
         if (name.startsWith('letter.')) return redirect(back+'#clinical-letters')
         if (name === 'chart.document.upload') return redirect('/app/clients/' + encodeURIComponent(String((result as any).clientId)) + '#chart-history')
         if (name === 'consent.request') return await page(env, who, back, { message: (result as any).mail === 'sent' ? 'Documents emailed. The private link expires in seven days.' : 'Email could not be sent. Check the patient’s email and the clinic’s mail settings.' })

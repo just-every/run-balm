@@ -142,5 +142,7 @@ try {
     }
   } }])
   await viewportProof(h, [{ name: 'migration-key-scope', path: '/app/agent', cookie: h.owner, selector: 'select[name=scopes]', interact: async ({page}) => { await page.locator('select[name=scopes]').selectOption('migration.prepare') } }])
+  const {payoutBrowser}=await import('./finance-review-journey.mjs')
+  await payoutBrowser(h)
   console.log('PASS migration mapping, explicit owner approval and saved cutover at 1440 and 390')
 } finally { await h.close() }
