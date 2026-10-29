@@ -10,7 +10,8 @@ export async function functionalAckFile(original,rejected=false) {
  const ack=file.trim().split('~').filter(Boolean).map(s=>s.split('*'))
  assert.equal(ack[0][13],ack.at(-1)[2]);assert.equal(ack[1][6],ack.at(-2)[2])
  assert.equal(ack[3][2],gs[6]);assert.equal(ack[4][2],st[2]);assert.equal(Number(ack.at(-3)[1]),ack.length-4)
- return file
+ // Exercise retained CRLF bytes without storing carriage returns in source files.
+ return file.replace(/\r?\n/g,'\r\n')
 }
 
 // Historical clinic fixture for reviewed destruction; patient and accounting
