@@ -130,7 +130,7 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "f0ec372952fe1d40bf639414d561c4936cd2b8a99611f311d8be1bbba4eaed13",
+      "sha256": "198cc5eb399367b547598e7453460da1cc8254205a51d45dba0a9ab7bcf81b4f",
       "executable": false
     },
     "AGENTS.md": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "c8f777b968547b776f8a69f40fe34ce4c09cabde17101901f3bbceeeac164dd8",
+      "sha256": "8500cece66ae9421095590bf70c5050f42ce465be9c8c8cadfc710dc70f11226",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "6bf2090d52b14857791b8ca4c3a7b5c8fc415eca5d320758973c1c3467dc3102",
+      "sha256": "b8dcdf914e4b55d529ea7104a6b4c19fbcafcfe2a5d1d8fe6992c85d00b5d39a",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -3234,7 +3234,7 @@
       "executable": false
     },
     "src/balm/ui/readiness.ts": {
-      "sha256": "9bb12890458c0de3c025985fb82d134d1985be8b303017056628646fc504e77c",
+      "sha256": "d8e3acf93b428d935bcda50b8e7158000fcdec2d516cc8f4a981b5af403102e8",
       "executable": false
     },
     "src/balm/ui/reminders.ts": {
@@ -5422,7 +5422,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "c534dbf6d55438dbe771a7d92c9defe654eae7234c9c97cd127926e1d21aeb0b",
+      "sha256": "adb80d94a19702dab427b6cff9a3983681326dd8cb43a78ebb774132e5613e2e",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5822,7 +5822,7 @@
       "executable": false
     },
     "tests/readiness-browser.mjs": {
-      "sha256": "1c99338503e896dd69dffb64e41478a943fb5c2756698c11e42d0445ba0f9b0d",
+      "sha256": "7bd8240eef20a475628360413d8ff4e3dc2a58b4df9c9be94e0cc57b405df9ef",
       "executable": false
     },
     "tests/readiness-fixture.mjs": {
@@ -5894,7 +5894,7 @@
       "executable": false
     },
     "tests/sms-quiet-journey.mjs": {
-      "sha256": "d116c9f3a04da0a7ff4e2e0decf5f43c879a9299c88cb16d1b6351dc8a80c116",
+      "sha256": "8df00670679922f235437390f90c110fc6f4bf08514e062fd8a10039463135b6",
       "executable": false
     },
     "tests/sms-quiet-worker.ts": {
