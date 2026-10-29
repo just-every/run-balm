@@ -37,7 +37,8 @@
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-letters\" node --test --test-name-pattern=\"^CHART-011:\" tests/charting.test.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-booking-payment\" node --test --test-name-pattern=\"PAY-003: deposit\" tests/payments.test.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-communications\" node tests/communication-browser.mjs",
-        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-waitlist\" node tests/waitlist-browser.mjs"
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-waitlist\" node tests/waitlist-browser.mjs",
+        "node tests/functional-ack-browser.mjs"
       ]
     },
     {

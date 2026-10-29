@@ -186,3 +186,7 @@ AGENT-005 whole-payout preparation uses Lander-Regenerate:
 `node scripts/contract-docs.mjs check AGENT-005`. The default check retains this
 adopted projection. Regenerate the source lock last with
 `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+INS-006 native 999 evidence uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write INS-006`, then
+`node scripts/contract-docs.mjs check INS-006`. Preserve its clearinghouse account
+Gap and regenerate the edition source lock last with the documented lock command.
