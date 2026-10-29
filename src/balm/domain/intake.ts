@@ -6,7 +6,7 @@ import { approvalStatements } from './approvals'
 import { intakeRecordStatements, type IntakeMetadata } from '../intake/records'
 import { intakePayers } from '../intake/coverage'
 import { pendingPolicies } from '../intake/policies'
-import { audit, commit, guard, human, id, insist, need, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
+import { actorLabel, decisionLabel, audit, commit, guard, human, id, insist, need, now, one, practitionerId, rows, sha256, stmt, text, type Actor, type Data } from './model'
 
 export type Question = { id: string; label: string; type: 'short' | 'long' | 'yes' | 'date' | 'number'; required: boolean; min?:number; max?:number }
 
@@ -94,7 +94,7 @@ export async function prepareForm(db: D1Database, who: Actor, input: Data) {
   insist(new Set(payload.questions.map(q=>q.id)).size===payload.questions.length,'duplicate_question_id')
   const draftId = id()
   await commit(db, who, [
-    stmt(db, "INSERT INTO bm_drafts(id,type,status,payload,basis,prepared_by,prepared_role,prepared_at) VALUES(?,'intake','draft',?,?,?,?,?)", draftId, JSON.stringify(payload), String((await currentForm(db)).number), who.email, who.role, now()),
+    stmt(db, "INSERT INTO bm_drafts(id,type,status,payload,basis,prepared_by,prepared_role,prepared_at) VALUES(?,'intake','draft',?,?,?,?,?)", draftId, JSON.stringify(payload), String((await currentForm(db)).number), actorLabel(who), who.agentAttribution ? 'agent' : who.role, now()),
     audit(db, who, 'intake.prepared', null, draftId),
   ])
   return { id: draftId, ...payload }
@@ -106,7 +106,7 @@ export async function publishForm(db: D1Database, who: Actor, input: Data) {
   insist(draft.status === 'draft', 'already_decided', 409)
   const current = (await one(db,'SELECT MAX(number) AS number FROM bm_intake_forms'))!, payload = JSON.parse(draft.payload as string), formId = id()
   await commit(db, who, [
-    stmt(db, 'INSERT INTO bm_intake_forms(id,number,title,questions,published_at,published_by,service_id,discipline,instruments) VALUES(?,?,?,?,?,?,?,?,?)', formId, Number(current.number) + 1, payload.title, JSON.stringify(payload.questions), now(), who.email,payload.serviceId??null,payload.discipline??'',JSON.stringify(payload.instruments??[])),
+    stmt(db, 'INSERT INTO bm_intake_forms(id,number,title,questions,published_at,published_by,service_id,discipline,instruments) VALUES(?,?,?,?,?,?,?,?,?)', formId, Number(current.number) + 1, payload.title, JSON.stringify(payload.questions), now(), decisionLabel(who),payload.serviceId??null,payload.discipline??'',JSON.stringify(payload.instruments??[])),
     ...await approvalStatements(db, who, 'intake', draft, draft.payload as string),
     audit(db, who, 'intake.published', null, formId, `v${Number(current.number) + 1} from ${draft.prepared_role}`),
   ])

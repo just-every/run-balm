@@ -4,7 +4,7 @@
 import { visibleAppointment } from './booking'
 import { approvalStatements } from './approvals'
 import { localTime } from './invoices'
-import { audit, commit, human, id, insist, need, now, one, stmt, text, type Actor, type Data } from './model'
+import { actorLabel, decisionLabel, audit, commit, human, id, insist, need, now, one, stmt, text, type Actor, type Data } from './model'
 
 /** The booking facts a reminder's text is built from; approval checks they still hold. */
 export async function facts(db: D1Database, appointmentId: string) {
@@ -23,7 +23,7 @@ export async function prepareReminder(db: D1Database, who: Actor, input: Data) {
   const payload = reminderPayload(row)
   const draftId = id()
   await commit(db, who, [
-    stmt(db, "INSERT INTO bm_drafts(id,type,status,payload,basis,client_id,prepared_by,prepared_role,prepared_at) VALUES(?,'reminder','draft',?,?,?,?,?,?)", draftId, JSON.stringify(payload), basis, row.client_id, who.email, who.role, now()),
+    stmt(db, "INSERT INTO bm_drafts(id,type,status,payload,basis,client_id,prepared_by,prepared_role,prepared_at) VALUES(?,'reminder','draft',?,?,?,?,?,?)", draftId, JSON.stringify(payload), basis, row.client_id, actorLabel(who), who.agentAttribution ? 'agent' : who.role, now()),
     audit(db, who, 'reminder.prepared', row.client_id as string, draftId),
   ])
   return { id: draftId, status: 'draft', ...payload }
