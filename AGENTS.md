@@ -180,6 +180,7 @@ INS-002 eligibility cohort evidence uses Lander-Regenerate:
 `node scripts/contract-docs.mjs write INS-002`, then
 `node scripts/contract-docs.mjs check INS-002`. Regenerate the source lock last
 with `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
 INS-006 native 999 evidence uses Lander-Regenerate:
 `node scripts/contract-docs.mjs write INS-006`, then
 `node scripts/contract-docs.mjs check INS-006`. Preserve its clearinghouse account

@@ -1,5 +1,5 @@
 import {eligibilityCohorts} from './eligibility-batches'
-import { functionalBatchClaims, functionalGuards } from './functional-acknowledgments'
+import { functionalBatchClaims, functionalBatchOwnerOnly, functionalGuards } from './functional-acknowledgments'
 import {authorizationPreparationFor,authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
 import {injuryState} from './injury'
 import {runoutState} from './runout'
@@ -63,6 +63,8 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
   ])
   const receiptClients=new Set<string>()
   if(who.role==='owner'||biller(who))for(const b of batches) {
+    b.functionalAcknowledgments=[]
+    if(who.role!=='owner'&&await functionalBatchOwnerOnly(db,b.id))continue
     b.functionalAcknowledgments=(await rows(db,'SELECT id,syntax_status,reasons,imported_at FROM bm_functional_acknowledgments WHERE batch_id=? ORDER BY imported_at,id',b.id)).map(a=>({...a,reasons:JSON.parse(a.reasons)}))
     if(b.functionalAcknowledgments.length)for(const c of await functionalBatchClaims(db,who,b.id))receiptClients.add(c.client_id)
   }

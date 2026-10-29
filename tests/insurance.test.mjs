@@ -818,6 +818,20 @@ test('INS-010: owner records carrier instructions and a patient-bound progress r
   const downloaded=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,owner)
   assert.equal(downloaded.status,200);assert.match(downloaded.text,/REF\*Y4\*SYNTHETIC-BALM-251/);assert.match(downloaded.text,/PWK\*OZ\*AA\*\*\*AC\*SYNTHETIC-BALM-255/);assert.match(downloaded.text,/SBR\*P\*18\*[^~]*\*WC~/)
   assert.equal((await h.send('/api/balm/insurance/837P/'+batch.id,undefined,c.biller.cookie)).status,403)
+  const {functionalAckFile}=await import('./functional-ack-fixture.mjs')
+  const original=(await functionalAckFile(downloaded.text,true)).replace('IK4*9*67*7*synthetic-balm-901','IK4*9*67*7*SYNTHETIC-BALM-255')
+  const receipt=await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:original},owner)
+  const ownerResult=(await h.state()).insurance.batches.find(b=>b.id===batch.id).functionalAcknowledgments
+  assert.equal(ownerResult.length,1)
+  assert.equal((await h.send('/api/balm/insurance/999/'+receipt.id,undefined,owner)).text,original)
+  assert.equal((await h.send('/api/balm/insurance/999/'+receipt.id,undefined,c.biller.cookie)).status,403)
+  const billerState=await h.state(c.biller.cookie)
+  assert.deepEqual(billerState.insurance.batches.find(b=>b.id===batch.id).functionalAcknowledgments,[])
+  const billerPage=await h.send('/app/insurance',undefined,c.biller.cookie)
+  assert.ok(!billerPage.text.includes(receipt.id));assert.ok(!billerPage.text.includes('SYNTHETIC-BALM-255'))
+  const beforeRefusal=await h.db.prepare('SELECT COUNT(*) AS n FROM bm_functional_acknowledgments').first()
+  await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:original.replaceAll('000000901','000000902')},c.biller.cookie,403)
+  assert.deepEqual(await h.db.prepare('SELECT COUNT(*) AS n FROM bm_functional_acknowledgments').first(),beforeRefusal)
   const refused=await h.cmd('insurance.batch.submit',{id:batch.id},owner,409);assert.equal(refused.code,'injury_report_transport_not_configured_no_claim_sent')
   assert.ok(!h.outboundRequests.some(r=>r.origin==='https://clearinghouse.clinic.example'))
   assert.equal((await h.state(c.biller.cookie)).insurance.injuryCases,null)
@@ -865,14 +879,24 @@ test('INS-006: matched 999 syntax originals never submit, adjudicate or move mon
  const exported=await h.send('/api/balm/insurance/837P/'+batch.id,undefined,c.biller.cookie)
  assert.equal(exported.status,200)
  const accepted=await functionalAckFile(exported.text),rejected=await functionalAckFile(exported.text,true)
- const input={batchId:batch.id,x12:accepted}
+ const input={batchId:batch.id,x12:accepted.replaceAll('000000901','000000904')}
  const snapshot=async()=>{
   const f=await patientFile(h,c.patient.id)
   return {claim:f.insurance.claims.find(x=>x.id===claim.id),ledger:f.billing.ledger,invoices:f.invoices,batch:(await h.state()).insurance.batches.find(b=>b.id===batch.id).status}
  }
  const before=await snapshot()
+ const groupOnly=accepted.replace(/AK2[^~]*~IK5\*A~/,'').replace('SE*6*','SE*4*')
+ const summary=await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:groupOnly},c.biller.cookie)
+ assert.equal(summary.syntaxStatus,'accepted')
+ assert.equal((await h.send('/api/balm/insurance/999/'+summary.id,undefined,c.biller.cookie)).text,groupOnly)
+ assert.equal((await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:groupOnly},c.biller.cookie)).duplicate,true)
+ assert.deepEqual(await snapshot(),before,'group acceptance changes no claim, submission, invoice or ledger facts')
  const receipts=async()=>(await h.state()).insurance.batches.find(b=>b.id===batch.id).functionalAcknowledgments
  const malformed=[
+  groupOnly.replace(/AK1\*HC\*[^*~]+/,'AK1*HC*987654321'),
+  groupOnly.replace('AK9*A*1*1*1','AK9*A*2*1*1'),
+  groupOnly.replace('AK9*A*1*1*1','AK9*P*1*1*1'),
+  groupOnly.replace('AK9*A*1*1*1','IK5*A~AK9*A*1*1*1').replace('SE*4*','SE*5*'),
   accepted.replace(/AK1\*HC\*[^*~]+/,'AK1*HC*987654321'),
   accepted.replace('AK2*837*0001','AK2*837*9999'),
   accepted.replace('AK9*A*1*1*1','AK9*A*2*1*1'),
@@ -884,7 +908,7 @@ test('INS-006: matched 999 syntax originals never submit, adjudicate or move mon
   accepted.replace('*ZZ*AETNA','*30*AETNA'),
   accepted.replace('999*0001','999*0002')
  ]
- for(const x12 of malformed){await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12},c.biller.cookie,400);assert.deepEqual(await snapshot(),before);assert.equal((await receipts()).length,0)}
+ for(const x12 of malformed){await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12},c.biller.cookie,400);assert.deepEqual(await snapshot(),before);assert.equal((await receipts()).length,1)}
  // Same transaction control in another batch is insufficient; AK1 must bind its group.
  const otherPatient=await h.cmd('client.save',{firstName:'Other',lastName:'Unrelated',dateOfBirth:'1980-01-01'})
  const otherPolicy=await h.cmd('insurance.policy.save',{clientId:otherPatient.id,payerId:c.payer.id,memberId:'synthetic-balm-902',relationship:'18',patientSex:'F',address:'100 Synthetic St',city:'Austin',state:'TX',postalCode:'78701',...coverage},h.owner)
@@ -897,19 +921,19 @@ test('INS-006: matched 999 syntax originals never submit, adjudicate or move mon
  const otherClaim=await h.cmd('insurance.claim.prepare',{appointmentId:otherVisit,policyId:otherPolicy.id},h.owner)
  const otherBatch=await h.cmd('insurance.batch.prepare',{claimIds:[otherClaim.id]},h.owner)
  await h.cmd('insurance.functional_acknowledgment.import',{batchId:otherBatch.id,x12:accepted},c.biller.cookie,400)
- assert.equal((await receipts()).length,0)
+ assert.equal((await receipts()).length,1)
  for(const cookie of [c.priya.cookie,(await h.staff('SyntaxDesk','reception')).cookie])await h.cmd('insurance.functional_acknowledgment.import',input,cookie,403)
  const agent=await h.cmd('agent.create',{label:'Syntax preparation'})
  assert.equal((await h.send('/api/balm/agent/command',{name:'insurance.functional_acknowledgment.import',input},'',{authorization:'Bearer '+agent.token})).status,403)
  const results=await Promise.all([1,2].map(()=>h.send('/api/balm/command',{name:'insurance.functional_acknowledgment.import',input},c.biller.cookie)))
  assert.deepEqual(results.map(r=>r.status),[200,200]);assert.equal(results.filter(r=>r.value.result.duplicate).length,1)
  const saved=results.find(r=>!r.value.result.duplicate).value.result
- assert.equal(saved.syntaxStatus,'accepted');assert.equal((await receipts()).length,1)
- assert.equal((await h.send('/api/balm/insurance/999/'+saved.id,undefined,c.biller.cookie)).text,accepted)
+ assert.equal(saved.syntaxStatus,'accepted');assert.equal((await receipts()).length,2)
+ assert.equal((await h.send('/api/balm/insurance/999/'+saved.id,undefined,c.biller.cookie)).text,input.x12)
  assert.equal((await h.cmd('insurance.functional_acknowledgment.import',input,c.biller.cookie)).duplicate,true)
- await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:rejected},c.biller.cookie,409)
+ await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:rejected.replaceAll('000000901','000000904')},c.biller.cookie,409)
  const rejection=await h.cmd('insurance.functional_acknowledgment.import',{batchId:batch.id,x12:rejected.replaceAll('000000901','000000902')},c.biller.cookie)
- assert.equal(rejection.syntaxStatus,'rejected');assert.equal((await receipts()).length,2)
+ assert.equal(rejection.syntaxStatus,'rejected');assert.equal((await receipts()).length,3)
  const page=await h.send('/app/insurance',undefined,c.biller.cookie)
  assert.match(page.text,/999 syntax: accepted/);assert.match(page.text,/999 syntax: rejected/);assert.match(page.text,/Invalid code value/);assert.match(page.text,/Source: IK4/)
  assert.deepEqual(await snapshot(),before,'999 syntax changes no claim, submission, invoice or ledger facts')

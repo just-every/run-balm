@@ -130,11 +130,11 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "ca7cda5c48621b958ad0633e577464beca14770855dc5eeaa1255fbb77d84296",
+      "sha256": "c4d9b1ecd2997ac586cc7b3da53005c0cb90d8338ea893cd69fe67bce6276e73",
       "executable": false
     },
     "AGENTS.md": {
-      "sha256": "61f470239514a41d43d36a15c8d4e7574bd1ac898703265bd95bed5ac9f71b0f",
+      "sha256": "861de5194062a71a691d55a50c0358288bd4e060a57f8b3d36ef75cfe9ccf43a",
       "executable": false
     },
     "base-copies.json": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "efd5ce013e349a0f957f24e1dc21a967cdcd8677a373fe3f63e15dcc17694c7e",
+      "sha256": "537132e6ec19abd25d8ab68448e6a17bf2a584e7d24b33aaa57558dd38bdec8d",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "98b24e52b7f83475e1eb781b36ecc10ded8ce6e0f7c43e40a2f34ce203a64594",
+      "sha256": "c83409159e7945b6a076855cfa161168eed38e1948a77c38a60ad6efcc2036ec",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -230,7 +230,7 @@
       "executable": false
     },
     "docs/insurance.md": {
-      "sha256": "832fefc9ffc932f736c0fca3f2b758479f96e6e47cfb7e56e2f6be1efc5dd033",
+      "sha256": "7d0581651cb94c88301e5bb16591df15bcc53b6657d20d2bf5e2da50c0ea73c9",
       "executable": false
     },
     "docs/intake.md": {
@@ -1482,7 +1482,7 @@
       "executable": false
     },
     "scripts/contract-docs.mjs": {
-      "sha256": "eb2906c4851867fd82c1873bfbb925c04f767eea2004749a099c11c880da0d24",
+      "sha256": "3ad477af7803bff9a3bf784441b7746188dab2d238ee38d460ce654dbb2abda4",
       "executable": false
     },
     "scripts/delivery/base/artifact.mjs": {
@@ -2762,7 +2762,7 @@
       "executable": false
     },
     "src/balm/insurance/functional-acknowledgments.ts": {
-      "sha256": "9fe671aa6464178f5939492a74b9b448b2f2db45fa3b2aead3ddeccd1e808c06",
+      "sha256": "17bc28f48448f6dc11ac42e8cb78aa78d6ad4793a2ddd1b1e505dc1c00639044",
       "executable": false
     },
     "src/balm/insurance/index.ts": {
@@ -2842,7 +2842,7 @@
       "executable": false
     },
     "src/balm/insurance/views.ts": {
-      "sha256": "41b3726f4bb3edc321bfd551c4fb0f6324324d46a6f9fc21b42bf3ac26d2707a",
+      "sha256": "7304fe4377e1b91bf1985a9749186321b95d68f7a6eeaf8d637e8b31b2d868e4",
       "executable": false
     },
     "src/balm/insurance/x12.ts": {
@@ -6438,7 +6438,7 @@
       "executable": false
     },
     "tests/functional-ack-browser.mjs": {
-      "sha256": "34fff1dbc131c381a73171166e084dfb2eb69635fe65ab26c86e3a7390686d88",
+      "sha256": "bd1676a788ccb43297a26f8eb2d771c09097f8d50b43cf9f152de663d949c00e",
       "executable": false
     },
     "tests/functional-ack-fixture.mjs": {
@@ -6454,7 +6454,7 @@
       "executable": false
     },
     "tests/insurance.test.mjs": {
-      "sha256": "b8287194caa4ef8a179c756ec466928f0ed05b7862b94fe0dbbc6a946c7fb89c",
+      "sha256": "5f0df32b16a9dca5baafe5e12c3e2c05b7279ef73376285d3821fbcf585891d4",
       "executable": false
     },
     "tests/intake-portal.test.mjs": {
