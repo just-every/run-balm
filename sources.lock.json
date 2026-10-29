@@ -1722,15 +1722,19 @@
       "executable": false
     },
     "src/balm/agent-door/catalogue.ts": {
-      "sha256": "3762d84f8f41bc7bca75a60b0d1a21108394a19ce1a8dabc9b3d804539cb67cb",
+      "sha256": "bce53d1c03e89f665affdacd326acddcfb896e8f2bf5e7cd544af35d3660454a",
+      "executable": false
+    },
+    "src/balm/agent-door/configuration.ts": {
+      "sha256": "5219ec3d08261717d59eb5b7b4ec41a6ea703d9d549f5a6e1c9a7e2a5cf7aa60",
       "executable": false
     },
     "src/balm/agent-door/index.ts": {
-      "sha256": "879f4ae4d3e6478aa0929ec8f1a978da14e9d8d8874268e75df3a1e14757cf94",
+      "sha256": "8882fba0dd7adf62655a6cc1d4f6c1718872ade3a4cd9632feca3b52c819592e",
       "executable": false
     },
     "src/balm/agent-door/native.ts": {
-      "sha256": "bac8d1e48ec47eac60bac6a74402f9d489fe1e51b6baf21c643c35515b6aa757",
+      "sha256": "ca3098335b5d4fed8ea7abbfec64342329a3b90a302b466df2c30938739de43e",
       "executable": false
     },
     "src/balm/agent-door/people.ts": {
@@ -1738,7 +1742,7 @@
       "executable": false
     },
     "src/balm/agent-door/resources.ts": {
-      "sha256": "038b0f311140585a64efe13832507c14a18cda38868b42819c51bbdae08e5edb",
+      "sha256": "de70595a092bb38098d5c43ca38af107a227771b6ef5c4c16eded5229a510e35",
       "executable": false
     },
     "src/balm/agent-openapi.ts": {
@@ -2070,7 +2074,7 @@
       "executable": false
     },
     "src/balm/domain/model.ts": {
-      "sha256": "f5cecac998f5e2d75bbe90e10a64649c60d6cd04dd5b198ad8370ec02197bddc",
+      "sha256": "ca2ca735dc24077348d63cd5a23ae566e30008494e52734e86a1bc449940ea97",
       "executable": false
     },
     "src/balm/domain/notes.ts": {
