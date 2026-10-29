@@ -119,6 +119,25 @@ export async function eligibilityCohortJourney(h) {
  const calendar=await h.send('/app?date=2030-03-11',undefined,h.owner)
  assert.match(calendar.text,/Coverage inactive/)
  assert.ok(!h.outboundRequests.some(r=>r.origin.includes('clearinghouse')),'cohort preparation and fixture import make no clearinghouse request')
+ // Scheduled policies must be checked even when recorded coverage has ended or has not started.
+ const endedScheduled=await h.cmd('insurance.policy.save',eligibilityPolicy(c.patients[0].id,c.payer.id,'synthetic-balm-341',{endsOn:'2030-03-10',priority:2}))
+ const futureScheduled=await h.cmd('insurance.policy.save',eligibilityPolicy(c.patients[0].id,c.payer.id,'synthetic-balm-342',{startsOn:'2030-05-01',priority:3}))
+ const scheduled=await preview(),scheduledPolicies=[endedScheduled.id,futureScheduled.id]
+ for(const policyId of scheduledPolicies)assert.deepEqual(new Set(scheduled.members.find(m=>m.policyId===policyId)?.visits),new Set([c.visits[0].appointmentId,c.visits[3].appointmentId,localNight.appointmentId]),'next-day preview includes every scheduled policy regardless of recorded coverage dates')
+ const preparedScheduled=await h.cmd('insurance.eligibility.cohort.prepare',{...input,digest:scheduled.digest})
+ const preparedState=(await h.state()).insurance.eligibilityCohorts.batches.find(b=>b.id===preparedScheduled.id)
+ for(const policyId of scheduledPolicies) {
+  const request=preparedScheduled.requests.find(r=>r.policyId===policyId)
+  assert.ok(request,'each scheduled policy gets a prepared inquiry')
+  assert.equal(preparedState.items.find(i=>i.eligibility_id===request.id)?.status,'prepared')
+  const exported=await h.send('/api/balm/insurance/270/'+request.id,undefined,h.owner)
+  assert.equal(exported.status,200,exported.text)
+  assert.match(exported.text,/DTP\*291\*D8\*20300311~/,'inquiry carries the scheduled visit date')
+ }
+ const activeMonth=await h.cmd('insurance.eligibility.cohort.preview',monthly)
+ assert.ok(!activeMonth.members.some(m=>scheduledPolicies.includes(m.policyId)),'monthly preview still excludes ended and future policies')
+ const preparedMonth=await h.cmd('insurance.eligibility.cohort.prepare',{...monthly,digest:activeMonth.digest})
+ assert.ok(!preparedMonth.requests.some(r=>scheduledPolicies.includes(r.policyId)),'monthly preparation remains limited to active policies')
  if(process.env.BALM_UI_SCREENSHOTS) {
   const {viewportProof}=await import('./viewport-proof.mjs')
   const browserRequest=mb.requests.find(r=>r.policyId===c.policies[0].id).id
