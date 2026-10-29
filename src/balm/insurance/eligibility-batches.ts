@@ -12,7 +12,7 @@ async function cohort(db:D1Database,input:Data) {
   const kind=String(input.kind),asOfDate=day(input.asOfDate,'as_of_date')
   insist(['next_business_day','monthly'].includes(kind),'invalid_eligibility_cohort')
   const settings=await one(db,'SELECT time_zone,holidays,version FROM bm_settings WHERE id=1')
-  insist(settings,'clinic_settings_missing',409)
+  insist(settings?.time_zone,'choose_clinic_time_zone_first',409)
   const holidays=JSON.parse(settings.holidays) as {date:string;name:string}[]
   const business=(date:string)=>![0,6].includes(weekdayForDate(date))&&!holidays.some(h=>h.date===date)
   let serviceDate=kind==='monthly'?asOfDate.slice(0,7)+'-01':datePlus(asOfDate,1)
@@ -70,10 +70,12 @@ export async function prepareEligibilityCohort(db:D1Database,who:Actor,input:Dat
 }
 export async function eligibilityCohorts(db:D1Database,who:Actor) {
   if(who.role!=='owner')return null
+  const settings=await one(db,'SELECT time_zone FROM bm_settings WHERE id=1')
+  if(!settings?.time_zone)return null
   const batches=await rows(db,'SELECT * FROM bm_eligibility_cohorts ORDER BY prepared_at DESC,id DESC LIMIT 100')
   const items=await rows(db,`SELECT i.*,e.service_date,e.status,e.checked_at,p.member_id,y.name AS payer,c.first_name||' '||c.last_name AS patient
     FROM bm_eligibility_cohort_items i JOIN bm_eligibility e ON e.id=i.eligibility_id JOIN bm_policies p ON p.id=i.policy_id
     JOIN bm_payers y ON y.id=p.payer_id JOIN bm_clients c ON c.id=i.client_id WHERE c.erased_at IS NULL AND i.batch_id IN (SELECT value FROM json_each(?)) ORDER BY p.id`,JSON.stringify(batches.map(b=>b.id)))
   await commit(db,who,items.flatMap(i=>[clientGuard(db,who,i.client_id),audit(db,who,'insurance.eligibility_cohort_read',i.client_id,i.eligibility_id)]))
-  return {today:hostDateAt(new Date(),(await one(db,'SELECT time_zone FROM bm_settings WHERE id=1'))!.time_zone),batches:batches.map(b=>({...b,items:items.filter(i=>i.batch_id===b.id)}))}
+  return {today:hostDateAt(new Date(),settings.time_zone),batches:batches.map(b=>({...b,items:items.filter(i=>i.batch_id===b.id)}))}
 }

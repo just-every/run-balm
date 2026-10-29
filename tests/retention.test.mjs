@@ -1,3 +1,4 @@
+import {recordedCohort} from './eligibility-cohort-journey.mjs'
 import { cutoverInvoices } from './movein-reconciliation-journey.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
@@ -25,6 +26,13 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   await ageVisit(h,visit)
   const oldest=(await file(h,patient.id)).retention
   assert.equal(oldest.eligible,true)
+  const eligibilityPatient=await h.cmd('client.save',{firstName:'Historical',lastName:'Eligibility custody',dateOfBirth:'1960-01-01'})
+  const eligibilityVisit=await pastVisit(h,eligibilityPatient.id,priya,service.id,h.owner,13)
+  await ageVisit(h,eligibilityVisit)
+  assert.equal((await file(h,eligibilityPatient.id)).retention.eligible,true)
+  await recordedCohort(h,eligibilityPatient.id)
+  assert.ok((await file(h,eligibilityPatient.id)).retention.reasons.includes('retention_period_not_complete'),'new eligibility preparation and response extend custody even for a historical service date')
+  await h.cmd('retention.preview',{clientId:eligibilityPatient.id},h.owner,409)
   const callPatient=await h.cmd('client.save',{firstName:'Historical',lastName:'Call entry',dateOfBirth:'1960-01-01'})
   const callVisit=await pastVisit(h,callPatient.id,priya,service.id,h.owner,3)
   await ageVisit(h,callVisit)
@@ -214,6 +222,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const invoice=await h.cmd('invoice.prepare',{appointmentId:visit})
   await h.cmd('invoice.approve',{id:invoice.id})
   await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Historical-payment'})
+  const cohort=await recordedCohort(h,patient.id)
+  await h.db.prepare("UPDATE bm_eligibility SET created_at='1990-01-02T03:00:00.000Z',checked_at='1990-01-02T03:00:00.000Z' WHERE id=?").bind(cohort.requestId).run()
+
   const historicalPlan=crypto.randomUUID()
   const planContent=JSON.stringify({startDate:'1990-01-01',frequencyPerWeek:1,durationWeeks:1,goals:'Private historical goals'})
   await h.db.prepare(`INSERT INTO bm_plans_of_care(id,client_id,author_id,note_id,content,content_sha256,therapist_name,therapist_credentials,created_at,physician_name,physician_email,sent_at,status)
@@ -280,6 +291,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const locationBefore=await h.send('/api/balm/reports?from=1990-01-01&to=1990-01-31&locationId='+location.id,undefined,h.owner)
   assert.equal(locationBefore.status,200)
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
+  assert.equal(preview.records.bm_eligibility_cohort_items,1);assert.equal(preview.records.bm_eligibility,1)
   assert.equal(preview.records.bm_calls,1,'COMM-003 call records join reviewed destruction scope')
   assert.equal(preview.records.bm_movein_invoices,1,'historical invoice originals join reviewed destruction scope')
   assert.ok(preview.records.bm_note_revisions>0)
@@ -301,6 +313,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   assert.doesNotMatch(JSON.stringify(await h.cmd('movein.journal',{jobId:oldInvoiceJob})),/Private historical invoice original/)
   assert.doesNotMatch((await h.db.prepare('SELECT source_json FROM bm_movein_jobs WHERE id=?').bind(oldInvoiceJob).first()).source_json,/Private historical invoice original/)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_calls WHERE id=?').bind(historicalCall).first()).n,0,'COMM-003 approved destruction removes call content')
+  assert.equal((await h.send('/api/balm/insurance/270/'+cohort.requestId,undefined,h.owner)).status,404)
+  await h.cmd('insurance.eligibility.import',{id:cohort.requestId,x12:cohort.x12},h.owner,404)
+  assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_eligibility_cohort_items WHERE client_id=?').bind(patient.id).first()).n,0)
   assert.equal((await h.send('/api/balm/clients/'+patient.id+'/communications',undefined,h.owner)).status,404)
   assert.equal((await h.send('/api/balm/insurance/authorization-request/'+historicalRequest,undefined,h.owner)).status,404)
   for(const table of ['bm_authorization_requests','bm_authorization_submissions','bm_authorization_decisions'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table).first()).n,0)

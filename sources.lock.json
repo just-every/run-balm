@@ -130,11 +130,11 @@
       "executable": false
     },
     "ACCEPTANCE.md": {
-      "sha256": "e48274428070958c3a9b64771899bdd7b122af27efa8d0bee7d7d5e5e3fb81c8",
+      "sha256": "775ada33ee0a5fd79b102d028296e631f5b4400e48fd3329d5d82b6214ca0e07",
       "executable": false
     },
     "AGENTS.md": {
-      "sha256": "0e61208b170cda2f2c7de660295904f81e0f31a467cb3b1e2921c73ef995e567",
+      "sha256": "de07240a9516e0250cef3fa791e77aeca09714ad969a90e45a701235891a068a",
       "executable": false
     },
     "base-copies.json": {
@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "6226b1bbf8dc7dfa4bbb59446cb2a9052812b828455ac037faa4e5ff247e4aff",
+      "sha256": "5c645b41c7435af8370d0d89fe9cbff51d5ff503ea3a4fb28f428da6ece0ec1e",
       "executable": false
     },
     "DEMO.md": {
@@ -194,7 +194,7 @@
       "executable": false
     },
     "docs/CLAIMS.md": {
-      "sha256": "7ba3372a0998fcb316a3531158d46af3da5420dc0140d8566d11fc0736aa2d6b",
+      "sha256": "be326323c728bfb0be8c8c3150647be0a9e4ee3ad48064785ebab0fdcc2ab69b",
       "executable": false
     },
     "docs/CODESETS.md": {
@@ -230,7 +230,7 @@
       "executable": false
     },
     "docs/insurance.md": {
-      "sha256": "551737eea826b3c1eebf064113747509bd51dfa62389caf8aa0f885a3d36b8a3",
+      "sha256": "1581ea17a4ce0c9b6ba946f8726d0ae6d5580645f439a9682109d2ef82c9af7d",
       "executable": false
     },
     "docs/intake.md": {
@@ -835,6 +835,10 @@
     },
     "migrations/core/0129_balm_waitlist_holds.sql": {
       "sha256": "514b979dc3aa6211844d4ab460f0012a5c7a8887c10ebb533622d9df9b962f54",
+      "executable": false
+    },
+    "migrations/core/0130_balm_eligibility_cohorts.sql": {
+      "sha256": "29e55c89d741da74c0ed6443c478ab5b3b0ca36ef32edc4ade9289b0d657feb4",
       "executable": false
     },
     "ONBOARDING.md": {
@@ -1474,7 +1478,7 @@
       "executable": false
     },
     "scripts/contract-docs.mjs": {
-      "sha256": "c926cc3a60d61f5cf9a96d850a1981c507ab72d12631e6e7666e1b1c3978bdac",
+      "sha256": "fc77af1bd860fb879f035920d28dcface4a73d31bb8353d353dc40991877d1b0",
       "executable": false
     },
     "scripts/delivery/base/artifact.mjs": {
@@ -2126,7 +2130,7 @@
       "executable": false
     },
     "src/balm/insurance/authorization.ts": {
-      "sha256": "05b001f7fd05e88c77c7eb71ae6b621f55173d5949d3de16ac856bdd0945400c",
+      "sha256": "a4bc737e12ab5e53101e6a2048519252328dc58747bf340764056b29a6b167b6",
       "executable": false
     },
     "src/balm/insurance/batch-coding.ts": {
@@ -2193,8 +2197,16 @@
       "sha256": "085246f03eefda0861ff0b9185717a403c6ce1a7b556425f27e3e7deb964abbe",
       "executable": false
     },
+    "src/balm/insurance/eligibility-batches.ts": {
+      "sha256": "e3783e786c45049e14fd8a858285ba9bf2c62b8024419a0b8c087b91b52fe3b2",
+      "executable": false
+    },
+    "src/balm/insurance/eligibility-flags.ts": {
+      "sha256": "d4c343bdc263e690aaacd7bbc7ad2b4b4699fa7fdf7fdcd506c475baa23409ad",
+      "executable": false
+    },
     "src/balm/insurance/eligibility.ts": {
-      "sha256": "bdfe386a03bebee9d5b1739bbdd6fd72166e4dd9b352a5038e6c4a129e9aafc4",
+      "sha256": "afe4411e06b9ec6af60fdee35ceaf13238a7363fae1b2e8e7612304747780de2",
       "executable": false
     },
     "src/balm/insurance/facts.ts": {
@@ -3027,6 +3039,10 @@
     },
     "src/balm/ui/drag.ts": {
       "sha256": "b561036fc26b86d741acbf053610848dad062372df250e77bb1a56c5ca34e971",
+      "executable": false
+    },
+    "src/balm/ui/eligibility-cohorts.ts": {
+      "sha256": "672da3a4527d58853f010f9f9c2ca76a9a8e3337a552b011581cc87fbd60148d",
       "executable": false
     },
     "src/balm/ui/episodes.ts": {
@@ -5430,7 +5446,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "0e129529ef47fca1f6e62db900edee286c524c120e5844c09b2d0eaa4373904a",
+      "sha256": "e8dbe41fefa38b77994bdcc7026e46cf12b28e098ccab87ab903e9483160c58e",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -5575,6 +5591,10 @@
     },
     "tests/disclosures.test.mjs": {
       "sha256": "6239703968c877b0cf12521336b113f67fa9498b8458e801674c6d839c204cae",
+      "executable": false
+    },
+    "tests/eligibility-cohort-journey.mjs": {
+      "sha256": "ed900e4e9600fb90e0d81ff40b87c18d0fa97b289dd1dc5f446fcfe6bdc004ac",
       "executable": false
     },
     "tests/estimate-browser.mjs": {
@@ -5866,7 +5886,7 @@
       "executable": false
     },
     "tests/retention.test.mjs": {
-      "sha256": "6e13dfdb9688e106ce2b4ffd730d546d1dc7ec18bc40095db8b5530661e9220e",
+      "sha256": "0c5eed3ddb73066c8c7c5018fc6396eb2040827a427e7d8ea73fd817a877a590",
       "executable": false
     },
     "tests/runtime.mjs": {

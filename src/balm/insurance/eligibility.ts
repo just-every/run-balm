@@ -34,12 +34,13 @@ export function eligibilityStatement(db: D1Database, request: Awaited<ReturnType
 export async function prepareEligibility(db:D1Database,who:Actor,input:Data) {
   const policy=await policyFor(db,who,input.policyId), date=day(input.serviceDate,'service_date')
   const request=await eligibilityRequest(db,policy,date)
-  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),eligibilityStatement(db,request),audit(db,who,'insurance.eligibility_prepared',policy.client_id,request.id)])
+  await commit(db,who,[clientGuard(db,who,policy.client_id),guard(db,'EXISTS(SELECT 1 FROM bm_insurance_settings WHERE id=1 AND version=?)',request.configVersion),guard(db,'EXISTS(SELECT 1 FROM bm_payers WHERE id=? AND version=?)',policy.payer_id,policy.payer_version),guard(db,'EXISTS(SELECT 1 FROM bm_policies WHERE id=? AND version=?)',policy.id,policy.version),eligibilityStatement(db,request),audit(db,who,'insurance.eligibility_prepared',policy.client_id,request.id)])
   return {id:request.id,policyId:policy.id,status:'prepared'}
 }
 export async function submitEligibility(env:InsuranceEnv,who:Actor,input:Data) {
   const db=env.DB,row=await one(db,'SELECT * FROM bm_eligibility WHERE id=?',text(input.id,'eligibility',100))
   insist(row,'eligibility_not_found',404);const policy=await policyFor(db,who,row.policy_id)
+  insist(!row.policy_basis||row.policy_basis===await eligibilityBasis(policy),'eligibility_policy_changed_prepare_again',409)
   const status=await adapterStatus(env);if(!status.available)return {status:'unavailable',reason:status.reason}
   insist(['prepared','exported'].includes(row.status),'eligibility_already_submitted',409)
   await commit(db,who,[stmt(db,"UPDATE bm_eligibility SET status='sending',version=version+1 WHERE id=? AND version=?",row.id,row.version),guard(db,'changes()=1'),audit(db,who,'insurance.eligibility_submission_started',policy.client_id,row.id)])
@@ -69,7 +70,7 @@ export async function importEligibility(db:D1Database,who:Actor,input:Data) {
   // benefits. Preserve every EB for review; never add visit counts across codes.
   const planBenefits=benefits.filter(b=>b.serviceTypes.includes('30')&&['','IND'].includes(b.coverageLevel))
   const changed=benefits.some(b=>b.information==='R'),inactive=planBenefits.some(b=>['6','7','8'].includes(b.information)),active=planBenefits.some(b=>['1','2','3','4','5'].includes(b.information))
-  const exhausted=benefits.some(b=>b.information==='F'&&b.timePeriod==='29'&&b.quantityQualifier==='VS'&&b.quantity===0&&b.serviceTypes.some(t=>['30','AE','PT','OT'].includes(t)))
+  const exhausted=benefits.some(b=>b.information==='F'&&b.timePeriod==='29'&&b.quantityQualifier==='VS'&&b.quantity===0&&b.serviceTypes.some(t=>['30','AD','AE','AF'].includes(t)))
   const status=errors.length?'error':changed?'changed':inactive?'inactive':exhausted?'exhausted':active?'active':'unknown'
   const copays=planBenefits.filter(b=>b.information==='B'&&b.network!=='N'&&b.amountCents!==null),deductibles=planBenefits.filter(b=>b.information==='C'&&b.timePeriod==='29'&&b.network!=='N'&&b.amountCents!==null)
   const copay=copays.length===1?copays[0].amountCents:null,deductible=deductibles.length===1?deductibles[0].amountCents:null,at=now()
