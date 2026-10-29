@@ -25,6 +25,7 @@ export async function inboxFixture(h) {
     ['referral', 'I have a new referral to share.', 'front_desk'],
     ['records', 'Please review my records request.', 'front_desk'],
     ['mixed', 'Please reschedule my appointment and explain my invoice.', 'front_desk'],
+    ['mixedClinical', 'Please reschedule my appointment. Should I go to the emergency room for chest pressure and trouble breathing?', 'front_desk'],
     ['unknown', 'Could somebody help with this?', 'front_desk'],
     ['uncertain', 'I am not sure whether to reschedule my appointment.', 'front_desk'],
     ['clinical', 'My shoulder pain increased after the exercise.', priya.id],
@@ -57,7 +58,7 @@ export async function inboxJourney(h) {
     assert.match(p.draft.action, { reschedule: /availability.*No visit has been changed/, billing: /billing records.*No balance or payment/, referral: /referral original.*No referral has been filed/, records: /recipient authority.*No records have been released/ }[intent])
     assert.equal((await prepare(messages[intent])).id, p.id, 'repeated preparation keeps one original')
   }
-  for (const key of ['mixed', 'unknown', 'uncertain', 'misdirected', 'attachment']) {
+  for (const key of ['mixed', 'mixedClinical', 'unknown', 'uncertain', 'misdirected', 'attachment']) {
     const p = await prepare(messages[key])
     assert.equal(p.draft, null); assert.ok(['review', 'clinical'].includes(p.state))
     await approve(p, desk.cookie, 409)
@@ -70,7 +71,7 @@ export async function inboxJourney(h) {
   await approve(clinical, priya.cookie, 409)
   assert.deepEqual(await h.db.prepare('SELECT * FROM bm_messages WHERE id=?').bind(messages.clinical.id).first(), clinicalBefore)
   assert.ok(h.mail.some(m => m.subject === 'A secure message needs your attention' && m.to.includes(priya.email)), 'the clinical original reached its existing clinician')
-  assert.equal((await read(desk.cookie)).value.total, 9)
+  assert.equal((await read(desk.cookie)).value.total, 10)
   assert.equal((await read(priya.cookie)).value.total, 1)
   assert.doesNotMatch(JSON.stringify((await read(desk.cookie)).value), /shoulder pain|exercise/)
   assert.doesNotMatch(JSON.stringify((await read(priya.cookie)).value), /new referral|records request|billing question/)

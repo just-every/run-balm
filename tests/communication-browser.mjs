@@ -120,6 +120,7 @@ try {
   ['referral','I have a new referral to share.','front_desk'],
   ['records','Please review my records request.','front_desk'],
   ['mixed','Please reschedule my appointment and explain my invoice.','front_desk'],
+  ['mixedClinical','Please reschedule my appointment. Should I go to the emergency room for chest pressure and trouble breathing?','front_desk'],
   ['clinical','My shoulder pain increased after the exercise.',c.priya.id],
  ]){
   assert.equal((await h.form('/portal/action',{name:'message.send',recipient,body},portal)).status,303)
@@ -144,7 +145,7 @@ try {
   await review.locator('summary').click()
   assert.match(await review.innerText(),new RegExp(body.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')))
   assert.equal(await review.getByRole('link',{name:'Original incoming portal message',exact:true}).getAttribute('href'),'/app/clients/'+c.patient.id+'#message-'+message.id)
-  if(['mixed','clinical'].includes(intent)){
+  if(['mixed','mixedClinical','clinical'].includes(intent)){
    assert.equal(await review.locator('textarea').count(),0)
    assert.equal(await review.getByRole('button',{name:'Approve preparation',exact:true}).count(),0)
    assert.match(await review.innerText(),/No drafted answer or action/)

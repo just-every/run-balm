@@ -1762,7 +1762,7 @@
       "executable": false
     },
     "src/balm/cases/inbox.ts": {
-      "sha256": "9c2c88e07fbc4b25ca4e979e5d33e6086e934f6fe8909c05ee00bdf4ec38047b",
+      "sha256": "bd36e3cbee4dbb2b58e8aa2c126a276c4d4ae57ca7ee539d50af7c074643191d",
       "executable": false
     },
     "src/balm/cases/index.ts": {
@@ -5538,7 +5538,7 @@
       "executable": false
     },
     "tests/communication-browser.mjs": {
-      "sha256": "f9b49b51f445bbd0957378906964fda24acc68f07581f83b25b5215cd459a76d",
+      "sha256": "cb6999f21056695588928d1b32931cfbbc3f5c3ce368825c6859de795fdeb789",
       "executable": false
     },
     "tests/communication-journey.mjs": {
@@ -5774,7 +5774,7 @@
       "executable": false
     },
     "tests/inbox-journey.mjs": {
-      "sha256": "af5aa894b544de02d015e6b972864c03a2493068f45939892e1b8e6a7e9817ae",
+      "sha256": "6850b1a9e3a1503a2ab6489d56652174c7ca9a1a2643b2a09a4acbf72b41c989",
       "executable": false
     },
     "tests/insurance.test.mjs": {

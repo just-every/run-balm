@@ -11,7 +11,7 @@ async function reader(db: D1Database, who: Actor) {
 
 /** No inference changes a conversation's existing destination or readership. */
 function triage(source: Data, attachments: Data[]) {
-  const clinical = /\b(pain|hurt\w*|sore|fever|nausea|dose|surgery|weakness|symptom\w*|medicat\w*|diagnos\w*|treatment|exercise\w*|injur\w*|bleed\w*|numb\w*|dizz\w*)\b/i.test(source.body)
+  const clinical = /\b(pain|hurt\w*|sore|fever|nausea|dose|surgery|weakness|symptom\w*|medicat\w*|diagnos\w*|treatment|exercise\w*|injur\w*|bleed\w*|numb\w*|dizz\w*|emergency|urgent care|chest|pressure|tightness|breath\w*|faint\w*|passed out)\b/i.test(source.body)
   if (source.route === 'practitioner' || clinical) return { intent: 'clinical', state: 'clinical', reason: source.route === 'practitioner' ? 'Remains in the existing clinician conversation, without a drafted answer.' : 'Clinical content needs human review. No destination or access was changed.', draft: null }
   if (/\b(not sure|unsure|uncertain|maybe|perhaps|not|never|do not|don[’']t)\b/i.test(source.body)) return { intent: 'review', state: 'review', reason: 'An uncertain or negated request needs human review before drafting.', draft: null }
   const rules = [
@@ -97,6 +97,7 @@ export async function inboxCommand(db: D1Database, who: Actor, name: string, inp
   insist(saved.state === 'prepared' && saved.authority === 1, 'preparation_requires_human_review_or_is_historical', 409)
   insist(input.digest === saved.digest && await sha256(saved.payload) === saved.digest, 'preparation_digest_changed', 409)
   const current = await sourceFor(db, live, clientId, saved.message_id)
+  insist(triage(current.source, current.attachments).state === 'prepared', 'preparation_requires_human_review_or_is_historical', 409)
   insist(current.sourceDigest === saved.source_digest, 'conversation_changed_prepare_again', 409)
   await commit(db, live, [...sourceGuards(db, live, current),
     guard(db, "EXISTS(SELECT 1 FROM bm_inbox_preparations WHERE id=? AND digest=? AND authority=1 AND state='prepared')", saved.id, saved.digest),
