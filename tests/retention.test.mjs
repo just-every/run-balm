@@ -1,5 +1,6 @@
 import {recordedCohort} from './eligibility-cohort-journey.mjs'
 import { cutoverInvoices } from './movein-reconciliation-journey.mjs'
+import { historicalInbox } from './inbox-journey.mjs'
 import { fakeProviders } from './fakes/stripe.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -42,6 +43,16 @@ test('HIPAA-002: state rules, payer/practice maximums and minor majority protect
   assert.equal((await file(h,callPatient.id)).retention.eligibleAfter,callDeadline.toISOString().slice(0,10),'COMM-003 late entry cannot backdate the retention deadline')
   assert.ok((await file(h,callPatient.id)).retention.reasons.includes('retention_period_not_complete'))
   await h.cmd('retention.preview',{clientId:callPatient.id},h.owner,409)
+  const inboxPatient=await h.cmd('client.save',{firstName:'Historical',lastName:'Inbox entry',dateOfBirth:'1960-01-01'})
+  const inboxVisit=await pastVisit(h,inboxPatient.id,priya,service.id,h.owner,5)
+  await ageVisit(h,inboxVisit)
+  const oldInbox=await historicalInbox(h,inboxPatient.id)
+  const unprepared=crypto.randomUUID()
+  await h.db.prepare("INSERT INTO bm_messages(id,client_id,sender,author_name,body,sent_at,notification_state,route) VALUES(?,?,'patient','Patient','An additional historical billing question','1990-01-03T03:00:00.000Z','shown','front_desk')").bind(unprepared,inboxPatient.id).run()
+  const inboxPreview=await h.cmd('retention.preview',{clientId:inboxPatient.id})
+  await h.cmd('inbox.prepare',{clientId:inboxPatient.id,messageId:unprepared})
+  assert.ok((await file(h,inboxPatient.id)).retention.reasons.includes('retention_period_not_complete'),'a recent preparation extends its source record custody')
+  await h.cmd('retention.destroy',{previewId:inboxPreview.previewId,digest:inboxPreview.digest,confirm:true},h.owner,409)
   const invoiceInput=cutoverInvoices(),invoicePreview=await h.cmd('movein.prepare',invoiceInput)
   const invoiceImport=await h.cmd('movein.cutover',{...invoiceInput,fingerprint:invoicePreview.fingerprint,mappingApproval:invoicePreview.mappingDigest,cutoverApproval:invoicePreview.fingerprint,acceptanceReason:'Reviewed historical invoice originals and independent aging.'})
   const invoiceClient=invoicePreview.patients[0].id
@@ -214,6 +225,7 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   await h.db.prepare('INSERT INTO bm_assistant_signed_notes(note_id,supervisor_id,rule_id,rule_snapshot,author_discipline) VALUES(?,?,?,?,?)').bind(historicalDaily,priya.id,historicalRule.id,JSON.stringify(historicalBasis),'pt').run()
   await h.db.prepare('INSERT INTO bm_assistant_supervision(note_id,supervision_given,supervisor_name,supervisor_credentials,attested_at,sha256) VALUES(?,?,?,?,?,?)').bind(historicalDaily,'on_site','Priya','PT','1990-01-02T03:00:00.000Z','synthetic-balm-6').run()
   const historicalCall=crypto.randomUUID()
+  const oldInbox=await historicalInbox(h,patient.id)
   await h.db.prepare("INSERT INTO bm_calls(id,client_id,direction,occurred_at,staff_id,staff_name,recorded_by,recorded_at,disposition,route,practitioner_id) VALUES(?,?,'outgoing','1990-01-02T03:00:00Z',?,'Historical Clinician',?,'1990-01-02T03:30:00Z','Private historical call','practitioner',?)").bind(historicalCall,patient.id,priya.id,priya.email,priya.id).run()
   await assert.rejects(h.db.prepare('DELETE FROM bm_calls WHERE id=?').bind(historicalCall).run(),/calls_are_health_records/)
   await assert.rejects(h.db.prepare('DELETE FROM bm_note_revisions WHERE note_id=?').bind(noteId).run())
@@ -293,6 +305,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const preview=await h.cmd('retention.preview',{clientId:patient.id})
   assert.equal(preview.records.bm_eligibility_cohort_items,1);assert.equal(preview.records.bm_eligibility,1)
   assert.equal(preview.records.bm_calls,1,'COMM-003 call records join reviewed destruction scope')
+  assert.equal(preview.records.bm_inbox_preparations,1);assert.equal(preview.records.bm_inbox_approvals,1)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_inbox_preparations WHERE id=?').bind(oldInbox.preparationId).run(),/inbox_requires_retention_review/)
+  await assert.rejects(h.db.prepare('DELETE FROM bm_inbox_approvals WHERE preparation_id=?').bind(oldInbox.preparationId).run(),/inbox_requires_retention_review/)
   assert.equal(preview.records.bm_movein_invoices,1,'historical invoice originals join reviewed destruction scope')
   assert.ok(preview.records.bm_note_revisions>0)
   assert.equal(preview.records.bm_note_releases,1);assert.equal(preview.records.bm_note_release_approvals,1)
@@ -308,6 +323,9 @@ test('HIPAA-002: approved destruction removes clinical bytes and private tokens,
   const before=await h.db.prepare('SELECT sequence,at,actor_email,actor_role,action,client_id,subject_id FROM bm_audit WHERE client_id=?').bind(patient.id).all()
   const destroyed=await h.cmd('retention.destroy',{previewId:preview.previewId,digest:preview.digest,confirm:true})
   assert.equal(destroyed.destroyed,true)
+  for(const table of ['bm_inbox_preparations','bm_inbox_approvals','bm_messages'])assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM '+table+' WHERE client_id=?').bind(patient.id).first()).n,0,'approved destruction purges inbox private originals and receipts')
+  assert.equal((await h.send('/api/balm/clients/'+patient.id+'/inbox',undefined,h.owner)).status,404)
+  await h.cmd('inbox.prepare',{clientId:patient.id,messageId:oldInbox.messageId},h.owner,404)
   assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM bm_movein_invoices WHERE id=?').bind(oldInvoice).first()).n,0)
   assert.deepEqual(await h.db.prepare('SELECT issued_on,billed_cents,balance_cents FROM bm_destroyed_movein_invoices WHERE id=?').bind(oldInvoice).first(),{issued_on:'1990-01-02',billed_cents:10000,balance_cents:0})
   assert.doesNotMatch(JSON.stringify(await h.cmd('movein.journal',{jobId:oldInvoiceJob})),/Private historical invoice original/)

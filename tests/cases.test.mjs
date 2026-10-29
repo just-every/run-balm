@@ -89,4 +89,4 @@ test('AGENT-006: episode questionnaires follow up once within shared limits and 
 
 test('denial appeal preserves cited adjudications, fences current evidence and billing authority, and resolves only on posted payment', {timeout:120000},async()=>{const {denialJourney}=await import('./denial-resolver-journey.mjs');await run(denialJourney)})
 
-test('inbox prepares cited administrative requests, preserves clinical privacy and approves an exact current preparation once without effects', {timeout:120000}, async()=>{const {inboxJourney}=await import('./inbox-journey.mjs');await run(inboxJourney)})
+test('inbox prepares cited administrative requests, preserves clinical privacy and approves an exact current preparation once without effects', {timeout:120000}, async()=>{const {inboxJourney}=await import('./inbox-journey.mjs');await run(inboxJourney,{entry:'tests/communication-worker.ts'})})

@@ -5,8 +5,13 @@ import type { Bindings } from '../src/auth.server'
 export default { async fetch(request: Request, env: Bindings) {
   let pending = request.headers.get('x-synthetic-revoke')
   let session = request.headers.get('x-synthetic-session-revoke')
+  let inbox = request.headers.get('x-synthetic-inbox-client')
   const db = new Proxy(env.DB, { get(target, key) {
     if (key === 'batch') return async (statements: D1PreparedStatement[]) => {
+      if (inbox) {
+        const client = inbox; inbox = null
+        await target.prepare("INSERT INTO bm_messages(id,client_id,sender,author_name,body,sent_at,notification_state,route) VALUES(?,?,'patient','Patient','A later billing detail',?,'shown','front_desk')").bind(crypto.randomUUID(),client,new Date().toISOString()).run()
+      }
       if (pending) {
         const email = pending; pending = null
         await target.prepare('UPDATE oa_operators SET version=version+1 WHERE email=?').bind(email).run()
