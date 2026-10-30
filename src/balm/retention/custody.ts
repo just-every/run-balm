@@ -142,4 +142,7 @@ export const custody = [
   {"table":"bm_clinical_letters","client":true,"links":[]},
   {"table":"bm_letter_deliveries","client":true,"links":[]},
   {"table":"bm_booking_payments","client":true,"links":[["client_id","bm_clients","id"],["payment_id","bm_card_payments","id"]]},
+  {"table":"bm_continuity_proposals","client":true,"links":[]},
+  {"table":"bm_continuity_offers","client":true,"links":[["proposal_id","bm_continuity_proposals","id"]]},
+  {"table":"bm_continuity_acceptances","client":true,"links":[["offer_id","bm_continuity_offers","id"]]},
 ] as const

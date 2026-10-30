@@ -20,7 +20,7 @@ function weekdaysFrom(input: Data) {
   return days
 }
 /** The pattern's dates: each chosen weekday from the first date, for the number of weeks. */
-function patternDates(first: string, weekdays: number[], weeks: number) {
+export function patternDates(first: string, weekdays: number[], weeks: number) {
   const dates = []
   for (let offset = 0; offset < weeks * 7; offset++) {
     const date = datePlus(first, offset)

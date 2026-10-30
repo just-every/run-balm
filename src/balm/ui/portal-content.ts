@@ -28,7 +28,9 @@ function visits(d: any) {
     + (a.canMove ? `<p><a href="/portal/appointments/${h(encodeURIComponent(a.id))}/move">Move this visit</a></p>` : '')
     + (a.canCancel ? `<details class="confirm"><summary>Cancel this visit</summary>${patientForm('appointment.cancel', hidden('id', a.id) + '<label>Reason for cancellation<input name="reason" required maxlength="500"></label><label class="check"><input type="checkbox" name="confirm" value="on" required><span>Yes, cancel this appointment.</span></label>', 'Cancel my appointment')}</details>` : '')
     + (!a.canMove || !a.canCancel ? '<p class="help">If you cannot change or cancel this visit online, contact the clinic.</p>' : '') + '</article>').join('')
-  return (upcoming || '<p>No upcoming visits.</p>') + '<p><a href="/portal/schedule">Book a follow-up</a></p>'
+  const continuity = (d.continuity ?? []).map((o: any) => `<article class="visit-item" data-continuity-offer="${h(o.id)}"><h3>Replacement visits</h3><p>${h(o.service)} with ${h(o.practitioner)}. Times in ${h(o.timeZone)}.</p><ol>${o.occurrences.map((v: any) => `<li>${h(localTime(v.startAt, o.timeZone))}</li>`).join('')}</ol>`
+    + (o.acceptedAt ? '<p>Accepted. All replacement visits are booked above.</p>' : `<p>These times are available for review until ${h(localTime(o.expiresAt, d.clinic.time_zone))}. They are not held. We check the whole sequence again before booking.</p>${patientForm('continuity.accept', hidden('id', o.id) + '<label class="check"><input type="checkbox" name="confirm" value="on" required><span>I accept every replacement date shown above.</span></label>', 'Accept all replacement visits')}`) + '</article>').join('')
+  return (upcoming || '<p>No upcoming visits.</p>') + continuity + '<p><a href="/portal/schedule">Book a follow-up</a></p>'
 }
 
 function forms(d: any) {

@@ -9,7 +9,7 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode='check',...requested]=process.argv.slice(2)
-const ids=[...new Set(['INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
+const ids=[...new Set(['AGENT-002','AGENT-009','AGENT-010','INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
@@ -33,7 +33,13 @@ const projections=ids.map(id=>{
  const definition=source.split('\n').find(line=>line.startsWith('- **'+id+' — '));assert.ok(definition)
  const evidence=definition.split('**Acceptance evidence:** ')[1];assert.ok(evidence)
  const projected=`- **${id} — ${row[2]}** (${row[4]}). ${evidence} Evidence: ${row[5]}${row[6]?' Gap: '+row[6]:''}`
- acceptance=acceptance.replace(new RegExp('^- \\*\\*'+id+' — .*$', 'm'),()=>projected)
+ const entry=new RegExp('^- \\*\\*'+id+' — .*$', 'm')
+ if(entry.test(acceptance))acceptance=acceptance.replace(entry,()=>projected)
+ else {
+  const prior=rows.slice(0,rows.indexOf(row)).reverse().find(r=>acceptance.includes('- **'+r[1]+' — '))
+  assert.ok(prior,'No preceding acceptance entry for '+id)
+  acceptance=acceptance.replace(new RegExp('^- \\*\\*'+prior[1]+' — .*$', 'm'),line=>line+'\n'+projected)
+ }
  return row[0]
 })
 let claims=readFileSync('docs/CLAIMS.md','utf8')

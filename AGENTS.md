@@ -186,3 +186,12 @@ AGENT-005 whole-payout preparation uses Lander-Regenerate:
 `node scripts/contract-docs.mjs check AGENT-005`. The default check retains this
 adopted projection. Regenerate the source lock last with
 `node scripts/edition-authoring/cli.mjs lock`, then its `check`.
+
+AGENT-002 care continuity uses Lander-Regenerate:
+`node scripts/contract-docs.mjs write AGENT-002`, then
+`node scripts/contract-docs.mjs check AGENT-002`. Historical preparations, portal releases and patient acceptances travel in
+archives with review and booking authority disabled. Preparation approval creates
+no offer; a separate treating-clinician release and direct patient confirmation
+are required before exact-date bookings and authorization reservations commit. Regenerate the
+source lock last with `node scripts/edition-authoring/cli.mjs lock`, then its
+`check`.
