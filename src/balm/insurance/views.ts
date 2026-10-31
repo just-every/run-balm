@@ -1,4 +1,5 @@
 import {eligibilityCohorts} from './eligibility-batches'
+import { functionalBatchClaims, functionalGuards } from './functional-acknowledgments'
 import {authorizationPreparationFor,authorizationRequestsFor, authorizationRequestPdf} from './authorization-requests'
 import {injuryState} from './injury'
 import {runoutState} from './runout'
@@ -60,7 +61,12 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
     rows(db,'SELECT * FROM bm_medicare_settings ORDER BY year DESC,therapy_group'),
     who.role==='owner'?rows(db,'SELECT * FROM bm_payer_claim_requirements'):Promise.resolve([])
   ])
-  const ids=new Set([...claims.map(c=>c.client_id),...visits.map(v=>v.client_id)])
+  const receiptClients=new Set<string>()
+  if(who.role==='owner'||biller(who))for(const b of batches) {
+    b.functionalAcknowledgments=(await rows(db,'SELECT id,syntax_status,reasons,imported_at FROM bm_functional_acknowledgments WHERE batch_id=? ORDER BY imported_at,id',b.id)).map(a=>({...a,reasons:JSON.parse(a.reasons)}))
+    if(b.functionalAcknowledgments.length)for(const c of await functionalBatchClaims(db,who,b.id))receiptClients.add(c.client_id)
+  }
+  const ids=new Set([...receiptClients,...claims.map(c=>c.client_id),...visits.map(v=>v.client_id)])
   await commit(db,who,[...[...ids].flatMap(clientId=>[clientGuard(db,who,clientId),audit(db,who,'insurance.work_queue_read',clientId)]),...claims.map(c=>guard(db,"EXISTS(SELECT 1 FROM bm_appointments WHERE id=? AND (? IN ('owner','reception') OR practitioner_id=?))",c.appointment_id,who.role,practitionerId(who)??''))])
   const warnings:Record<string,unknown>={}
   for(const clientId of new Set(visits.map(v => v.client_id))) {
@@ -74,6 +80,12 @@ export async function insuranceState(env:InsuranceEnv,initial:Actor) {
 export async function insuranceDownload(env:InsuranceEnv,initial:Actor,kind:string,key:string) {
   const who=await insuranceActor(env.DB,initial,kind!=='abn'),db=env.DB,id=text(key,'download',100)
   if(kind==='authorization-request')return authorizationRequestPdf(db,who,id)
+  if(kind==='999') {
+    const ack=await one(db,'SELECT * FROM bm_functional_acknowledgments WHERE id=?',id);insist(ack,'functional_acknowledgment_not_found',404)
+    const claims=await functionalBatchClaims(db,who,ack.batch_id)
+    await commit(db,who,[...functionalGuards(db,who,claims),guard(db,'EXISTS(SELECT 1 FROM bm_functional_acknowledgments WHERE id=? AND sha256=?)',id,ack.sha256),...claims.map(c=>audit(db,who,'insurance.999_downloaded',c.client_id,id))])
+    return {filename:`acknowledgment-${id}.999.x12`,contentType:'application/EDI-X12',body:ack.body as string}
+  }
   if(kind==='abn') {
     insist(who.role==='owner'||who.staffRole==='practitioner','abn_is_clinical',403)
     const abn=await one(db,'SELECT * FROM bm_medicare_abns WHERE id=?',id);insist(abn,'abn_not_found',404)
