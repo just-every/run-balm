@@ -15,7 +15,7 @@ try {
  const c=await dailyCloseClinic(h)
  const claim=await h.cmd('insurance.claim.prepare',{appointmentId:c.visit,policyId:c.policy.id}),batch=await h.cmd('insurance.batch.prepare',{claimIds:[claim.id]})
  const original=(await h.send('/api/balm/insurance/837P/'+batch.id,undefined,h.owner)).text
- const accepted=await functionalAckFile(original),rejected=(await functionalAckFile(original,true)).replaceAll('000000901','000000902')
+ const accepted=(await functionalAckFile(original)).replace(/AK2[^~]*~IK5\*A~/,'').replace('SE*6*','SE*4*'),rejected=(await functionalAckFile(original,true)).replaceAll('000000901','000000902')
  context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}})
  for(const [pattern,path,type] of [['**/rer-theme.css','public/rer-theme.css','text/css'],['**/fonts/fonts.css','public/fonts/fonts.css','text/css'],['**/brand/mark.svg','public/brand/mark.svg','image/svg+xml']])await context.route(pattern,r=>r.fulfill({path,contentType:type}))
  await context.route('**/fonts/**/*.woff2',r=>r.fulfill({path:'public'+new URL(r.request().url()).pathname,contentType:'font/woff2'}))

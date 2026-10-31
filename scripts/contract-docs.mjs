@@ -109,7 +109,6 @@ console.log('contract-docs '+mode+': '+adopted.join(', ')+'; '+done+' done, '+pa
 
 // Incremental adoption keeps the existing acceptance and homepage claim text intact.
 // Only explicitly selected status rows acquire generated evidence registers.
-const ids=['COMM-003']
 const [mode='check',...selected]=process.argv.slice(2)
 if(!['write','check'].includes(mode))throw Error('Expected write or check')
 const contract=readFileSync('CONTRACT.md','utf8')
@@ -117,6 +116,7 @@ const rows=new Map(contract.split('\n').filter(line=>/^\| `[A-Z]+-\d+` \|/.test(
  const cells=line.split('|').slice(1,-1).map(cell=>cell.trim())
  return [cells[0].replaceAll('`',''),{title:cells[1],status:cells[3],evidence:cells[4],gap:cells[5]}]
 }))
+const ids=['COMM-003']
 for(const file of ['ACCEPTANCE.md','docs/CLAIMS.md']){
  let value=readFileSync(file,'utf8')
  for(const id of ids){

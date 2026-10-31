@@ -193,3 +193,6 @@ replacement payer or plan for you. Review and update those recorded facts yourse
 Clearinghouse enrollment, provider credentials, an applicable signed BAA and live
 sandbox qualification are still required for provider use. These manual cohorts
 do not enable unattended checking or prove live payer acceptance.
+
+Native 999 originals are retained by the append-only
+`migrations/core/0131_balm_functional_acknowledgments.sql` migration.
