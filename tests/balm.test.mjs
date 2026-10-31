@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
-import { bookOnline, clinic, pastVisit, slots } from './clinic.mjs'
+import { bookOnline, clinic, pastVisit, slots, visitDate } from './clinic.mjs'
 
 // OWN-001 evidence for the existing clinic loop, not HIPAA-005 deployment gating.
 // Assert every attempted request, including failures that handlers might catch.
@@ -484,7 +484,14 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  for(const name of noWrites) await h.cmd(name,{},biller.cookie,403)
  const after=await h.state()
  assert.deepEqual(after.clients,before.clients);assert.deepEqual(after.appointments,before.appointments)
- const local=await h.state(manager.cookie)
+ // The real past visit can be in the prior month around clinic midnight.
+ const reportFrom=await visitDate(h,visit)
+ const locationSnapshot=async()=>{
+  const response=await h.send('/api/balm/reports/location?from='+reportFrom,undefined,manager.cookie)
+  assert.equal(response.status,200)
+  return response.value
+ }
+ const local={...await h.state(manager.cookie),location:await locationSnapshot()}
  assert.equal(local.location.name,'North clinic');assert.deepEqual(local.location.appointments.map(a=>a.id),[visit]);assert.equal(local.location.counts.attended,1)
  assert.ok(!JSON.stringify(local).includes('South Patient'));assert.ok(!JSON.stringify(local).includes('Private clinical narrative'))
  assert.equal((await h.send('/api/balm/reports/location?locationId='+south.id,undefined,manager.cookie)).value.name,'North clinic')
@@ -504,10 +511,10 @@ test('ROLE-002: owner-assigned jobs restrict billing, supervised staff and one-l
  await h.cmd('appointment.cancel',{id:managed.appointmentId,reason:'Patient requested cancellation',confirm:true},manager.cookie)
  const checkin=await pastVisit(h,patient.id,priya,service.id,h.owner,1,{roomId:northRoom.id})
  await h.cmd('pay.checkin',{appointmentId:checkin,charge:true},manager.cookie,403)
- assert.equal((await h.state(manager.cookie)).location.appointments.find(a=>a.id===checkin).checked_in_at,null)
+ assert.equal((await locationSnapshot()).appointments.find(a=>a.id===checkin).checked_in_at,null)
  await h.cmd('pay.checkin',{appointmentId:checkin},manager.cookie)
- assert.ok((await h.state(manager.cookie)).location.appointments.find(a=>a.id===checkin).checked_in_at)
- const managedState=await h.state(manager.cookie)
+ assert.ok((await locationSnapshot()).appointments.find(a=>a.id===checkin).checked_in_at)
+ const managedState={...await h.state(manager.cookie),location:await locationSnapshot()}
  assert.ok(!JSON.stringify(managedState).includes('South Patient'));assert.ok(!JSON.stringify(managedState).includes('Private clinical narrative'))
  if(process.env.BALM_UI_SCREENSHOTS){const {viewportProof}=await import('./viewport-proof.mjs');await viewportProof(h,[{name:'ROLE-002-location',path:'/app',cookie:manager.cookie},{name:'ROLE-002-location-reports',path:'/app/reports',cookie:manager.cookie}])}
  for(const kind of ['assistant','student','fellow']) {

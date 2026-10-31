@@ -6150,11 +6150,11 @@
       "executable": false
     },
     "tests/balm.test.mjs": {
-      "sha256": "e4f65a8a4e05339887e0873c1a88999bd24765b2a305999e1cddbbe8ec6e2dbe",
+      "sha256": "3557b6cba21b22051c727940cff2b5260a35f38a26defd16dacbd482057e923b",
       "executable": false
     },
     "tests/booking-prepayment-journey.mjs": {
-      "sha256": "ceb4d7650cac99805cd7d612d217fd281efeee0f3c9925b11e7c808e19227a4d",
+      "sha256": "ef55189d185371ccdf7af6ae1c9dff72046100f32648a9d5e2422bf5c5b7bf4a",
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
