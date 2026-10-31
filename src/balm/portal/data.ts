@@ -1,3 +1,4 @@
+import { acceptContinuity, patientContinuity } from '../cases/continuity'
 import { patientBookingPayments,portalBookingPayment } from '../payments/booking-prepayment'
 import { patientLetters } from '../charting/letters'
 import { retailNotices } from '../payments/retail'
@@ -49,6 +50,7 @@ export async function portalHome(env: Bindings, patient: Patient, setupId?: stri
     audit(db, guardianActor(patient), 'retail.notices_read', patient.clientId),
   ])
   return {
+    continuity: await patientContinuity(db, patient),
     letters: await patientLetters(db,patient),
     outcomeFollowthrough: await patientOutcomes(db, patient),
     language:await patientLanguage(db,patient),
@@ -97,6 +99,7 @@ async function paymentOpen(env: Bindings, patient: Patient, input: Data) {
 export async function portalAction(env: Bindings, patient: Patient, name: string, input: Data) {
   switch (name) {
     case 'outcome.respond':return respondOutcome(env.DB,patient,input)
+    case 'continuity.accept': return acceptContinuity(env.DB, patient, input)
     case 'language.choose':return chooseLanguage(env.DB,patient,input)
     case 'guardian.select':return selectGuardianChild(env.DB,patient,input)
     case 'profile.contact':case 'profile.insurance':return submitProfile(env.DB,patient,name,input)
