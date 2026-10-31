@@ -9,7 +9,7 @@ import {parseContract} from '../src/base/seed-contract.mjs'
 
 
 const [mode='check',...requested]=process.argv.slice(2)
-const ids=[...new Set(['AGENT-002','AGENT-009','AGENT-010','INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
+const ids=[...new Set(['INS-006','AGENT-002','AGENT-009','AGENT-010','INS-002','AGENT-005','HIPAA-005','SCHED-005','REPORT-003','PAY-003','PAY-002','PAY-008','AGENT-004','MOVE-006','COMM-002',...requested.filter(id=>!['CHART-011','COMM-003'].includes(id))])]
 assert.ok(['write','check'].includes(mode)&&ids.length,'Usage: contract-docs.mjs write|check CLAUSE...')
 const source=readFileSync('CONTRACT.md','utf8')
 const rows=[...source.matchAll(/^\| `([A-Z]+-\d+)` \| (.*?) \| (published|target|push-further) \| (done|partial|missing) \| (.*?) \| (.*?) \|$/gm)]
@@ -109,6 +109,7 @@ console.log('contract-docs '+mode+': '+adopted.join(', ')+'; '+done+' done, '+pa
 
 // Incremental adoption keeps the existing acceptance and homepage claim text intact.
 // Only explicitly selected status rows acquire generated evidence registers.
+const ids=['COMM-003']
 const [mode='check',...selected]=process.argv.slice(2)
 if(!['write','check'].includes(mode))throw Error('Expected write or check')
 const contract=readFileSync('CONTRACT.md','utf8')
@@ -116,7 +117,6 @@ const rows=new Map(contract.split('\n').filter(line=>/^\| `[A-Z]+-\d+` \|/.test(
  const cells=line.split('|').slice(1,-1).map(cell=>cell.trim())
  return [cells[0].replaceAll('`',''),{title:cells[1],status:cells[3],evidence:cells[4],gap:cells[5]}]
 }))
-const ids=['COMM-003']
 for(const file of ['ACCEPTANCE.md','docs/CLAIMS.md']){
  let value=readFileSync(file,'utf8')
  for(const id of ids){

@@ -77,6 +77,7 @@ export const custody = [
   {"table":"bm_cob_paper_packets","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_cob_manual_reductions","client":false,"links":[["line_id","bm_payer_payment_lines","id"]]},
   {"table":"bm_claim_batch_items","client":false,"links":[["claim_id","bm_claims","id"]]},
+  {"table":"bm_functional_acknowledgments","client":false,"links":[["batch_id","bm_claim_batch_items","batch_id"]]},
   {"table":"bm_claim_events","client":false,"links":[["claim_id","bm_claims","id"]]},
   {"table":"bm_client_alerts","client":true,"links":[["client_id","bm_clients","id"]]},
   {"table":"bm_consent_declines","client":true,"links":[["client_id","bm_clients","id"]]},

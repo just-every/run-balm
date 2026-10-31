@@ -606,19 +606,26 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
 })
 
 test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches, signed recoupments and deposit arithmetic', {timeout:240000},async()=>{
+ const {functionalAckFile}=await import('./functional-ack-fixture.mjs')
  const {manualPayerJourney,payerEobPdf}=await import('./manual-payer-journey.mjs')
  const temporary=await mkdtemp(join(tmpdir(),'balm-payer-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
   await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
-  h=await harness({root:source})
-  const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
+  // Apply fixture migrations with their ledger in the Worker, as archiveFixture does.
+  // Both public CLI transfer doors and every restore assertion remain unchanged.
+  h=await harness({root:source,migrate:true})
+  const result=await manualPayerJourney(h)
+  const receiptBatch=(await h.state()).insurance.batches[0],batchOriginal=(await h.send('/api/balm/insurance/837P/'+receiptBatch.id,undefined,h.owner)).text
+  const ackOriginal=await functionalAckFile(batchOriginal,true),ack=await h.cmd('insurance.functional_acknowledgment.import',{batchId:receiptBatch.id,x12:ackOriginal})
+  const identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null
   await command(source,['export','--output',archive,'--no-queue'])
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,...identity})
   const owner=await h.signIn(h.auth.OWNER_EMAIL)
+  assert.equal((await h.send('/api/balm/insurance/999/'+ack.id,undefined,owner)).text,ackOriginal,'CLI archive restores exact 999 bytes and native download')
+  assert.equal((await h.cmd('insurance.functional_acknowledgment.import',{batchId:receiptBatch.id,x12:ackOriginal},owner)).duplicate,true,'restored receipt cannot be imported twice')
   const third=(await h.send('/api/balm/clients/'+result.claims[2].patient.id,undefined,owner)).value
   assert.equal(third.billing.ledger.balanceCents,2000);assert.equal(third.billing.ledger.insurancePendingCents,2000)
   const batch=(await h.state(owner)).insurance.manualPayers.find(b=>b.id===result.batch.id)

@@ -30,7 +30,7 @@ export function envelope(kind:'270'|'837', guide:string, config:Envelope, parts:
   const st=segment('ST',kind,'0001',guide), se=segment('SE',parts.length+2,'0001')
   return [isa,segment('GS',group,sender,receiver,date,time,Number(ref),'X',guide),st,...parts,se,segment('GE',1,Number(ref)),segment('IEA',1,ref)].join('~')+'~\n'
 }
-export function parseX12(raw: unknown, expected: '271'|'277'|'835'): {segments:Segment[];component:string;body:string} {
+export function parseX12(raw: unknown, expected: '271'|'277'|'835'|'837'|'999'): {segments:Segment[];component:string;body:string;envelope?:{isa:Segment;gs:Segment;st:Segment}} {
   const body=text(raw,'x12',2_000_000).replace(/^\uFEFF/,'')
   let separator='*', terminator='~', component=':'
   if (body.startsWith('ISA')) { insist(body.length>=106,'invalid_x12_envelope'); separator=body[3];component=body[104];terminator=body[105] }
@@ -45,5 +45,11 @@ export function parseX12(raw: unknown, expected: '271'|'277'|'835'): {segments:S
     const isa=segments[0],iea=segments.find(s=>s[0]==='IEA'),gs=segments.find(s=>s[0]==='GS'),ge=segments.find(s=>s[0]==='GE')
     insist(iea?.[2]===isa[13] && iea[1]==='1' && ge?.[1]==='1' && gs?.[6]===ge[2],'invalid_x12_envelope_controls')
   }
-  return {segments:segments.slice(start+1,end),component,body}
+  let envelope
+  if(segments[0][0]==='ISA') {
+    const gs=segments.find(s=>s[0]==='GS')!
+    envelope={isa:segments[0],gs,st:starts[0]}
+    if(expected==='999')insist(segments[0].length===17&&segments.filter(s=>s[0]==='ISA').length===1&&segments.filter(s=>s[0]==='GS').length===1&&segments.filter(s=>s[0]==='GE').length===1&&segments.filter(s=>s[0]==='IEA').length===1&&segments.filter(s=>s[0]==='SE').length===1&&segments[1]===gs&&start===2&&end===segments.length-3&&segments[end+1][0]==='GE'&&segments[end+2][0]==='IEA','invalid_x12_envelope_structure')
+  }
+  return {segments:segments.slice(start+1,end),component,body,envelope}
 }
