@@ -61,13 +61,20 @@ async function proposal(db: D1Database, who: Actor, seriesId: unknown) {
   insist(!['inactive', 'changed'].includes(policy.eligibility_status), 'continuity_coverage_requires_review', 409)
   const occurrences: Data[] = [], demand = new Map<string, number>()
   const codes = JSON.parse(service.cpt_defaults).map((c: Data) => c.code)
+  const discipline = (await one(db, 'SELECT discipline FROM bm_staff WHERE id=?', practitioner.id))!.discipline
+  const active = await rows(db, `SELECT a.start_at,a.end_at,a.practitioner_id,s.discipline,
+    COALESCE(r.episode_id,'') AS episode_id FROM bm_appointments a JOIN bm_staff s ON s.id=a.practitioner_id
+    LEFT JOIN bm_episode_records r ON r.record_kind='visit' AND r.record_id=a.id
+    WHERE a.client_id=? AND a.status IN ('booked','attended')`, client.id)
+  const treatment = active.filter(v => v.episode_id === (episode?.id ?? '') &&
+    (v.practitioner_id === practitioner.id || discipline && v.discipline === discipline))
   for (const date of patternDates(pattern.firstDate, pattern.weekdays, pattern.weeks)) {
     if (date <= after || date < today || date > content.certifiedThrough) continue
-    // Existing patient visits count against the signed weekly frequency too.
+    // The plan's treatment counts against its cadence; other disciplines still
+    // block overlapping times without consuming this plan's weekly frequency.
     const week = Math.floor((Date.parse(date) - Date.parse(content.startDate)) / 604800000)
     const sameWeek = (d: string) => Math.floor((Date.parse(d) - Date.parse(content.startDate)) / 604800000) === week
-    const active = await rows(db, "SELECT start_at,end_at FROM bm_appointments WHERE client_id=? AND status IN ('booked','attended')", client.id)
-    if (active.filter(v => sameWeek(hostDateAt(new Date(v.start_at), zone))).length + occurrences.filter(o => sameWeek(o.date)).length >= content.frequencyPerWeek) continue
+    if (treatment.filter(v => sameWeek(hostDateAt(new Date(v.start_at), zone))).length + occurrences.filter(o => sameWeek(o.date)).length >= content.frequencyPerWeek) continue
     const place = await placeVisit(db, zone, { practitionerId: series.practitioner_id, serviceId: series.service_id, durationMinutes: service.duration_minutes, date, minute: clockMinute(pattern.time), roomId: series.room_id })
     if (place.problem || !place.start || !place.end || place.start.getTime() <= Date.now()) continue
     const startAt = place.start.toISOString(), endAt = place.end.toISOString()
@@ -220,7 +227,10 @@ export async function acceptContinuity(db: D1Database, patient: Patient, input: 
       ...await appointmentStatements(db, patientActor, { id: ids[i], clientId: patient.clientId, practitionerId: p.payload.practitionerId,
         serviceId: p.payload.serviceId, roomId: p.payload.roomId, startAt: v.startAt, endAt: v.endAt, seriesId: p.payload.seriesId, bookedVia: 'online', coverageChoice: 'insured_claim' }),
       ...(p.payload.episodeId ? [stmt(db, `INSERT INTO bm_episode_records(record_kind,record_id,client_id,episode_id,assigned_at,assigned_by) VALUES('visit',?,?,?,?,?)
-        ON CONFLICT(record_kind,record_id) DO UPDATE SET episode_id=excluded.episode_id`, ids[i], patient.clientId, p.payload.episodeId, at, 'clinician-reviewed continuity')] : []),
+        ON CONFLICT(record_kind,record_id) DO UPDATE SET episode_id=excluded.episode_id`, ids[i], patient.clientId, p.payload.episodeId, at, 'clinician-reviewed continuity')]
+        // The ordinary insert trigger chooses the only open episode. A plan
+        // that predates it must retain its reviewed unassigned authorization.
+        : [stmt(db, "DELETE FROM bm_episode_records WHERE record_kind='visit' AND record_id=?", ids[i])]),
     ]))).flat(),
     stmt(db, 'INSERT INTO bm_continuity_acceptances(proposal_id,offer_id,client_id,accepted_at,appointment_ids,authorization) VALUES(?,?,?,?,?,?)', offer.proposal_id, offer.id, patient.clientId, at, JSON.stringify(ids), JSON.stringify(p.payload.authorization)),
     audit(db, patientActor, 'continuity.accepted_and_booked', patient.clientId, offer.id, offer.digest),

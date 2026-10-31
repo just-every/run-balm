@@ -221,3 +221,55 @@ export async function continuityBookingJourney(h) {
   const audit = (await h.db.prepare("SELECT action FROM bm_audit WHERE client_id=? AND action LIKE 'continuity.%'").bind(patient.id).all()).results
   for (const action of ['continuity.offered_in_portal', 'continuity.offer_withdrawn', 'continuity.accepted_and_booked']) assert.ok(audit.some(r => r.action === action), action)
 }
+
+export async function continuityEpisodeJourney(h) {
+  const f = await continuityFixture(h), { patient, priya } = f
+  await h.cmd('episode.open', { clientId: patient.id, title: 'Later episode', directAccess: true })
+  const prepared = await h.cmd('continuity.prepare', { seriesId: f.booked.seriesId }, priya.cookie)
+  assert.equal(prepared.payload.episodeId, '', 'the historical plan remains unassigned')
+  assert.deepEqual(prepared.payload.authorization.map(a => [a.remaining, a.proposed, a.afterBooking]), [[4, 2, 2]])
+  await h.cmd('continuity.approve', { id: prepared.id, digest: prepared.digest, confirm: true }, priya.cookie)
+  const offer = await h.cmd('continuity.offer', { id: prepared.id, digest: prepared.digest, confirm: true }, priya.cookie)
+  const cookie = await portalLogin(h, ['synthetic-balm-204', 'patient.example'].join('@'))
+  assert.equal((await h.form('/portal/action', { name: 'continuity.accept', id: offer.id, confirm: 'on' }, cookie)).status, 303)
+  const file = (await h.send('/api/balm/clients/' + patient.id, undefined, priya.cookie)).value
+  assert.deepEqual(file.insurance.authorizations.map(a => [a.reserved_allowance, a.remaining_allowance]), [[3, 2]], 'replacement bookings consume the reviewed authorization even after an episode is opened')
+  const receipt = await h.db.prepare('SELECT appointment_ids FROM bm_continuity_acceptances WHERE offer_id=?').bind(offer.id).first()
+  const ids = JSON.parse(receipt.appointment_ids)
+  assert.equal(ids.length, 2)
+  assert.deepEqual((await h.state()).appointments.filter(a => ids.includes(a.id)).map(a => a.start_at).sort(), prepared.payload.occurrences.map(o => o.startAt).sort())
+  console.log('PROBE AGENT-002 episode accounting: series, later episode, portal acceptance -> two bookings, three reservations, two visits remaining')
+}
+
+export async function continuityDisciplineJourney(h) {
+  const f = await continuityFixture(h), { patient, priya, service } = f
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, practitionerId: priya.id })
+  const ot = await h.staff('ContinuityOT', 'practitioner', { discipline: 'ot' })
+  await h.cmd('hours.save', { practitionerId: ot.id, hours: [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00', end: '24:00' })) })
+  const otService = await h.cmd('service.save', { name: 'Occupational therapy', durationMinutes: 45, priceCents: 9500 })
+  const otInput = { clientId: patient.id, practitionerId: ot.id, serviceId: otService.id, firstDate: '2099-03-01', weeks: 6, weekdays: [0, 2], time: '09:00' }
+  const otPreview = await h.cmd('series.preview', otInput)
+  await h.cmd('series.book', { ...otInput, occurrences: otPreview.occurrences })
+  const prepared = await h.cmd('continuity.prepare', { seriesId: f.booked.seriesId }, priya.cookie)
+  assert.deepEqual(prepared.payload.occurrences.map(o => o.date), ['2099-03-10', '2099-03-15'], 'unrelated OT visits do not consume the PT plan frequency')
+  assert.deepEqual(prepared.payload.authorization.map(a => [a.remaining, a.proposed, a.afterBooking]), [[4, 2, 2]])
+  await h.cmd('continuity.approve', { id: prepared.id, digest: prepared.digest, confirm: true }, priya.cookie)
+  // Another PT service still consumes this plan's weekly frequency, while any
+  // overlapping patient visit still prevents a replacement at that time.
+  const ptService = await h.cmd('service.save', { name: 'Physical therapy follow-up', durationMinutes: 45, priceCents: 9500 })
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, practitionerId: priya.id, visits: 100 })
+  const ptInput = { ...otInput, practitionerId: priya.id, serviceId: ptService.id, time: '11:00' }
+  const ptPreview = await h.cmd('series.preview', ptInput, priya.cookie)
+  const ptBooked = await h.cmd('series.book', { ...ptInput, occurrences: ptPreview.occurrences }, priya.cookie)
+  await h.cmd('continuity.prepare', { seriesId: f.booked.seriesId }, priya.cookie, 409)
+  for (const visitId of ptBooked.appointmentIds) await h.cmd('appointment.cancel', { id: visitId, reason: 'Synthetic PT schedule released' }, priya.cookie)
+  await h.cmd('insurance.authorization.save', { ...f.authInput, id: f.authorization.id, practitionerId: priya.id })
+  const overlap = await h.cmd('appointment.book', { clientId: patient.id, practitionerId: ot.id, serviceId: otService.id, date: '2099-03-10', time: '10:00' }, ot.cookie)
+  const blocked = await h.cmd('continuity.prepare', { seriesId: f.booked.seriesId }, priya.cookie)
+  assert.deepEqual(blocked.payload.occurrences.map(o => o.date), ['2099-03-15', '2099-03-17'], 'OT overlap still excludes the occupied time')
+  await h.cmd('appointment.cancel', { id: overlap.appointmentId, reason: 'Synthetic OT overlap released' }, ot.cookie)
+  const restored = await h.cmd('continuity.prepare', { seriesId: f.booked.seriesId }, priya.cookie)
+  assert.deepEqual(restored.payload.occurrences.map(o => o.date), ['2099-03-10', '2099-03-15'])
+  assert.equal((await h.send('/api/balm/clients/' + patient.id, undefined, priya.cookie)).value.insurance.authorizations[0].remaining_allowance, 4)
+  console.log('PROBE AGENT-002 discipline cadence: concurrent OT and PT series -> PT replacements remain feasible; PT frequency and patient overlap still refuse occupied dates')
+}
