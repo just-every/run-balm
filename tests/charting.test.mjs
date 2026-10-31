@@ -794,11 +794,20 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  const medicare=await h.cmd('insurance.payer.save',{name:'Synthetic Medicare',payerId:'SYNTHETICMED',receiverId:'SYNTHETICMED',medicare:true,unitMethod:'cms',fees:[{code:'97110',cents:3500},{code:'97161',cents:5000}]})
  await h.cmd('insurance.supervision.save',{payerId:medicare.id,billSupervisor:true,billable:true,minimumSupervision:'on_site'})
  await h.cmd('insurance.enrollment.save',{payerId:medicare.id,practitionerId:priya.id,taxonomy:'225100000X',active:true})
- await h.cmd('insurance.medicare.settings.save',{year:new Date().getFullYear(),therapyGroup:'pt_slp',publishedOn:new Date().getFullYear()+'-01-01',thresholdCents:248000,reviewCents:300000,source:'Synthetic published threshold for this public-door fixture'})
+ // Own the Medicare service-date fixture rather than using the runner's year.
+ // Brisbane is UTC+10 without DST; offset these slots by a quarter-hour so
+ // they cannot collide with the earlier whole-hour pastVisit fixtures.
+ const medicareNow=Math.floor(Date.now()/900_000)*900_000
+ const medicareVisitAt=async(clientId,practitioner,hoursAgo=2)=>{
+  const local=new Date(medicareNow+(10-hoursAgo)*3600_000-900_000).toISOString()
+  const year=Number(local.slice(0,4))
+  await h.cmd('insurance.medicare.settings.save',{year,therapyGroup:'pt_slp',publishedOn:year+'-01-01',thresholdCents:248000,reviewCents:300000,source:'Synthetic published threshold for this public-door fixture'})
+  return (await h.cmd('appointment.book',{clientId,practitionerId:practitioner.id,serviceId:service.id,date:local.slice(0,10),time:local.slice(11,16)})).appointmentId
+ }
  await h.cmd('insurance.policy.save',{id:policy.id,clientId:patient.id,payerId:payer.id,priority:2,memberId:'synthetic-balm-2',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
  const medicarePolicy=await h.cmd('insurance.policy.save',{clientId:patient.id,payerId:medicare.id,memberId:'synthetic-balm-3',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
  for(const [hours,supervisionGiven] of [[4,'on_site'],[6,'in_room']]) {
-  const medicareVisit=await pastVisit(h,patient.id,student,service.id,h.owner,hours)
+  const medicareVisit=await medicareVisitAt(patient.id,student,hours)
   await h.cmd('appointment.attend',{id:medicareVisit})
   const evaluation=await h.cmd('note.write',{...chartFixture('evaluation'),clientId:patient.id,appointmentId:medicareVisit,template:'pt.evaluation',sections:{...chartFixture('evaluation').sections,diagnosis:'M25.561',subjective:'Student evaluation history',objective:'Student objective measures',assessment:'Evaluation under the therapist',goals:'Functional goal',plan:'Therapist directs the plan'},charges:[{code:'97161',minutes:20},{code:'97110',minutes:30}],totalTimedMinutes:30,totalTreatmentMinutes:50},student.cookie)
   await h.cmd('note.submit',{id:evaluation.id,revision:1,signature:'Student',credentials:'SPT',attest:true},student.cookie)
@@ -821,7 +830,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  await h.cmd('hours.save',{practitionerId:daily.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
  const dailyPatient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Daily',dateOfBirth:'1980-01-01'})
  const dailyPolicy=await h.cmd('insurance.policy.save',{clientId:dailyPatient.id,payerId:medicare.id,memberId:'synthetic-balm-4',relationship:'18',patientSex:'F',address:'200 Oak St',city:'Austin',state:'TX',postalCode:'78701',startsOn:'2020-01-01',endsOn:'2099-12-31'})
- const dailyVisit=await pastVisit(h,dailyPatient.id,daily,service.id)
+ const dailyVisit=await medicareVisitAt(dailyPatient.id,daily)
  await h.cmd('appointment.attend',{id:dailyVisit})
  const dailyNote=await h.cmd('note.write',{...chartFixture(),clientId:dailyPatient.id,appointmentId:dailyVisit,template:'pt.daily',sections:{...chartFixture().sections,subjective:'Daily symptoms',objective:'Skilled exercise',assessment:'Response',goals:'Daily function',plan:'Continue'},charges:[{code:'97110',minutes:30,parameters:'Synthetic skilled exercise parameters'}]},daily.cookie)
  const ownSignature={id:dailyNote.id,revision:1,signature:'DailyAssistant',credentials:'PTA',attest:true}
@@ -855,7 +864,7 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  assert.equal(dailyClaim.status,'ready',JSON.stringify(dailyClaim.errors));assert.equal((await h.send('/api/balm/clients/'+dailyPatient.id,undefined,biller.cookie)).value.insurance.claims.find(c=>c.id===unreviewed.id).snapshot.rendering.npi,'1234567893')
  await h.cmd('assistant_daily.revoke',{id:rule.id})
  assert.ok(!(await h.state(daily.cookie)).assistantDailyRules.some(r=>r.id===rule.id))
- const laterDailyVisit=await pastVisit(h,dailyPatient.id,daily,service.id,h.owner,4)
+ const laterDailyVisit=await medicareVisitAt(dailyPatient.id,daily,4)
  const laterDaily=await h.cmd('note.write',{...chartFixture(),clientId:dailyPatient.id,appointmentId:laterDailyVisit,template:'pt.daily',sections:{...chartFixture().sections,subjective:'Later history',objective:'Later skilled work',assessment:'Response',goals:'Function',plan:'Continue'}},daily.cookie)
  await h.cmd('note.sign',{...ownSignature,id:laterDaily.id,ruleId:rule.id},daily.cookie,403)
  assert.equal((await h.send('/api/balm/clients/'+dailyPatient.id,undefined,h.owner)).value.notes.find(n=>n.id===dailyNote.id).signature.sha256,signedDaily.signature.sha256)
