@@ -150,7 +150,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "66d9decc1de4d689b36d6a98bb5fec91f1e16f23c417b1f1e63af0c88030fe26",
+      "sha256": "cd53ee00578d87233a0cd17b3b568fd17d44fab4affcb6dd036494fe312fa129",
       "executable": false
     },
     "DEMO.md": {
@@ -6130,7 +6130,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "9fdf373ccf6fc6c314c9e23e4dd21b5685433f6d33cdf17a468271fdee593718",
+      "sha256": "8eb86f667cce3e68d9dc4bc48ca0caf042e3b0d742e5010cf6c73f31b1b2cb6f",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -6478,7 +6478,7 @@
       "executable": false
     },
     "tests/functional-ack-fixture.mjs": {
-      "sha256": "21e1b8a7bbdc407df8238900f4e99a475563b78eeb1703db3a6fd4c38119568a",
+      "sha256": "d207fe8f1446ca5ffe4b35b71581b4124109d032dd7927231994f406aa1ab6ba",
       "executable": false
     },
     "tests/good-faith-journey.mjs": {

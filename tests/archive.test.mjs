@@ -109,6 +109,9 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     assert.equal(beforePayment.insurancePendingCents,0,'the archived cash visit was explicitly booked as self-pay')
     assert.equal(beforePayment.patientBalanceCents,9500)
     await h.cmd('payment.record',{invoiceId:invoice.id,amountCents:9500,reference:'Backup-EFTPOS-1'})
+    const {historicalFunctionalReceipt}=await import('./functional-ack-fixture.mjs')
+    const archivePolicy=(await h.send('/api/balm/clients/'+maya.id,undefined,h.owner)).value.insurance.policies[0]
+    const syntaxReceipt=await historicalFunctionalReceipt(h,{clientId:maya.id,policyId:archivePolicy.id,appointmentId:visit,invoiceId:invoice.id},true)
     const external=await h.cmd('pay.entry.prepare',{clientId:maya.id,kind:'credit',amount:'30.00',reason:'Archived external prepayment',reference:'Archive-external-30',occurredOn:'2001-01-02'})
     await h.cmd('pay.entry.approve',{id:external.id,sha256:external.sha256,attest:true})
     const externalReceipt=(await h.send('/api/balm/receipts/'+external.id+'.pdf',undefined,h.owner)).text
@@ -145,12 +148,12 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
     const excludedHook=await h.cmd('integration.hook.create',{url:'https://archive.synthetic-balm.com/events',consent:true})
     const identity={auth:h.auth,owner:h.owner}
     await h.close();h=null
-    return {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
+    return {syntaxReceipt,archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}
   }catch(error){if(h)await h.close();await rm(temporary,{recursive:true,force:true,maxRetries:3,retryDelay:100});throw error}
 }
 const archiveRows=text=>text.split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.kind==='part')
 test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003 CHART-010 CHART-009: public CLI archive round trip refuses damaged or populated stores', {timeout:600_000},async()=>{
-  const {archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
+  const {syntaxReceipt,archivedCalls,moveinInventory,retail,retailOriginal,temporary,source,restored,erased,refused,p,service,priya,maya,checkedNote,noteCheck,external,externalReceipt,chartDocument,feedToken,retentionPatient,recordRequest,recordPackage,recordOriginal,identity,tie}=await archiveFixture({ signedTie: true })
   try{
     const old=join(temporary,'before.rer'),again=join(temporary,'again.rer')
     await command(source,['export','--output',old,'--no-queue'])
@@ -173,6 +176,8 @@ test('CHART-006 INS-001 AGENT-003 PAY-004 COMM-001 SCHED-003 SCHED-009 HIPAA-003
     try {
       await assertSignedTie(restoredClinic, tie)
       const retailCookie=await restoredClinic.signIn(restoredClinic.auth.OWNER_EMAIL)
+      assert.equal((await restoredClinic.send('/api/balm/insurance/999/'+syntaxReceipt.id,undefined,retailCookie)).text,syntaxReceipt.body,'public CLI archive restores unchanged 999 bytes')
+      assert.equal((await restoredClinic.cmd('insurance.functional_acknowledgment.import',{batchId:syntaxReceipt.batchId,x12:syntaxReceipt.body},retailCookie)).duplicate,true,'restored original retains replay identity')
       assert.equal((await restoredClinic.send(retail.receiptUrl,undefined,retailCookie)).text,retailOriginal)
       const finance=await restoredClinic.cmd('finance.reconcile.prepare',{month:'2026-09'},retailCookie)
       assert.equal(finance.findings.length,1);assert.equal(finance.findings[0].kind,'missing_era')
@@ -606,26 +611,19 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
 })
 
 test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches, signed recoupments and deposit arithmetic', {timeout:240000},async()=>{
- const {functionalAckFile}=await import('./functional-ack-fixture.mjs')
  const {manualPayerJourney,payerEobPdf}=await import('./manual-payer-journey.mjs')
  const temporary=await mkdtemp(join(tmpdir(),'balm-payer-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
   await checkout(source);await checkout(restored)
-  // Apply fixture migrations with their ledger in the Worker, as archiveFixture does.
-  // Both public CLI transfer doors and every restore assertion remain unchanged.
-  h=await harness({root:source,migrate:true})
-  const result=await manualPayerJourney(h)
-  const receiptBatch=(await h.state()).insurance.batches[0],batchOriginal=(await h.send('/api/balm/insurance/837P/'+receiptBatch.id,undefined,h.owner)).text
-  const ackOriginal=await functionalAckFile(batchOriginal,true),ack=await h.cmd('insurance.functional_acknowledgment.import',{batchId:receiptBatch.id,x12:ackOriginal})
-  const identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
+  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
+  h=await harness({root:source})
+  const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null
   await command(source,['export','--output',archive,'--no-queue'])
   await command(restored,['import','--input',archive,'--yes','--no-queue'])
   h=await harness({root:restored,...identity})
   const owner=await h.signIn(h.auth.OWNER_EMAIL)
-  assert.equal((await h.send('/api/balm/insurance/999/'+ack.id,undefined,owner)).text,ackOriginal,'CLI archive restores exact 999 bytes and native download')
-  assert.equal((await h.cmd('insurance.functional_acknowledgment.import',{batchId:receiptBatch.id,x12:ackOriginal},owner)).duplicate,true,'restored receipt cannot be imported twice')
   const third=(await h.send('/api/balm/clients/'+result.claims[2].patient.id,undefined,owner)).value
   assert.equal(third.billing.ledger.balanceCents,2000);assert.equal(third.billing.ledger.insurancePendingCents,2000)
   const batch=(await h.state(owner)).insurance.manualPayers.find(b=>b.id===result.batch.id)
