@@ -6170,7 +6170,7 @@
       "executable": false
     },
     "tests/charting.test.mjs": {
-      "sha256": "60e04df10cbef8d20abe83f6c5526671bc868cc1fd2ec45cb38b7011ca1c7401",
+      "sha256": "80f867752c6e9077afb13aeec35a0297366a4eb638a868e6c55ef217afcb1f4d",
       "executable": false
     },
     "tests/clinic.mjs": {
