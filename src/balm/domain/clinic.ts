@@ -4,7 +4,7 @@ import { createPortability } from '@runeditrun/rer/modules/portability'
 import archivePolicy from '../archive-policy.mjs'
 import { parsedList } from '../scheduling/service-rules'
 import { holidayRanges } from './holidays'
-import { clinicIdentity } from './us-clinic'
+import { clinicIdentity, privateTaxIdentity } from './us-clinic'
 import { resolveTemplate } from '../charting/template-catalog'
 import { validNpi } from '../payments/codes'
 import { audit, commit, email, guard, human, id, insist, integer, need, now, one, optional, sha256, stmt, text, type Actor, type Data } from './model'
@@ -15,8 +15,9 @@ export function validTimeZone(value: unknown) {
   return zone
 }
 
-export async function saveSettings(db: D1Database, who: Actor, input: Data) {
+export async function saveSettings(db: D1Database, who: Actor, input: Data, agentIdentityReceipt?: string) {
   need(who, 'owner'); human(who)
+  insist(agentIdentityReceipt === undefined || who.agentAttribution && /^[a-f0-9]{64}$/.test(agentIdentityReceipt), 'invalid_agent_identity_receipt')
   const current = await one(db, 'SELECT * FROM bm_settings WHERE id=1')
   const zone = validTimeZone(input.timeZone)
   // Booked visits are stored as exact moments, so they keep their moment and show
@@ -32,6 +33,10 @@ export async function saveSettings(db: D1Database, who: Actor, input: Data) {
     stmt(db, 'UPDATE bm_settings SET clinic_name=?,time_zone=?,abn=?,address=?,booking_open=?,tax_id_type=?,practice_npi=?,street_address=?,city=?,state=?,postal_code=?,time_zone_chosen=1,version=version+1 WHERE id=1', ...values),
     stmt(db, 'UPDATE bm_settings SET holidays=? WHERE id=1', JSON.stringify(holidayRanges(JSON.parse(current!.holidays as string), zone))),
     audit(db, who, 'settings.saved', null, null, zone !== current!.time_zone ? `time zone ${current!.time_zone} to ${zone}` : ''),
+    // Preserve only the risk fact, never either tax identifier. The receipt and
+    // identity change commit together under the same version/authority guards.
+    ...(agentIdentityReceipt ? [audit(db, who, 'settings.agent_identity', null, agentIdentityReceipt,
+      privateTaxIdentity(current!.tax_id_type, current!.abn) || privateTaxIdentity(identity.taxType, identity.taxId) ? 'sensitive' : 'standard')] : []),
   ])
   return { saved: true }
 }

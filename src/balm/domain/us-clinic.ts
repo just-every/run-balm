@@ -3,6 +3,8 @@ import { validNpi } from '../payments/codes'
 
 export const usStates = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI'.split(' ')
 
+export const privateTaxIdentity = (type: unknown, value: unknown) => type === 'SSN' && String(value ?? '').replace(/\D/g, '').length === 9
+
 /** Optional during first-run setup; supplied identifiers and addresses must be valid. */
 export function clinicIdentity(input: Data, current: Data) {
   const taxId = input.taxId === undefined ? String(current.abn) : String(input.taxId).trim()

@@ -1,3 +1,4 @@
+import configurationDoorJourney from './agent-configuration-journey.mjs'
 import {portalBilling} from './portal-billing.mjs'
 import {test} from 'node:test'
 import {readFile} from 'node:fs/promises'
@@ -6,6 +7,8 @@ import {createHmac,timingSafeEqual} from 'node:crypto'
 import {harness} from './harness.mjs'
 import {clinic,pastVisit} from './clinic.mjs'
 import {viewportProof} from './viewport-proof.mjs'
+
+test('BASE-AGENT-006/007/009/010/013: native identity approvals retain risk on retry, real reviews and once-only record effects', {timeout:120000},()=>configurationDoorJourney(process.env.BALM_NATIVE_PROBES?console.log:undefined))
 
 test('scoped keys read only authorized fields, prepare invoices for a human, and lose authority on revocation', {timeout:120000}, async()=>{
  const h=await harness()
