@@ -154,7 +154,7 @@
       "executable": false
     },
     "CONTRACT.md": {
-      "sha256": "092758f4c0184c0de3538bd6504c62b368ab1d1529e7fbbf5b945d312e441347",
+      "sha256": "be37db82b193a0e63d9f15574f27f89d6b27abf13c1d491343292e64aec6e53a",
       "executable": false
     },
     "DEMO.md": {
@@ -2290,7 +2290,7 @@
       "executable": false
     },
     "src/balm/agent-door/catalogue.ts": {
-      "sha256": "6a4e5a8fde2d90b0dd50b1820a21b8b8c4c487530f7c8206c16f717abc79b1a8",
+      "sha256": "312667b37c65b364232078c76838a7e50d9bd4206e4938f4a0bcae4acde9cf20",
       "executable": false
     },
     "src/balm/agent-door/configuration.ts": {

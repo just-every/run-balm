@@ -13,7 +13,7 @@ const object = (properties: Record<string,JsonSchema>, required: string[] = []) 
 const standard = (measure=1): ClassAndFacts => ({class:'standard',facts:{measure}})
 const live = (service:string): ClassAndFacts => ({class:'live',facts:{measure:1,service}})
 const sensitive = (measure:number,kind='ID'): ClassAndFacts => ({class:'sensitive',facts:{measure,kind}})
-const clinicClasses = (record:Record<string,any>) => [standard(),...(privateTaxIdentity(record.tax_id_type,record.abn) ? [sensitive(1)] : [])]
+const clinicClasses = (record:Record<string,any>) => [standard(),...(record.tax_id_type==='SSN' && /\d{9}/.test(String(record.abn).replace(/\D/g,'')) ? [sensitive(1)] : [])]
 // Bind the native risk receipt to the admitted caller and public retry key.
 // Base checks the exact arguments for that key before replay; no tax value or
 // raw key enters Balm's append-only audit. Current state is still classified.
