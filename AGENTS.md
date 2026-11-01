@@ -145,7 +145,8 @@ Native-session/runtime evidence: https://github.com/runeditrun/base/tree/ada9f57
 
 ## Contract documentation regeneration
 
-Lander-Regenerate: `node scripts/contract-docs.mjs write REPORT-003 CHART-011`, then
+Lander-Regenerate: node scripts/contract-docs.mjs write REPORT-003 CHART-011
+Then run
 `node scripts/contract-docs.mjs check REPORT-003 CHART-011`. Both adopted projections
 are maintained together, including when an older invocation names only REPORT-003.
 CONTRACT.md supplies acceptance, status,
