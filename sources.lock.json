@@ -2298,7 +2298,7 @@
       "executable": false
     },
     "src/balm/agent-door/index.ts": {
-      "sha256": "8882fba0dd7adf62655a6cc1d4f6c1718872ade3a4cd9632feca3b52c819592e",
+      "sha256": "fd107266e8e89ae3118eb9dbb66b70328642dfa5b2bd5977f1a9b0c8b77a5eca",
       "executable": false
     },
     "src/balm/agent-door/native.ts": {

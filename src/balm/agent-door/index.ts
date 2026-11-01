@@ -33,5 +33,9 @@ export function balmAgentDoor(original:Bindings) {
 export async function agentResponse(request:Request,original:Bindings):Promise<Response|null> {
   const env=runtimeBindings(original),business=await balmBusiness(env).handle(request)
   if(business)return business
+  // Only construct the registry for its own routes. An unconfigured Worker
+  // still serves health and the public lobby before setup supplies AUTH_ORIGIN.
+  const path=new URL(request.url).pathname
+  if(!['/mcp','/agents','/api/rer/agent-policy','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'].includes(path)&&!path.startsWith('/agents/api/')&&!/^\/agents\/approvals\/[^/]+$/.test(path))return null
   return balmAgentDoor(env).handle(request)
 }
