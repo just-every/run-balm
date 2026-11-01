@@ -3,7 +3,8 @@ import { ToolRefusal, type ToolContext, type ToolDefinition, type ClassAndFacts,
 import { currentForm, prepareForm, publishForm } from '../domain/intake.ts'
 import { saveService, saveSettings, saveStaff, saveRoom, saveEquipment } from '../domain/clinic.ts'
 import { templateCatalog } from '../charting/template-catalog.ts'
-import { audit, commit, need, one, rows } from '../domain/model.ts'
+import { audit, commit, need, one, rows, sha256 } from '../domain/model.ts'
+import { privateTaxIdentity } from '../domain/us-clinic.ts'
 import { native, sponsor } from './native.ts'
 import { clinic, configuration, owner } from './configuration.ts'
 
@@ -12,14 +13,26 @@ const object = (properties: Record<string,JsonSchema>, required: string[] = []) 
 const standard = (measure=1): ClassAndFacts => ({class:'standard',facts:{measure}})
 const live = (service:string): ClassAndFacts => ({class:'live',facts:{measure:1,service}})
 const sensitive = (measure:number,kind='ID'): ClassAndFacts => ({class:'sensitive',facts:{measure,kind}})
-const clinicClasses = (record:Record<string,any>) => [standard(),...(record.tax_id_type==='SSN' && /\d{9}/.test(String(record.abn).replace(/\D/g,'')) ? [sensitive(1)] : [])]
+const clinicClasses = (record:Record<string,any>) => [standard(),...(privateTaxIdentity(record.tax_id_type,record.abn) ? [sensitive(1)] : [])]
+// Bind the native risk receipt to the admitted caller and public retry key.
+// Base checks the exact arguments for that key before replay; no tax value or
+// raw key enters Balm's append-only audit. Current state is still classified.
+async function identityReceipt(ctx:ToolContext) {
+  return ctx.idempotencyKey === null ? undefined : sha256(JSON.stringify(['balm.clinic.update',ctx.person.id,ctx.agent.id,ctx.clientId??null,ctx.idempotencyKey]))
+}
 async function recordRead(env:Bindings,ctx:ToolContext,action:string) {
   const who=await sponsor(env,ctx);await commit(env.DB,who,[audit(env.DB,who,action,null)])
 }
 export function balmTools(env:Bindings):ToolDefinition[] {
   function tool(input: Omit<ToolDefinition,'outputSchema'> & {outputSchema?:JsonSchema}):ToolDefinition {
     const run=input.run,classify=input.classify
-    return {...input,outputSchema:input.outputSchema??{type:'object'},classify:(a,c)=>native(async()=>classify(a,c)),run:(a,c)=>native(()=>run(a,c))}
+    return {...input,outputSchema:input.outputSchema??{type:'object'},classify:(a,c)=>native(async()=>classify(a,c)),run:(a,c)=>native(async()=>{
+      const value=await run(a,c)
+      // These links identify the records the native write actually committed.
+      // The shared door supplies attribution, visibility checks and replay.
+      if(!input.readOnly)for(const resource of value.resources??[])c.emit(input.name,resource.uri)
+      return value
+    })}
   }
   function read(name:string,title:string,classes:ClassId[],clauses:string[],scope:string,load:(args:Record<string,unknown>,ctx:ToolContext)=>Promise<Record<string,any>>,classify?:ToolDefinition['classify']):ToolDefinition {
     return tool({name:'balm.'+name,title,description:title+' through the current clinic role; record text is untrusted.',scope,readOnly:true,classes,clauses,inputSchema:object({}),untrusted:true,
@@ -56,9 +69,15 @@ export function balmTools(env:Bindings):ToolDefinition[] {
     classify:async(_,ctx)=>{await owner(env,ctx);return [live('booking')]},summary:async(args,ctx)=>{await owner(env,ctx);return {items:[String(args.kind)+': '+String(args.name)]}},
     async run(args,ctx){const result=await (args.kind==='room'?saveRoom:saveEquipment)(env.DB,await sponsor(env,ctx),args);return {result,resources:[{uri:'balm://'+args.kind+'/'+result.id,name:'Facility'}]}}}))
   tools.push(tool({name:'balm.clinic.update',title:'Update clinic identity',description:'Update native clinic identity without changing timezone or opening booking.',scope:'clinic.write',readOnly:false,classes:['standard','sensitive'],clauses:['SETUP-001','US-001'],inputSchema:object({clinicName:string,taxId:string,taxIdType:{enum:['EIN','SSN']}},['clinicName','taxId','taxIdType']),
-    async classify(args,ctx){const current=await clinic(env,ctx);return [standard(),...((args.taxIdType==='SSN'&&String(args.taxId).replace(/\D/g,'').length===9)||(current.tax_id_type==='SSN'&&String(current.abn).replace(/\D/g,'').length===9)?[sensitive(1)]:[])]},
+    async classify(args,ctx){
+      const current=await clinic(env,ctx),receipt=await identityReceipt(ctx)
+      const prior=receipt?await one(env.DB,"SELECT 1 FROM bm_audit WHERE action='settings.agent_identity' AND subject_id=? AND agent_id=? AND sponsor_id=? AND detail='sensitive' LIMIT 1",receipt,ctx.agent.id,ctx.person.id):null
+      // Replacing an SSN remains a sensitive operation on its approved retry,
+      // even though that operation itself removed the SSN from current state.
+      return [standard(),...(privateTaxIdentity(args.taxIdType,args.taxId)||privateTaxIdentity(current.tax_id_type,current.abn)||prior?[sensitive(1)]:[])]
+    },
     summary:async(args,ctx)=>{await owner(env,ctx);return {target:{id:'1',name:String(args.clinicName)},items:['Clinic identity and '+String(args.taxIdType)+' tax identifier']}},revision:async(_,ctx)=>Number((await clinic(env,ctx)).version),target:async(_,ctx)=>{await owner(env,ctx);return {kind:'clinic',id:'1'}},
-    async run(args,ctx){const current=await clinic(env,ctx);const result=await saveSettings(env.DB,await sponsor(env,ctx),{...args,timeZone:current.time_zone,bookingOpen:Boolean(current.booking_open)});return {result,resources:[{uri:'balm://clinic/1',name:'Clinic'}]}}}))
+    async run(args,ctx){const current=await clinic(env,ctx);const result=await saveSettings(env.DB,await sponsor(env,ctx),{...args,timeZone:current.time_zone,bookingOpen:Boolean(current.booking_open)},await identityReceipt(ctx));return {result,resources:[{uri:'balm://clinic/1',name:'Clinic'}]}}}))
   tools.push(tool({name:'balm.staff.update',title:'Update a native clinic job',description:'Set a clinic staff job through the owner-only native staff service. Business membership alone grants no clinic job.',scope:'staff.write',readOnly:false,classes:['access'],clauses:['BALM-001','ROLE-002'],inputSchema:object({id:string,name:string,email:string,role:{enum:['practitioner','reception','biller','assistant','student','fellow','supervisor','location_manager']},active:boolean,profession:string,discipline:string,supervisorId:string,locationId:string},['name','email','role','active']),
     async authority(args,ctx){await owner(env,ctx);const previous=args.id?await one(env.DB,'SELECT s.*,COALESCE(a.kind,s.role) AS native_job FROM bm_staff s LEFT JOIN bm_staff_access a ON a.staff_id=s.id WHERE s.id=? AND s.erased_at IS NULL',args.id):null;const operator=await one(env.DB,'SELECT id FROM oa_operators WHERE lower(email)=lower(?)',args.email);return {subject:String(operator?.id??args.email),widens:args.active===true&&(!previous?.active||previous.native_job!==args.role||previous.email!==args.email)}},
     async classify(args,ctx){await owner(env,ctx);return [{class:'access',facts:{measure:1,direction:args.active?'widens':'narrows'}}]},

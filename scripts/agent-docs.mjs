@@ -14,11 +14,13 @@ ${rows.join('\n')}
 
 Resources: ${surface.resources.map(uri=>'\`'+uri+'\`').join(', ')}. Each reader rechecks native owner visibility; missing and restricted records are indistinguishable. Stored labels, questions and imported text are untrusted. No bearer or provider credential is returned. The witness masks an SSN; clinic identity reads classify an actual full SSN as sensitive. Setting a service fee adds money; changing only duration retains live. Staff changes compute the native subject and refuse self-widening.
 
+Replacing a clinic SSN records only its sensitive risk fact in the same native transaction as the identity change. The receipt is bound to the sponsor, agent, client and retry key; the original operation remains sensitive on replay after the SSN has been removed. Fresh operations still classify current state, and every retry still passes the shared door's current authority and company policy checks.
+
 Business owner_id and team id bind to native operator ids. Existing team people keep their clinic grants; a signed roster does not create shadow accounts. Unknown, inactive or natively inadmissible subjects cannot act. Original local preparation keys retain their original scopes and revocation checks. A failed recognizable Business token cannot become a local key. Native sessions and independent second-factor proof control the person-only /agents and approval pages. The agent prepares; actual reviewers are named separately in native activity. Autonomous policy invents no human approval.
 
 ## Boundaries
 
-The declared capability set is tools, policy, pause, audit and idempotency. Base 0.2.86 still advertises its compulsory event/subscription surface and requires effect events in its harness; this seed adds no new native event family. Multi-sponsor verification, subscription delivery, event refresh and external mail families are undeclared. There is no provider spend registration or spend enforcement, and these tools contact no outbound provider.
+The declared capability set is tools, policy, pause, audit and idempotency. Base 0.2.86 still advertises its compulsory event/subscription surface. Successful configuration writes emit their native tool name and changed resource URI through the shared door, with agent attribution and current resource visibility; reads, pending approvals and saved retries emit no new record change. Multi-sponsor verification, subscription delivery, event refresh and external mail families are undeclared. There is no provider spend registration or spend enforcement, and these tools contact no outbound provider.
 
 Pinned Base also has no client-scoped retained-artifact redaction and atomic pending-execution/capture hook for Balm erasure. Native custody remains closed rather than claiming that patient deletion clears retained approvals or replay outcomes.
 
