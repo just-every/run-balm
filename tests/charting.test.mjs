@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { run } from './harness.mjs'
 import { clinic, pastVisit, visitDate } from './clinic.mjs'
 import { mriUpload } from './chart-document-fixtures.mjs'
+import { pinSupervisionClock } from './supervision-clock.mjs'
 
 const daily = { ...chartFixture().sections, subjective: 'Knee pain 4/10 after stairs; HEP daily.', objective: 'Ther ex 25 min: step-ups 2x12. Flexion 118 deg.', assessment: 'Improving tolerance to stairs.', plan: 'Progress step height.' }
 const view = async (h, clientId, cookie) => (await h.send('/api/balm/clients/' + clientId, undefined, cookie)).value
@@ -714,7 +715,11 @@ test('AGENT-003: grounded pre-sign questions cite units, skilled need, plan and 
 })
 
 
-test('CHART-008: student submission, return and supervisor co-sign lock both signatures and preserve care-team and emergency reads', () => run(async h=>{
+test('CHART-008: student submission, return and supervisor co-sign lock both signatures and preserve care-team and emergency reads', () => {
+ // Medicare slots must not cross clinic midnight or overlap pastVisit fixtures
+ // as the runner's wall clock changes. Own the same mid-month day on both sides.
+ const clock=pinSupervisionClock()
+ return run(async h=>{
  await h.finishSetup()
  const {service,practitioners:[priya,cover,emergency]}=await clinic(h,['Priya','Cover','Emergency'])
  await h.cmd('staff.save',{id:priya.id,name:'Priya Supervisor',email:priya.email,role:'supervisor',credentials:'PT, DPT'})
@@ -870,7 +875,8 @@ test('CHART-008: student submission, return and supervisor co-sign lock both sig
  assert.equal((await h.send('/api/balm/clients/'+dailyPatient.id,undefined,h.owner)).value.notes.find(n=>n.id===dailyNote.id).signature.sha256,signedDaily.signature.sha256)
  const audit=(await h.db.prepare('SELECT action,actor_email FROM bm_audit WHERE client_id=?').bind(patient.id).all()).results
  for(const action of ['plan.read','note.submitted','note.returned','note.signed','note.read','note.break_glass_read']) assert.ok(audit.some(a=>a.action===action),action)
-},{outbound:supervisionModelEdge().outbound,browserHttps:!!process.env.BALM_UI_SCREENSHOTS}))
+},{entry:'tests/supervision-worker.ts',auth:{SUPERVISION_TEST_CLOCK_OFFSET:String(clock.offset)},outbound:supervisionModelEdge().outbound,browserHttps:!!process.env.BALM_UI_SCREENSHOTS}).finally(clock.restore)
+})
 
 test('CHART-002: PT, OT and SLP complete signed episodes, carry only earlier episode facts, and preserve signed custom template versions', () => run(async h => {
   const { customizedTemplateJourney } = await import('./chart-template-journey.mjs')

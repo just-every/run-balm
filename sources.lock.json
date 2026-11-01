@@ -6190,7 +6190,7 @@
       "executable": false
     },
     "tests/charting.test.mjs": {
-      "sha256": "80f867752c6e9077afb13aeec35a0297366a4eb638a868e6c55ef217afcb1f4d",
+      "sha256": "8552b41e5271229befb076f453f519aff95fd798d79653bbe4f89459308f63db",
       "executable": false
     },
     "tests/clinic.mjs": {
@@ -6671,6 +6671,14 @@
     },
     "tests/statement-cycles-journey.mjs": {
       "sha256": "b8fdd00ae928337626878f2059c1a70f81fd89ba13acd2e4ae49bec7506a702e",
+      "executable": false
+    },
+    "tests/supervision-clock.mjs": {
+      "sha256": "9aa34365b038f8caa3ec23cfdfac15c553d2e550a34b852b689d5ff109f5b75d",
+      "executable": false
+    },
+    "tests/supervision-worker.ts": {
+      "sha256": "c69b5e9887d006c7355426ca49265ddac5bbc74b03da4bcd1b436bc3a05257d2",
       "executable": false
     },
     "tests/viewport-proof.mjs": {
