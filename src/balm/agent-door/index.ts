@@ -14,12 +14,13 @@ function trust(env:Bindings):Trust|null {
   return {issuer,installationId,appOrigin:env.AUTH_ORIGIN,publicKeys:JSON.parse(publicKeys)}
 }
 export function balmAgentDoor(original:Bindings) {
-  const env=runtimeBindings(original)
-  return createAgentDoor({seed:'balm',name:'Balm',specialist:'Therapy practice coordinator',db:env.DB,origin:env.AUTH_ORIGIN,trust:trust(env),people:balmPeople(env),tools:balmTools(env),resources:balmResources(env),
+  const env=runtimeBindings(original),people=balmPeople(env)
+  return createAgentDoor({seed:'balm',name:'Balm',specialist:'Therapy practice coordinator',db:env.DB,origin:env.AUTH_ORIGIN,trust:trust(env),people,tools:balmTools(env),resources:balmResources(env),
     async localCredentials(request) {
       try { const who=await localPrincipal(request,env,true);return {sponsor:{id:who.id},agent:{id:who.keyId!,name:(await one(env.DB,'SELECT label FROM bm_agent_keys WHERE id=?',who.keyId))!.label,specialist:'Therapy practice coordinator'},scopes:who.keyScopes??[],clientId:'balm-key:'+who.keyId} } catch { return null }
     },
     async currentScopes(principal) {
+      if(principal.consent && !await people.businessMember!(principal.person))return []
       if(!principal.clientId?.startsWith('balm-key:'))return principal.scopes
       const key=await one(env.DB,`SELECT k.scopes FROM bm_agent_keys k JOIN oa_operators o ON o.id=k.owner_id WHERE k.id=? AND k.owner_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND k.owner_version=o.version AND o.status='active'`,principal.clientId.slice(9),principal.person.id,Date.now())
       if(!key)return []
