@@ -6166,7 +6166,7 @@
       "executable": false
     },
     "tests/cases.test.mjs": {
-      "sha256": "e214991e4e92efe720ad0ca4e954e021ec77f1f2bfa6418b2573f1ac8ae2b54b",
+      "sha256": "b3c0cdea48ba2d2f2efa145cef7d1df67f45f5e67748ff6ff0485ea41d875c3e",
       "executable": false
     },
     "tests/chart-document-fixtures.mjs": {
@@ -6242,7 +6242,7 @@
       "executable": false
     },
     "tests/continuity-journey.mjs": {
-      "sha256": "b48b706375b2049d7e15742118aec2d79c0e1febd8440822f6bfd96d072c1f59",
+      "sha256": "e492a3c2b005966708fbd9200af9a406ea499b24e600858d91fee89c7fb5be4e",
       "executable": false
     },
     "tests/daily-close-clinic.mjs": {
