@@ -83,9 +83,10 @@ export async function bookingPrepaymentJourney(h,stripe,hooks={}){
  assert.match((await h.send('/app/clients/'+client.id,undefined,h.owner)).text,/Booking deposit \$30\.00 paid/)
  await hooks.screen?.('booking-visit','/app/clients/'+client.id,'#codes-'+visit.id,h.owner)
  assert.equal(file.billing.ledger.paymentsCents,3000);assert.equal(file.billing.ledger.creditCents,3000)
- // Yesterday at clinic noon is always past and leaves room for the full visit.
- const careDate=new Date(Date.now()-86400000+10*3600000).toISOString().slice(0,10)
- await h.cmd('appointment.move',{id:visit.id,date:careDate,time:'12:00'})
+ // A few hours ago stays within the move window, with the full visit already over.
+ // Round to the hour so the 45-minute visit never crosses clinic midnight.
+ const careLocal=new Date(Date.now()-3*3600000+10*3600000).toISOString()
+ await h.cmd('appointment.move',{id:visit.id,date:careLocal.slice(0,10),time:careLocal.slice(11,13)+':00'})
  await h.cmd('appointment.attend',{id:visit.id},priya.cookie)
  const invoice=await h.cmd('invoice.prepare',{appointmentId:visit.id})
  await h.cmd('invoice.approve',{id:invoice.id})

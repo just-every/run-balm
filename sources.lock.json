@@ -6154,7 +6154,7 @@
       "executable": false
     },
     "tests/booking-prepayment-journey.mjs": {
-      "sha256": "ef55189d185371ccdf7af6ae1c9dff72046100f32648a9d5e2422bf5c5b7bf4a",
+      "sha256": "7c214ecc32ea1e2c54b1cbb338c5be00e79ead2a15c27db77589d00b583842f0",
       "executable": false
     },
     "tests/card-payments-browser.mjs": {
