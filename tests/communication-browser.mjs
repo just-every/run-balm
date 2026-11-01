@@ -6,6 +6,7 @@ import {mkdir} from 'node:fs/promises'
 import {chromium} from '@playwright/test'
 import {harness} from './harness.mjs'
 import {communicationFixture} from './communication-journey.mjs'
+import {portalLogin} from './portal-billing.mjs'
 
 const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
 const root=process.env.BALM_UI_SCREENSHOTS
@@ -110,4 +111,63 @@ try {
  assert.match(await page.locator('#reminder-deliveries').innerText(),/Accepted by text provider/)
  console.log('PASS COMM-002 native policy and patient-zone forms, visible deferral and one eligible attempt; screens 1440 and 390 head='+head)
  console.log('PASS COMM-003 actual call form, exact search results and hidden clinical results; screens 1440 and 390 head='+head)
+ // AGENT-007 extends the existing secure-message screen with native preparation and review.
+ const patientEmail=(await h.db.prepare('SELECT email FROM bm_clients WHERE id=?').bind(c.patient.id).first()).email
+ const portal=await portalLogin(h,patientEmail),inboxMessages=[]
+ for(const [intent,body,recipient] of [
+  ['reschedule','Please reschedule my appointment.','front_desk'],
+  ['billing','I have a billing question about my invoice.','front_desk'],
+  ['referral','I have a new referral to share.','front_desk'],
+  ['records','Please review my records request.','front_desk'],
+  ['mixed','Please reschedule my appointment and explain my invoice.','front_desk'],
+  ['clinical','My shoulder pain increased after the exercise.',c.priya.id],
+ ]){
+  assert.equal((await h.form('/portal/action',{name:'message.send',recipient,body},portal)).status,303)
+  const file=(await h.send('/api/balm/clients/'+c.patient.id,undefined,h.owner)).value
+  inboxMessages.push({intent,body,message:file.messages.messages.findLast(m=>m.sender==='patient'&&m.body===body)})
+ }
+ const captureInbox=async(name,target)=>{
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:1100});await target.scrollIntoViewIfNeeded();await page.evaluate(()=>document.fonts.ready)
+   await target.screenshot({path:root+'/'+name+'-'+width+'.png'})
+  }
+  await page.setViewportSize({width:1440,height:1100})
+ }
+ for(const {intent,body,message} of inboxMessages){
+  await login(intent==='clinical'?c.priya.cookie:c.reception.cookie)
+  await page.setViewportSize({width:1440,height:1100});await page.goto(h.origin+'/app/clients/'+c.patient.id)
+  const review=page.locator('#message-'+message.id+' .inbox-review')
+  await review.locator('summary').click()
+  if(intent==='reschedule')await captureInbox('AGENT-007-native-preparation',review)
+  const beforeMail=h.outboundRequests.length
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),review.getByRole('button',{name:'Prepare from this message',exact:true}).click()])
+  await review.locator('summary').click()
+  assert.match(await review.innerText(),new RegExp(body.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')))
+  assert.equal(await review.getByRole('link',{name:'Original incoming portal message',exact:true}).getAttribute('href'),'/app/clients/'+c.patient.id+'#message-'+message.id)
+  if(['mixed','clinical'].includes(intent)){
+   assert.equal(await review.locator('textarea').count(),0)
+   assert.equal(await review.getByRole('button',{name:'Approve preparation',exact:true}).count(),0)
+   assert.match(await review.innerText(),/No drafted answer or action/)
+  }else{
+   assert.match(await review.locator('textarea[readonly]').inputValue(),/received/)
+   assert.equal(await review.getByRole('button',{name:'Approve preparation',exact:true}).count(),1)
+  }
+  const small=await review.locator('p,label,button,a,textarea,summary,h4').evaluateAll(els=>els.filter(el=>el.getClientRects().length&&parseFloat(getComputedStyle(el).fontSize)<13).map(el=>el.textContent))
+  assert.deepEqual(small,[],'inbox review text is at least 13px')
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'inbox review fits at the assertion width')
+  await captureInbox('AGENT-007-'+intent+'-review',review)
+  if(intent==='billing'){
+   await review.locator('[name=confirm]').check()
+   await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),review.getByRole('button',{name:'Approve preparation',exact:true}).click()])
+   await review.locator('summary').click()
+   assert.match(await review.innerText(),/Preparation approved/)
+   assert.match(await review.innerText(),/Nothing was sent or executed/)
+   assert.equal(await review.getByRole('button',{name:'Approve preparation',exact:true}).count(),0)
+   await captureInbox('AGENT-007-approved-preparation',review)
+  }
+  assert.equal(h.outboundRequests.length,beforeMail,'native preparation and approval make no outbound request')
+ }
+ await login(c.reception.cookie);await page.goto(h.origin+'/app/clients/'+c.patient.id)
+ assert.equal(await page.locator('#message-'+inboxMessages.find(m=>m.intent==='clinical').message.id).count(),0,'front desk sees no clinical message, preparation, snippet or count')
+ console.log('PASS AGENT-007 native preparation and exact review forms, four administrative intents, mixed pause, untouched clinical conversation and once-only preparation approval; assertions at 1440; screens at 1440 and 390 head='+head)
 } finally {await context?.close();await h.close();await browser.close()}

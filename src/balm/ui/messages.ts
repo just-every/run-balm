@@ -1,3 +1,4 @@
+import { inboxReview } from './inbox'
 import type { MessageFile, SecureMessage } from '../messages'
 import { attachmentInput } from '../messages/attachments'
 import { empty, entry, form, h, hidden, panel, result, select, stamp, status, textarea } from './shared'
@@ -10,7 +11,7 @@ export function messageAttachments(message: SecureMessage, base: string) {
 const destinationLabel = (message: SecureMessage) => message.route === 'front_desk' ? 'Front desk' : message.recipientName ?? 'Care team'
 function messageEntry(s: any, message: SecureMessage, clinicView: boolean, attachmentBase: string, reply = '') {
   return entry(message.sender === 'patient' ? 'Patient' : message.authorName,
-    `<p class="help">${stamp(s, message.sentAt)} · ${h(destinationLabel(message))}${clinicView && !message.automated ? ` · Email notice: ${status(message.notification)}` : ''}</p>${written(message.body)}${messageAttachments(message, attachmentBase)}${reply}`)
+    `<p class="help">${stamp(s, message.sentAt)} · ${h(destinationLabel(message))}${clinicView && !message.automated ? ` · Email notice: ${status(message.notification)}` : ''}</p>${written(message.body)}${messageAttachments(message, attachmentBase)}${reply}`, `message-${message.id}`)
 }
 const uploadForm = (command: string, path: string, fields: string, button: string) => `<form method="post" enctype="multipart/form-data" action="/app/action?name=${encodeURIComponent(command)}&amp;returnTo=${encodeURIComponent(path)}">${fields}<button type="submit">${h(button)}</button></form>`
 
@@ -37,7 +38,7 @@ export function messagePanel(state: any, file: any, notice?: any) {
   if (state.actor.role === 'owner' || state.actor.staffRole === 'reception') choices.push(['front_desk', 'Front desk — scheduling and billing'])
   const recipient = () => choices.length ? select('recipient', 'Conversation destination', choices, choices[0][0]) : hidden('route', 'practitioner')
   const conversation = messages.messages.map(m => messageEntry(state, m, true, '/api/balm/messages/attachments', m.sender === 'patient'
-    ? `<details><summary>Reply in this conversation</summary>${uploadForm('message.send', path, fields + hidden('replyTo', m.id) + textarea('body', 'Reply to the patient', '', 'required maxlength="10000" rows="4"') + attachmentInput + delivery(), 'Send reply')}</details>` : '')).join('') || empty('No secure messages yet.')
+    ? inboxReview(state, file, m.id) + `<details><summary>Reply in this conversation</summary>${uploadForm('message.send', path, fields + hidden('replyTo', m.id) + textarea('body', 'Reply to the patient', '', 'required maxlength="10000" rows="4"') + attachmentInput + delivery(), 'Send reply')}</details>` : '')).join('') || empty('No secure messages yet.')
   const live = messages.access.filter(a => a.active)
   const access = live.length ? live.map(l => `<p class="help">${l.route === 'front_desk' ? 'Front desk' : h(messages.recipients.find(r => r.id === l.practitionerId)?.name ?? 'Care team')} private link expires ${stamp(state, l.expiresAt)}. ${l.openedAt ? `Last opened ${stamp(state, l.openedAt)}.` : 'Not opened yet.'} Notice: ${status(l.deliveryState)}.</p>`).join('')
     + form('message.revoke', path, fields, 'Revoke patient links for my conversations', true) : '<p class="help">There is no active patient message link.</p>'
