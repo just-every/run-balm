@@ -21,11 +21,10 @@ try {
   assert.equal((await page.goto(h.origin + path)).status(), 200)
   const section = page.locator('#care-continuity')
   const capture = async (stage, target = section) => {
-    await page.setViewportSize({ width: 1440, height: 1100 })
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'continuity fits 1440')
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 1100 })
       await target.scrollIntoViewIfNeeded()
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'continuity fits ' + width)
       if (directory) await page.screenshot({ path: directory + '/continuity-' + stage + '-' + width + '.png' })
     }
     await page.setViewportSize({ width: 1440, height: 1100 })

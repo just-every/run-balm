@@ -6638,7 +6638,7 @@
       "executable": false
     },
     "tests/continuity-browser.mjs": {
-      "sha256": "7f11e17780fca1c8da37fcbb9866dc63692e77f454bc75814880df010e6729fa",
+      "sha256": "e834fefbe4f290a318b4090f4ec7ac620be273ba1802b85520dce00bc150a90b",
       "executable": false
     },
     "tests/continuity-journey.mjs": {
