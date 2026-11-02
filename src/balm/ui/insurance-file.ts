@@ -54,15 +54,16 @@ function claims(s: any, f: any, path: string) {
       + medicareClaimForms(c,snapshot,path,clinical,desk(s))
       + (['draft', 'ready'].includes(c.status) && desk(s) ? form('insurance.claim.scrub', path, hidden('id', c.id), 'Check the claim again') : '')
       + (['draft', 'ready'].includes(c.status) && clinical ? `<details><summary>Document KX medical necessity</summary><p>The treating clinician must support continued skilled care. This attestation is kept with the claim.</p>${form('insurance.claim.necessity', path, hidden('id', c.id) + textarea('medicalNecessity', 'Medical necessity', snapshot?.medicalNecessity ?? '', 'required maxlength="8000"'), 'Save medical necessity and validate')}</details>` : '')
-      + (['draft', 'ready', 'denied', 'rejected', 'partial', 'accepted'].includes(c.status) && desk(s) ? `<details><summary>Correct and prepare a new claim</summary><p>Correct the patient, policy, visit codes or fee schedule first. This keeps the original attempt.</p>${form('insurance.claim.correct', path, hidden('id', c.id) + field('payerControl', 'Original payer control number (for replacement)', c.payer_control), 'Prepare corrected claim')}</details>` : '')
+      + (!snapshot.institutional && ['draft', 'ready', 'denied', 'rejected', 'partial', 'accepted'].includes(c.status) && desk(s) ? `<details><summary>Correct and prepare a new claim</summary><p>Correct the patient, policy, visit codes or fee schedule first. This keeps the original attempt.</p>${form('insurance.claim.correct', path, hidden('id', c.id) + field('payerControl', 'Original payer control number (for replacement)', c.payer_control), 'Prepare corrected claim')}</details>` : '')
       + (['denied', 'rejected', 'partial'].includes(c.status) && clinical ? `<details><summary>Draft appeal letter</summary>${form('insurance.denial.appeal', path, hidden('id', c.id) + textarea('reason', 'Why the record supports payment', '', 'required maxlength="8000"'), 'Draft appeal for review')}</details>${c.appeal ? `<details><summary>Saved appeal draft</summary><pre>${h(c.appeal)}</pre></details>` : ''}` : ''), `claim-${c.id}`)
   }).join('')
   const visits = f.appointments.filter((a: any) => a.status === 'attended')
   const prepare = desk(s) && visits.length && i.policies.length ? `<details><summary>Prepare a claim from a signed visit</summary>${form('insurance.claim.prepare', path,
     select('appointmentId', 'Attended visit', visits.map((a: any) => [a.id, `${usDate(a.start_at, zoneOf(s))} · ${a.service} · ${a.practitioner}`])) + select('policyId', 'Policy', i.policies.map((p: any) => [p.id, `${p.payer_name ?? 'Payer'} · ${p.member_id}`]))
+    + select('claimFormat','Claim format',[['837P','837P · Professional'],['837I','837I · Institutional test export']])
     + select('therapyGroup', 'Therapy accumulator', [['pt_slp', 'Physical therapy / speech'], ['ot', 'Occupational therapy']])
     + `<details><summary>Referring provider (if payer requires)</summary>${field('referringFirst', 'First name')}${field('referringLast', 'Last name')}${field('referringNpi', 'NPI')}</details>` + '<p class="help">Requires an approved visit invoice. CPT units come from the signed note; diagnoses come from the visit’s ICD-10 codes. Missing fields are named before batching.</p>', 'Prepare and validate claim')}</details>` : ''
-  return panel('Insurance claims', list + prepare || empty('No claims yet. Complete and sign the visit note, record ICD-10 codes, and approve its invoice.'))
+  return panel('Insurance claims', list + institutionalVisitForm(s,f,path,visits) + prepare || empty('No claims yet. Complete and sign the visit note, record ICD-10 codes, and approve its invoice.'))
 }
 function medicare(s: any, f: any, path: string) {
   if (!f.insurance.policies.some((p: any) => p.medicare) && !f.insurance.medicare.length) return ''
@@ -74,4 +75,20 @@ export function insurancePanels(s: any, f: any, notice: any) {
   if (!f.insurance) return ''
   const path = `/app/clients/${f.client.id}`
   return `<div class="full insurance">${insuranceResult(notice)}<div class="grid">${coverage(s, f, path)}${claims(s, f, path)}${medicare(s, f, path)}</div></div>`
+}
+
+function institutionalVisitForm(s:any,f:any,path:string,visits:any[]){
+ if(!owner(s)||!visits.length)return ''
+ const plans=(f.plans??[]).filter((p:any)=>p.status==='certified')
+ const recorded=(f.insurance.institutionalVisits??[]).map((v:any)=>'<li>'+h(v.source)+' · '+h(v.patient_status)+' · '+h(JSON.parse(v.occurrences).map((o:any)=>o.code+' '+o.date).join(', '))+'</li>').join('')
+ return `<details id="institutional-visit"><summary>Institutional visit facts</summary><p>One original outpatient Medicare visit only. Record the occurrence dates from the payer instructions and select the signed, certified plan for this visit and episode. Configure the agency and revenue mappings in <a href="/app/clinic#rehab-agency">Settings</a>. Files remain unsent.</p><ul>${recorded}</ul>`
+ +form('insurance.institutional.visit',path,select('appointmentId','Attended visit',visits.map((a:any)=>[a.id,usDate(a.start_at,zoneOf(s))+' · '+a.service]))
+ +select('policyId','Medicare policy',f.insurance.policies.filter((p:any)=>p.medicare).map((p:any)=>[p.id,p.payer_name+' · '+p.member_id]))
+ +select('planId','Signed certified plan',plans.map((p:any)=>[p.id,(p.content?.startDate??'')+' through '+(p.content?.certifiedThrough??'')+' · '+p.therapistName]))
+ +field('attendingFirst','Attending provider first name','','text','required maxlength="60"')+field('attendingLast','Attending provider last name','','text','required maxlength="60"')+field('attendingNpi','Attending provider NPI','','text','required maxlength="10"')
+ +'<p class="help">Record the attending provider named by the institutional billing instructions; selecting a plan does not infer attending authority.</p>'
+ +select('patientStatus','Patient discharge status',[['01','01 · Discharged home']])
+ +'<label>Occurrence codes and dates<textarea name="occurrenceLines" rows="3" required></textarea><span class="hint">One two-character occurrence code and date (YYYY-MM-DD) per line. Use the written instruction, not an inferred date.</span></label>'
+ +field('source','Occurrence instruction source','','text','required maxlength="2000"')
+ +'<label class="check"><input type="checkbox" name="attest" value="on" required><span>I reviewed the patient, visit, signed plan and occurrence dates against the written payer instructions.</span></label>','Record institutional visit facts')+'</details>'
 }
