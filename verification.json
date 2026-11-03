@@ -39,7 +39,8 @@
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-communications\" node tests/communication-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-waitlist\" node tests/waitlist-browser.mjs",
         "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-continuity\" node tests/continuity-browser.mjs",
-        "node tests/functional-ack-browser.mjs"
+        "node tests/functional-ack-browser.mjs",
+        "BALM_UI_SCREENSHOTS=\"${RUNNER_TEMP:-/tmp}/balm-institutional\" node --test --test-name-pattern=\"^institutional Medicare claim preparation\" tests/insurance.test.mjs"
       ]
     },
     {
