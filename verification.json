@@ -5,17 +5,10 @@
       "browser": false,
       "hosted": false,
       "commands": [
+        "pnpm run typecheck",
         "pnpm run check --profile first-party",
         "node scripts/contract-docs.mjs check REPORT-003",
         "node scripts/contract-docs.mjs check"
-      ]
-    },
-    {
-      "name": "typecheck",
-      "browser": false,
-      "hosted": false,
-      "commands": [
-        "pnpm run typecheck"
       ]
     },
     {
@@ -64,7 +57,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"^(?!(?:prior authorization|booking prepayments|retail and finance originals|denial appeal originals)).*public CLI (archive round trip|erasure journals)\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"^(?!(?:prior authorization|booking prepayments|retail and finance originals|denial appeal originals|COMM-003 SCHED-005:|institutional claim originals)).*public CLI (archive round trip|erasure journals)\" tests/archive.test.mjs"
       ]
     },
     {
@@ -72,7 +65,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-004 automatic\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-004 automatic|HIPAA-001: public CLI|booking prepayments and fixed\" tests/archive.test.mjs"
       ]
     },
     {
@@ -88,15 +81,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"prior authorization signed packets|denial appeal originals\" tests/archive.test.mjs"
-      ]
-    },
-    {
-      "name": "portability-readiness",
-      "browser": false,
-      "hosted": false,
-      "commands": [
-        "node --test --test-concurrency=1 --test-name-pattern=\"HIPAA-001: public CLI|booking prepayments and fixed\" tests/archive.test.mjs"
+        "node --test --test-concurrency=1 --test-name-pattern=\"prior authorization signed packets|denial appeal originals|^COMM-003 SCHED-005:|^institutional claim originals\" tests/archive.test.mjs"
       ]
     }
   ],

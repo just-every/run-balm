@@ -7218,11 +7218,11 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "6a6dd3724fc8725205abe46a71c736c7de72b3be40fa3f753fdf463a017f0332",
+      "sha256": "ce8bb51e4104ca3cd699457efa7c2721f09994b250a7c1f2d5d5446b5b1d9b17",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {
-      "sha256": "43ee8f53cbd4cefe8a573cc0c854b1365c3a1884d6f4d7ec3682df2aaefc4d52",
+      "sha256": "b79a8e82f34b80a2f24c2042200c4cf525ed67fcc74a9c3e2754d1bb207de280",
       "executable": false
     },
     "vite.config.ts": {

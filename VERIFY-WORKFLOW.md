@@ -29,9 +29,17 @@ Balm adopts the verification lifecycle from rer 0.2.86 / Base
 `f96363bf919ea3e7ed1837daba6894810a50e4a6`. Its existing
 `verification.json` remains the source of product coverage: source and generated
 contract checks, typecheck, the hosted runtime/browser checks, domain and billing
-checks, and all five portability partitions stay in push coverage. The
+checks, and all four portability partitions stay in push coverage. The
 `owned-clean-start` browser journey stays in nightly coverage. No commands or
 assertions are removed by this workflow adoption.
+
+Push coverage uses eight shards. The source shard runs typecheck before its
+source and generated-contract checks. Portability core owns the general round
+trip and erasure journals; authorizations also owns the continuity and
+institutional originals round trips. The backup shard includes readiness and
+booking-prepayment archives, while the roles partition is unchanged. Every
+archive case runs in exactly one partition, with the existing assertions and
+12-minute job limit.
 
 Balm retains its `v*` tag trigger on Verify and its separate Release checks
 workflow, which calls Verify with `tier: all`. Both retain complete release
