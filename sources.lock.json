@@ -118,7 +118,7 @@
       "executable": false
     },
     ".github/workflows/verify.yml": {
-      "sha256": "5d8994971b4af981fd0db88ee84da65305ed4195ec7531a46a235691d322c4cd",
+      "sha256": "a3b26c982baed131d4f3bbb349cf2c2b906efaa487f1ba08758c5919b3c2333c",
       "executable": false
     },
     ".gitignore": {
@@ -6650,7 +6650,7 @@
       "executable": false
     },
     "tests/archive.test.mjs": {
-      "sha256": "90669eebf4b2062dc5d94c3292c49cc32e9e14604e48aa70576d794b8deca1d1",
+      "sha256": "30ac5d8a65f9666639b078ad4b858b633faa1df2ed6bc1decf2806c7c6a3d116",
       "executable": false
     },
     "tests/authorization-clinic.mjs": {
@@ -7218,11 +7218,11 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "ce8bb51e4104ca3cd699457efa7c2721f09994b250a7c1f2d5d5446b5b1d9b17",
+      "sha256": "b9b1c0c4979e9ee7ca647b5680d55b591398402b01ac5cca489b7681d9503e56",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {
-      "sha256": "b79a8e82f34b80a2f24c2042200c4cf525ed67fcc74a9c3e2754d1bb207de280",
+      "sha256": "0bca1c165ebef17587ddcd4f9241df63b0051d3ae9651b2dbcb32677f1bcafc4",
       "executable": false
     },
     "vite.config.ts": {

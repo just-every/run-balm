@@ -42,10 +42,19 @@ const command = async (cwd, args, expected = 0) => {
   console.log(`archive ${args[0]} finished in ${Date.now()-started}ms`)
   assert.equal(result.code, expected, `${args[0]}: ${result.stdout ?? ''} ${result.stderr ?? ''}`)
 }
-async function checkout(root) {
+async function checkout(root, { migrate = false } = {}) {
   await mkdir(root)
   for (const name of ['package.json','pnpm-lock.yaml','OPERATIONS.json','RUN-LOCALLY.md','ACCEPTANCE.md','SEED-COMMAND-CONTRACT.md','OPERATIONS.md','.node-version','wrangler.jsonc','deploy.json','rer-setup.json','scripts','src','migrations']) await cp(name, join(root,name), { recursive: true })
   await symlink(resolve('node_modules'), join(root,'node_modules'), 'dir')
+  if (migrate) {
+    // An unclaimed, empty install: apply every real migration and ledger entry
+    // in one Worker instead of starting Wrangler's proxy for every SQL file.
+    // Import still validates the ledger, emptiness and every transferred row.
+    const started = Date.now()
+    const empty = await harness({root, migrate:true, unclaimed:true})
+    await empty.close()
+    console.log(`archive empty installation prepared in ${Date.now()-started}ms`)
+  }
 }
 async function historicalErasurePatient(h,priya,service) {
   const patient=await h.cmd('client.save',{firstName:'Retained',lastName:'Historical',dateOfBirth:'1950-01-01'})
@@ -61,7 +70,7 @@ async function archiveFixture({ signedTie = false, erasureOnly = false } = {}){
   const temporary = await mkdtemp(join(tmpdir(),'balm-archive-')), source=join(temporary,'source'), restored=join(temporary,'restored'), erased=join(temporary,'erased'), refused=join(temporary,'refused')
   let h
   try {
-    for (const path of (erasureOnly ? [source,erased,refused] : [source,restored,erased,refused])) await checkout(path)
+    for (const path of (erasureOnly ? [source,erased,refused] : [source,restored,erased,refused])) await checkout(path,{migrate:erasureOnly&&path===erased})
     // Apply fixture SQL and its ledger in the existing Worker; public transfers below still use the CLI.
     const webhookKey='whsec_'+Buffer.from('synthetic-balm-1').toString('base64')
     h=await harness({root:source,migrate:true,outbound:modelEdge().outbound,auth:{BALM_RESEND_WEBHOOK_KEY:webhookKey,BALM_RESEND_EVENT_NAMESPACE:'archive-clinic-account'}})
@@ -365,8 +374,7 @@ test('HIPAA-004 automatic encrypted backups reach the owner\'s storage, show a r
       assert.equal(bucket.log.length, 0, 'Managed never contacts storage')
     } finally { await managed.close() }
     for (const path of [source, scratch, refused]) await checkout(path)
-    await exec(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'migrations', 'apply', 'foundation', '--local'], { cwd: source, env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 16e6 })
-    h = await harness({ root: source, outbound: bucket.fetchHandler })
+    h = await harness({ root: source, migrate:true, outbound: bucket.fetchHandler })
     await clinic(h, []); await h.finishSetup()
     const tick = async at => (await h.mf.getWorker()).scheduled({ scheduledTime: at, cron: '* * * * *' })
     const reception = await h.staff('Riley', 'reception')
@@ -502,9 +510,8 @@ test('ROLE-002 CHART-008 PAY-007 INTAKE-002: CLI archive preserves jobs, both si
  const temporary=await mkdtemp(join(tmpdir(),'balm-c23-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try {
-  await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
-  h=await harness({root:source})
+  await checkout(source);await checkout(restored,{migrate:true})
+  h=await harness({root:source,migrate:true})
   const {service,practitioners:[priya]}=await clinic(h)
   const student=await h.staff('ArchiveStudent','student',{discipline:'pt',supervisorId:priya.id,credentials:'SPT'})
   await h.cmd('hours.save',{practitionerId:student.id,hours:[0,1,2,3,4,5,6].map(weekday=>({weekday,start:'00:00',end:'24:00'}))})
@@ -617,9 +624,8 @@ test('INS-012: CLI archive preserves jobs and restores fixed manual EOB batches,
  const temporary=await mkdtemp(join(tmpdir(),'balm-payer-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
-  h=await harness({root:source})
+  await checkout(source);await checkout(restored,{migrate:true})
+  h=await harness({root:source,migrate:true})
   const result=await manualPayerJourney(h),identity={owner:h.owner,auth:h.auth},archive=join(temporary,'payer.rer')
   await h.close();h=null
   await command(source,['export','--output',archive,'--no-queue'])
@@ -641,10 +647,9 @@ test('retail and finance originals, paused entitlements and preparation authorit
   const temporary=await mkdtemp(join(tmpdir(),'balm-retail-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
   let h
   try {
-    await checkout(source);await checkout(restored)
-    await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
+    await checkout(source);await checkout(restored,{migrate:true})
     const {quickbooksEdge,accountingMappings}=await import('./fakes/quickbooks.mjs'),qbo=quickbooksEdge(),stripe=fakeProviders()
-    h=await harness({root:source,outbound:r=>new URL(r.url).hostname==='api.stripe.com'?stripe.handler(r):qbo.outbound(r)})
+    h=await harness({root:source,migrate:true,outbound:r=>new URL(r.url).hostname==='api.stripe.com'?stripe.handler(r):qbo.outbound(r)})
     const {service,practitioners:[priya]}=await clinic(h)
     const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Retail archive',dateOfBirth:'1950-01-01'})
     const member=await h.cmd('pay.retail.sell',{clientId:patient.id,kind:'membership',serviceId:service.id,units:2,amountCents:5000,label:'Synthetic finite membership',reference:'synthetic-balm-archive-member',confirm:true})
@@ -792,9 +797,8 @@ test('prior authorization signed packets and recorded payer decisions survive a 
  const temporary=await mkdtemp(join(tmpdir(),'balm-authorization-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
-  await exec(process.execPath,[resolve('node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','foundation','--local'],{cwd:source,env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false'},maxBuffer:16e6})
-  h=await harness({root:source})
+  await checkout(source);await checkout(restored,{migrate:true})
+  h=await harness({root:source,migrate:true})
   const {authorizationRequestFixture,approveAuthorizationRelease}=await import('./authorization-request-journey.mjs'),c=await authorizationRequestFixture(h)
   await c.sign()
   const request=await h.cmd('insurance.authorization_request.prepare',c.input)
@@ -853,10 +857,7 @@ test('COMM-003 SCHED-005: public CLI archive round trip preserves exact calls, w
   audit:(await db.prepare('SELECT * FROM bm_audit WHERE client_id=? ORDER BY sequence').bind(clientId).all()).results,
  })
  try{
-  await checkout(source);await checkout(restored)
-  // Build an unclaimed, empty installation without spawning Wrangler for each
-  // migration. The CLI still checks the ledger and enforces empty-target restore.
-  h=await harness({root:restored,migrate:true,unclaimed:true,codeSets:false});await h.close();h=null
+  await checkout(source);await checkout(restored,{migrate:true})
   h=await harness({root:source,migrate:true,codeSets:false})
   const desk=await h.staff('Rosa','reception')
   const patient=await h.cmd('client.save',{firstName:'Synthetic',lastName:'Call custody',dateOfBirth:'1988-04-02',email:['synthetic-balm-510','patient.example'].join('@'),smsTimeZone:'America/New_York'})
@@ -1013,7 +1014,7 @@ test('HIPAA-001: public CLI archive restores the readiness review and complete B
  const temporary=await mkdtemp(join(tmpdir(),'balm-readiness-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
+  await checkout(source);await checkout(restored,{migrate:true})
   h=await harness({root:source,migrate:true,codeSets:false,auth:{BALM_HOSTING_PROFILE:JSON.stringify(hostingProfile)}})
   const before=(await h.send('/api/balm/readiness.json',undefined,h.owner)).value
   assert.equal(before.ready,true)
@@ -1054,7 +1055,7 @@ test('denial appeal originals and complete adjudications survive public CLI arch
  const temporary=await mkdtemp(join(tmpdir(),'balm-denial-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
+  await checkout(source);await checkout(restored,{migrate:true})
   h=await harness({root:source,migrate:true})
   const c=await denialJourney(h)
   await h.cmd('note_release.revoke',{id:c.packet.releaseId})
@@ -1084,7 +1085,7 @@ test('booking prepayments and fixed receipts survive a public CLI archive round 
  const temporary=await mkdtemp(join(tmpdir(),'balm-booking-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
+  await checkout(source);await checkout(restored,{migrate:true})
   const {fakeProviders}=await import('./fakes/stripe.mjs'),stripe=fakeProviders()
   h=await harness({root:source,migrate:true,outbound:stripe.handler})
   const {bookingPrepaymentJourney}=await import('./booking-prepayment-journey.mjs')
@@ -1115,7 +1116,7 @@ test('institutional claim originals survive public CLI archive round trip withou
  const temporary=await mkdtemp(join(tmpdir(),'balm-institutional-archive-')),source=join(temporary,'source'),restored=join(temporary,'restored')
  let h
  try{
-  await checkout(source);await checkout(restored)
+  await checkout(source);await checkout(restored,{migrate:true})
   h=await harness({root:source,migrate:true})
   const c=await exportedInstitutionalFixture(h),before=(await c.file()).billing.ledger
   const identity={auth:h.auth,owner:h.owner}

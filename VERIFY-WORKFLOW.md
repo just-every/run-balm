@@ -33,13 +33,90 @@ checks, and all four portability partitions stay in push coverage. The
 `owned-clean-start` browser journey stays in nightly coverage. No commands or
 assertions are removed by this workflow adoption.
 
-Push coverage uses eight shards. The source shard runs typecheck before its
-source and generated-contract checks. Portability core owns the general round
-trip and erasure journals; authorizations also owns the continuity and
-institutional originals round trips. The backup shard includes readiness and
-booking-prepayment archives, while the roles partition is unchanged. Every
-archive case runs in exactly one partition, with the existing assertions and
-12-minute job limit.
+Push coverage uses eight shards. Source runs typecheck, then the Balm,
+schedule, reminders, move-in and retention test files before its source and
+generated-contract checks. Those five whole files move from domain; their
+351.8 seconds in Verify 41718952920 balance its previously idle source runner.
+Tests precede generated-view checks so stale lander-owned views cannot prevent
+product journeys from running. Portability core owns the general round trip and
+erasure journals; authorizations also owns the continuity and institutional
+originals round trips. Backups includes readiness and booking-prepayment
+archives; roles retains both jobs-preservation cases and the retail case.
+Every archive case runs in exactly one partition with every existing assertion,
+test timeout retained. The job limit is 13 minutes for the measured reason
+below.
+
+### Archive fixture cost and shard measurements
+
+Durations below include runner setup and cleanup, not just the test process.
+Main's domain result is its successful retry; its other shards are attempt 1.
+The first rebalance already combined typecheck into source and readiness into
+backups. It moved work between jobs without removing repeated fixture cost.
+
+| Shard | Main Verify 41686109554 (job) | First rebalance Verify 41718952920 (job) |
+| --- | --- | --- |
+| source | 0:26 (126111429373) | 0:39, generated-view failure (126206443152) |
+| typecheck | 0:43 (126111381369) | included in source |
+| runtime | 8:10 (126111468209) | 8:09 (126206442973) |
+| domain | 11:43 (126111381180) | 11:43 (126206443145) |
+| domain-billing | 10:18 (126111431550) | 7:26 (126206443008) |
+| portability-core | 10:45 (126111431099) | 8:42 (126206443115) |
+| portability-backups | 3:51 (126111451873) | 10:16 (126206443026) |
+| portability-readiness | 4:30 (126111382749) | included in backups |
+| portability-roles | 10:50 (126111382296) | 12:00, cancelled (126206443275) |
+| portability-authorizations | 6:49 (126111474028) | 10:39 (126206443031) |
+
+The slowest rebalance cases were automatic backup/recovery (306.0 seconds),
+the general cold archive round trip (272.2), retail (240.0, timed out),
+jobs/signatures (225.9), erasure journals (216.7), and manual EOB (215.7).
+Main's retail case took 221.5 seconds: export 40.4 and import 127.8. On the
+rebalance it spent 47.2 in export and 142.8 in import; the latter completed only
+after the case's 240-second deadline. Domain's slowest individual cases were
+quiet hours (26.6), reminders (26.5), retention (25.9), and Cliniko cutover
+(18.3), rather than one stalled case.
+
+Wrangler 4.129.1 applies each pending file through a fresh Miniflare proxy.
+The old roles fixtures ran all 142 migrations that way in their source, then
+CLI import repeated the cold apply in each destination. The fixture now uses
+the existing harness's real per-file SQL transactions and migration ledger in
+one Worker, including unclaimed empty destinations. Migration 0141 itself
+measured 77.6 ms in a local per-migration probe; it adds to repeated history
+setup rather than introducing a pathological retail query. No migration bytes,
+product transfer path, provider behavior or archive assertions change.
+
+The general round-trip destination and automatic backup scratch destination
+still start without a database, covering the public CLI's cold migration path.
+Damaged and occupied-target refusal, erasure fences, native ledger validation,
+real export/import and Worker disposal remain covered. Other destinations are
+unclaimed, migrated empty installations; no clinic fixture data is copied into
+them. This extends the existing call-custody fixture strategy.
+
+With at most two local check processes on the four-core cloud VM, the repaired
+roles partition passed all three cases in 472.6 seconds. Jobs/signatures took
+154.1 seconds, manual EOB 142.0, and retail 175.4, retaining the latter's
+240-second limit. The five moved domain files passed all 38 cases in 416.5
+seconds. These are local fixture checks; the branch's exact-SHA Verify is the
+required runner timing proof, not an extrapolation from this VM.
+
+After the fixture optimization, core passed in 482.0 seconds and authorizations
+in 542.0 seconds locally (all four real CLI transfers: 137.8, 143.1, 133.5 and
+126.4 seconds). The remaining work includes the public CLI's policy, migration
+history, empty-target and archive validation, with no test or assertion removed.
+In rebalance Verify 41718952920, the authorization job spent 31.0 seconds outside
+its test process (639 seconds total versus 608.1 seconds of cases). Allowing
+that observed setup/cleanup cost gives 573 seconds: 12 minutes permits only
+540 seconds at 75%, while 13 permits 585. Thirteen is therefore the smallest
+whole-minute limit covering the measured remaining cost and runner overhead.
+
+The adopted Base workflow has exactly two local value changes: the reusable
+`timeout` input default and the shard fallback become 13 rather than 12 in
+`.github/workflows/verify.yml`. Keep both together through Base refreshes and
+report this narrow override to gr. Explicit caller timeouts remain supported.
+The seed-owned manifest and archive fixtures carry the rebalance and setup
+optimization. Exact-SHA Verify must demonstrate every shard within 585 seconds
+(75% of 13 minutes) and the longest within 1.5 times the eight-shard mean;
+an expected generated-view failure does not exempt source from these timing
+requirements.
 
 Balm retains its `v*` tag trigger on Verify and its separate Release checks
 workflow, which calls Verify with `tier: all`. Both retain complete release
