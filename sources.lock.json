@@ -134,7 +134,7 @@
       "executable": false
     },
     "agent-surface.json": {
-      "sha256": "7bf1f179790975f4645793d11affd86bfb58b0d938fb7315464d2f2a4b82dea1",
+      "sha256": "dfead915cbf77d7cc31207a020b2bfc1a875313709a104dfa2bec481148ae16d",
       "executable": false
     },
     "AGENTS.md": {
@@ -2314,7 +2314,7 @@
       "executable": false
     },
     "src/balm/agent-door/index.ts": {
-      "sha256": "fd107266e8e89ae3118eb9dbb66b70328642dfa5b2bd5977f1a9b0c8b77a5eca",
+      "sha256": "dd735f0591d441e61eaddbecfd5ee46c4384de4bb3d67bbcea984811493cec47",
       "executable": false
     },
     "src/balm/agent-door/native.ts": {

@@ -1,4 +1,4 @@
-import { createAgentDoor, type Trust } from '../../modules/agent-door/index.ts'
+import { createAgentDoor, CORE_CAPABILITIES, OPTIONAL_CAPABILITIES, type Trust } from '../../modules/agent-door/index.ts'
 import { principal as localPrincipal } from '../credentials.ts'
 import { one } from '../domain/model.ts'
 import { runtimeBindings, type Bindings } from '../../auth.server.ts'
@@ -15,7 +15,7 @@ function trust(env:Bindings):Trust|null {
 }
 export function balmAgentDoor(original:Bindings) {
   const env=runtimeBindings(original),people=balmPeople(env)
-  return createAgentDoor({seed:'balm',name:'Balm',specialist:'Therapy practice coordinator',db:env.DB,origin:env.AUTH_ORIGIN,trust:trust(env),people,tools:balmTools(env),resources:balmResources(env),
+  return createAgentDoor({seed:'balm',name:'Balm',specialist:'Therapy practice coordinator',capabilities:[...CORE_CAPABILITIES,...OPTIONAL_CAPABILITIES],db:env.DB,origin:env.AUTH_ORIGIN,trust:trust(env),people,tools:balmTools(env),resources:balmResources(env),
     async localCredentials(request) {
       try { const who=await localPrincipal(request,env,true);return {sponsor:{id:who.id},agent:{id:who.keyId!,name:(await one(env.DB,'SELECT label FROM bm_agent_keys WHERE id=?',who.keyId))!.label,specialist:'Therapy practice coordinator'},scopes:who.keyScopes??[],clientId:'balm-key:'+who.keyId} } catch { return null }
     },
@@ -36,6 +36,6 @@ export async function agentResponse(request:Request,original:Bindings):Promise<R
   // Only construct the registry for its own routes. An unconfigured Worker
   // still serves health and the public lobby before setup supplies AUTH_ORIGIN.
   const path=new URL(request.url).pathname
-  if(!['/mcp','/agents','/api/rer/agent-policy','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'].includes(path)&&!path.startsWith('/agents/api/')&&!/^\/agents\/approvals\/[^/]+$/.test(path))return null
+  if(!['/mcp','/agents','/api/rer/agent-policy','/api/rer/agent-decisions','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'].includes(path)&&!path.startsWith('/agents/api/')&&!/^\/agents\/approvals\/[^/]+$/.test(path))return null
   return balmAgentDoor(env).handle(request)
 }

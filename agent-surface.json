@@ -7,7 +7,11 @@
     "policy",
     "pause",
     "audit",
-    "idempotency"
+    "idempotency",
+    "events",
+    "resources",
+    "prompts",
+    "subscriptions"
   ],
   "tools": [
     {
@@ -297,7 +301,14 @@
         {
           "class": "standard"
         }
-      ]
+      ],
+      "resource": {
+        "uriTemplate": "balm://clinic/{id}",
+        "state": {
+          "id": 1,
+          "clinic_name": "Synthetic Therapy Clinic"
+        }
+      }
     },
     {
       "id": "tax-private",
