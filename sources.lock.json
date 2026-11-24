@@ -146,7 +146,7 @@
       "executable": false
     },
     "CHANGELOG.md": {
-      "sha256": "f0dd0f8df00a06d55acec37c6b51c25a0adb8b1d4802cf0db5ece2da23d55b52",
+      "sha256": "eefefc4a763fda8b4e9c5baf84c351826b2865ba0e12d5ee70fcef9eb4bdd5d2",
       "executable": false
     },
     "composition.lock.json": {
@@ -906,7 +906,7 @@
       "executable": false
     },
     "package.json": {
-      "sha256": "19661cd246ecbc1ec01bd33e34e0b4744ff5ca1421bd6c0f3d21fd83c567f097",
+      "sha256": "6ddbdea45631799dbd67bb250c1e33e68c6dba2e3e528e61558522906dc8f90e",
       "executable": false
     },
     "packaging.json": {
@@ -2734,7 +2734,7 @@
       "executable": false
     },
     "src/balm/followups/scheduler.ts": {
-      "sha256": "f349a4a3804677b80b6b9c6b19e37b8883de40b9749642ca23121c96d00dcba0",
+      "sha256": "33f0128377115d1703ed5bba5ca8c94c2b8e4f34d2ab7737c2e87fd63fcdd0e5",
       "executable": false
     },
     "src/balm/followups/settings.ts": {
@@ -3178,7 +3178,7 @@
       "executable": false
     },
     "src/balm/payments/balance-reminders.ts": {
-      "sha256": "d1f2219f49924195bcc5d39aa0948bca4bb25826b20b345bfbb56c3681202de5",
+      "sha256": "ae659763bae998bc27ca87ecd1f8f021005a7c43375a3132f41d30b127481010",
       "executable": false
     },
     "src/balm/payments/booking-prepayment.ts": {
@@ -3266,11 +3266,11 @@
       "executable": false
     },
     "src/balm/payments/plan-settings.ts": {
-      "sha256": "bdb9b3f4c4799bc13fcdbe63ceda0ee59d7ad5c2cd8291b79fc3c2cabb81f86b",
+      "sha256": "87bcfcb8280d1d4c6551c07445e717cea6c6cde0e22b0c80119aff834f25c08e",
       "executable": false
     },
     "src/balm/payments/plans.ts": {
-      "sha256": "5a3c118579a19e255ab24523bbadc2682f739127622be50d473b173873315c9c",
+      "sha256": "db90ee86ade9ddf8e540810bd070f4be16b89add391f157a11f4c6021427905b",
       "executable": false
     },
     "src/balm/payments/reconciliation.ts": {
@@ -3390,7 +3390,7 @@
       "executable": false
     },
     "src/balm/reminders/scheduler.ts": {
-      "sha256": "6f6bde14f509e9a71c1d8c5689ca535129b8347f7023ca8eb597469ba65b00f6",
+      "sha256": "8474a3407d2d6a171f2ece2c9e818eac38706cf193fe26c460c6851f97bca64d",
       "executable": false
     },
     "src/balm/reminders/settings.ts": {
@@ -7078,7 +7078,7 @@
       "executable": false
     },
     "tests/payments.test.mjs": {
-      "sha256": "2c40b64f462dda9b38ad21d798990768e22026b17314e29fb8a8a98d4457e54d",
+      "sha256": "6fe69ac56e6f16950ccad4bcdf8885331f274505a34f54fd7c5b472b8d60e49d",
       "executable": false
     },
     "tests/portal-billing.mjs": {
@@ -7218,7 +7218,7 @@
       "executable": false
     },
     "verification.json": {
-      "sha256": "b9b1c0c4979e9ee7ca647b5680d55b591398402b01ac5cca489b7681d9503e56",
+      "sha256": "d5eb2e41e9ae482d6899667ca9e3039a9f64123fbaad7e1df2947bdb0d4b9d4b",
       "executable": false
     },
     "VERIFY-WORKFLOW.md": {

@@ -19,12 +19,13 @@ export async function sendDueReminders(env: Bindings, scheduledTime = Date.now()
   // already due (a visit booked inside both windows gets the shorter one now, and nothing twice).
   const leads = (JSON.parse(settings.reminder_leads) as number[]).sort((a, b) => b - a)
   for (const [index, lead] of leads.entries()) {
-    const shorter = leads[index + 1], unlessShorterDue = shorter === undefined ? '' : new Date(scheduledTime + shorter * 60_000).toISOString()
+    // Only visits whose reminder falls due within the hour get a row: reading the whole future book each minute is what costs.
+    const shorter = leads[index + 1], unlessShorterDue = shorter === undefined ? '' : new Date(scheduledTime + shorter * 60_000).toISOString(), startsBy = new Date(scheduledTime + (lead + 60) * 60_000).toISOString()
     for (const channel of settings.reminder_sms ? ['email','sms'] : ['email']) {
       await stmt(db, `INSERT INTO bm_visit_reminders(id,appointment_id,start_at,lead_minutes,channel,due_at)
         SELECT lower(hex(randomblob(16))),a.id,a.start_at,?,?,strftime('%Y-%m-%dT%H:%M:%fZ',a.start_at,?) FROM bm_appointments a
-        JOIN bm_clients c ON c.id=a.client_id WHERE a.status='booked' AND a.start_at>? AND a.start_at>? AND c.erased_at IS NULL
-        AND (?='email' OR c.sms_reminder_consent=1) ON CONFLICT(appointment_id,start_at,lead_minutes,channel) DO UPDATE SET state='pending',outcome=NULL WHERE bm_visit_reminders.state='cancelled'`, lead, channel, `-${lead} minutes`, at, unlessShorterDue, channel).run()
+        JOIN bm_clients c ON c.id=a.client_id WHERE a.status='booked' AND a.start_at>? AND a.start_at>? AND a.start_at<=? AND c.erased_at IS NULL
+        AND (?='email' OR c.sms_reminder_consent=1) ON CONFLICT(appointment_id,start_at,lead_minutes,channel) DO UPDATE SET state='pending',outcome=NULL WHERE bm_visit_reminders.state='cancelled'`, lead, channel, `-${lead} minutes`, at, unlessShorterDue, startsBy, channel).run()
     }
   }
   // Reminders left pending past their time (the scheduler did not run) give way to a shorter one due now.

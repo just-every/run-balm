@@ -7,12 +7,13 @@ const DAY = 86400_000, system = { email: 'Balm scheduler', role: 'system' }
 export async function sendDueFollowups(env: Bindings, scheduledTime = Date.now()) {
   if (env.RER_DEMO === '1') return
   const db = env.DB, at = new Date(scheduledTime).toISOString()
+  if (!await one(db, 'SELECT 1 FROM bm_followup_settings WHERE enabled=1 LIMIT 1')) return
   const candidates = await rows(db, `SELECT f.*,s.delay_days,s.repeat_days,s.max_sends,s.survey_url,s.review_url,s.version AS settings_version,
     c.email,c.version AS client_version,b.clinic_name,b.followup_contact_limit,
     (SELECT COUNT(*) FROM bm_followup_attempts a WHERE a.followup_id=f.id) AS sent_count,
     (SELECT MAX(attempted_at) FROM bm_followup_attempts a WHERE a.followup_id=f.id) AS last_attempt,
     (SELECT COUNT(*) FROM bm_followup_attempts a WHERE a.followup_id=f.id AND (a.state='uncertain' OR (a.state='reserved' AND a.attempted_at<=?))) AS unknown_count
-    FROM bm_followups f JOIN bm_followup_settings s ON s.kind=f.kind JOIN bm_clients c ON c.id=f.client_id,bm_settings b
+    FROM bm_followup_settings s CROSS JOIN bm_followups f ON f.kind=s.kind AND f.state='active' JOIN bm_clients c ON c.id=f.client_id,bm_settings b
     WHERE f.state='active' AND s.enabled=1 AND c.erased_at IS NULL ORDER BY f.enrolled_at,f.id`, new Date(scheduledTime - 15 * 60_000).toISOString())
   for (const f of candidates) {
     const goal = await sequenceGoal(db, f, at)

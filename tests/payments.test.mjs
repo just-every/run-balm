@@ -350,6 +350,8 @@ test('PAY-006: three authorized monthly card charges, consented reminder sequenc
     const paid = stripe.complete(sessionOf(checkout.location))
     assert.equal((await h.send(open.location + '?paid=' + paid.id)).status, 200)
     await Promise.all([installmentTick(h, '2030-03-31'), installmentTick(h, '2030-03-31')])
+    // A reminder that is not yet due is marked paid by the next clinic day's sweep, not by every minute's run.
+    await installmentTick(h, '2030-04-01')
     charges = stripe.calls.filter(c => c.path === '/payment_intents')
     assert.deepEqual(charges.map(c => Number(c.body.amount)), [9500, 9500, 5500])
     assert.equal(new Set(charges.map(c => c.idempotencyKey)).size, 3)

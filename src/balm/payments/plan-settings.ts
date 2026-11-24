@@ -73,22 +73,37 @@ export async function patientPlans(db: D1Database, clientId: string) {
   return { plans, reminders }
 }
 
-/** A live work list only: no export or collections side effect exists. */
+/** Re-derive what the invoices touched since the last look owe: one set-based pass over the changes, nothing when none. */
+async function refreshOpenInvoices(db: D1Database) {
+  if (!await one(db, 'SELECT 1 FROM bm_invoice_balance_stale LIMIT 1')) return
+  await db.batch([
+    stmt(db, 'DELETE FROM bm_invoice_open WHERE invoice_id IN (SELECT invoice_id FROM bm_invoice_balance_stale)'),
+    stmt(db, `INSERT INTO bm_invoice_open(invoice_id,balance_cents,approved_at) SELECT id,balance,approved_at FROM (SELECT i.id AS id,i.approved_at AS approved_at,
+      i.amount_cents-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0) AS balance
+      FROM bm_invoices i WHERE i.status='approved' AND i.id IN (SELECT invoice_id FROM bm_invoice_balance_stale)) WHERE balance>0`),
+    stmt(db, 'DELETE FROM bm_invoice_balance_stale'),
+  ])
+}
+
+/** A live work list only: no export or collections side effect exists. It reads the patients with an old open invoice, never the paid history. */
 export async function balanceReview(db: D1Database, at = now()) {
   const afterDays = Number((await one(db, 'SELECT after_days FROM bm_balance_review_settings WHERE id=1'))!.after_days)
-  const aged = await rows(db, `SELECT c.id AS client_id,c.first_name,c.last_name,MIN(i.approved_at) AS oldest_at,
-    SUM(MAX(0,i.amount_cents-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)-COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0))) AS balance_cents
-    FROM bm_clients c JOIN bm_invoices i ON i.client_id=c.id WHERE c.erased_at IS NULL AND i.status='approved'
-    AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=i.id)
-    AND i.amount_cents>COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_payments p WHERE p.invoice_id=i.id),0)+COALESCE((SELECT SUM(amount_cents) FROM bm_invoice_adjustments x WHERE x.invoice_id=i.id),0)
+  await refreshOpenInvoices(db)
+  const aged = await rows(db, `SELECT g.*,
+    (SELECT COALESCE(SUM(amount_cents-applied_cents),0) FROM bm_card_payments WHERE client_id=g.client_id AND status='succeeded')+(SELECT COALESCE(SUM(remaining_cents),0) FROM bm_credit_balances WHERE client_id=g.client_id) AS credit_cents,
+    (SELECT age_days FROM bm_balance_review_queue q WHERE q.client_id=g.client_id AND q.after_days=? AND q.oldest_at=g.oldest_at) AS queued_age
+    FROM (SELECT c.id AS client_id,c.first_name,c.last_name,MIN(i.approved_at) AS oldest_at,SUM(o.balance_cents) AS balance_cents
+    FROM bm_clients c CROSS JOIN bm_invoices i ON i.client_id=c.id CROSS JOIN bm_invoice_open o ON o.invoice_id=i.id
+    WHERE c.id IN (SELECT i2.client_id FROM bm_invoice_open o2 JOIN bm_invoices i2 ON i2.id=o2.invoice_id WHERE o2.approved_at<=? UNION SELECT client_id FROM bm_balance_review_queue WHERE after_days=?)
+    AND c.erased_at IS NULL AND i.status='approved' AND NOT EXISTS(SELECT 1 FROM bm_invoice_insurance_hold h WHERE h.invoice_id=o.invoice_id)
     GROUP BY c.id HAVING julianday(?)-julianday(MIN(i.approved_at))>=?
-      OR EXISTS(SELECT 1 FROM bm_balance_review_queue q WHERE q.client_id=c.id AND q.after_days=?) ORDER BY oldest_at`, at, afterDays, afterDays)
+      OR EXISTS(SELECT 1 FROM bm_balance_review_queue q WHERE q.client_id=c.id AND q.after_days=?)) g ORDER BY g.oldest_at`,
+    afterDays, new Date(Date.parse(at) - afterDays * 86400_000 + 1000).toISOString(), afterDays, at, afterDays, afterDays)
   const accounts: Data[] = []
-  for (const row of aged) {
-    const credit = Number((await one(db, "SELECT (SELECT COALESCE(SUM(amount_cents-applied_cents),0) FROM bm_card_payments WHERE client_id=? AND status='succeeded')+(SELECT COALESCE(SUM(remaining_cents),0) FROM bm_credit_balances WHERE client_id=?) AS cents", row.client_id, row.client_id))!.cents)
-    const queued = await one(db, 'SELECT age_days FROM bm_balance_review_queue WHERE client_id=? AND after_days=? AND oldest_at=?', row.client_id, afterDays, row.oldest_at)
-    const age = Math.max(Number(queued?.age_days ?? 0), Math.floor((Date.parse(at) - Date.parse(row.oldest_at)) / 86400_000))
-    if (row.balance_cents > credit && age >= afterDays) accounts.push({ ...row, balance_cents: row.balance_cents - credit, age_days: age })
+  for (const { credit_cents, queued_age, ...row } of aged) {
+    const age = Math.max(Number(queued_age ?? 0), Math.floor((Date.parse(at) - Date.parse(row.oldest_at as string)) / 86400_000))
+    const credit = Number(credit_cents)
+    if (row.balance_cents as number > credit && age >= afterDays) accounts.push({ ...row, balance_cents: row.balance_cents as number - credit, age_days: age })
   }
   const attention = await rows(db, `SELECT i.*,p.client_id,c.first_name,c.last_name,cp.status AS payment_status,cp.failure FROM bm_plan_installments i JOIN bm_payment_plans p ON p.id=i.plan_id JOIN bm_clients c ON c.id=p.client_id LEFT JOIN bm_card_payments cp ON cp.id=i.payment_id WHERE i.status IN ('review','reserved') AND c.erased_at IS NULL ORDER BY i.due_on`)
   return { afterDays, accounts, attention }

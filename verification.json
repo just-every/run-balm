@@ -42,7 +42,7 @@
       "browser": false,
       "hosted": false,
       "commands": [
-        "node --test --test-concurrency=1 tests/setup.test.mjs tests/demo.test.mjs tests/intake-portal.test.mjs tests/portal.test.mjs tests/disclosures.test.mjs tests/alerts.test.mjs tests/report.test.mjs tests/security.test.mjs tests/integ.test.mjs"
+        "node --test --test-concurrency=1 tests/setup.test.mjs tests/d1-budget.test.mjs tests/demo.test.mjs tests/intake-portal.test.mjs tests/portal.test.mjs tests/disclosures.test.mjs tests/alerts.test.mjs tests/report.test.mjs tests/security.test.mjs tests/integ.test.mjs"
       ]
     },
     {

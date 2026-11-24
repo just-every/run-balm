@@ -1,5 +1,6 @@
 import type { Bindings } from '../../auth.server'
 import { audit, commit, guard, id, one, rows, stmt } from '../domain/model'
+import { markRan, ranIn } from '../domain/jobs'
 import { dispatchPatientMail } from '../mail/dispatch'
 import { ledger } from './ledger'
 import { preparedStatement } from './statements'
@@ -8,8 +9,10 @@ const scheduler = { email: 'payment scheduler', role: 'payments' }
 
 /** One generic email per due date, reserved durably before contacting mail. */
 export async function sendBalanceReminders(env: Bindings, db: D1Database, today: string, at: string) {
-  const due = await rows(db, `SELECT r.*,c.email,s.clinic_name FROM bm_balance_reminders r JOIN bm_clients c ON c.id=r.client_id,bm_settings s
-    WHERE r.status='active' AND c.erased_at IS NULL ORDER BY r.next_on`)
+  // Every active reminder is checked for a paid balance once a clinic day; between sweeps a minute reads only the reminders that are due.
+  const sweep = !await ranIn(db, 'balance-reminder-sweep', today)
+  const due = await rows(db, `SELECT r.*,c.email,(SELECT clinic_name FROM bm_settings WHERE id=1) AS clinic_name FROM bm_balance_reminders r JOIN bm_clients c ON c.id=r.client_id
+    WHERE r.status='active' AND c.erased_at IS NULL${sweep ? '' : ' AND r.next_on<=?'} ORDER BY r.next_on`, ...sweep ? [] : [today])
   let sent = 0
   for (const reminder of due) {
     const balance = (await ledger(db, reminder.client_id)).patientBalanceCents
@@ -46,6 +49,7 @@ export async function sendBalanceReminders(env: Bindings, db: D1Database, today:
     await commit(db, null, [stmt(db, 'UPDATE bm_balance_notices SET status=?,outcome=? WHERE id=?', state, delivery.state, noticeId), audit(db, scheduler, `balance_reminder.${state}`, reminder.client_id, noticeId)])
     if (state === 'sent') sent++
   }
+  if (sweep) await markRan(db, 'balance-reminder-sweep', today).run()
   // A crashed dispatch is a human-visible uncertainty, never a resend.
   await stmt(db, "UPDATE bm_balance_notices SET status='uncertain',outcome='Delivery outcome unknown; check before resending' WHERE status='sending' AND reserved_at<?", new Date(Date.parse(at) - 15 * 60_000).toISOString()).run()
   return { sent }
