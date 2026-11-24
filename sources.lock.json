@@ -893,6 +893,10 @@
       "sha256": "c01d7af30ee48bdde3f6edfe5fb2dd9054757a693b3f533d5eeef3f38859d7d3",
       "executable": false
     },
+    "migrations/core/0142_balm_open_balances.sql": {
+      "sha256": "2d0fadf4531f6e83c845b9ed215a0b97061bd4a87afbc550aa2036646dd7d9d4",
+      "executable": false
+    },
     "ONBOARDING.md": {
       "sha256": "5d20f1bd0c24def0cd6c1165d1a58d0472ad0f02f2b60047014bda962eaf4274",
       "executable": false
@@ -2663,6 +2667,10 @@
     },
     "src/balm/domain/invoices.ts": {
       "sha256": "7fe729d65c031d9ff40340b7b7032f9ad7ddf6d8ffdc380c3b497f4d2baf2fd3",
+      "executable": false
+    },
+    "src/balm/domain/jobs.ts": {
+      "sha256": "c04344188d27365700b2bbf9052ba705c600d9b9b8b5bebce138d95eb54ec239",
       "executable": false
     },
     "src/balm/domain/measures.ts": {
@@ -6763,6 +6771,14 @@
     },
     "tests/continuity-journey.mjs": {
       "sha256": "b48b706375b2049d7e15742118aec2d79c0e1febd8440822f6bfd96d072c1f59",
+      "executable": false
+    },
+    "tests/d1-budget.test.mjs": {
+      "sha256": "74ce290a120a3c33161b7ceedc27b8546658e105e17c3d86a6aa83567a4204d3",
+      "executable": false
+    },
+    "tests/d1-meter-worker.ts": {
+      "sha256": "580f081b14debec120748f038a27eabd821fe457df418edc8fe28ca62642506b",
       "executable": false
     },
     "tests/daily-close-clinic.mjs": {
