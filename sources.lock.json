@@ -893,6 +893,10 @@
       "sha256": "c01d7af30ee48bdde3f6edfe5fb2dd9054757a693b3f533d5eeef3f38859d7d3",
       "executable": false
     },
+    "migrations/core/0142_agent_door_relay_privacy.sql": {
+      "sha256": "fb9e276013234f2f3afbd10dc654e93edc361b2165fd4cb2c0273ce44ab70a7a",
+      "executable": false
+    },
     "ONBOARDING.md": {
       "sha256": "5d20f1bd0c24def0cd6c1165d1a58d0472ad0f02f2b60047014bda962eaf4274",
       "executable": false
