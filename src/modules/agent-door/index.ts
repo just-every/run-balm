@@ -5,7 +5,7 @@ import { eventsTool, appendEvents } from './events.ts'
 import { personDoor } from './person-doors.ts'
 import { agentPage } from './pages.ts'
 import { mcp } from './transport.ts'
-import { adoptPolicy, policyState } from './policy-store.ts'
+import { adoptPolicy, policyAdoptedData, policyState } from './policy-store.ts'
 import { admit } from './admission.ts'
 import { callTool } from './pipeline.ts'
 import { revoked } from './execution.ts'
@@ -44,7 +44,7 @@ export function createAgentDoor(options: AgentDoorOptions): AgentDoor {
         const response = await adoptPolicy(rt, request)
         if (response.ok) {
           const state = await policyState(rt)
-          await appendEvents(rt, [{ type: 'policy.adopted', uri: `${options.origin}/agents/policy/${state.seq}`, actor: { kind: 'business' }, data: { seq: state.seq, revision: state.revision } }])
+          await appendEvents(rt, [{ type: 'policy.adopted', uri: `${options.origin}/agents/policy/${state.seq}`, actor: { kind: 'business' }, data: await policyAdoptedData(state) }])
         }
         return response
       }

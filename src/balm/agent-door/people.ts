@@ -25,8 +25,13 @@ export function balmPeople(env: Bindings): PeopleAdapter {
   }
   return {
     person: async id => admitted(await native.person(id)),
+    async businessStopped() {
+      // Missing or unreadable stop state cannot carry Business authority.
+      try { return await native.businessStopped?.() !== false }
+      catch { return true }
+    },
     sponsor: async claims => {
-      const settings=await env.DB.prepare('SELECT owner_id FROM bs_settings WHERE singleton=1 AND stopped=0').first<{owner_id:string}>()
+      const settings=await env.DB.prepare('SELECT owner_id FROM bs_settings WHERE singleton=1').first<{owner_id:string}>()
       if(!settings)return null
       const binding=settings.owner_id===claims.sub
         ? await env.DB.prepare('SELECT claim_id AS id FROM oa_bootstrap WHERE singleton=1').first<{id:string}>()

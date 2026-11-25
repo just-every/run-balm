@@ -16,6 +16,17 @@ export async function policyState(rt: Runtime): Promise<PolicyState> {
     expires: rt.options.trust ? envelope?.exp * 1000 || null : null, iat: envelope?.iat ?? null }
 }
 export const declaredClasses = (rt: Runtime) => classIds.filter(cls => rt.tools.some(tool => tool.classes.includes(cls)) || offers(rt.options.capabilities, 'resources') && rt.options.resources?.some(resource => resource.classes.includes(cls)))
+
+/** Publish the adopted revision and class coverage without disclosing policy rules. */
+export async function policyAdoptedData(state: PolicyState) {
+  const covered = new Set(state.document?.rules.map(rule => rule.class))
+  return {
+    seq: state.seq, revision: state.revision,
+    classes: classIds.filter(cls => covered.has('*') || covered.has(cls)).map(cls => ({ class: cls })),
+    decision: { revision: state.revision, document_sha256: state.document ? await document_sha256(state.document) : null },
+  }
+}
+
 export const unanswered = (rt: Runtime, state: PolicyState) => declaredClasses(rt).filter(cls => !answered(state.document, cls))
 export const setupUrl = (rt: Runtime, state: PolicyState) => rt.options.trust && state.business
   ? `${rt.options.trust.issuer}/business/${encodeURIComponent(state.business)}/settings/policy` : `${rt.options.origin}/agents`

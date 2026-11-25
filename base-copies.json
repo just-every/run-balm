@@ -286,6 +286,20 @@
       ]
     },
     {
+      "path": "migrations/core/0142_agent_door_relay_privacy.sql",
+      "originPath": "default-seed/migrations/core/0043_agent_door_relay_privacy.sql",
+      "revision": "25760e153b6f78090a48582727b30cfb86582a0d",
+      "files": {
+        "migrations/core/0142_agent_door_relay_privacy.sql": "fb9e276013234f2f3afbd10dc654e93edc361b2165fd4cb2c0273ce44ab70a7a"
+      },
+      "modes": {
+        "migrations/core/0142_agent_door_relay_privacy.sql": "100644"
+      },
+      "originFiles": [
+        "default-seed/migrations/core/0043_agent_door_relay_privacy.sql"
+      ]
+    },
+    {
       "path": "ONBOARDING.md",
       "originPath": "foundation/template/ONBOARDING.md",
       "revision": "0ada1e64389f21687bb9d2d327dd3e5653627076",
@@ -2034,7 +2048,31 @@
         "modules/agent-door/transport.ts",
         "modules/agent-door/types.ts",
         "modules/agent-door/wire.ts"
-      ]
+      ],
+      "adapted": {
+        "src/modules/agent-door/index.ts": "0ada1e64389f21687bb9d2d327dd3e5653627076",
+        "src/modules/agent-door/policy-store.ts": "0ada1e64389f21687bb9d2d327dd3e5653627076",
+        "src/modules/agent-door/approval-execution.ts": "0ada1e64389f21687bb9d2d327dd3e5653627076",
+        "src/modules/agent-door/principal.ts": "0ada1e64389f21687bb9d2d327dd3e5653627076"
+      },
+      "acknowledged": {
+        "src/modules/agent-door/index.ts": {
+          "sha256": "9a6d85b8f37778ab700073cd9af6bf566068205875a1c7ade517acca73951ed4",
+          "mode": "100644"
+        },
+        "src/modules/agent-door/policy-store.ts": {
+          "sha256": "61964d9c0ca0d31cc61af97ba3cf096ea0be10f60d709e86ea79a3c7daeac8db",
+          "mode": "100644"
+        },
+        "src/modules/agent-door/approval-execution.ts": {
+          "sha256": "177ca168138c5136a76ff571b3a7a15a70db38376b8cbca719a6c7864b1aabd3",
+          "mode": "100644"
+        },
+        "src/modules/agent-door/principal.ts": {
+          "sha256": "61560403e82c1747157988ccf84763bca3d180d76c28bd205c083d62efe90017",
+          "mode": "100644"
+        }
+      }
     },
     {
       "path": "src/modules/ai",

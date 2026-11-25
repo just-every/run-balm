@@ -132,8 +132,11 @@ async function handleAuthResponse(request: Request, original: Bindings): Promise
  }
  if (url.pathname.startsWith('/auth/')) {
   const response = await createAuthHandler(operatorAuth(env))(request)
-  if (env.MAIL_PROVIDER === 'none' && response?.status === 503 && (await response.clone().json().catch(() => null))?.error === 'mail_unavailable') {
-   return Response.json({ error: 'mail_off' }, { status: response.status, headers: response.headers })
+  if (env.MAIL_PROVIDER === 'none' && response?.status === 503) {
+   const body: unknown = await response.clone().json().catch(() => null)
+   if (body && typeof body === 'object' && 'error' in body && body.error === 'mail_unavailable') {
+    return Response.json({ error: 'mail_off' }, { status: response.status, headers: response.headers })
+   }
   }
   return fontDocumentResponse(response)
  }
