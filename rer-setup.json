@@ -91,10 +91,6 @@
           "label": "Local development (no email)"
         },
         {
-          "value": "none",
-          "label": "Mail off"
-        },
-        {
           "value": "rer",
           "label": "RER managed mail"
         },
@@ -112,7 +108,7 @@
         }
       ],
       "group": "mail",
-      "help": "For a hosted trial with mail off, the owner signs in using rer signin. Sending email requires a configured provider and verified sender."
+      "help": "Local setup suppresses email. For a hosted trial, set MAIL_PROVIDER=none at deploy time and use rer signin."
     },
     {
       "name": "MAIL_FROM",
