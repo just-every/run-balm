@@ -118,7 +118,12 @@ test('booking webhooks require owner consent and explicit approval, verify raw-b
   await h.cmd('movein.undo',{jobId:imported.job.id},h.owner,409)
   const retained=await h.cmd('movein.journal',{jobId:imported.job.id})
   assert.equal(retained.job.state,'applied')
-  assert.ok((await h.state()).appointments.some(a=>a.id===importedVisit))
+  const patientFiles=await Promise.all(imported.records.filter(r=>r.kind==='patient').map(async r=>{
+   const file=await h.send('/api/balm/clients/'+r.target_id,undefined,h.owner)
+   assert.equal(file.status,200)
+   return file.value
+  }))
+  assert.ok(patientFiles.some(file=>file.appointments.some(a=>a.id===importedVisit)))
  }finally{await h.close()}
 })
 

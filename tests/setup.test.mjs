@@ -1,9 +1,38 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { run } from './harness.mjs'
 import { bookOnline, clinic, slots } from './clinic.mjs'
 import { hostingProfile, hostingFixture, patientMode, readinessFixture } from './readiness-fixture.mjs'
+import { authorizeTestSession } from './staff-second-step.mjs'
+
+test('a mail-off trial refuses email and admits its owner with a one-use rer signin grant', { timeout: 120_000 }, () => run(async h => {
+  const ip = { 'cf-connecting-ip': '192.0.2.40' }
+  const signin = await h.send('/signin')
+  assert.equal(signin.status, 200)
+  assert.doesNotMatch(signin.text, /action="\/auth\/magic-link"/)
+  const email = await h.send('/auth/magic-link', { email: h.auth.OWNER_EMAIL }, '', ip)
+  assert.equal(email.status, 503)
+  assert.deepEqual(email.value, { error: 'mail_off' })
+
+  // At the Cloudflare D1 edge, seed the same grant rer signin mints.
+  const token = randomBytes(32).toString('base64url')
+  const digest = createHash('sha256').update('owner-signin\0' + token).digest('hex')
+  const now = Date.now()
+  await h.db.prepare(`INSERT INTO oa_owner_signins(id,token_hash,operator_id,operator_version,created_at,expires_at)
+    SELECT ?,?,id,version,?,? FROM oa_operators WHERE email=? AND role='owner' AND status='active'`)
+    .bind(randomUUID(), digest, now, now + 60_000, h.auth.OWNER_EMAIL).run()
+  assert.equal((await h.send('/auth/owner-signin?token=' + token)).status, 200)
+  const entered = await h.send('/auth/owner-signin', { token }, '', ip)
+  assert.equal(entered.status, 303)
+  assert.ok(entered.cookie)
+  assert.equal((await h.send('/auth/owner-signin', { token }, '', ip)).status, 400)
+
+  await authorizeTestSession(h.send, entered.cookie, h.auth.OWNER_EMAIL, h.auth.SESSION_SECRET + ':memory')
+  assert.equal((await h.send('/setup', undefined, entered.cookie)).status, 200)
+  assert.deepEqual(h.outboundRequests, [])
+}, { auth: { MAIL_PROVIDER: 'none', MAIL_FROM: '', MAIL_API_KEY: '' }, autoMfa: false }))
 
 const zone = 'America/Chicago'
 const localDate = t => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t))

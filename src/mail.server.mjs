@@ -1,6 +1,9 @@
 import { createMailSender } from './modules/mail/index.mjs'
 
 export function operatorMail(env) {
+ if (env.MAIL_PROVIDER === 'none') return {
+  async send() { return { status: 'rejected', provider: 'none', providerMessageId: null, code: 'mail_off' } },
+ }
  // Development and demo sends succeed silently without storing messages.
  if (env.RER_DEMO === '1' || env.AUTH_LOCAL === 'true') return createMailSender({ provider: 'development', mode: 'development' })
  if (!env.MAIL_PROVIDER || env.MAIL_PROVIDER === 'development') return undefined
