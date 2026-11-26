@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (27 Nov 2026)
+
+- **A demo that follows the release.** Each published release redeploys the Balm demo at its tag, on rer 0.2.140 (0.1.4's rer 0.2.80 pin could not deploy a hosted demo). Adds 45 forward-only migrations (0101 to 0142). Back up first with `rer export` or `rer run backup:hosted`.
 
 - **Automatic encrypted backups.** On Clinic → Backups the owner points Balm at an S3-compatible bucket they control and pastes the public half of a key pair made with `rer run backup:keygen`; Balm then writes the whole clinic there as an encrypted `.rer` archive on a schedule (or at **Back up now**), never deleting or overwriting one, and shows the recovery point on the owner's schedule. `rer run backup:drill` proves the newest backup restores into a scratch copy; `backup:restore` makes a `.rer` for `rer import`. Balm never holds the private key, so a lost key cannot be recovered.
 - **Move in from the downloaded report.** The page gives WebPT, SimplePractice and Cliniko download paths, reads documented patient CSV/Excel fields and WebPT Scheduled Visits, and explains what stays behind. The 100-record limit is removed: large imports use bounded groups, with a 1,284-patient import/repeat/undo proven. Jane’s unverified native headers are plainly unavailable instead of asking for hand conversion.

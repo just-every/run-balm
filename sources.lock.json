@@ -106,7 +106,7 @@
       "executable": false
     },
     ".github/workflows/run-demo.yml": {
-      "sha256": "e74d8f744f9302193e0af0db3c35ca6b8eeb40155c16eb062fe9456c32ae25cb",
+      "sha256": "8a9f011fa892b7adc7941f2ddd09cb08c8af4c77c05c584c89b70de2cc1ab9b7",
       "executable": false
     },
     ".github/workflows/run-site.yml": {
@@ -142,11 +142,11 @@
       "executable": false
     },
     "base-copies.json": {
-      "sha256": "d7343c80aa16a4c356c17243a5e91adcdd3d3b8ba8699bef824c47bfc674e504",
+      "sha256": "b98ac4c205d1c85c3bc94a58363414d848cd6d9c35882a11322b9b87232a483b",
       "executable": false
     },
     "CHANGELOG.md": {
-      "sha256": "f0dd0f8df00a06d55acec37c6b51c25a0adb8b1d4802cf0db5ece2da23d55b52",
+      "sha256": "cc401c44e06f2ef2b86cfb2fbf2e61a19025628b8bda5d695460b9e02d6a30fa",
       "executable": false
     },
     "composition.lock.json": {
@@ -910,7 +910,7 @@
       "executable": false
     },
     "package.json": {
-      "sha256": "c95ed4ccd422b1b5d31b1c08154e2675506c5bbfe70aefe79bd441a31c3fb106",
+      "sha256": "23b1f5874fab4cd5b3e7c486cd6ace2b2c284ec1cf089fdd761f625fc341cb96",
       "executable": false
     },
     "packaging.json": {
@@ -918,7 +918,7 @@
       "executable": false
     },
     "pnpm-lock.yaml": {
-      "sha256": "bf11bb1e18046799f3c62aceaccf25107ed4667fefba0ce65433d1ae3a1dbf75",
+      "sha256": "0a17573cd023096b3d842a2725038aa8bf3bf36d3c69383cb95532b41104da03",
       "executable": false
     },
     "public/apple-touch-icon.png": {
@@ -1474,7 +1474,7 @@
       "executable": false
     },
     "README.md": {
-      "sha256": "e930a667ce5db0e7e0c1256bfdde14af1cc16a5b96140c3fc940c0a23991c6e3",
+      "sha256": "0cbea3e863866d7cc0bb84b3194151d34a440875d2b635593f9eebb01b2a5f8c",
       "executable": false
     },
     "release-history/0.1.0.json": {
@@ -1494,7 +1494,7 @@
       "executable": false
     },
     "RELEASE.json": {
-      "sha256": "ea3115d7fa052d58be8b7f69aebb32a4ec255659c683f10dec6bb258b0971645",
+      "sha256": "f0609ff23d84d4bb486d921f819eaac539aaa4e54e26209c408e0d95ffcd5cb5",
       "executable": false
     },
     "rer-project.json": {
@@ -2302,7 +2302,7 @@
       "executable": false
     },
     "seed.json": {
-      "sha256": "982b9bff67e8854fcf758e5046e1498158dd9541bdb32f88e0dfabc9dcae1348",
+      "sha256": "0a19ac51c603c98a8a0f60fe613186febfffdd2cf283a7a4596140a8bf8477f9",
       "executable": false
     },
     "src/auth.server.ts": {

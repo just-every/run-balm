@@ -13,7 +13,16 @@
       },
       "originFiles": [
         "export/run-demo.yml"
-      ]
+      ],
+      "adapted": {
+        ".github/workflows/run-demo.yml": "0ada1e64389f21687bb9d2d327dd3e5653627076"
+      },
+      "acknowledged": {
+        ".github/workflows/run-demo.yml": {
+          "sha256": "8a9f011fa892b7adc7941f2ddd09cb08c8af4c77c05c584c89b70de2cc1ab9b7",
+          "mode": "100644"
+        }
+      }
     },
     {
       "path": ".github/workflows/verify-nightly.yml",
@@ -56,7 +65,7 @@
       },
       "acknowledged": {
         ".github/workflows/verify.yml": {
-          "sha256": "5d8994971b4af981fd0db88ee84da65305ed4195ec7531a46a235691d322c4cd",
+          "sha256": "a3b26c982baed131d4f3bbb349cf2c2b906efaa487f1ba08758c5919b3c2333c",
           "mode": "100644"
         }
       }
@@ -4010,7 +4019,7 @@
       },
       "acknowledged": {
         "VERIFY-WORKFLOW.md": {
-          "sha256": "43ee8f53cbd4cefe8a573cc0c854b1365c3a1884d6f4d7ec3682df2aaefc4d52",
+          "sha256": "0bca1c165ebef17587ddcd4f9241df63b0051d3ae9651b2dbcb32677f1bcafc4",
           "mode": "100644"
         }
       }

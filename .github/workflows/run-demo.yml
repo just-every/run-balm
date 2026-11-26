@@ -1,6 +1,6 @@
 # Adoption note: add it only when the seed's demo is adopted (DEMO.md "Hosting the demo")
-# seed-release.sh publishes with a user token so GitHub fires the release event.
 name: Run demo
+# Each published release redeploys the demo at its tag (seed-release.sh publishes with a user token, so this fires).
 on:
   release:
     types: [published]
